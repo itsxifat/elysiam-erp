@@ -712,7 +712,9 @@
               "PACKING_NOTHING_TO_REMOVE",
               "PACKING_VIDEO_INVALID",
               "PACKING_VIDEO_GONE",
-              "PACKING_CAMERA_INVALID"
+              "PACKING_CAMERA_INVALID",
+              "PACKING_CAMERA_PASSWORD_REQUIRED",
+              "PACKING_CAMERA_LIMIT"
             ]
           },
           "detail": {

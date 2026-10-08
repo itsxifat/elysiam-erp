@@ -4,14 +4,23 @@
     "segments": 8,
     "status": {
       "running": true,
-      "lastSegmentAt": "2026-10-08T04:00:02.596Z",
+      "lastSegmentAt": "2026-10-08T08:34:03.844Z",
       "errorCode": null,
       "failures": 0
     },
+    "whileRecording": [
+      {
+        "argvHasPassword": false,
+        "argvHasRtsp": false,
+        "whitelist": "file,rtsp,tcp",
+        "envNames": ["PATH", "TZ"]
+      }
+    ],
+    "inputListsAfter3s": ["input-1791448435730.ffconcat"],
     "cut": {
       "window": {
-        "fromMs": 1791431997995,
-        "toMs": 1791432000995
+        "fromMs": 1791448439240,
+        "toMs": 1791448442240
       },
       "chosen": 5,
       "coverage": {
@@ -20,9 +29,9 @@
         "gapMs": 0
       },
       "startsNoLater": true,
-      "durationMsFromSpans": 5001,
+      "durationMsFromSpans": 5004,
       "ftyp": "ftyp",
-      "sizeBytes": 155250,
+      "sizeBytes": 154257,
       "probe": {
         "programs": [],
         "streams": [
@@ -47,9 +56,19 @@
       "failures": 1
     }
   },
+  "serviceName": {
+    "segments": 0,
+    "status": {
+      "running": false,
+      "lastSegmentAt": null,
+      "errorCode": "address_refused",
+      "failures": 3
+    }
+  },
   "passwordInLog": false,
   "wrongPasswordInLog": false,
   "logSample": [
-    "camera recording stopped {\"cameraId\":\"smoke\",\"host\":\"mediamtx:8554\",\"reason\":\"auth_failed\",\"exitCode\":1,\"retryInMs\":1000,\"ffmpeg\":\"[rtsp @ 0x5b2a1a97ce00] method DESCRIBE failed: 401 Unauthorized | rtsp://***@mediamtx:8554/stream1: Server returned 401 Unauthorized (authorization failed)\"}"
+    "camera recording stopped {\"cameraId\":\"smoke\",\"host\":\"valkey:6379\",\"reason\":\"address_refused\",\"exitCode\":null,\"retryInMs\":1000}",
+    "camera recording stopped {\"cameraId\":\"smoke\",\"host\":\"valkey:6379\",\"reason\":\"address_refused\",\"exitCode\":null,\"retryInMs\":2000}"
   ]
 }
