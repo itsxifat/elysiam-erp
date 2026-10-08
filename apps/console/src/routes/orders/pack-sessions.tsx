@@ -6,12 +6,14 @@ import { useId, useState } from 'react';
 import { ApiError } from '../../api.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/pack-station.js';
+import { IpCamerasSettings } from './pack-cameras.js';
 import { VIDEO_TONE, formatElapsed } from './pack-logic.js';
 import { recentPacking, savePackingSettings, type PackingSettings } from './pack-station-api.js';
 import { ordersPath } from './paths.js';
 
 /**
- * The station's recent sessions and the brand's packing settings (M38b, D-615, D-617).
+ * The station's recent sessions and the brand's packing settings (M38b, D-615, D-617), with
+ * the packing tables' IP cameras (M38c, D-668).
  */
 
 /** "Recent packing": who packed what, how long it took, what was caught, and the video. */
@@ -161,6 +163,7 @@ export function PackSettingsDialog({
             {save.error instanceof ApiError ? save.error.message : t('ps.failed')}
           </p>
         )}
+        <IpCamerasSettings />
       </div>
     </Dialog>
   );

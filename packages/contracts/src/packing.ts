@@ -150,7 +150,8 @@ export const cameraPasswordSchema = z
   .max(128)
   .refine((value) => !CONTROL.test(value), 'A password has no control characters.');
 
-const cameraNameSchema = z.string().trim().min(1, 'Name the camera.').max(60);
+/** A camera's name, as the station's list shows it: one per brand. */
+export const cameraNameSchema = z.string().trim().min(1, 'Name the camera.').max(60);
 
 /** A new IP camera for the packing table (`update PackingVideo`, org_admin). */
 export const packingCameraCreateSchema = z

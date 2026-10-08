@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  PACK_SOURCE_KEY,
   RECORDING_LIMIT_MS,
   RECORDING_MAX_BYTES,
   VIDEO_BITS_PER_SECOND,
+  cameraErrorCode,
+  cameraInput,
   chooseRecorderMime,
   containerOf,
+  effectiveCameraId,
+  ipRecordingPhase,
+  parsePackSource,
+  serializePackSource,
   formatElapsed,
   formatMegabytes,
   isOrderSlip,
@@ -307,5 +314,119 @@ describe('the upload queue', () => {
     expect(uploadDue({ attempts: 2, lastAttemptAt: 1_000 }, 60_999)).toBe(false);
     expect(uploadDue({ attempts: 2, lastAttemptAt: 1_000 }, 61_000)).toBe(true);
     expect(recordedMs(recording({ endedAt: null, lastChunkAt: null }))).toBe(0);
+  });
+});
+
+// --- M38c: the recording source and the IP camera (D-670, D-671, D-673) -----------------------
+
+const CAMERA = '6b0f3a0e-8f0e-4c55-9d0b-2b4a1f2b7c11';
+
+describe('this desk’s recording source', () => {
+  it('is remembered under a neutral key, as this computer’s camera or an IP camera', () => {
+    expect(PACK_SOURCE_KEY).toBe('erp.pack.source');
+    expect(PACK_SOURCE_KEY).not.toMatch(/elys|oura|orvo|wear|beownz/i);
+    expect(parsePackSource(null)).toEqual({ kind: 'browser' });
+    expect(parsePackSource('browser')).toEqual({ kind: 'browser' });
+    expect(parsePackSource(`camera:${CAMERA}`)).toEqual({ kind: 'camera', cameraId: CAMERA });
+    expect(parsePackSource(`camera:${CAMERA.toUpperCase()}`)).toEqual({
+      kind: 'camera',
+      cameraId: CAMERA,
+    });
+    // Anything else is this computer's camera, never an error.
+    expect(parsePackSource('camera:not-a-uuid')).toEqual({ kind: 'browser' });
+    expect(parsePackSource('rtsp://192.168.20.111/stream1')).toEqual({ kind: 'browser' });
+    for (const source of [
+      { kind: 'browser' } as const,
+      { kind: 'camera', cameraId: CAMERA } as const,
+    ]) {
+      expect(parsePackSource(serializePackSource(source))).toEqual(source);
+    }
+  });
+
+  it('records with the chosen IP camera while it is in use, and falls back to this computer’s when it is not', () => {
+    const chosen = { kind: 'camera', cameraId: CAMERA } as const;
+    expect(effectiveCameraId({ kind: 'browser' }, [{ id: CAMERA, enabled: true }])).toBeNull();
+    expect(effectiveCameraId(chosen, [{ id: CAMERA, enabled: true }])).toBe(CAMERA);
+    expect(effectiveCameraId(chosen, [{ id: CAMERA, enabled: false }])).toBeNull();
+    expect(effectiveCameraId(chosen, [])).toBeNull();
+    // Before the list arrives, the choice stands (the server refuses a camera that is off).
+    expect(effectiveCameraId(chosen, undefined)).toBe(CAMERA);
+  });
+});
+
+describe('the IP camera’s recording at the station', () => {
+  const base = {
+    session: {
+      status: 'open' as const,
+      videoRequired: true,
+      recordingFrom: null,
+      recordingTo: null,
+    },
+    videos: [] as { source?: string; state: string }[],
+    video: 'pending',
+  };
+
+  it('is ready until the first correct piece, then recording, then cut and saved', () => {
+    expect(ipRecordingPhase(base)).toBe('ready');
+    const recording = {
+      ...base,
+      session: { ...base.session, recordingFrom: '2026-10-08T06:00:00.000Z' },
+    };
+    expect(ipRecordingPhase(recording)).toBe('recording');
+    const closed = {
+      ...recording,
+      session: {
+        ...recording.session,
+        status: 'completed' as const,
+        recordingTo: '2026-10-08T06:02:00.000Z',
+      },
+    };
+    expect(ipRecordingPhase(closed)).toBe('cutting');
+    expect(
+      ipRecordingPhase({
+        ...closed,
+        videos: [{ source: 'camera', state: 'uploaded' }],
+        video: 'uploaded',
+      }),
+    ).toBe('saved');
+    expect(ipRecordingPhase({ ...closed, video: 'missing' })).toBe('missing');
+    // A packing finished with no correct piece ever scanned was never filmed.
+    expect(
+      ipRecordingPhase({ ...base, session: { ...base.session, status: 'completed' as const } }),
+    ).toBe('missing');
+    expect(ipRecordingPhase({ ...base, session: { ...base.session, videoRequired: false } })).toBe(
+      'off',
+    );
+  });
+
+  it('says why a camera stopped in words of its own, any unknown reason as a stream error', () => {
+    expect(cameraErrorCode(null)).toBeNull();
+    expect(cameraErrorCode('auth_failed')).toBe('auth_failed');
+    expect(cameraErrorCode('unreachable')).toBe('unreachable');
+    expect(cameraErrorCode('something_new')).toBe('stream_error');
+  });
+});
+
+describe('the camera form', () => {
+  const filled = {
+    name: ' Packing table ',
+    rtspUrl: ' rtsp://192.168.20.111:554/stream1 ',
+    username: ' packing ',
+    password: '',
+    removePassword: false,
+    enabled: true,
+  };
+
+  it('keeps the stored password unless one is typed or its removal is asked for', () => {
+    expect(cameraInput(filled, true)).toEqual({
+      name: 'Packing table',
+      rtspUrl: 'rtsp://192.168.20.111:554/stream1',
+      username: 'packing',
+      enabled: true,
+    });
+    expect(cameraInput({ ...filled, password: 'p@ss' }, true).password).toBe('p@ss');
+    expect(cameraInput({ ...filled, removePassword: true }, true).password).toBeNull();
+    // A new camera has nothing to remove: an empty password is simply none.
+    expect(cameraInput({ ...filled, removePassword: true }, false)).not.toHaveProperty('password');
   });
 });

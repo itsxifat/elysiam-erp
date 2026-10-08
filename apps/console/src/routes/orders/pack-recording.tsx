@@ -189,6 +189,8 @@ export interface StationRecorder {
 export function useStationRecorder(
   view: PackView | undefined,
   queue: Pick<UploadQueue, 'run' | 'setActive'>,
+  /** False while an IP camera films the packing (M38c, D-670): the browser records nothing. */
+  active = true,
 ): StationRecorder {
   const { run, setActive } = queue;
   const handle = useRef<{ recorder: RecorderHandle; videoId: string } | null>(null);
@@ -203,7 +205,7 @@ export function useStationRecorder(
 
   const sessionId = view?.session.id ?? null;
   const videoRequired = view?.session.videoRequired ?? false;
-  const wanted = view?.session.status === 'open' && videoRequired && supported;
+  const wanted = active && view?.session.status === 'open' && videoRequired && supported;
   const orderNo = view?.session.orderNo ?? '';
   const packer = view?.you.name ?? null;
 

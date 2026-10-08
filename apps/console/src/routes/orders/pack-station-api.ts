@@ -1,8 +1,8 @@
 import { api } from '../../api.js';
 
 /**
- * The packing station's and the packing video's endpoints (M38b, D-610 to D-615), typed to
- * what the server returns.
+ * The packing station's and the packing video's endpoints (M38b, D-610 to D-615), and the
+ * packing tables' IP cameras (M38c, D-668 to D-676), typed to what the server returns.
  */
 
 export type PackLineState = 'todo' | 'partial' | 'done' | 'over';
@@ -53,6 +53,9 @@ export interface PackVideoPart {
   readonly deletedAt: string | null;
   readonly deletedReason: string | null;
   readonly recordedBy: PersonRef;
+  /** M38c: the desk's camera (uploaded by the browser) or an IP camera (cut on the server). */
+  readonly source?: 'browser' | 'camera';
+  readonly cameraId?: string | null;
 }
 
 export interface PackView {
@@ -67,6 +70,11 @@ export interface PackView {
     readonly startedBy: PersonRef;
     readonly completedAt: string | null;
     readonly completedBy: PersonRef | null;
+    /** M38c (D-670, D-671): the IP camera filming it, and its recording's window. */
+    readonly cameraId?: string | null;
+    readonly recordingFrom?: string | null;
+    readonly recordingTo?: string | null;
+    readonly recordingBy?: PersonRef | null;
   };
   readonly order: {
     readonly id: string;
@@ -108,7 +116,13 @@ export interface ScanAnswer {
   readonly view: PackView;
 }
 
-export function openPacking(input: { code: string } | { orderId: string }): Promise<PackView> {
+/**
+ * Open the station on an order, or resume it. `cameraId` is this desk's recording source: an
+ * IP camera's id, `null` for the desk's own camera, absent to leave the session's choice.
+ */
+export function openPacking(
+  input: ({ code: string } | { orderId: string }) & { cameraId?: string | null },
+): Promise<PackView> {
   return api.post('/v1/packing/sessions', input);
 }
 
@@ -249,4 +263,53 @@ export function putVideo(
     request.onabort = () => reject(new Error('The video upload was stopped.'));
     request.send(blob);
   });
+}
+
+// --- the packing tables' IP cameras (M38c, D-668, D-669) ------------------------------------
+
+export type PackCameraState = 'off' | 'ready' | 'offline';
+
+export interface PackCamera {
+  readonly id: string;
+  readonly name: string;
+  readonly enabled: boolean;
+  readonly state: PackCameraState;
+  readonly lastSegmentAt: string | null;
+  readonly lastErrorCode: string | null;
+  readonly lastErrorAt: string | null;
+  /** For an org admin only: the address (never with credentials) and the user name. */
+  readonly rtspUrl?: string;
+  readonly username?: string;
+  /** The password itself never leaves the server: whether one is set, and its fingerprint. */
+  readonly passwordSet?: boolean;
+  readonly passwordFingerprint?: string | null;
+  readonly updatedAt?: string | null;
+}
+
+export interface PackCameras {
+  readonly cameras: readonly PackCamera[];
+  readonly canEdit: boolean;
+  /** Whether this server can keep a camera's password (its credentials key is set). */
+  readonly credentialsKey: boolean;
+}
+
+export function packingCameras(): Promise<PackCameras> {
+  return api.get('/v1/packing/cameras');
+}
+
+export interface PackCameraInput {
+  readonly name: string;
+  readonly rtspUrl: string;
+  readonly username: string;
+  /** Absent keeps the stored password, a string replaces it, null removes it. */
+  readonly password?: string | null;
+  readonly enabled: boolean;
+}
+
+export function addPackingCamera(input: PackCameraInput): Promise<PackCamera> {
+  return api.post('/v1/packing/cameras', input);
+}
+
+export function updatePackingCamera(id: string, input: PackCameraInput): Promise<PackCamera> {
+  return api.put(`/v1/packing/cameras/${id}`, input);
 }

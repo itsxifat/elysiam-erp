@@ -124,7 +124,9 @@ function VideoNote({ view }: { readonly view: PackView & { canPlay: boolean } })
       : view.video === 'missing'
         ? t('ps.panel.missing')
         : view.video === 'pending'
-          ? t('ps.panel.waiting')
+          ? (view.session.cameraId ?? null) !== null && (view.session.recordingTo ?? null) !== null
+            ? t('ps.panel.cutting')
+            : t('ps.panel.waiting')
           : view.video === 'deleted'
             ? t('ps.panel.gone')
             : !view.canPlay
@@ -153,6 +155,7 @@ function VideoPart({ part, canPlay }: { readonly part: PackVideoPart; readonly c
   const play = useMutation({ mutationFn: () => videoUrl(part.id) });
   const facts = [
     `${t('ps.panel.part')} ${String(part.part)}`,
+    part.source === 'camera' ? t('ps.panel.camera') : null,
     part.durationMs === null ? null : formatElapsed(part.durationMs),
     part.sizeBytes === null ? null : formatMegabytes(part.sizeBytes),
   ].filter((fact): fact is string => fact !== null);
