@@ -123,6 +123,7 @@ const KNOWN_HOSTS = new Set([
   'http://oura-lifestyle.localhost',
   'http://preview-seed.localhost',
   'http://request.invalid',
+  'http://camera.invalid',
   'https://erp.example.com',
   'https://console.',
   'https://orvo.',
