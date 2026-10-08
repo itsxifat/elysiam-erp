@@ -2649,3 +2649,37 @@ dry-run|commit --file <users.json>`.
   there, never in chat); check it reads Ready; choose it under Recording source on the packing
   computer; pack one order and play its video. `stream2` is the smaller picture if
   `stream1`'s ~15 MB a minute is too much.
+
+## 2026-10-08 · M38c · the ledger audit's findings fixed (not deployed)
+
+- **Ledger audit** of 3d8de8e..36b40e0: 0 critical, 6 warnings, 5 notes, all fixed on
+  `m38c-ip-camera` (decisions D-669 corrected, D-677 to D-682; migration
+  `0136_m38c_camera_audit_fixes`, a trigger only):
+  - W1 the camera's credentials were on ffmpeg's command line (readable by any user of the
+    host). Now in a private ffconcat list (0600, removed five seconds after ffmpeg started);
+    verified on the image's ffmpeg 5.1 that recording works this way and ffmpeg's argv holds
+    neither the password nor `rtsp://`. What remains (memory, those seconds on disk) is root's
+    to read, as `.env.brand` is; `hidepid=2` is in the runbook as optional hardening.
+  - W2 a stored password no longer follows the address to another host or port; W3 protocol
+    whitelists `file,rtsp,tcp` and `file`; W4 loopback, link-local, unspecified, one-word and
+    odd numeric hosts refused by the shared schema, re-checked and resolved before every
+    connection, and the `camera` service on a compose network with Postgres only; W5 ffmpeg runs
+    with `PATH` and `TZ` only, and the camera process has its own configuration and compose
+    environment (no other secrets); W6 a 2 GiB byte cap per camera, a 5 GiB free-disk floor
+    (`disk_low`), dead cuts cleared, eight cameras per brand.
+  - N1 the camera is fixed once a piece is in the box; N2/N4 the start held to the first
+    accepted scan, by its scanner, on a camera that is on (domain rule and 0136's trigger); N3
+    only the deployment's active brand; N5 a part over the ceiling filed as never arrived, and a
+    failed cut forgets what it stored.
+- **Evidence:** domain 34/34; contracts 10/10; the recorder and cut 14/14 and the camera config
+  3/3 (stand-in ffmpeg with a bare environment); `camera.e2e.test.ts` 19/19 (8 new: W2, W6 cap
+  and disk, N1, N2/N4, N3, N5 and a failing cut) and `pack-station.e2e.test.ts` 19/19 on real
+  Postgres; console `pack-station-ui` 20/20. A real ffmpeg 5.1 in the server's base image
+  against mediamtx with a password (`docs/review/M38c/`): 8 segments in 9 s through the private
+  list, ffmpeg's argv without the password or `rtsp://`, its whitelist `file,rtsp,tcp`, its
+  environment `PATH` and `TZ` (an `AUTH_SECRET` given to the parent did not reach it), a 5.000 s
+  H.264 cut, a wrong password `auth_failed` and masked, `rtsp://valkey:6379/` `address_refused`
+  without ffmpeg starting. The camera process booted against a fresh database with only its own
+  variables. Gates: typecheck and build (18 tasks), lint, format, routes (517), i18n, migrations,
+  schema (135), api-client (regenerated for the two error codes): PASS.
+- New dependencies: none.

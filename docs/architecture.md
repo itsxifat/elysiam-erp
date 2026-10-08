@@ -1876,3 +1876,12 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   private packing videos and filed as the session's `camera` parts (`packing.videos.source`,
   D-674). Its log never carries a camera's password (masked, tested). Its ffmpeg is Debian's, in
   the server image (D-675).
+- **After the ledger audit** (D-677 to D-682): ffmpeg reads the camera's address from a private
+  0600 list removed seconds after it started, never its command line; it runs with `PATH` and
+  `TZ` only and the protocols `file,rtsp,tcp` (`file` for the cut); the camera process has its
+  own configuration and the compose network `camera` with Postgres only; addresses on loopback,
+  link-local, one-word names and the like are refused, and checked again before each
+  connection; a stored password does not follow the address to another host or port; each
+  buffer is capped at 2 GiB with a 5 GiB free-disk floor (`disk_low`), eight cameras per brand;
+  migration 0136 holds the start to the session's first accepted scan on a camera that is on,
+  and the camera fixed once a piece is in the box.

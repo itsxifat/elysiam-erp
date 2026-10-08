@@ -56,18 +56,24 @@ table. The ERP's server records it; the browser does not.
      is on the same network as the server.
    - _The camera has no stream at that address_: check the path (`/stream1`, `/stream2`, …).
 5. The password is never shown again: the list says it is set and shows a short fingerprint.
-   To change it, edit the camera and type the new one; leave the box empty to keep it. Never
-   send the camera's password in a chat or an email: type it into the settings only.
+   To change it, edit the camera and type the new one; leave the box empty to keep it. Moving
+   the camera to another address or port asks for the password again. Never send the camera's
+   password in a chat or an email: type it into the settings only.
+6. Use the camera's IP address (like `192.168.20.111`), not a one-word name. A brand records
+   with at most eight cameras at once; switch one off to add another.
 
-`/stream1` is the camera's full picture (about 15 MB a minute). If videos are too large,
-`/stream2` (the smaller picture, about a tenth of that) can be entered instead.
+`/stream1` is the camera's full picture (about 15 MB a minute: a two-minute packing is about
+30 MB, kept until seven days after delivery). If videos are too large, `/stream2` (the smaller
+picture, about a tenth of that) can be entered instead. If the server's disk runs low, the
+cameras stop and the station says so; tell whoever looks after the server.
 
 ### Packing with it
 
 1. On the station, choose the camera under **Recording source** (once; the browser remembers).
 2. Scan the order slip: the camera card says **Camera ready**.
 3. Scan the pieces. Recording starts with the **first piece that belongs to the order**, from
-   two seconds before that scan. A wrong piece never starts it.
+   two seconds before that scan. A wrong piece never starts it. Once a piece is in the box the
+   recording source cannot change for that order.
 4. Finish the order as usual. The card says the video is being cut, then **Video saved**; it
    appears on the order page like any packing video (marked "IP camera") and is kept and
    deleted the same way.
