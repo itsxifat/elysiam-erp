@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
-import path from 'node:path';
 
 import { Injectable } from '@nestjs/common';
 import {
@@ -16,6 +15,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { seal, sealedBoxConfigured } from '../../platform/crypto/sealed-box.js';
 import { serverEnv } from '../../platform/config/env.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { previewFile } from './camera/camera-preview.js';
 import * as cameras from './camera.repository.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 
@@ -115,7 +115,7 @@ export class CameraSettingsService {
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         await cameras.lockCameraSettings(tx, context.orgId);
         const before = await cameras.cameraById(tx, context.orgId, id, { forUpdate: true });
-        if (before === undefined || before.deleted_at !== null) {
+        if (before?.deleted_at !== null) {
           throw new PackingError('NOT_FOUND', 'No such camera.');
         }
         // A stored password goes only where it went before (ledger audit W2): an address on
@@ -172,7 +172,7 @@ export class CameraSettingsService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         await cameras.lockCameraSettings(tx, context.orgId);
         const before = await cameras.cameraById(tx, context.orgId, id, { forUpdate: true });
-        if (before === undefined || before.deleted_at !== null) {
+        if (before?.deleted_at !== null) {
           throw new PackingError('NOT_FOUND', 'No such camera.');
         }
         if (await cameras.cameraRecordingOpen(tx, context.orgId, id)) {
@@ -218,7 +218,7 @@ export class CameraSettingsService {
     return mapPackingErrors(async () => {
       await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const camera = await cameras.cameraById(tx, context.orgId, id);
-        if (camera === undefined || camera.deleted_at !== null || !camera.enabled) {
+        if (camera?.deleted_at !== null || !camera.enabled) {
           throw new PackingError('NOT_FOUND', 'No such camera in use.');
         }
         const until = previewDemandUntil({
@@ -293,11 +293,6 @@ export class CameraSettingsService {
       updatedAt: iso(row.updated_at),
     };
   }
-}
-
-/** Where the camera process writes a camera's preview frame (D-683): one file per camera. */
-export function previewFile(root: string, orgId: string, cameraId: string): string {
-  return path.join(root, orgId, `${cameraId}.jpg`);
 }
 
 /** The largest preview frame served: a 640-wide JPEG is a few tens of kilobytes. */

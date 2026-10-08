@@ -12,6 +12,7 @@ import {
   cameraRecordingTimedOut,
   cutDecision,
   cutSpan,
+  previewShouldRun,
   segmentsForWindow,
   segmentsOverByteCap,
   segmentsToForget,
@@ -34,6 +35,7 @@ import {
   type RecorderLog,
   type SpawnFn,
 } from './camera-recorder.js';
+import { CameraPreview, previewFile } from './camera-preview.js';
 import { cutSegments } from './cutter.js';
 import type { CameraErrorCode } from './ffmpeg.js';
 import { SegmentBuffer } from './segment-buffer.js';
@@ -71,6 +73,13 @@ export interface CameraProcessOptions {
   readonly freeBytes?: (dir: string) => Promise<number>;
   /** The largest part a cut files (the files ceiling less room for the index; a test lowers it). */
   readonly partMaxBytes?: number;
+  /**
+   * Where the live previews' frames go (D-683): the shared `camera-preview` volume the API
+   * reads. Unset: no previews.
+   */
+  readonly previewRoot?: string;
+  /** A test's input for the previews instead of the camera's RTSP. */
+  readonly previewInputArgs?: readonly string[];
   /** The camera host check the recorders run before each connection (W4). */
   readonly checkHost?: (hostname: string) => Promise<string | null>;
   /** A test's stand-ins: another input than the camera's RTSP, an encoder, a spawn, a clock. */
@@ -143,6 +152,8 @@ export class CameraProcessService {
   private readonly buffers = new Map<string, SegmentBuffer>();
   /** Whether the disk under the buffer is below its floor: no camera buffers then (W6). */
   private diskLow = false;
+  /** The live previews running now, by camera (D-683). */
+  private readonly previews = new Map<string, CameraPreview>();
 
   constructor(
     @Inject(FILES_API) private readonly files: FilesApi,
@@ -176,6 +187,69 @@ export class CameraProcessService {
   /** The cameras recording now, for the tests and the boot log. */
   recording(): readonly string[] {
     return [...this.running.keys()];
+  }
+
+  /** The cameras whose live preview runs now, for the tests. */
+  previewing(): readonly string[] {
+    return [...this.previews.keys()];
+  }
+
+  /**
+   * Run each camera's live preview while someone looks (D-683): started when its demand is in
+   * the future and the camera is recording here (the preview opens the same stream), stopped
+   * twenty seconds after the demand lapsed, or when the camera stops, is switched off or is
+   * deleted. Every two seconds. The recording never depends on it.
+   */
+  async syncPreviews(): Promise<void> {
+    const root = this.config.previewRoot;
+    if (root === undefined) return;
+    const now = new Date(this.now());
+    const wanted = new Set<string>();
+    for (const orgId of await this.orgIds()) {
+      const demand = await withOrg({ orgId }, (tx) => cameras.previewDemand(tx, orgId));
+      for (const row of demand) {
+        const running = this.running.get(row.id);
+        const preview = this.previews.get(row.id);
+        const should =
+          running !== undefined &&
+          previewShouldRun({
+            wantedUntil:
+              row.preview_wanted_until === null ? null : new Date(row.preview_wanted_until),
+            now,
+            running: preview !== undefined,
+          });
+        if (!should) continue;
+        wanted.add(row.id);
+        if (preview !== undefined) continue;
+        const started = new CameraPreview({
+          cameraId: row.id,
+          stream: running.recorder.stream,
+          workDir: this.bufferFor(orgId, row.id).dir,
+          output: previewFile(root, orgId, row.id),
+          ffmpeg: this.config.ffmpeg,
+          log: this.config.log,
+          ...(this.config.spawn === undefined ? {} : { spawn: this.config.spawn }),
+          ...(this.config.checkHost === undefined ? {} : { checkHost: this.config.checkHost }),
+          ...(this.config.previewInputArgs === undefined
+            ? {}
+            : { inputArgs: this.config.previewInputArgs }),
+        });
+        this.previews.set(row.id, started);
+        await started.start();
+      }
+    }
+    for (const [cameraId, preview] of [...this.previews]) {
+      if (wanted.has(cameraId)) continue;
+      this.previews.delete(cameraId);
+      await preview.stop();
+    }
+  }
+
+  private async stopPreview(cameraId: string): Promise<void> {
+    const preview = this.previews.get(cameraId);
+    if (preview === undefined) return;
+    this.previews.delete(cameraId);
+    await preview.stop();
   }
 
   /**
@@ -267,6 +341,8 @@ export class CameraProcessService {
       const next = wanted.get(cameraId);
       if (next?.signature !== running.signature) {
         this.running.delete(cameraId);
+        // Its preview opens the same stream: it goes too (and starts again on demand).
+        await this.stopPreview(cameraId);
         await running.recorder.stop();
         this.config.log.info({ cameraId }, 'camera recording stopped (settings changed)');
       }
@@ -671,6 +747,7 @@ export class CameraProcessService {
 
   /** Stop every recorder (the process is going down). */
   async stopAll(): Promise<void> {
+    for (const cameraId of [...this.previews.keys()]) await this.stopPreview(cameraId);
     for (const [cameraId, running] of [...this.running]) {
       this.running.delete(cameraId);
       await running.recorder.stop();

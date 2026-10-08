@@ -37,6 +37,8 @@ const RELOAD_MS = 10_000;
 const REPORT_MS = 5_000;
 const PRUNE_MS = 10_000;
 const TIMEOUT_SWEEP_MS = 30_000;
+/** The live previews follow the stations' demand (D-683). */
+const PREVIEW_MS = 2_000;
 
 async function startJobsClient(logger: Logger): Promise<JobsRuntime> {
   const deadline = Date.now() + 120_000;
@@ -144,6 +146,7 @@ async function bootstrap(): Promise<void> {
     ffmpeg: { command: config.ffmpegPath },
     log: logger,
     brandSlug: env.ERP_BRAND_SLUG,
+    previewRoot: config.previewDir,
     ...(env.CAMERA_BUFFER_MAX_BYTES === undefined
       ? {}
       : { maxBufferBytes: env.CAMERA_BUFFER_MAX_BYTES }),
@@ -158,6 +161,7 @@ async function bootstrap(): Promise<void> {
     every(REPORT_MS, 'report', () => camera.reportAll(), logger, stopping.signal),
     every(PRUNE_MS, 'prune', () => camera.prune(), logger, stopping.signal),
     every(TIMEOUT_SWEEP_MS, 'timeouts', () => camera.closeTimedOut(), logger, stopping.signal),
+    every(PREVIEW_MS, 'previews', () => camera.syncPreviews(), logger, stopping.signal),
   ];
   logger.info({ bufferDir: config.bufferDir }, 'ready');
 
