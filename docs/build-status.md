@@ -101,7 +101,8 @@ Wave 3         [##################--]  93%   (M31 to M39)
    `https://erp.beownz.com`, with the packing station and video; the website at
    `https://demo.elysium-lifestyle.bd`.
 2. **Ready, waiting for the owner:** the mother ERP needs its own server and domain.
-3. **Then:** the final addresses (M37), and later a way to remove a super admin.
+3. **Then:** the final addresses (M37). Removing a super admin, and stepping down, is built
+   (2026-10-10, branch `superadmin-removal`, not merged or deployed).
 
 ## Time left (estimate)
 

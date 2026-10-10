@@ -309,8 +309,12 @@ describe('removing a super admin (D-685 to D-689)', () => {
     expect(await isSuperAdmin(first.userId)).toBe(true);
   });
 
-  it('a super admin steps down at once, and the next earliest becomes the first', async () => {
+  it('a super admin steps down at once; the next earliest becomes the first, and a removal of them goes', async () => {
     const next = await superAdmin('Next');
+    const later = await superAdmin('Later');
+    const pending = await remove(first.client, next.userId);
+    expect(json(pending)).toMatchObject({ outcome: 'pending', votes: 1, needed: 2 });
+
     const stepped = await first.client.request('POST', '/v1/users/me/step-down');
     expect(stepped.statusCode, stepped.body).toBe(201);
     expect(await isSuperAdmin(first.userId)).toBe(false);
@@ -320,12 +324,24 @@ describe('removing a super admin (D-685 to D-689)', () => {
       (entry) => entry.action === 'iam.super_admin_removal_stepped_down',
     );
     expect(row?.before).toMatchObject({ isSuperAdmin: true, wasFirst: true });
-    expect(row?.after).toMatchObject({ isSuperAdmin: false, firstNow: next.userId });
+    expect(row?.after).toMatchObject({
+      isSuperAdmin: false,
+      firstNow: next.userId,
+      clearedRemovalVoters: [first.userId],
+    });
 
-    const listed = json<{ canStartSuperAdmin: boolean }>(
-      await next.client.request('GET', '/v1/users'),
-    );
+    // The first now: they start what the first starts, and nobody can remove them.
+    const listed = json<{
+      canStartSuperAdmin: boolean;
+      items: { userId: string; superAdminRemoval: { pending: boolean; isFirst: boolean } | null }[];
+    }>(await next.client.request('GET', '/v1/users'));
     expect(listed.canStartSuperAdmin).toBe(true);
+    expect(
+      listed.items.find((item) => item.userId === next.userId)?.superAdminRemoval,
+    ).toMatchObject({ pending: false, isFirst: true });
+    expect((await remove(later.client, next.userId)).statusCode).toBe(409);
+
+    expect((await later.client.request('POST', '/v1/users/me/step-down')).statusCode).toBe(201);
     const last = await next.client.request('POST', '/v1/users/me/step-down');
     expect(last.statusCode, last.body).toBe(409);
   });

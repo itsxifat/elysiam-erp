@@ -21,6 +21,7 @@ import {
   loadNominations,
   lockSuperAdmins,
   promoteSuperAdmin,
+  withdrawRemoval,
 } from './super-admin.repository.js';
 import { usersHttpError } from './users.errors.js';
 import { endSessions, membershipsOfUser, people } from './users.repository.js';
@@ -318,6 +319,12 @@ export async function stepDown(
   await demoteSuperAdmin(tx, actor.userId);
   const sessionsEnded = await endSessions(tx, actor.userId, 'all');
   const firstNow = facts.superAdmins.find((id) => id !== actor.userId) ?? null;
+  // The next earliest is the first now, whom the others never remove: a removal of them
+  // still open here could neither finish nor be voted on, so it goes, in the record below.
+  const clearedRemoval =
+    facts.first === actor.userId && firstNow !== null
+      ? await withdrawRemoval(tx, actor.orgId, firstNow)
+      : [];
   await audit.record(tx, {
     orgId: actor.orgId,
     actorUserId: actor.userId,
@@ -326,7 +333,7 @@ export async function stepDown(
     entityType: 'User',
     entityId: actor.userId,
     before: { isSuperAdmin: true, wasFirst: facts.first === actor.userId },
-    after: { isSuperAdmin: false, firstNow, sessionsEnded },
+    after: { isSuperAdmin: false, firstNow, sessionsEnded, clearedRemovalVoters: clearedRemoval },
     requestId: actor.requestId,
     ...(request === undefined ? {} : { request }),
   });

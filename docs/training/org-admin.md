@@ -94,6 +94,22 @@ own, and a sign-in reset still needs someone outside the chain.
   count.
 - Trusted means two thirds of those who may vote, and never fewer than two votes.
 
+## Super admins
+
+Only super admins see these buttons on **Staff**; everyone sees a pending vote's badge.
+
+- **Make super admin** (in **Manage**) and **Invite a super admin**: only the first super admin
+  starts one. With one super admin it applies at once; with more, every super admin votes yes.
+- **Step down** on your own row gives up your super admin power at once and signs you out. Any
+  admin role you hold in the brand stays. The last super admin cannot step down. If the first
+  super admin steps down, the next earliest becomes the first.
+- **Remove super admin** on another super admin's row: only the first super admin starts it.
+  With two super admins it applies at once; with more, every other super admin presses
+  **Vote to remove**, and the row shows "Removal: 1 of 2 votes" until then. **Withdraw
+  removal** clears the votes. The first super admin is never removed this way, only by
+  stepping down.
+- A removed super admin is signed out at once and keeps any admin role they hold here.
+
 ## Discounts
 
 Sales agents and branch managers may price an order at most 20% below the catalogue. You may
