@@ -162,6 +162,19 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     operationId: 'withdrawSuperAdminNomination',
     summary: 'Withdraw a pending super admin nomination.',
   },
+  'POST /v1/users/:id/super-admin-removal': {
+    operationId: 'voteSuperAdminRemoval',
+    summary:
+      'Say yes to removing a super admin: the first starts it; it removes when every other super admin has.',
+  },
+  'DELETE /v1/users/:id/super-admin-removal': {
+    operationId: 'withdrawSuperAdminRemoval',
+    summary: 'Withdraw a pending super admin removal.',
+  },
+  'POST /v1/users/me/step-down': {
+    operationId: 'stepDownSuperAdmin',
+    summary: 'Give up your own super admin power at once; never the last super admin.',
+  },
 
   'GET /v1/approvals': {
     operationId: 'listApprovals',

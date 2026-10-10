@@ -16,8 +16,10 @@ import {
 } from '@elysium/db';
 import {
   isCollectable,
+  isRemovableSuperAdmin,
   isSuperAdminCandidate,
   nominationTally,
+  removalTally,
   planCredentialReset,
   planRoleChange,
   resetAllowedByLimits,
@@ -45,12 +47,21 @@ import {
   withdrawVote,
   type TrustFacts,
 } from './trust.repository.js';
-import { requireSuperAdmin, voteSuperAdmin, type NominationOutcome } from './super-admin.js';
+import {
+  requireSuperAdmin,
+  requireSuperAdminToRemove,
+  stepDown,
+  voteRemoval,
+  voteSuperAdmin,
+  type NominationOutcome,
+  type RemovalOutcome,
+} from './super-admin.js';
 import {
   loadNominations,
   lockSuperAdmins,
   superAdminIds,
   withdrawNomination,
+  withdrawRemoval,
   type NominationFacts,
 } from './super-admin.repository.js';
 import { pgCode, usersHttpError } from './users.errors.js';
@@ -122,6 +133,35 @@ export interface StaffRow {
    * to everyone while a nomination is pending. Null otherwise.
    */
   readonly superAdminNomination: NominationView | null;
+  /**
+   * For an active super admin who is not an owner (D-686): shown to a super admin, and to
+   * everyone while a removal is pending. Null otherwise.
+   */
+  readonly superAdminRemoval: RemovalView | null;
+}
+
+/** Removing one super admin, or stepping down, as the caller sees it (D-685, D-686). */
+export interface RemovalView {
+  /** Some super admin has said yes to removing them, and it waits for the rest. */
+  readonly pending: boolean;
+  /** Yes votes from the super admins whose vote is required. */
+  readonly votes: number;
+  /** Every other active super admin, owners aside; 0 while that is at most one. */
+  readonly needed: number;
+  /** At most one other super admin: the next yes removes at once. */
+  readonly immediate: boolean;
+  /** The caller has said yes already. */
+  readonly votedByMe: boolean;
+  /** This is the first super admin: removed only by stepping down. */
+  readonly isFirst: boolean;
+  /** The caller may say yes now: a super admin, not the target, the target not the first. */
+  readonly canVote: boolean;
+  /** The caller may withdraw the removal (any super admin but the target, while pending). */
+  readonly canWithdraw: boolean;
+  /** The caller may start a removal: the first super admin or an owner (D-666). */
+  readonly canStart: boolean;
+  /** This is the caller's own row and they may step down: another super admin remains. */
+  readonly canStepDown: boolean;
 }
 
 /** Making one admin a super admin, as the caller sees it (D-659). */
@@ -192,6 +232,35 @@ function nominationView(
     canVote: mayAct && (pending || canStart) && (!votedByMe || tally.complete),
     canWithdraw: mayAct && pending,
     canStart,
+  };
+}
+
+function removalView(
+  context: ActiveContext,
+  facts: NominationFacts,
+  targetId: string,
+): RemovalView | null {
+  const voters = facts.removals.get(targetId) ?? [];
+  const pending = voters.length > 0;
+  if (!context.isSuperAdmin && !pending) return null;
+  const tally = removalTally(facts.superAdmins, targetId, voters);
+  const self = targetId === context.userId;
+  const isFirst = facts.first === targetId;
+  const othersRemain = facts.superAdmins.some((id) => id !== targetId);
+  const mayAct = context.isSuperAdmin && !self && !isFirst && othersRemain;
+  const canStart = mayAct && facts.starters.has(context.userId);
+  const votedByMe = voters.includes(context.userId);
+  return {
+    pending,
+    votes: tally.votes,
+    needed: tally.needed,
+    immediate: tally.immediate,
+    votedByMe,
+    isFirst,
+    canVote: mayAct && (pending || canStart) && (!votedByMe || tally.complete),
+    canWithdraw: mayAct && pending,
+    canStart,
+    canStepDown: self && context.isSuperAdmin && othersRemain,
   };
 }
 
@@ -478,6 +547,9 @@ export class UsersService {
       superAdminNomination: isSuperAdminCandidate(candidate)
         ? nominationView(context, nominations, person.id)
         : null,
+      superAdminRemoval: isRemovableSuperAdmin(candidate)
+        ? removalView(context, nominations, person.id)
+        : null,
     };
   }
 
@@ -532,6 +604,82 @@ export class UsersService {
       });
       return { userId, withdrawnVotes: voters.length };
     });
+  }
+
+  // --- removing a super admin (D-685 to D-689) --------------------------------------------
+
+  /**
+   * A super admin's yes for removing another: started by the first super admin or an owner,
+   * complete once every other super admin but the target has said yes (at once while that
+   * is at most one). The removed person's sessions end; an admin role here stays.
+   */
+  async removeSuperAdmin(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<RemovalOutcome> {
+    requireSuperAdminToRemove(context);
+    try {
+      return await this.inOrg(context, async (tx) =>
+        voteRemoval(tx, this.audit, context, userId, request),
+      );
+    } catch (error) {
+      throw promotionRaceLost(error);
+    }
+  }
+
+  /** Withdraw a pending removal: every vote for it goes. Any super admin but the target. */
+  async withdrawSuperAdminRemoval(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<{ userId: string; withdrawnVotes: number }> {
+    requireSuperAdminToRemove(context);
+    if (userId === context.userId) {
+      throw usersHttpError(
+        'USER_SELF_MANAGEMENT',
+        'Nobody withdraws the removal of themselves. Another super admin may.',
+      );
+    }
+    return this.inOrg(context, async (tx) => {
+      await lockSuperAdmins(tx);
+      const voters = await withdrawRemoval(tx, context.orgId, userId);
+      if (voters.length === 0) {
+        throw usersHttpError(
+          'SUPER_ADMIN_NOT_REMOVABLE',
+          'There is no removal of this person to withdraw.',
+        );
+      }
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'delete',
+        action: 'iam.super_admin_removal_withdrawn',
+        entityType: 'User',
+        entityId: userId,
+        before: { voters },
+        after: null,
+        requestId: context.requestId,
+        request,
+      });
+      return { userId, withdrawnVotes: voters.length };
+    });
+  }
+
+  /** Give up your own super admin power at once; never the last super admin (D-685). */
+  async stepDown(
+    context: ActiveContext,
+    request: AuditableRequest,
+  ): Promise<{ userId: string; sessionsEnded: number }> {
+    requireSuperAdminToRemove(context);
+    try {
+      const done = await this.inOrg(context, async (tx) =>
+        stepDown(tx, this.audit, context, request),
+      );
+      return { userId: done.userId, sessionsEnded: done.sessionsEnded };
+    } catch (error) {
+      throw promotionRaceLost(error);
+    }
   }
 
   // --- trust votes ------------------------------------------------------------------------

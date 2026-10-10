@@ -58,6 +58,10 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   // D-659: super admins making super admins.
   'POST /v1/users/:id/super-admin',
   'DELETE /v1/users/:id/super-admin',
+  // D-685, D-686: removing a super admin, and stepping down.
+  'POST /v1/users/:id/super-admin-removal',
+  'DELETE /v1/users/:id/super-admin-removal',
+  'POST /v1/users/me/step-down',
   'GET /v1/catalog/categories',
   'POST /v1/catalog/categories',
   'PATCH /v1/catalog/categories/:id',
