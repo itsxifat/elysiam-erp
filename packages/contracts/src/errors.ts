@@ -535,6 +535,14 @@ export const ERROR_CODES = [
    */
   'SUPER_ADMIN_NOT_CANDIDATE',
   /**
+   * Not a super admin the removal rules reach (D-686): not an active super admin, an owner,
+   * or the first super admin, who is removed only by stepping down; or there is no removal
+   * for them to withdraw.
+   */
+  'SUPER_ADMIN_NOT_REMOVABLE',
+  /** The last active super admin cannot step down or be removed (D-685). */
+  'SUPER_ADMIN_LAST',
+  /**
    * Sent by sign-in itself (Better Auth's error body), not by a route here: the account
    * is disabled, or holds no active role in any brand (D-401).
    */

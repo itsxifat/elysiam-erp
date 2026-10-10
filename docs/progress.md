@@ -2723,3 +2723,38 @@ dry-run|commit --file <users.json>`.
   back-off); camera suites, `pack-station.e2e`, the route matrix, domain and console orders
   together 147 passed, 2 skipped; lint (28 tasks), format, typecheck, routes (519), i18n,
   api-client (regenerated): PASS. Decisions D-683 and D-684 reworded.
+
+## 2026-10-10 · trust · removing a super admin, and stepping down (not merged or deployed)
+
+- **Asked for:** a way to remove a super admin (D-667's open item). Branch `superadmin-removal`
+  from `integration-wave2` (79de53f). Decisions D-685 to D-689, all ASSUMED for the owner to
+  change. Migrations `0138_super_admin_removal_votes_schema` (the votes table) and
+  `0139_super_admin_removal_policies` (RLS ENABLE and FORCE, the standard policy, SELECT,
+  INSERT and DELETE for erp_app, the votes' guard trigger, `iam.demote_super_admin`, and
+  0015's flag guard now refusing a plain clear by the application role).
+- **Built:** `removalRefusal`, `stepDownRefusal` and `removalTally` in `@elysium/domain/iam`;
+  `POST /v1/users/me/step-down`, `POST` and `DELETE /v1/users/:id/super-admin-removal`
+  (route matrix and fixtures, OpenAPI catalog, API client regenerated, two error codes
+  `SUPER_ADMIN_NOT_REMOVABLE` and `SUPER_ADMIN_LAST`); `superAdminRemoval` on the Staff rows;
+  the Staff screen's Step down, Remove super admin / Vote to remove and Withdraw removal, each
+  behind a confirmation, bn and en in the trust section; the removed person's sessions end, an
+  admin role stays; every step audited (`iam.super_admin_removal_*`). Architecture §6, the org
+  admin guide's "Super admins", build status.
+- **Evidence:** domain `super-admin-removal.test.ts` 10/10 (fast-check) with
+  `super-admin.test.ts` (19 together); `super-admin-removal.e2e.test.ts` 7/7 on real Postgres
+  (refused for a non-super admin; four forged refusals as erp_app: a non-super admin calling
+  the function, a super admin without the others' votes, a second super admin writing the
+  first vote, a plain UPDATE of the flag; a non-first cannot start or remove the first; with
+  three the first starts, the target cannot withdraw, another withdraws, every other votes;
+  with two the first removes the second at once, the admin role stays, the old session is
+  401, signed in again they cannot promote or remove; the last cannot step down; the first
+  steps down, the next earliest becomes the first and an open removal of them is cleared; audit
+  rows); with `super-admin`, `trust`,
+  `users`, `bootstrap` and `tenancy` 133/133; `route-matrix` and `owner-link` 12/12; i18n,
+  contracts and console users units 160/160. Typecheck (14 tasks), eslint and prettier on the
+  touched files, check:routes (522), check:i18n, check:api-client, check:migrations,
+  check:schema (138): PASS. Not run: full `pnpm verify`, a console stack spec or a look at the
+  screen in a browser. The ledger-auditor found no blocker; its nit on old votes counting again
+  is fixed (a removed super admin's nomination and removal votes go, e2e checked), and its
+  should-fix on how "the first" is ordered is recorded as OPEN in D-689.
+- New dependencies: none.

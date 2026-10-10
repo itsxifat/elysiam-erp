@@ -154,6 +154,42 @@ export class UsersController {
     return this.users.voteSuperAdmin(requireContext(request), auditable(request), userId);
   }
 
+  /**
+   * Give up your own super admin power, at once (D-685). Refused for the last super admin
+   * and for an owner; your sessions end, this one included. Declared before the `:id`
+   * routes only for reading order: `me` is a static segment, so it never reaches them.
+   */
+  @RequireAbility('update', 'User')
+  @Post('me/step-down')
+  async stepDown(@Req() request: FastifyRequest) {
+    return this.users.stepDown(requireContext(request), auditable(request));
+  }
+
+  /**
+   * A super admin's yes for removing another super admin (D-686). Only the first super admin
+   * or an owner starts one; it removes once every other super admin but the target has said
+   * yes, at once while that is at most one. The first super admin is removed only by
+   * stepping down. Anyone who is not a super admin is refused by the handler.
+   */
+  @RequireAbility('update', 'User')
+  @Post(':id/super-admin-removal')
+  async removeSuperAdmin(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.removeSuperAdmin(requireContext(request), auditable(request), userId);
+  }
+
+  /** Withdraw a pending super admin removal: every vote for it goes. */
+  @RequireAbility('update', 'User')
+  @Delete(':id/super-admin-removal')
+  async withdrawSuperAdminRemoval(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.withdrawSuperAdminRemoval(
+      requireContext(request),
+      auditable(request),
+      userId,
+    );
+  }
+
   /** Withdraw a pending super admin nomination: every vote for the person goes. */
   @RequireAbility('update', 'User')
   @Delete(':id/super-admin')

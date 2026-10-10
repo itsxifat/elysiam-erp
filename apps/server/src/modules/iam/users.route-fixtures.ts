@@ -86,4 +86,13 @@ export const USERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
   'DELETE /v1/users/:id/super-admin': async () => ({
     url: `/v1/users/${await freshAdmin()}/super-admin`,
   }),
+  // D-685, D-686: only a super admin removes one or steps down, and the matrix has none, so
+  // org_admin reaches the handler and is refused there (403, "Only a super admin…").
+  'POST /v1/users/:id/super-admin-removal': async () => ({
+    url: `/v1/users/${await freshAdmin()}/super-admin-removal`,
+  }),
+  'DELETE /v1/users/:id/super-admin-removal': async () => ({
+    url: `/v1/users/${await freshAdmin()}/super-admin-removal`,
+  }),
+  'POST /v1/users/me/step-down': () => ({ url: '/v1/users/me/step-down' }),
 };

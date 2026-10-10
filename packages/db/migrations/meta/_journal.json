@@ -953,6 +953,20 @@
       "when": 1791464613842,
       "tag": "0137_m38c_camera_preview_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1791645998152,
+      "tag": "0138_super_admin_removal_votes_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1791646005836,
+      "tag": "0139_super_admin_removal_policies",
+      "breakpoints": true
     }
   ]
 }
