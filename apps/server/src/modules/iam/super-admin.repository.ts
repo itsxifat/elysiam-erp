@@ -154,6 +154,25 @@ export async function withdrawRemoval(
 }
 
 /**
+ * Forget every super admin vote this person cast here, nominations and removals: run as they
+ * stop being one (D-687), so an old yes never counts again should they be made one later.
+ * Returns how many went.
+ */
+export async function clearVotesBy(tx: Tx, orgId: string, voterId: string): Promise<number> {
+  const nominations = await tx.execute<{ id: string }>(sql`
+    delete from iam.super_admin_votes
+    where org_id = ${orgId} and voter_user_id = ${voterId}
+    returning id
+  `);
+  const removals = await tx.execute<{ id: string }>(sql`
+    delete from iam.super_admin_removal_votes
+    where org_id = ${orgId} and voter_user_id = ${voterId}
+    returning id
+  `);
+  return nominations.length + removals.length;
+}
+
+/**
  * Clear the flag, through the owner-role function that checks the rule again and clears the
  * removal votes (migration 0139): a step down when the target is the acting user. Refuses
  * with SQLSTATE 42501 or 23514 when the rule does not hold; the caller has checked first.

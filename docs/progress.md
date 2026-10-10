@@ -2734,5 +2734,7 @@ dry-run|commit --file <users.json>`.
   contracts and console users units 160/160. Typecheck (14 tasks), eslint and prettier on the
   touched files, check:routes (522), check:i18n, check:api-client, check:migrations,
   check:schema (138): PASS. Not run: full `pnpm verify`, a console stack spec or a look at the
-  screen in a browser.
+  screen in a browser. The ledger-auditor found no blocker; its nit on old votes counting again
+  is fixed (a removed super admin's nomination and removal votes go, e2e checked), and its
+  should-fix on how "the first" is ordered is recorded as OPEN in D-689.
 - New dependencies: none.

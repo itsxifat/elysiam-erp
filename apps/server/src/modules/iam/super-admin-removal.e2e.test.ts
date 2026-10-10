@@ -247,12 +247,31 @@ describe('removing a super admin (D-685 to D-689)', () => {
     // Withdrawn means not started: the second still cannot start it.
     expect((await remove(second.client, third.userId)).statusCode).toBe(403);
 
+    // A yes the third gives as a super admin goes with their power (D-687).
+    const nominate = (voter: Client) =>
+      voter.request('POST', `/v1/users/${admin.userId}/super-admin`);
+    expect(json(await nominate(first.client))).toMatchObject({ outcome: 'pending', needed: 3 });
+    expect(json(await nominate(third.client))).toMatchObject({ outcome: 'pending', votes: 2 });
+
     expect((await remove(first.client, third.userId)).statusCode).toBe(201);
     const last = await remove(second.client, third.userId);
     expect(last.statusCode, last.body).toBe(201);
     expect(json(last)).toMatchObject({ outcome: 'removed', votes: 2, needed: 2 });
     expect(await isSuperAdmin(third.userId)).toBe(false);
     expect((await third.client.request('GET', '/v1/me')).statusCode).toBe(401);
+
+    const [kept] = await withSystem(
+      async (tx) =>
+        tx.execute<{ n: number }>(sql`
+          select count(*)::int as n from iam.super_admin_votes where voter_user_id = ${third.userId}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(kept?.n).toBe(0);
+    const done = (await auditRowsFor(ORG_A, third.userId)).find(
+      (row) => row.action === 'iam.super_admin_removal_completed',
+    );
+    expect(done?.after).toMatchObject({ votesCleared: 1, sessionsEnded: 1 });
 
     const audited = await actions(third.userId);
     expect(audited).toEqual(

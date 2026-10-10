@@ -17,6 +17,7 @@ import type { AuditService } from '../../platform/audit/audit.service.js';
 import {
   castRemovalVote,
   castSuperAdminVote,
+  clearVotesBy,
   demoteSuperAdmin,
   loadNominations,
   lockSuperAdmins,
@@ -268,6 +269,7 @@ export async function voteRemoval(
 
   await demoteSuperAdmin(tx, targetId);
   const sessionsEnded = await endSessions(tx, targetId, 'all');
+  const votesCleared = await clearVotesBy(tx, actor.orgId, targetId);
   await audit.record(tx, {
     orgId: actor.orgId,
     actorUserId: actor.userId,
@@ -282,6 +284,7 @@ export async function voteRemoval(
       voters: [...new Set(voters)],
       superAdminsBefore: facts.superAdmins.length,
       sessionsEnded,
+      votesCleared,
     },
     requestId: actor.requestId,
     ...audited,
@@ -325,6 +328,7 @@ export async function stepDown(
     facts.first === actor.userId && firstNow !== null
       ? await withdrawRemoval(tx, actor.orgId, firstNow)
       : [];
+  const votesCleared = await clearVotesBy(tx, actor.orgId, actor.userId);
   await audit.record(tx, {
     orgId: actor.orgId,
     actorUserId: actor.userId,
@@ -333,7 +337,13 @@ export async function stepDown(
     entityType: 'User',
     entityId: actor.userId,
     before: { isSuperAdmin: true, wasFirst: facts.first === actor.userId },
-    after: { isSuperAdmin: false, firstNow, sessionsEnded, clearedRemovalVoters: clearedRemoval },
+    after: {
+      isSuperAdmin: false,
+      firstNow,
+      sessionsEnded,
+      votesCleared,
+      clearedRemovalVoters: clearedRemoval,
+    },
     requestId: actor.requestId,
     ...(request === undefined ? {} : { request }),
   });
