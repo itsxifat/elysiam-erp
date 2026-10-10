@@ -1,8 +1,9 @@
 import type { TrustKey } from './trust.en.js';
 
 /**
- * Staff → trust votes (D-654 to D-657) and super admins making super admins (D-659): the
- * Bangla section, typed against the English one, so a key on one side only does not compile.
+ * Staff → trust votes (D-654 to D-657) and super admins making and removing super admins
+ * (D-659, D-685): the Bangla section, typed against the English one, so a key on one side
+ * only does not compile.
  */
 const bn: Record<TrustKey, string> = {
   'users.trusted': 'বিশ্বস্ত',
@@ -36,6 +37,26 @@ const bn: Record<TrustKey, string> = {
   'users.superAdminPromoted': '{name} এখন সুপার অ্যাডমিন।',
   'users.superAdminWaiting': 'সব সুপার অ্যাডমিন হ্যাঁ ভোট দিলে {name} সুপার অ্যাডমিন হবেন।',
   'users.superAdminWithdrawn': 'মনোনয়ন প্রত্যাহার করা হয়েছে।',
+  'users.removalPending': 'অপসারণ: {m}টির মধ্যে {n}টি ভোট',
+  'users.removalStart': 'সুপার অ্যাডমিন থেকে সরান',
+  'users.removalVote': 'সরানোর পক্ষে ভোট দিন',
+  'users.removalWithdraw': 'অপসারণ প্রত্যাহার করুন',
+  'users.stepDown': 'পদ ছেড়ে দিন',
+  'users.removalTitle': '{name}-কে সুপার অ্যাডমিন থেকে সরাবেন?',
+  'users.removalVoteTitle': '{name}-কে সুপার অ্যাডমিন থেকে সরানোর পক্ষে ভোট দেবেন?',
+  'users.removalImmediate':
+    'তিনি সঙ্গে সঙ্গে সুপার অ্যাডমিনের ক্ষমতা হারাবেন এবং সাইন আউট হয়ে যাবেন। এই ব্র্যান্ডে তাঁর অ্যাডমিন ভূমিকা থাকলে তা থাকবে।',
+  'users.removalRule':
+    'অন্য প্রত্যেক সুপার অ্যাডমিনকে হ্যাঁ ভোট দিতে হবে ({m}টি ভোট)। ততক্ষণ তাঁর সুপার অ্যাডমিনের ক্ষমতা থাকবে; সরানো হলে তিনি সাইন আউট হয়ে যাবেন।',
+  'users.removalWithdrawTitle': '{name}-এর অপসারণ প্রত্যাহার করবেন?',
+  'users.removalWithdrawDetail':
+    'এর পক্ষের সব ভোট মুছে যাবে। শুধু প্রথম সুপার অ্যাডমিন আবার এটি শুরু করতে পারবেন।',
+  'users.stepDownTitle': 'সুপার অ্যাডমিনের পদ ছেড়ে দেবেন?',
+  'users.stepDownDetail':
+    'আপনি সঙ্গে সঙ্গে সুপার অ্যাডমিনের ক্ষমতা হারাবেন এবং সাইন আউট হয়ে যাবেন। এই ব্র্যান্ডে আপনার অ্যাডমিন ভূমিকা থাকলে তা থাকবে।',
+  'users.removalDone': '{name} আর সুপার অ্যাডমিন নন।',
+  'users.removalWaiting': 'অন্য প্রত্যেক সুপার অ্যাডমিন হ্যাঁ ভোট দিলে {name}-কে সরানো হবে।',
+  'users.removalWithdrawn': 'অপসারণ প্রত্যাহার করা হয়েছে।',
   'users.inviteSuperAdmin': 'সুপার অ্যাডমিন আমন্ত্রণ করুন',
   'users.inviteSuperAdminDetail':
     'তিনি অ্যাডমিন হিসেবে যোগ দেবেন এবং তাঁকে টু-স্টেপ সাইন-ইন চালু করতে হবে। একজন সুপার অ্যাডমিন থাকলে তিনি সঙ্গে সঙ্গে সুপার অ্যাডমিন হবেন; বেশি থাকলে অন্যরা আগে ভোট দেবেন।',

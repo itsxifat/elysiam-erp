@@ -41,6 +41,35 @@ export interface StaffRow {
   readonly trust: TrustView | null;
   /** For an admin who could be made a super admin (D-659), as this viewer sees it. */
   readonly superAdminNomination: NominationView | null;
+  /** For an active super admin who is not an owner (D-686), as this viewer sees it. */
+  readonly superAdminRemoval: RemovalView | null;
+}
+
+/** Removing one super admin, or stepping down, as this viewer sees it (D-685, D-686). */
+export interface RemovalView {
+  readonly pending: boolean;
+  readonly votes: number;
+  /** Every other active super admin; 0 while that is at most one. */
+  readonly needed: number;
+  /** At most one other super admin: the next yes removes at once. */
+  readonly immediate: boolean;
+  readonly votedByMe: boolean;
+  /** The first super admin: removed only by stepping down. */
+  readonly isFirst: boolean;
+  readonly canVote: boolean;
+  readonly canWithdraw: boolean;
+  /** The first super admin or an owner (D-666). */
+  readonly canStart: boolean;
+  /** The viewer's own row, and another super admin remains. */
+  readonly canStepDown: boolean;
+}
+
+export interface RemovalOutcome {
+  readonly userId: string;
+  readonly outcome: 'removed' | 'pending';
+  readonly votes: number;
+  readonly needed: number;
+  readonly sessionsEnded: number;
 }
 
 /** Making one admin a super admin, as this viewer sees it (D-659). */
@@ -173,6 +202,21 @@ export function withdrawSuperAdmin(
   userId: string,
 ): Promise<{ userId: string; withdrawnVotes: number }> {
   return api.delete(`/v1/users/${encodeURIComponent(userId)}/super-admin`);
+}
+
+export function voteSuperAdminRemoval(userId: string): Promise<RemovalOutcome> {
+  return api.post(`/v1/users/${encodeURIComponent(userId)}/super-admin-removal`);
+}
+
+export function withdrawSuperAdminRemoval(
+  userId: string,
+): Promise<{ userId: string; withdrawnVotes: number }> {
+  return api.delete(`/v1/users/${encodeURIComponent(userId)}/super-admin-removal`);
+}
+
+/** Give up your own super admin power; your sessions end, this one included (D-685). */
+export function stepDown(): Promise<{ userId: string; sessionsEnded: number }> {
+  return api.post('/v1/users/me/step-down');
 }
 
 export function invite(input: {

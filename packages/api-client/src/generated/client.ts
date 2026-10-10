@@ -1953,6 +1953,7 @@ export const OPERATIONS = {
     ability: 'update:ApprovalThreshold',
   },
   setUserRoles: { method: 'PUT', path: '/v1/users/{id}/roles', ability: 'update:User' },
+  stepDownSuperAdmin: { method: 'POST', path: '/v1/users/me/step-down', ability: 'update:User' },
   switchOrg: { method: 'POST', path: '/v1/me/active-org', ability: 'authenticated' },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
   updatePackingCamera: {
@@ -1966,10 +1967,20 @@ export const OPERATIONS = {
     ability: 'update:User',
   },
   voteSuperAdmin: { method: 'POST', path: '/v1/users/{id}/super-admin', ability: 'update:User' },
+  voteSuperAdminRemoval: {
+    method: 'POST',
+    path: '/v1/users/{id}/super-admin-removal',
+    ability: 'update:User',
+  },
   voteUserTrust: { method: 'POST', path: '/v1/users/{id}/trust', ability: 'update:User' },
   withdrawSuperAdminNomination: {
     method: 'DELETE',
     path: '/v1/users/{id}/super-admin',
+    ability: 'update:User',
+  },
+  withdrawSuperAdminRemoval: {
+    method: 'DELETE',
+    path: '/v1/users/{id}/super-admin-removal',
     ability: 'update:User',
   },
   withdrawUserTrust: { method: 'DELETE', path: '/v1/users/{id}/trust', ability: 'update:User' },
@@ -4172,6 +4183,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: SetRoles },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.setUserRoles, input, options),
+    /** Give up your own super admin power at once; never the last super admin. */
+    stepDownSuperAdmin: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.stepDownSuperAdmin, undefined, options),
     /** Enter an organization for the rest of this session. */
     switchOrg: (input: { readonly body: SwitchOrg }, options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.switchOrg, input, options),
@@ -4195,6 +4209,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.voteSuperAdmin, input, options),
+    /** Say yes to removing a super admin: the first starts it; it removes when every other super admin has. */
+    voteSuperAdminRemoval: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.voteSuperAdminRemoval, input, options),
     /** Vouch for an admin: two thirds of the independent admins make them trusted. */
     voteUserTrust: (
       input: { readonly path: { readonly id: string } },
@@ -4206,6 +4225,11 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.withdrawSuperAdminNomination, input, options),
+    /** Withdraw a pending super admin removal. */
+    withdrawSuperAdminRemoval: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.withdrawSuperAdminRemoval, input, options),
     /** Withdraw your trust vote for an admin. */
     withdrawUserTrust: (
       input: { readonly path: { readonly id: string } },

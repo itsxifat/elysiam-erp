@@ -21,6 +21,7 @@ import {
   Crown,
   KeyRound,
   ShieldCheck,
+  ShieldMinus,
   ShieldOff,
   ShieldX,
   UserMinus,
@@ -43,13 +44,17 @@ import {
   passwordLink,
   resetTwoFactor,
   setRoles,
+  stepDown,
   voteSuperAdmin,
+  voteSuperAdminRemoval,
   voteTrust,
   withdrawSuperAdmin,
+  withdrawSuperAdminRemoval,
   withdrawTrust,
   type NominationOutcome,
   type NominationView,
   type OpenReset,
+  type RemovalView,
   type StaffRow,
   type StaffStatus,
   type TrustView,
@@ -105,6 +110,17 @@ function nominationLabel(
     .replace('{m}', formatCount(nomination.needed, locale));
 }
 
+/** A pending super admin removal: "Removal: 1 of 2 votes" (D-686). */
+function removalLabel(
+  removal: RemovalView,
+  u: (key: UsersMessageKey) => string,
+  locale: Locale,
+): string {
+  return u('users.removalPending')
+    .replace('{n}', formatCount(removal.votes, locale))
+    .replace('{m}', formatCount(removal.needed, locale));
+}
+
 /** An owner is "Owner" to everyone but another owner (D-473, D-658). */
 function displayName(row: StaffRow, u: (key: UsersMessageKey) => string): string {
   return row.isOwner && row.name === '' ? u('users.owner') : row.name;
@@ -132,6 +148,13 @@ type Pending = {
   readonly row: StaffRow;
 } | null;
 
+/** A super admin removal action waiting for its confirmation (D-685, D-686). */
+type Removing = {
+  readonly kind: 'stepDown' | 'remove' | 'withdraw';
+  readonly row: StaffRow;
+  readonly removal: RemovalView;
+} | null;
+
 interface IssuedLink {
   readonly name: string;
   readonly kind: 'invite' | 'password';
@@ -157,6 +180,7 @@ export function UsersPage() {
   const [pending, setPending] = useState<Pending>(null);
   const [link, setLink] = useState<IssuedLink | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Removing>(null);
 
   const staffQuery = useQuery({ queryKey: ['users'], queryFn: listStaff, enabled: mayRead });
   const branchesQuery = useQuery({
@@ -207,6 +231,11 @@ export function UsersPage() {
                   {row.superAdminNomination?.pending === true ? (
                     <StatusBadge tone="warning">
                       {nominationLabel(row.superAdminNomination, u, locale)}
+                    </StatusBadge>
+                  ) : null}
+                  {row.superAdminRemoval?.pending === true ? (
+                    <StatusBadge tone="warning">
+                      {removalLabel(row.superAdminRemoval, u, locale)}
                     </StatusBadge>
                   ) : null}
                   {row.trust === null ? null : (
@@ -288,22 +317,38 @@ export function UsersPage() {
       column.display({
         id: 'actions',
         header: u('users.colActions'),
-        cell: (cell) => (
-          // A super admin with no role here, or an owner, is listed but managed elsewhere.
-          <PermissionGate allowed={mayChange && cell.row.original.hasRoleHere}>
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={`${u('users.manage')}: ${cell.row.original.name}`}
-              onClick={() => {
-                setNotice(null);
-                setManageId(cell.row.original.userId);
-              }}
-            >
-              {u('users.manage')}
-            </Button>
-          </PermissionGate>
-        ),
+        cell: (cell) => {
+          const row = cell.row.original;
+          const removal = row.superAdminRemoval;
+          return (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* A super admin with no role here, or an owner, is listed but managed elsewhere. */}
+              <PermissionGate allowed={mayChange && row.hasRoleHere}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`${u('users.manage')}: ${row.name}`}
+                  onClick={() => {
+                    setNotice(null);
+                    setManageId(row.userId);
+                  }}
+                >
+                  {u('users.manage')}
+                </Button>
+              </PermissionGate>
+              {removal === null || !mayChange ? null : (
+                <RemovalActions
+                  row={row}
+                  removal={removal}
+                  onPick={(kind) => {
+                    setNotice(null);
+                    setRemoving({ kind, row, removal });
+                  }}
+                />
+              )}
+            </div>
+          );
+        },
       }),
     ]) as readonly DataTableColumn<StaffRow>[];
   }, [u, branches, mayChange, locale]);
@@ -450,7 +495,149 @@ export function UsersPage() {
       {link === null ? null : (
         <LinkDialog key={link.token} link={link} onClose={() => setLink(null)} />
       )}
+
+      <RemovalConfirm
+        removing={removing}
+        onClose={() => setRemoving(null)}
+        onDone={async (message) => {
+          setRemoving(null);
+          setNotice(message);
+          await refresh();
+        }}
+      />
     </div>
+  );
+}
+
+// --- removing a super admin, and stepping down (D-685, D-686) ------------------------------
+
+function RemovalActions({
+  row,
+  removal,
+  onPick,
+}: {
+  readonly row: StaffRow;
+  readonly removal: RemovalView;
+  readonly onPick: (kind: 'stepDown' | 'remove' | 'withdraw') => void;
+}) {
+  const u = useUsersT();
+  const name = displayName(row, u);
+  const voteLabel = removal.pending ? u('users.removalVote') : u('users.removalStart');
+  return (
+    <>
+      {removal.canStepDown ? (
+        <Button variant="outline" size="sm" onClick={() => onPick('stepDown')}>
+          <ShieldMinus aria-hidden="true" />
+          {u('users.stepDown')}
+        </Button>
+      ) : null}
+      {removal.canVote ? (
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={`${voteLabel}: ${name}`}
+          onClick={() => onPick('remove')}
+        >
+          <ShieldMinus aria-hidden="true" />
+          {voteLabel}
+        </Button>
+      ) : null}
+      {removal.canWithdraw ? (
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={`${u('users.removalWithdraw')}: ${name}`}
+          onClick={() => onPick('withdraw')}
+        >
+          <X aria-hidden="true" />
+          {u('users.removalWithdraw')}
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+function RemovalConfirm({
+  removing,
+  onClose,
+  onDone,
+}: {
+  readonly removing: Removing;
+  readonly onClose: () => void;
+  readonly onDone: (message: string) => Promise<void>;
+}) {
+  const u = useUsersT();
+  const t = useT();
+  const { locale } = useLocale();
+
+  let text = { title: '', detail: '', confirm: '' };
+  if (removing !== null) {
+    const name = displayName(removing.row, u);
+    if (removing.kind === 'stepDown') {
+      text = {
+        title: u('users.stepDownTitle'),
+        detail: u('users.stepDownDetail'),
+        confirm: u('users.stepDown'),
+      };
+    } else if (removing.kind === 'withdraw') {
+      text = {
+        title: u('users.removalWithdrawTitle').replace('{name}', name),
+        detail: u('users.removalWithdrawDetail'),
+        confirm: u('users.removalWithdraw'),
+      };
+    } else {
+      const { pending, immediate, needed } = removing.removal;
+      text = {
+        title: (pending ? u('users.removalVoteTitle') : u('users.removalTitle')).replace(
+          '{name}',
+          name,
+        ),
+        detail: immediate
+          ? u('users.removalImmediate')
+          : u('users.removalRule').replace('{m}', formatCount(needed, locale)),
+        confirm: pending ? u('users.removalVote') : u('users.removalStart'),
+      };
+    }
+  }
+
+  const confirm = async (current: NonNullable<Removing>) => {
+    const name = displayName(current.row, u);
+    try {
+      if (current.kind === 'stepDown') {
+        await stepDown();
+        // Every session ended, this one included: a full reload lands on sign-in with no
+        // cached query, socket or ability left from the super admin's view.
+        window.location.reload();
+        return;
+      }
+      if (current.kind === 'withdraw') {
+        await withdrawSuperAdminRemoval(current.row.userId);
+        await onDone(u('users.removalWithdrawn'));
+        return;
+      }
+      const result = await voteSuperAdminRemoval(current.row.userId);
+      const done =
+        result.outcome === 'removed' ? u('users.removalDone') : u('users.removalWaiting');
+      await onDone(done.replace('{name}', name));
+    } catch (cause) {
+      await onDone(messageOf(cause, t('error.unreachable')));
+    }
+  };
+
+  return (
+    <ConfirmDialog
+      open={removing !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      destructive={removing?.kind !== 'withdraw'}
+      title={text.title}
+      description={text.detail}
+      confirmLabel={text.confirm}
+      cancelLabel={t('common.cancel')}
+      closeLabel={t('common.close')}
+      onConfirm={() => (removing === null ? undefined : confirm(removing))}
+    />
   );
 }
 
