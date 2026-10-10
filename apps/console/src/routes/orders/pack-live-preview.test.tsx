@@ -6,7 +6,8 @@ import { LocaleProvider } from '../../i18n/locale.js';
 
 vi.mock('../../env.js', () => ({ env: { VITE_API_URL: 'http://api.test' } }));
 
-const { CameraLivePreview, LIVE_PREVIEW_REFRESH_MS } = await import('./pack-live-preview.js');
+const { CameraLivePreview, LIVE_PREVIEW_IDLE_MS, LIVE_PREVIEW_REFRESH_MS } =
+  await import('./pack-live-preview.js');
 
 /**
  * The packing table's live view (M38c, D-683): it asks for the camera's newest frame every
@@ -111,21 +112,47 @@ describe('the live view', () => {
     expect(fetchMock.mock.calls.length).toBe(whileHidden + 1);
   });
 
-  it('says the picture is not coming when no frame arrives, and lets go of everything on close', async () => {
+  it('asks every 3 s while no frame comes (204), says so, and goes back to 400 ms when frames return', async () => {
+    let frames = false;
     fetchMock.mockImplementation(() =>
-      Promise.resolve(new Response('{"code":"PACKING_PREVIEW_UNAVAILABLE"}', { status: 503 })),
+      Promise.resolve(
+        frames
+          ? new Response(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])]))
+          : new Response(null, { status: 204 }),
+      ),
     );
     await render();
     expect(view()?.getAttribute('data-state')).toBe('waiting');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Backed off: nothing more at 400 ms, the next ask at 3 s.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(LIVE_PREVIEW_REFRESH_MS * 10);
+      await vi.advanceTimersByTimeAsync(LIVE_PREVIEW_REFRESH_MS * 2);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIVE_PREVIEW_IDLE_MS);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIVE_PREVIEW_IDLE_MS);
     });
     expect(view()?.getAttribute('data-state')).toBe('offline');
     expect(host.querySelector('img')).toBeNull();
+    // Frames come back: live, and asked for every 400 ms again.
+    frames = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIVE_PREVIEW_IDLE_MS);
+    });
+    expect(view()?.getAttribute('data-state')).toBe('live');
+    const live = fetchMock.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIVE_PREVIEW_REFRESH_MS);
+    });
+    expect(fetchMock.mock.calls.length).toBe(live + 1);
     act(() => root?.unmount());
     root = null;
     const asked = fetchMock.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(LIVE_PREVIEW_REFRESH_MS * 5);
+    await vi.advanceTimersByTimeAsync(LIVE_PREVIEW_IDLE_MS * 2);
     expect(fetchMock.mock.calls.length).toBe(asked);
   });
 });
