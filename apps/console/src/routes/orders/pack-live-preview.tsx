@@ -13,10 +13,15 @@ import { cameraPreviewUrl } from './pack-station-api.js';
  * process's preview running; the loop pauses while the tab is hidden.
  */
 
-/** How often the station asks for the camera's newest frame. */
+/** How often the station asks for the camera's newest frame while frames come. */
 export const LIVE_PREVIEW_REFRESH_MS = 400;
+/**
+ * How often it asks while none comes (204, or no answer): enough to keep the preview wanted
+ * and to notice it back, without asking 150 times a minute for nothing.
+ */
+export const LIVE_PREVIEW_IDLE_MS = 3_000;
 /** Answers without a frame in a row before the view says the picture is not coming. */
-const OFFLINE_AFTER = 8;
+const OFFLINE_AFTER = 3;
 
 export type LiveState = 'waiting' | 'live' | 'offline';
 
@@ -44,9 +49,11 @@ export function CameraLivePreview({
       timer = undefined;
       if (stopped || asking || document.visibilityState === 'hidden') return;
       asking = true;
+      let framed = false;
       try {
         const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
-        if (!response.ok) throw new Error(String(response.status));
+        // 204: no live frame yet (or any more); not an error, just nothing to show.
+        if (response.status !== 200) throw new Error(String(response.status));
         const blob = await response.blob();
         if (stopped) return;
         const next = URL.createObjectURL(blob);
@@ -55,13 +62,19 @@ export function CameraLivePreview({
         misses = 0;
         setSrc(next);
         setState('live');
+        framed = true;
       } catch {
         misses += 1;
         if (!stopped && misses >= OFFLINE_AFTER) setState('offline');
       } finally {
         asking = false;
       }
-      if (!stopped) timer = window.setTimeout(() => void tick(), LIVE_PREVIEW_REFRESH_MS);
+      if (!stopped) {
+        timer = window.setTimeout(
+          () => void tick(),
+          framed ? LIVE_PREVIEW_REFRESH_MS : LIVE_PREVIEW_IDLE_MS,
+        );
+      }
     };
 
     const onVisibility = () => {

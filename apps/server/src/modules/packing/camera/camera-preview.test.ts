@@ -1,12 +1,21 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { fakeFfmpeg, type FakeFfmpegRun } from '../../../testing/fake-ffmpeg.js';
-import { CameraPreview, previewArgs, previewFile } from './camera-preview.js';
+import type { AuditService } from '../../../platform/audit/audit.service.js';
+import type { FilesApi } from '../../files/files.api.js';
+import { freshFrame } from '../camera-settings.service.js';
+import { CameraProcessService } from './camera-process.service.js';
+import {
+  CameraPreview,
+  previewArgs,
+  previewFile,
+  removeCameraInputLists,
+} from './camera-preview.js';
 import { rtspInputArgs, streamAddress, type CameraStream } from './ffmpeg.js';
 
 /**
@@ -111,4 +120,130 @@ describe('the live preview’s ffmpeg', () => {
     expect(spawned).toBe(0);
     expect(preview.running).toBe(false);
   });
+});
+
+describe('nothing holding a camera password or picture is left behind (preview fixes)', () => {
+  it('removes every private input list of a camera, recording and preview, and nothing else', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'erp-lists-'));
+    for (const name of [
+      'input-1791400000000.ffconcat',
+      'preview-input-1791400000001.ffconcat',
+      'seg-1791400000000-1791400001000.ts',
+      'notes.txt',
+    ]) {
+      await writeFile(path.join(dir, name), 'x');
+    }
+    expect(await removeCameraInputLists(dir)).toBe(2);
+    expect((await readdir(dir)).sort()).toEqual([
+      'notes.txt',
+      'seg-1791400000000-1791400001000.ts',
+    ]);
+    expect(await removeCameraInputLists(path.join(dir, 'missing'))).toBe(0);
+  });
+
+  it('removes its list at once when ffmpeg cannot be started (W3)', async () => {
+    const workDir = await mkdtemp(path.join(tmpdir(), 'erp-preview-work-'));
+    const preview = new CameraPreview({
+      cameraId: 'cam',
+      stream: STREAM,
+      workDir,
+      output: path.join(await mkdtemp(path.join(tmpdir(), 'erp-preview-')), 'cam.jpg'),
+      ffmpeg: fake.command('frames'),
+      log: quiet,
+      checkHost: () => Promise.resolve(null),
+      spawn: () => {
+        throw new Error('cannot start');
+      },
+    });
+    previews.push(preview);
+    await preview.start();
+    await until(async () => (await readdir(workDir)).every((name) => !name.endsWith('.ffconcat')));
+    expect(preview.running).toBe(false);
+  });
+
+  it('starts nothing when stopped while the host is being checked, and says a refused host (N4)', async () => {
+    let release: (value: string | null) => void = () => undefined;
+    let spawned = 0;
+    const lines: string[] = [];
+    const preview = new CameraPreview({
+      cameraId: 'cam',
+      stream: STREAM,
+      workDir: await mkdtemp(path.join(tmpdir(), 'erp-preview-work-')),
+      output: path.join(await mkdtemp(path.join(tmpdir(), 'erp-preview-')), 'cam.jpg'),
+      ffmpeg: fake.command('frames'),
+      log: { ...quiet, warn: (fields) => lines.push(JSON.stringify(fields)) },
+      checkHost: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      spawn: () => {
+        spawned += 1;
+        throw new Error('must not start');
+      },
+    });
+    await preview.start();
+    const stopping = preview.stop();
+    release(null);
+    await stopping;
+    expect(spawned).toBe(0);
+
+    const refused = new CameraPreview({
+      cameraId: 'cam',
+      stream: STREAM,
+      workDir: await mkdtemp(path.join(tmpdir(), 'erp-preview-work-')),
+      output: path.join(await mkdtemp(path.join(tmpdir(), 'erp-preview-')), 'cam.jpg'),
+      ffmpeg: fake.command('frames'),
+      log: { ...quiet, warn: (fields) => lines.push(JSON.stringify(fields)) },
+      checkHost: () => Promise.resolve('loopback'),
+    });
+    previews.push(refused);
+    await refused.start();
+    await until(() => lines.some((line) => line.includes('address_refused')));
+  });
+
+  it('clears an earlier process’s frames and lists when the camera process starts', async () => {
+    const bufferRoot = await mkdtemp(path.join(tmpdir(), 'erp-cam-'));
+    const previewRoot = await mkdtemp(path.join(tmpdir(), 'erp-cam-preview-'));
+    const org = '6b0f3a0e-8f0e-4c55-9d0b-2b4a1f2b7c11';
+    const camera = '7c1f4b1f-9f1f-4d66-8e1c-3c5b2a3c8d22';
+    const cameraDir = path.join(bufferRoot, org, camera);
+    await mkdir(cameraDir, { recursive: true });
+    await writeFile(path.join(cameraDir, 'input-1.ffconcat'), 'rtsp://user:secret@host/x');
+    await writeFile(path.join(cameraDir, 'preview-input-2.ffconcat'), 'rtsp://user:secret@host/x');
+    await writeFile(path.join(cameraDir, 'seg-1791400000000-1791400001000.ts'), 'video');
+    await mkdir(path.join(previewRoot, org), { recursive: true });
+    await writeFile(previewFile(previewRoot, org, camera), 'old frame');
+    const service = new CameraProcessService({} as FilesApi, {} as AuditService);
+    service.configure({ bufferRoot, previewRoot, ffmpeg: fake.command('frames'), log: quiet });
+    await service.adoptBuffers();
+    expect(await readdir(cameraDir)).toEqual(['seg-1791400000000-1791400001000.ts']);
+    expect(await readdir(previewRoot)).toEqual([]);
+  });
+});
+
+describe('the frame the API serves (N1)', () => {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0xff, 0xd9]);
+
+  it('serves a fresh, whole JPEG and nothing else', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'erp-frame-'));
+    const file = path.join(dir, 'cam.jpg');
+    await writeFile(file, jpeg);
+    expect(await freshFrame(file)).toEqual(jpeg);
+    expect(await freshFrame(file, new Date(Date.now() + 10_000))).toBeNull();
+    await writeFile(file, jpeg.subarray(0, 5));
+    expect(await freshFrame(file)).toBeNull();
+    expect(await freshFrame(path.join(dir, 'none.jpg'))).toBeNull();
+    await mkdir(path.join(dir, 'folder.jpg'));
+    expect(await freshFrame(path.join(dir, 'folder.jpg'))).toBeNull();
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'never follows a symbolic link (skipped on Windows, where making one needs rights)',
+    async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), 'erp-frame-'));
+      await writeFile(path.join(dir, 'real.jpg'), jpeg);
+      await symlink(path.join(dir, 'real.jpg'), path.join(dir, 'cam.jpg'));
+      expect(await freshFrame(path.join(dir, 'cam.jpg'))).toBeNull();
+    },
+  );
 });

@@ -18,6 +18,7 @@ import {
   rtspInputArgs,
   streamAddress,
   streamHost,
+  type CameraErrorCode,
   type CameraStream,
 } from './ffmpeg.js';
 
@@ -28,6 +29,30 @@ import {
  * list, `file,rtsp,tcp` only, a bare environment, the host checked first) and shares nothing
  * else with it: a preview that fails never touches the recording.
  */
+
+/**
+ * Every private input list in a camera's buffer directory, the recording's and the preview's
+ * (`input-<n>.ffconcat`, `preview-input-<n>.ffconcat`): each holds the camera's address with
+ * its password, so none may outlive its ffmpeg (preview fixes, W3). Returns how many went.
+ */
+export async function removeCameraInputLists(dir: string): Promise<number> {
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const name of names) {
+    if (INPUT_LIST.test(name)) {
+      await rm(path.join(dir, name), { force: true });
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
+const INPUT_LIST = /^(preview-)?input-\d+\.ffconcat$/;
 
 /** Where the camera process writes a camera's preview frame: one file per camera. */
 export function previewFile(root: string, orgId: string, cameraId: string): string {
@@ -140,8 +165,11 @@ export class CameraPreview {
     let listFile: string | null = null;
     if (inputArgs === undefined) {
       const hostname = new URL(this.options.stream.rtspUrl).hostname;
-      if ((await (this.options.checkHost ?? hostRefusal)(hostname)) !== null) {
-        this.exited(null);
+      const refused = await (this.options.checkHost ?? hostRefusal)(hostname);
+      // Stopped while the host was being checked: nothing starts (N4).
+      if (this.stopped) return;
+      if (refused !== null) {
+        this.exited(null, 'address_refused');
         return;
       }
       listFile = path.join(this.options.workDir, `preview-input-${String(Date.now())}.ffconcat`);
@@ -158,14 +186,22 @@ export class CameraPreview {
     const removeList = () => {
       if (listFile !== null) void rm(listFile, { force: true }).catch(() => undefined);
     };
-    const child = this.spawnFn(
-      this.options.ffmpeg.command,
-      [
-        ...(this.options.ffmpeg.prefix ?? []),
-        ...previewArgs({ inputArgs, output: this.options.output }),
-      ],
-      { stdio: ['ignore', 'ignore', 'pipe'], env: ffmpegEnv() },
-    );
+    let child: ChildProcess;
+    try {
+      child = this.spawnFn(
+        this.options.ffmpeg.command,
+        [
+          ...(this.options.ffmpeg.prefix ?? []),
+          ...previewArgs({ inputArgs, output: this.options.output }),
+        ],
+        { stdio: ['ignore', 'ignore', 'pipe'], env: ffmpegEnv() },
+      );
+    } catch {
+      // ffmpeg never started: its list (the camera's password) goes now, not in five seconds (W3).
+      if (listFile !== null) await rm(listFile, { force: true });
+      this.exited(null);
+      return;
+    }
     if (listFile !== null) setTimeout(removeList, INPUT_LIST_KEEP_MS).unref();
     child.once('exit', removeList);
     this.child = child;
@@ -182,20 +218,10 @@ export class CameraPreview {
   }
 
   private async removeInputLists(): Promise<void> {
-    let names: string[];
-    try {
-      names = await readdir(this.options.workDir);
-    } catch {
-      return;
-    }
-    for (const name of names) {
-      if (/^preview-input-\d+\.ffconcat$/.test(name)) {
-        await rm(path.join(this.options.workDir, name), { force: true });
-      }
-    }
+    await removeCameraInputLists(this.options.workDir);
   }
 
-  private exited(code: number | null): void {
+  private exited(code: number | null, forced?: CameraErrorCode): void {
     this.child = null;
     if (this.stopped) return;
     this.failures += 1;
@@ -204,7 +230,7 @@ export class CameraPreview {
       {
         cameraId: this.options.cameraId,
         host: streamHost(this.options.stream.rtspUrl),
-        reason: classifyFfmpegError(this.stderr, code),
+        reason: forced ?? classifyFfmpegError(this.stderr, code),
         retryInMs: delay,
         ffmpeg:
           maskSecrets(this.stderr.trim().split('\n').slice(-2).join(' | '), this.options.stream) ||

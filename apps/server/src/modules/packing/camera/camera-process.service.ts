@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, readdir, rm, stat, statfs } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, statfs } from 'node:fs/promises';
 import path from 'node:path';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -35,7 +35,7 @@ import {
   type RecorderLog,
   type SpawnFn,
 } from './camera-recorder.js';
-import { CameraPreview, previewFile } from './camera-preview.js';
+import { CameraPreview, previewFile, removeCameraInputLists } from './camera-preview.js';
 import { cutSegments } from './cutter.js';
 import type { CameraErrorCode } from './ffmpeg.js';
 import { SegmentBuffer } from './segment-buffer.js';
@@ -339,6 +339,19 @@ export class CameraProcessService {
       }
     }
 
+    // A deleted camera leaves nothing that holds its password or its picture (W3).
+    for (const orgId of orgIds) {
+      const deleted = await withOrg({ orgId }, (tx) => cameras.deletedCameraIds(tx, orgId));
+      for (const cameraId of deleted) {
+        if (!this.buffers.has(`${orgId}/${cameraId}`)) continue;
+        await this.stopPreview(cameraId);
+        await removeCameraInputLists(this.bufferFor(orgId, cameraId).dir);
+        if (this.config.previewRoot !== undefined) {
+          await rm(previewFile(this.config.previewRoot, orgId, cameraId), { force: true });
+        }
+      }
+    }
+
     for (const [cameraId, running] of [...this.running]) {
       const next = wanted.get(cameraId);
       if (next?.signature !== running.signature) {
@@ -456,6 +469,14 @@ export class CameraProcessService {
   async adoptBuffers(): Promise<void> {
     // No cut runs before this process starts working jobs: every leftover goes (W6).
     await this.forgetCutLeftovers(Number.POSITIVE_INFINITY);
+    // Nor does a preview: an earlier process's frames are not live (preview fixes, W3).
+    // Its contents only: the directory is a volume's mount point.
+    if (this.config.previewRoot !== undefined) {
+      await mkdir(this.config.previewRoot, { recursive: true });
+      for (const entry of await readdir(this.config.previewRoot)) {
+        await rm(path.join(this.config.previewRoot, entry), { recursive: true, force: true });
+      }
+    }
     let orgs: string[];
     try {
       orgs = await readdir(this.config.bufferRoot);
@@ -471,7 +492,8 @@ export class CameraProcessService {
       }
       for (const cameraId of cameraIds) {
         if (/^[0-9a-f-]{36}$/i.test(orgId) && /^[0-9a-f-]{36}$/i.test(cameraId)) {
-          this.bufferFor(orgId, cameraId);
+          // Lists an earlier process left behind hold a camera's password: gone (W3).
+          await removeCameraInputLists(this.bufferFor(orgId, cameraId).dir);
         }
       }
     }

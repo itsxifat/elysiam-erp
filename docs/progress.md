@@ -2703,3 +2703,23 @@ dry-run|commit --file <users.json>`.
   schema, api-client, white-label, bundle (249.9 KB): PASS. Not run: a stack spec (as asked),
   the preview against the image's real ffmpeg (to check on the server after deploy).
 - New dependencies: none.
+
+## 2026-10-10 · M38c · the live view's ledger audit fixed (not deployed)
+
+- **Ledger audit** of b672730..79de53f: 0 critical, 3 warnings, 4 notes, fixed on
+  `m38c-preview-fixes` (from `integration-wave2` at 79de53f); no migration. W1 a delete takes
+  the camera's lock and then its open packings' before reading whether it records, and choosing
+  a camera reads it with a shared lock before the session's (camera then session everywhere), so
+  a delete and a first accepted scan never both win; W2 no live frame answers 204 (no error, no
+  log), the console asks every 3 s while none comes and every 400 ms while frames do; W3 every
+  private input list is removed at start, when a preview's ffmpeg cannot start and when a camera
+  is deleted (with its frame), the preview directory emptied at start; N1 the frame read through
+  one descriptor opened without following links; N3 the delete's audit names the packings that
+  fell back; N4 a refused host stops a preview with `address_refused`, a stop during the host
+  check starts nothing. N2 (any packing role may watch any camera) kept, noted in D-683.
+- **Evidence:** `camera.e2e.test.ts` 24/24 on real Postgres (2 new: the delete-versus-first-scan
+  race over six rounds, a deleted camera's lists and frame cleared); preview units 8/8 (1 skipped
+  on Windows: a symbolic link needs rights); console `pack-live-preview` 3/3 (204 and the
+  back-off); camera suites, `pack-station.e2e`, the route matrix, domain and console orders
+  together 147 passed, 2 skipped; lint (28 tasks), format, typecheck, routes (519), i18n,
+  api-client (regenerated): PASS. Decisions D-683 and D-684 reworded.

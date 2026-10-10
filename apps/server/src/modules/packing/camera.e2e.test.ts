@@ -1175,12 +1175,14 @@ describe('deleting a camera and its live preview (D-683, D-684)', () => {
     ).toBe(201);
     const audits = await withSystem(
       async (tx) =>
-        tx.execute<{ action: string }>(sql`
-          select action from audit.audit_log
+        tx.execute<{ action: string; after: { sessionsReleased: string[] } }>(sql`
+          select action, after from audit.audit_log
           where entity_id = ${cameraId} and action = 'packing.camera_deleted'
         `),
       { orgId: ORG_A },
     );
+    // N3: the packings that fell back are named.
+    expect(audits[0]?.after.sessionsReleased).toEqual([idle]);
     expect(audits).toHaveLength(1);
     // Its past video still plays.
     const record = await call(admin, 'GET', `/v1/packing/orders/${order.id}`);
@@ -1198,10 +1200,10 @@ describe('deleting a camera and its live preview (D-683, D-684)', () => {
     const accounts = await harness.asRole('accounts', ORG_A);
     expect((await call(accounts, 'GET', url)).status).toBe(403);
 
-    // No frame yet: 503 with its code, and the demand is written.
+    // No frame yet: 204, no body (an answer, not an error), and the demand is written.
     const none = await call(packer, 'GET', url);
-    expect(none.status).toBe(503);
-    expect(none.body.code).toBe('PACKING_PREVIEW_UNAVAILABLE');
+    expect(none.status).toBe(204);
+    expect(none.body).toEqual({});
     const wanted = async () =>
       withSystem(
         async (tx) =>
@@ -1231,11 +1233,15 @@ describe('deleting a camera and its live preview (D-683, D-684)', () => {
     expect((await sales.client.request('GET', url)).statusCode).toBe(200);
     // Half-written, or older than five seconds: not live.
     await writeFile(file, jpeg.subarray(0, 6));
-    expect((await call(packer, 'GET', url)).status).toBe(503);
+    expect((await call(packer, 'GET', url)).status).toBe(204);
     await writeFile(file, jpeg);
     const old = new Date(Date.now() - 10_000);
     await utimes(file, old, old);
-    expect((await call(packer, 'GET', url)).status).toBe(503);
+    expect((await call(packer, 'GET', url)).status).toBe(204);
+    // An unknown camera stays a 404.
+    expect((await call(packer, 'GET', `/v1/packing/cameras/${randomUUID()}/preview`)).status).toBe(
+      404,
+    );
     // Another brand cannot see it.
     expect((await call(adminB, 'GET', url)).status).toBe(404);
     await switchOffCameras();
@@ -1277,6 +1283,72 @@ describe('deleting a camera and its live preview (D-683, D-684)', () => {
     expect(existsSync(file)).toBe(false);
     // The recording never stopped.
     expect(service.recording()).toContain(cameraId);
+    await switchOffCameras();
+  });
+});
+
+describe('the live view after its ledger audit', () => {
+  it('never lets a delete and a first accepted scan both win (W1)', async () => {
+    for (let round = 0; round < 6; round += 1) {
+      const cameraId = await addCamera(`Race ${String(round)} ${suffix}`);
+      const order = await confirmedOrder([{ sku: cap, qty: 1 }]);
+      const sessionId = String(
+        (
+          (await call(packer, 'POST', '/v1/packing/sessions', { orderId: order.id, cameraId })).body
+            .session as Json
+        ).id,
+      );
+      const [scanned, deleted] = await Promise.all([
+        scan(packer, sessionId, cap.barcode),
+        call(admin, 'DELETE', `/v1/packing/cameras/${cameraId}`),
+      ]);
+      expect(scanned.status, JSON.stringify(scanned.body)).toBe(200);
+      expect(scanned.body.outcome).toBe('accepted');
+      const recording = (await windowOf(sessionId)).recording_from !== null;
+      if (deleted.status === 200) {
+        // The delete went first: the packing fell back and never records on a deleted camera.
+        expect(recording).toBe(false);
+      } else {
+        expect(deleted.status, JSON.stringify(deleted.body)).toBe(409);
+        expect(deleted.body.code).toBe('PACKING_CAMERA_IN_USE');
+        expect(recording).toBe(true);
+      }
+      const camera = await withSystem(
+        async (tx) =>
+          (
+            await tx.execute<{ deleted: boolean }>(sql`
+              select deleted_at is not null as deleted from packing.cameras where id = ${cameraId}
+            `)
+          )[0],
+        { orgId: ORG_A },
+      );
+      expect(camera?.deleted === true && recording).toBe(false);
+    }
+    await switchOffCameras();
+  });
+
+  it('leaves no list or frame of a deleted camera with the camera process (W3)', async () => {
+    const cameraId = await addCamera(`Clean ${suffix}`);
+    const root = await mkdtemp(path.join(tmpdir(), 'erp-cam-preview-'));
+    const service = cameraProcess({
+      bufferRoot: await mkdtemp(path.join(tmpdir(), 'erp-cam-')),
+      mode: 'segments',
+      previewRoot: root,
+      previewFfmpeg: fake.command('frames'),
+    });
+    processes.push(service);
+    await service.reload();
+    const dir = service.bufferFor(ORG_A, cameraId).dir;
+    await writeFile(path.join(dir, 'input-1.ffconcat'), 'rtsp://user:secret@host/x');
+    await writeFile(path.join(dir, 'preview-input-2.ffconcat'), 'rtsp://user:secret@host/x');
+    const frame = previewFile(root, ORG_A, cameraId);
+    await mkdir(path.dirname(frame), { recursive: true });
+    await writeFile(frame, 'frame');
+    expect((await call(admin, 'DELETE', `/v1/packing/cameras/${cameraId}`)).status).toBe(200);
+    await service.reload();
+    expect(service.recording()).not.toContain(cameraId);
+    expect((await readdir(dir)).filter((name) => name.endsWith('.ffconcat'))).toEqual([]);
+    expect(existsSync(frame)).toBe(false);
     await switchOffCameras();
   });
 });
