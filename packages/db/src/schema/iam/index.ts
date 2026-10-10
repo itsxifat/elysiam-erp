@@ -454,6 +454,42 @@ export const superAdminVotes = iam.table(
 );
 
 /**
+ * Super admins' yes votes for removing a super admin (D-686): one row per super admin per
+ * target. The first row starts the removal; only the first super admin or an owner may
+ * write it (the trigger in migration 0139).
+ *
+ * The last required yes removes through `iam.demote_super_admin` (migration 0139), the only
+ * way the flag is cleared, which checks these rows again and clears them; a withdrawn
+ * removal deletes them all. Insert and delete only, audited, like `super_admin_votes`.
+ */
+export const superAdminRemovalVotes = iam.table(
+  'super_admin_removal_votes',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    voterUserId: text('voter_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    targetUserId: text('target_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('super_admin_removal_votes_org_voter_target_idx').on(
+      table.orgId,
+      table.voterUserId,
+      table.targetUserId,
+    ),
+    index('super_admin_removal_votes_org_idx').on(table.orgId),
+    index('super_admin_removal_votes_org_target_idx').on(table.orgId, table.targetUserId),
+    check('super_admin_removal_votes_not_self', sql`${table.voterUserId} <> ${table.targetUserId}`),
+  ],
+);
+
+/**
  * Every owner sign-in link this brand has accepted, by its `jti` (M31, D-473).
  *
  * Global (identity, like `users`): a link names a brand by its audience, not an org row.
