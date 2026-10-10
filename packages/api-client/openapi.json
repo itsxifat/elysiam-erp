@@ -31830,7 +31830,7 @@
     "/v1/packing/cameras/{id}/preview": {
       "get": {
         "operationId": "packingCameraPreview",
-        "summary": "One JPEG frame of a packing camera's live preview.",
+        "summary": "The newest JPEG frame of a packing camera's live preview; 204 when none is live.",
         "tags": ["packing"],
         "x-ability": "update:Order",
         "parameters": [

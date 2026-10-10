@@ -3058,7 +3058,7 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The signed-in user, their roles and active org. */
     me: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.me, undefined, options),
-    /** One JPEG frame of a packing camera's live preview. */
+    /** The newest JPEG frame of a packing camera's live preview; 204 when none is live. */
     packingCameraPreview: (
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
