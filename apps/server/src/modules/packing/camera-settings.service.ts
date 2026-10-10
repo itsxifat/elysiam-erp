@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, type FileHandle } from 'node:fs/promises';
 
 import { Injectable } from '@nestjs/common';
 import {
@@ -175,6 +176,10 @@ export class CameraSettingsService {
         if (before?.deleted_at !== null) {
           throw new PackingError('NOT_FOUND', 'No such camera.');
         }
+        // The camera, then its open packings (W1): a first accepted scan in flight on one of
+        // them commits first, so its recording is seen here and the delete refused; one that
+        // comes after finds the camera deleted and never records.
+        await cameras.lockOpenSessionsOfCamera(tx, context.orgId, id);
         if (await cameras.cameraRecordingOpen(tx, context.orgId, id)) {
           throw new PackingError(
             'PACKING_CAMERA_IN_USE',
@@ -214,7 +219,7 @@ export class CameraSettingsService {
    * someone looks), and the newest frame the camera process wrote, if it is under five
    * seconds old. A JPEG caught half-written is read again once.
    */
-  async livePreview(context: ActiveContext, id: string): Promise<Buffer> {
+  async livePreview(context: ActiveContext, id: string): Promise<Buffer | null> {
     return mapPackingErrors(async () => {
       await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const camera = await cameras.cameraById(tx, context.orgId, id);
@@ -234,10 +239,8 @@ export class CameraSettingsService {
         if (frame !== null) return frame;
         await new Promise((resolve) => setTimeout(resolve, 60));
       }
-      throw new PackingError(
-        'PACKING_PREVIEW_UNAVAILABLE',
-        'The camera’s live picture is not coming in yet.',
-      );
+      // No live frame is an ordinary answer (W2): the route says 204, nothing is logged.
+      return null;
     });
   }
 
@@ -298,15 +301,22 @@ export class CameraSettingsService {
 /** The largest preview frame served: a 640-wide JPEG is a few tens of kilobytes. */
 const PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 
-/** The frame, if it is fresh and whole (a JPEG from its start marker to its end marker). */
-async function freshFrame(file: string): Promise<Buffer | null> {
+/**
+ * The frame, if it is fresh and whole (a JPEG from its start marker to its end marker). Opened
+ * without following a symbolic link, and judged and read through that one descriptor (N1), so
+ * nothing swapped in between the look and the read is served.
+ */
+export async function freshFrame(file: string, now: Date = new Date()): Promise<Buffer | null> {
+  let handle: FileHandle | undefined;
   try {
-    const info = await stat(file);
-    if (info.size > PREVIEW_MAX_BYTES) return null;
-    if (!previewFrameFresh({ frameAt: info.mtime, now: new Date() })) return null;
-    const bytes = await readFile(file);
+    handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > PREVIEW_MAX_BYTES) return null;
+    if (!previewFrameFresh({ frameAt: info.mtime, now })) return null;
+    const bytes = await handle.readFile();
     const whole =
       bytes.length > 4 &&
+      bytes.length <= PREVIEW_MAX_BYTES &&
       bytes[0] === 0xff &&
       bytes[1] === 0xd8 &&
       bytes[bytes.length - 2] === 0xff &&
@@ -314,6 +324,8 @@ async function freshFrame(file: string): Promise<Buffer | null> {
     return whole ? bytes : null;
   } catch {
     return null;
+  } finally {
+    await handle?.close();
   }
 }
 

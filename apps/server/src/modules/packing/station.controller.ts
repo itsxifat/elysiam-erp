@@ -239,7 +239,7 @@ export class PackStationController {
 
   /**
    * One frame of a camera's live preview (D-683), a JPEG, for whoever packs (`update Order`;
-   * resellers hold none). Asking keeps the preview running; 503 when no fresh frame is in.
+   * resellers hold none). Asking keeps the preview running; 204 when no fresh frame is in.
    */
   @RequireAbility('update', 'Order')
   @Get('cameras/:id/preview')
@@ -250,6 +250,11 @@ export class PackStationController {
   ): Promise<void> {
     scopeHasNoRowDimension(request, 'the packing cameras are the brand’s, not an order’s');
     const frame = await this.cameras.livePreview(requireContext(request), parse(idSchema, id));
+    if (frame === null) {
+      // No fresh frame yet, or the camera stopped sending: an answer, not an error (W2).
+      await reply.code(204).header('cache-control', 'no-store').send();
+      return;
+    }
     await reply
       .header('content-type', 'image/jpeg')
       .header('cache-control', 'no-store')

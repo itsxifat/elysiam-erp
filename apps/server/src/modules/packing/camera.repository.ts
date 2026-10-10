@@ -82,7 +82,7 @@ export async function releaseCameraFromIdleSessions(
   tx: Tx,
   orgId: string,
   cameraId: string,
-): Promise<number> {
+): Promise<string[]> {
   const rows = await tx.execute<{ id: string }>(sql`
     update packing.sessions s set camera_id = null, updated_at = now()
      where s.org_id = ${orgId} and s.camera_id = ${cameraId} and s.status = 'open'
@@ -93,7 +93,7 @@ export async function releaseCameraFromIdleSessions(
        )
     returning s.id
   `);
-  return rows.length;
+  return rows.map((row) => row.id);
 }
 
 /** Someone is looking at the camera's live preview until `until` (D-683). */
@@ -105,6 +105,14 @@ export async function wantPreview(
     update packing.cameras set preview_wanted_until = ${input.until.toISOString()}::timestamptz
      where org_id = ${input.orgId} and id = ${input.id} and enabled and deleted_at is null
   `);
+}
+
+/** The brand's deleted cameras, for the camera process to clear what it held of them (W3). */
+export async function deletedCameraIds(tx: Tx, orgId: string): Promise<string[]> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from packing.cameras where org_id = ${orgId} and deleted_at is not null
+  `);
+  return rows.map((row) => row.id);
 }
 
 /** The enabled cameras' preview demand, for the camera process's preview loop. */
@@ -123,13 +131,36 @@ export async function cameraById(
   tx: Tx,
   orgId: string,
   id: string,
-  options: { readonly forUpdate?: boolean } = {},
+  options: { readonly forUpdate?: boolean; readonly forShare?: boolean } = {},
 ): Promise<CameraRow | undefined> {
+  const lock =
+    options.forUpdate === true
+      ? sql`for update`
+      : options.forShare === true
+        ? sql`for share`
+        : sql``;
   const rows = await tx.execute<CameraRow>(sql`
     select ${CAMERA_COLUMNS} from packing.cameras where org_id = ${orgId} and id = ${id}
-    ${options.forUpdate === true ? sql`for update` : sql``}
+    ${lock}
   `);
   return rows[0];
+}
+
+/**
+ * Lock the open packings a camera films (preview fixes, W1), after the camera's own lock: the
+ * camera, then its sessions, the order every path takes. A first accepted scan holding one of
+ * them commits before a delete reads whether the camera is recording.
+ */
+export async function lockOpenSessionsOfCamera(
+  tx: Tx,
+  orgId: string,
+  cameraId: string,
+): Promise<void> {
+  await tx.execute(sql`
+    select id from packing.sessions
+    where org_id = ${orgId} and camera_id = ${cameraId} and status = 'open'
+    for update
+  `);
 }
 
 /**

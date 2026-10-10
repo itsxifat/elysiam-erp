@@ -524,7 +524,9 @@ export class PackStationService {
   ): Promise<repo.SessionRow> {
     if (session.camera_id === cameraId) return session;
     if (cameraId !== null) {
-      const camera = await cameras.cameraById(tx, context.orgId, cameraId);
+      // Shared, before the session's lock (W1): a delete holds the camera first and then its
+      // sessions, so choosing waits for it and then sees the camera gone.
+      const camera = await cameras.cameraById(tx, context.orgId, cameraId, { forShare: true });
       if (camera?.enabled !== true) {
         throw new PackingError(
           'PACKING_CAMERA_INVALID',

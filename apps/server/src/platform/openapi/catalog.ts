@@ -257,7 +257,7 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
   },
   'GET /v1/packing/cameras/:id/preview': {
     operationId: 'packingCameraPreview',
-    summary: "One JPEG frame of a packing camera's live preview.",
+    summary: "The newest JPEG frame of a packing camera's live preview; 204 when none is live.",
   },
   'PUT /v1/packing/cameras/:id': {
     operationId: 'updatePackingCamera',
