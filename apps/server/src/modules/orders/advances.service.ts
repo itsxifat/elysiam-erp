@@ -35,6 +35,7 @@ import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import * as repo from './orders.repository.js';
 import type { RecordAdvanceInput, RefundAdvanceInput } from './orders.schemas.js';
 import { orderScopeSql } from './orders.scope.js';
+import { OwnershipGate } from './ownership.gate.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 
 /**
@@ -63,6 +64,7 @@ export class AdvancesService {
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
     private readonly audit: AuditService,
     private readonly courier: CourierBookingRegistry,
+    private readonly gate: OwnershipGate,
   ) {}
 
   // --- the agent ------------------------------------------------------------------
@@ -100,6 +102,8 @@ export class AdvancesService {
           orderScopeSql(context, request),
         );
         if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+        // M41 (D-710): recording the buyer's advance is the owner's work.
+        await this.gate.check(tx, context, request, order, 'advance');
         if (!acceptsAdvanceClaim(order.status as OrderStatus)) {
           throw new OrdersError(
             'ADVANCE_INVALID',

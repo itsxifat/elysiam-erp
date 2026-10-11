@@ -1,6 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { MATRIX, MEMBERSHIP_ROLES, type CallAttemptInput } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
 import {
+  assignmentDecision,
+  CALLABLE_STATUSES,
+  callAttemptProblem,
+  hubStageOf,
+  isSupervisor,
+  type CallOutcome,
+  type HubStage,
+  type OwnerGatedAct,
   applicableAdvance,
   add,
   businessDate,
@@ -38,6 +47,10 @@ import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
 import { PROMO_PORT, type PricedPromo, type PromoPort } from './ports/promo.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
+import { TEAM_API, type TeamApi } from '../team/team.api.js';
+import { OffersService } from './offers.service.js';
+import { OwnershipGate } from './ownership.gate.js';
+import { orderQueueSql } from './queues.js';
 import * as desk from './desk.repository.js';
 import * as repo from './orders.repository.js';
 import { orderScopeSql } from './orders.scope.js';
@@ -138,9 +151,21 @@ export interface OrderView {
   readonly holdReason: string | null;
   readonly cancelReason: string | null;
   readonly assignedTo: string | null;
+  /** M41 (D-710): since when the owner has it. */
+  readonly assignedAt: string | null;
   readonly createdBy: string;
   readonly exchangeOfOrderId: string | null;
   readonly notes: string | null;
+  /** M41 (D-718): the verification calls, summarised for the queue. */
+  readonly calls: {
+    readonly attempts: number;
+    readonly lastOutcome: string | null;
+    readonly lastAt: string | null;
+    readonly callBackAt: string | null;
+  };
+  /** M41 (D-719): the hub's progress, which the desk that sold it follows. */
+  readonly slipPrintedAt: string | null;
+  readonly hubStage: HubStage | null;
   readonly timestamps: {
     readonly createdAt: string;
     readonly confirmedAt: string | null;
@@ -211,9 +236,18 @@ function toOrderView(row: repo.OrderRow): OrderView {
     holdReason: row.hold_reason,
     cancelReason: row.cancel_reason,
     assignedTo: row.assigned_to,
+    assignedAt: isoOf(row.assigned_at),
     createdBy: row.created_by,
     exchangeOfOrderId: row.exchange_of_order_id,
     notes: row.notes,
+    calls: {
+      attempts: row.call_attempts,
+      lastOutcome: row.last_call_outcome,
+      lastAt: isoOf(row.last_call_at),
+      callBackAt: isoOf(row.call_back_at),
+    },
+    slipPrintedAt: isoOf(row.slip_printed_at),
+    hubStage: hubStageOf({ status: row.status, slipPrintedAt: row.slip_printed_at }),
     timestamps: {
       createdAt: new Date(row.created_at).toISOString(),
       confirmedAt: isoOf(row.confirmed_at),
@@ -341,6 +375,9 @@ export class OrdersService {
     private readonly customers: CustomersService,
     private readonly transitions: TransitionsService,
     private readonly audit: AuditService,
+    private readonly gate: OwnershipGate,
+    private readonly offers: OffersService,
+    @Inject(TEAM_API) private readonly team: TeamApi,
   ) {}
 
   // --- reads --------------------------------------------------------------------
@@ -355,12 +392,7 @@ export class OrdersService {
      * could already see. `mine` is the caller's own name on the row, which is what the
      * order desk's "my orders" tab means.
      */
-    const queued =
-      query.queue === 'unassigned'
-        ? sql`(${scope} and o.assigned_to is null)`
-        : query.queue === 'mine'
-          ? sql`(${scope} and o.assigned_to = ${context.userId})`
-          : scope;
+    const queue = orderQueueSql(query.queue, context.userId);
 
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -370,8 +402,21 @@ export class OrdersService {
          * a second scan of the same predicate; "the page came back full" misreports the one
          * case where the last page is exactly full, which the extra row removes.
          */
+        /*
+         * M41 (D-719): the hub's queues are the hub's location's. Asked without a location, a
+         * person whose desk profile names a hub sees that hub's orders; one with no hub (a
+         * supervisor) sees every location's.
+         */
+        const locationId =
+          query.locationId ??
+          (query.queue?.startsWith('hub_') === true
+            ? ((await this.team.hubLocationOf(tx, context.orgId, context.userId)) ?? undefined)
+            : undefined);
         const rows = await repo.listOrders(tx, context.orgId, {
-          scope: queued,
+          scope,
+          queue: queue.where,
+          orderBy: queue.orderBy,
+          locationId,
           status: query.status,
           customerId: query.customerId,
           q: query.q,
@@ -384,7 +429,9 @@ export class OrdersService {
           offset: query.offset,
         });
         return {
-          items: rows.slice(0, query.limit).map(toOrderView),
+          items: rows
+            .slice(0, query.limit)
+            .map((row) => ({ ...toOrderView(row), itemCount: row.item_count })),
           hasNext: rows.length > query.limit,
         };
       }),
@@ -904,7 +951,7 @@ export class OrdersService {
     const order =
       options.system === true
         ? await this.lockSystem(tx, context, id)
-        : await this.readInScope(tx, context, request, id);
+        : await this.lockForAct(tx, context, request, id, 'edit');
     const editable: readonly string[] = ['pending', 'confirmed', 'on_hold'];
     if (!editable.includes(order.status)) {
       throw new OrdersError(
@@ -1172,8 +1219,10 @@ export class OrdersService {
   async confirm(context: ActiveContext, request: AuditableRequest, id: string) {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const order = await this.readInScope(tx, context, request, id);
+        const order = await this.lockForAct(tx, context, request, id, 'confirm');
         const moved = await this.transitions.move(tx, context, request, order, 'confirm', {});
+        // It left New: nobody should still be holding a card for it (D-717).
+        await this.offers.withdrawFor(tx, context.orgId, order.id);
         return toOrderView(moved.order);
       }),
     );
@@ -1189,7 +1238,11 @@ export class OrdersService {
   ) {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const order = await this.readInScope(tx, context, request, id);
+        const gated = DESK_TRIGGERS[trigger];
+        const order =
+          gated === undefined
+            ? await this.readInScope(tx, context, request, id)
+            : await this.lockForAct(tx, context, request, id, gated);
         // Every transition that posts reads its date from here, so §7's window is checked
         // once rather than in each of the five endpoints that accept one.
         const occurredAt = this.postingInstant(options.occurredAt);
@@ -1215,6 +1268,7 @@ export class OrdersService {
           ...options,
           occurredAt,
         });
+        if (trigger === 'cancel') await this.offers.withdrawFor(tx, context.orgId, order.id);
         return toOrderView(moved.order);
       }),
     );
@@ -1235,69 +1289,284 @@ export class OrdersService {
     return { from: moved.result.from, to: moved.result.to };
   }
 
-  // --- the queue ----------------------------------------------------------------
+  // --- the queue (M10, M41: D-711, D-712) ---------------------------------------------
 
+  /**
+   * Hand an order to a person, or (the owner, or a supervisor) on to a colleague.
+   *
+   * `assignmentDecision` is the rule: the owner may hand their order on; org_admin,
+   * branch_manager and super admins may reassign anyone's order in their scope; anybody may
+   * take a queued order for themselves, and only a supervisor routes queued work to someone
+   * else. The person named must hold a role that works orders in this brand. The previous
+   * owner, when it was somebody other than the caller, is told.
+   */
   async assign(context: ActiveContext, request: AuditableRequest, id: string, assignedTo: string) {
-    return this.reassign(context, request, id, assignedTo, false);
+    return this.moveOwner(context, request, id, assignedTo, 'order.assigned');
+  }
+
+  /** Back to the unassigned queue: the owner's own call, or a supervisor's. */
+  async release(context: ActiveContext, request: AuditableRequest, id: string) {
+    return this.moveOwner(context, request, id, null, 'order.released');
   }
 
   /**
-   * Take an unassigned order out of §6's queue.
+   * Take an unassigned order out of §6's queue (M41 check 1).
    *
-   * `onlyIfUnassigned` is the whole of the concurrency control: two agents pressing
-   * "claim" at the same moment both pass the read, and the second one's UPDATE matches
-   * nothing because `assigned_to` is no longer null. Reported as
-   * `ORDER_ALREADY_CLAIMED` rather than silently reassigning, because the agent who
-   * lost needs to know to pick another one.
+   * The order is locked first and judged after, so of two people pressing "Take this order"
+   * together, the second waits for the first and then finds the order taken. The loser is told
+   * **who** has it (`ORDER_ALREADY_CLAIMED`, D-711) even when, as for a sales agent, the order
+   * has just left their scope: a sales agent reaches the queue, and an order taken from it
+   * moments ago is one they were looking at. Taking an order you already hold is a no-op.
    */
   async claim(context: ActiveContext, request: AuditableRequest, id: string) {
-    return this.reassign(context, request, id, context.userId, true);
-  }
-
-  private async reassign(
-    context: ActiveContext,
-    request: AuditableRequest,
-    id: string,
-    assignedTo: string,
-    onlyIfUnassigned: boolean,
-  ) {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const order = await this.readInScope(tx, context, request, id);
-        const taken = await repo.assignOrder(tx, {
-          orgId: context.orgId,
-          orderId: order.id,
-          assignedTo,
-          onlyIfUnassigned,
-        });
-        if (!taken) {
+        const scope = orderScopeSql(context, request);
+        const reach = context.roles.includes('sales')
+          ? sql`(${scope} or o.assigned_to is not null)`
+          : scope;
+        const order = await repo.lockOrderInScope(tx, context.orgId, id, reach);
+        if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+        if (order.assigned_to === context.userId) return toOrderView(order);
+        if (order.assigned_to !== null) {
+          const name = await this.gate.nameOf(tx, context.orgId, order.assigned_to);
           throw new OrdersError(
             'ORDER_ALREADY_CLAIMED',
-            'Somebody else took this order out of the queue first.',
+            `${name} took order ${order.order_no} first.`,
           );
         }
-
+        await repo.assignOrder(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          assignedTo: context.userId,
+          onlyIfUnassigned: true,
+        });
+        await this.offers.withdrawFor(tx, context.orgId, order.id);
         await emit(
           tx,
-          onlyIfUnassigned ? 'order.claimed' : 'order.assigned',
-          { id: order.id, orderNo: order.order_no, assignedTo },
+          'order.claimed',
+          { id: order.id, orderNo: order.order_no, assignedTo: context.userId },
           { orgId: context.orgId },
         );
-
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
           operation: 'update',
-          action: onlyIfUnassigned ? 'order.claimed' : 'order.assigned',
+          action: 'order.claimed',
           entityType: 'order',
           entityId: order.id,
-          before: { assignedTo: order.assigned_to },
-          after: { assignedTo },
+          before: { assignedTo: null },
+          after: { assignedTo: context.userId },
           request,
         });
+        const after = await repo.orderById(tx, context.orgId, order.id);
+        return after === undefined
+          ? { id: order.id, assignedTo: context.userId }
+          : toOrderView(after);
+      }),
+    );
+  }
+
+  private async moveOwner(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    target: string | null,
+    action: 'order.assigned' | 'order.released',
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.readInScope(tx, context, request, id);
+        const previous = order.assigned_to;
+        const decision = assignmentDecision({
+          ownerId: previous,
+          callerId: context.userId,
+          target,
+          supervisor: isSupervisor(context.roles, context.isSuperAdmin),
+        });
+        if (!decision.allowed) {
+          const owner =
+            previous === null ? null : await this.gate.nameOf(tx, context.orgId, previous);
+          throw new OrdersError(
+            'ORDER_ASSIGN_NOT_ALLOWED',
+            owner === null
+              ? 'Only a supervisor can give a queued order to somebody else. Take it yourself, or ask one.'
+              : `${owner} is handling this order. Only they or a supervisor can hand it on.`,
+          );
+        }
+        if (decision.change === 'unchanged') return toOrderView(order);
+        if (target !== null && target !== context.userId) {
+          await this.assertAssignable(tx, context, target);
+        }
+
+        await repo.assignOrder(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          assignedTo: target,
+          onlyIfUnassigned: false,
+        });
+        await this.offers.withdrawFor(tx, context.orgId, order.id);
+        if (target === null) {
+          await emit(
+            tx,
+            'order.released',
+            { id: order.id, orderNo: order.order_no },
+            { orgId: context.orgId },
+          );
+          // Back in New, so auto-assign may offer it to the next person (D-717).
+          if (order.status === 'pending')
+            await this.offers.queueDispatch(tx, context.orgId, order.id);
+        } else {
+          await emit(
+            tx,
+            'order.assigned',
+            { id: order.id, orderNo: order.order_no, assignedTo: target },
+            { orgId: context.orgId },
+          );
+        }
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action,
+          entityType: 'order',
+          entityId: order.id,
+          before: { assignedTo: previous },
+          after: { assignedTo: target, change: decision.change },
+          request,
+        });
+        if (previous !== null && previous !== context.userId) {
+          // A supervisor moved somebody's order: they hear it from the ERP, not the floor.
+          await this.gate.tellOwner(tx, context, request, order, previous, decision.change);
+        }
 
         const after = await repo.orderById(tx, context.orgId, order.id);
-        return after === undefined ? { id: order.id, assignedTo } : toOrderView(after);
+        return after === undefined ? { id: order.id, assignedTo: target } : toOrderView(after);
+      }),
+    );
+  }
+
+  /** The person named holds a role that works orders in this brand (D-712). */
+  private async assertAssignable(tx: Tx, context: ActiveContext, userId: string): Promise<void> {
+    const members = await this.iam.activeMembers(tx, context.orgId, { roles: ORDER_HOLDING_ROLES });
+    if (!members.some((member) => member.userId === userId)) {
+      throw new OrdersError(
+        'ORDER_ASSIGNEE_INVALID',
+        'That person cannot hold orders in this brand.',
+      );
+    }
+  }
+
+  // --- verification calls (M41, D-718) -------------------------------------------------
+
+  /** Record one call to the buyer: the owner's work, so the owner's gate applies. */
+  async logCall(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    input: CallAttemptInput,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.lockForAct(tx, context, request, id, 'call');
+        if (!CALLABLE_STATUSES.includes(order.status as OrderStatus)) {
+          throw new OrdersError(
+            'ORDER_CALL_INVALID',
+            `Order ${order.order_no} is ${order.status}: its verification calls are over.`,
+          );
+        }
+        const callBackAt = input.callBackAt === undefined ? null : new Date(input.callBackAt);
+        const problem = callAttemptProblem({
+          outcome: input.outcome as CallOutcome,
+          callBackAt,
+          now: new Date(),
+        });
+        if (problem !== null) throw new OrdersError('ORDER_CALL_INVALID', problem);
+        const note = input.note === undefined || input.note === '' ? null : input.note;
+        const row = await repo.recordCallAttempt(tx, {
+          orgId: context.orgId,
+          orderId: order.id,
+          outcome: input.outcome,
+          callBackAt,
+          note,
+          calledBy: context.userId,
+        });
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'create',
+          action: 'order.call_logged',
+          entityType: 'order',
+          entityId: order.id,
+          after: {
+            callId: row.id,
+            outcome: input.outcome,
+            callBackAt: callBackAt === null ? null : callBackAt.toISOString(),
+            attempt: order.call_attempts + 1,
+          },
+          request,
+        });
+        await emit(
+          tx,
+          'order.edited',
+          { id: order.id, orderNo: order.order_no, at: new Date(row.called_at).toISOString() },
+          { orgId: context.orgId },
+        );
+        return toCallView(row);
+      }),
+    );
+  }
+
+  async calls(context: ActiveContext, request: object, id: string) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await repo.orderByIdInScope(
+          tx,
+          context.orgId,
+          id,
+          orderScopeSql(context, request),
+        );
+        if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+        const rows = await repo.callAttemptsOf(tx, context.orgId, order.id);
+        return { orderId: order.id, items: rows.map(toCallView) };
+      }),
+    );
+  }
+
+  // --- the hub (M41, D-719) ----------------------------------------------------------
+
+  /**
+   * The hub printed these confirmed orders' slips: they move from "To print" to "Packing". The
+   * PDF itself is `GET /v1/orders/documents`, which stays a read.
+   */
+  async markPrinted(context: ActiveContext, request: AuditableRequest, ids: readonly string[]) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const marked = await repo.markSlipsPrinted(
+          tx,
+          context.orgId,
+          ids,
+          orderScopeSql(context, request),
+        );
+        for (const order of marked) {
+          await this.audit.record(tx, {
+            orgId: context.orgId,
+            actorUserId: context.userId,
+            operation: 'update',
+            action: 'order.slip_printed',
+            entityType: 'order',
+            entityId: order.id,
+            after: { orderNo: order.order_no },
+            request,
+          });
+          await emit(
+            tx,
+            'order.edited',
+            { id: order.id, orderNo: order.order_no, at: new Date().toISOString() },
+            { orgId: context.orgId },
+          );
+        }
+        return { marked: marked.map((order) => order.id) };
       }),
     );
   }
@@ -1339,7 +1608,7 @@ export class OrdersService {
   ) {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const order = await this.readInScope(tx, context, request, id);
+        const order = await this.lockForAct(tx, context, request, id, 'exchange');
         const occurredAt = this.postingInstant(
           input.occurredAt === undefined ? undefined : new Date(input.occurredAt),
         );
@@ -1501,6 +1770,25 @@ export class OrdersService {
   }
 
   // --- the pieces the flows are built from --------------------------------------
+
+  /**
+   * The order, locked in the caller's scope, and the owner's gate asked (M41, D-710).
+   *
+   * Every desk write goes through here, so "somebody else is handling this order" is decided in
+   * one place: `OwnershipGate.check` refuses a non-owner without `x-acknowledge-owner`, and
+   * with it audits the act and tells the owner, in this transaction.
+   */
+  private async lockForAct(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    act: OwnerGatedAct,
+  ): Promise<repo.OrderRow> {
+    const order = await this.readInScope(tx, context, request, id);
+    await this.gate.check(tx, context, request, order, act);
+    return order;
+  }
 
   /** The order, locked, or a 404-shaped refusal that reveals nothing. */
   private async readInScope(
@@ -1880,6 +2168,33 @@ export class OrdersService {
 }
 
 // --- small helpers ------------------------------------------------------------
+
+/** The desk's transitions, which the owner's name guards (D-710); the hub's are not here. */
+const DESK_TRIGGERS: Partial<Record<OrderTrigger, OwnerGatedAct>> = {
+  hold: 'hold',
+  release_hold: 'release_hold',
+  cancel: 'cancel',
+};
+
+/** Roles that hold `update Order`, read off the matrix: who may be handed an order (D-712). */
+const ORDER_HOLDING_ROLES = MEMBERSHIP_ROLES.filter((role) =>
+  MATRIX[role].some(
+    (rule) =>
+      rule.subject === 'Order' &&
+      (Array.isArray(rule.action) ? rule.action.includes('update') : rule.action === 'update'),
+  ),
+);
+
+function toCallView(row: repo.CallAttemptRow) {
+  return {
+    id: row.id,
+    outcome: row.outcome,
+    callBackAt: row.call_back_at === null ? null : new Date(row.call_back_at).toISOString(),
+    note: row.note,
+    calledBy: row.called_by,
+    calledAt: new Date(row.called_at).toISOString(),
+  };
+}
 
 function bigintMax(left: bigint, right: bigint): bigint {
   return left > right ? left : right;

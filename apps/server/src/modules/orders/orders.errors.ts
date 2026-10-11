@@ -55,6 +55,14 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   ADVANCE_SELF_VERIFY: 403,
   // M30 (D-364): about who is asking, not the body. An org admin may enter the same price.
   ORDER_DISCOUNT_ABOVE_CEILING: 403,
+  // M41 (D-710 to D-718). Somebody else has the order: send it again acknowledging them.
+  ORDER_HANDLED_BY_OTHER: 409,
+  // About who is asking: the owner or a supervisor moves an order on.
+  ORDER_ASSIGN_NOT_ALLOWED: 403,
+  ORDER_ASSIGNEE_INVALID: 400,
+  // The offer ended before the answer arrived; the queue shows what is left.
+  ORDER_OFFER_GONE: 409,
+  ORDER_CALL_INVALID: 400,
 };
 
 export class OrdersError extends Error {

@@ -11,8 +11,9 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
+import { callAttemptSchema, markPrintedSchema, workflowSettingsSchema } from '@elysium/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
@@ -23,6 +24,7 @@ import { DeskService } from './desk.service.js';
 import { DocumentsService } from './documents.service.js';
 import { BuyerProfileService } from './profile.service.js';
 import { ReengagementService } from './reengagement.service.js';
+import { OffersService } from './offers.service.js';
 import { OrdersService } from './orders.service.js';
 import { mapOrderErrors } from './orders.errors.js';
 import {
@@ -201,6 +203,17 @@ export class OrdersController {
       input.ids,
       input.trigger,
     );
+  }
+
+  /**
+   * M41 (D-719): the hub printed these confirmed orders' slips, so they move from "To print" to
+   * "Packing". `update Order` like the hub's other moves; the PDF itself stays a read.
+   */
+  @RequireAbility('update', 'Order')
+  @Post('mark-printed')
+  async markPrinted(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(markPrintedSchema, body);
+    return this.orders.markPrinted(requireContext(request), auditable(request), input.ids);
   }
 
   /**
@@ -454,6 +467,37 @@ export class OrdersController {
     return this.orders.claim(requireContext(request), auditable(request), parse(orderIdSchema, id));
   }
 
+  /** M41 (D-712): back to the unassigned queue, by the owner or a supervisor. */
+  @RequireAbility('update', 'Order')
+  @Post(':id/release')
+  async release(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.orders.release(
+      requireContext(request),
+      auditable(request),
+      parse(orderIdSchema, id),
+    );
+  }
+
+  // --- verification calls (M41, D-718) ------------------------------------------
+
+  @RequireAbility('update', 'Order')
+  @Post(':id/calls')
+  async logCall(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(callAttemptSchema, body);
+    return this.orders.logCall(
+      requireContext(request),
+      auditable(request),
+      parse(orderIdSchema, id),
+      input,
+    );
+  }
+
+  @RequireAbility('read', 'Order')
+  @Get(':id/calls')
+  async calls(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.orders.calls(requireContext(request), request, parse(orderIdSchema, id));
+  }
+
   // --- money and exchanges ------------------------------------------------------
 
   @RequireAbility('create', 'Order')
@@ -699,5 +743,66 @@ export class ReengagementController {
       .header('x-row-count', String(file.rows))
       .header('cache-control', 'no-store')
       .send(file.bytes);
+  }
+}
+
+const offerIdSchema = z.string().uuid('No such offer.');
+
+/**
+ * The order workflow (M41, D-715 to D-717, D-720): auto-assign's offers, the brand's workflow
+ * settings and the supervisors' team board.
+ *
+ * * **`read Order` / `update Order`**: the caller's own offers, and the answer to one. An offer
+ *   is addressed to one person by their user id, so nobody else's can be read or answered.
+ * * **`read OrderWorkflow`**: the settings and the team board, org_admin and branch_manager.
+ * * **`update OrderWorkflow`**: the settings, org_admin alone.
+ */
+@Controller('v1/orders')
+export class WorkflowController {
+  constructor(private readonly offers: OffersService) {}
+
+  @RequireAbility('read', 'Order')
+  @Get('offers/mine')
+  async mine(@Req() request: FastifyRequest) {
+    return this.offers.mine(requireContext(request), request);
+  }
+
+  @RequireAbility('update', 'Order')
+  @Post('offers/:id/accept')
+  async accept(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.offers.accept(
+      requireContext(request),
+      auditable(request),
+      parse(offerIdSchema, id),
+    );
+  }
+
+  @RequireAbility('update', 'Order')
+  @Post('offers/:id/decline')
+  async decline(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.offers.decline(
+      requireContext(request),
+      auditable(request),
+      parse(offerIdSchema, id),
+    );
+  }
+
+  @RequireAbility('read', 'OrderWorkflow')
+  @Get('workflow-settings')
+  async settings(@Req() request: FastifyRequest) {
+    return this.offers.getSettings(requireContext(request), request);
+  }
+
+  @RequireAbility('update', 'OrderWorkflow')
+  @Put('workflow-settings')
+  async saveSettings(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(workflowSettingsSchema, body);
+    return this.offers.saveSettings(requireContext(request), auditable(request), input);
+  }
+
+  @RequireAbility('read', 'OrderWorkflow')
+  @Get('team-board')
+  async board(@Req() request: FastifyRequest) {
+    return this.offers.board(requireContext(request), request);
   }
 }

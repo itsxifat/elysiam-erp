@@ -24,6 +24,7 @@ import { NotifyModule } from './modules/notify/notify.module.js';
 import { PromoModule } from './modules/promo/promo.module.js';
 import { StorefrontModule } from './modules/storefront/storefront.module.js';
 import { SupplyModule } from './modules/supply/supply.module.js';
+import { TeamModule } from './modules/team/team.module.js';
 import { WalletsModule } from './modules/wallets/wallets.module.js';
 import { JobsModule } from './platform/jobs/jobs.module.js';
 import type { PasswordTokenStore } from './modules/iam/iam.service.js';
@@ -83,6 +84,8 @@ export class AppModule {
         SupplyModule,
         InvestorsModule,
         HrModule,
+        // M41: presence and desk profiles, before the orders that offer work by them.
+        TeamModule,
         OrdersModule,
         /*
          * After `OrdersModule`, and that is not cosmetic: M12 imports it for `ORDERS_API`
