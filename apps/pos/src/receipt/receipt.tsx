@@ -76,7 +76,7 @@ export function Receipt({
       data-receipt
       aria-label={t(isReturn ? 'pos.receipt.returnTitle' : 'pos.receipt.title')}
       lang="en"
-      className="w-[80mm] bg-background px-3 py-4 font-sans text-xs leading-snug text-foreground tabular-nums"
+      className="w-[80mm] bg-background px-3 py-4 font-sans text-xs leading-snug text-foreground"
     >
       <header className="text-center">
         <p className="text-base font-bold tracking-tight">
@@ -125,17 +125,25 @@ export function Receipt({
             <tr key={`${line.code}-${String(index)}`} className="align-top">
               <td className="py-0.5 pr-1">
                 <span className="block">{line.name}</span>
-                <span className="block tabular-nums">
-                  {line.code} @ {money(line.unitPricePoisha)}
+                <span className="block">
+                  {line.code} @{' '}
+                  <span className="whitespace-nowrap tabular-nums">
+                    {money(line.unitPricePoisha)}
+                  </span>
                 </span>
                 {line.discountPoisha === '0' ? null : (
-                  <span className="block tabular-nums">
-                    {t('pos.receipt.discount')} -{money(line.discountPoisha)}
+                  <span className="block">
+                    {t('pos.receipt.discount')}{' '}
+                    <span className="whitespace-nowrap tabular-nums">
+                      -{money(line.discountPoisha)}
+                    </span>
                   </span>
                 )}
               </td>
               <td className="py-0.5 text-right tabular-nums">{String(line.qty)}</td>
-              <td className="py-0.5 text-right tabular-nums">{money(line.netPoisha)}</td>
+              <td className="py-0.5 pl-2 text-right whitespace-nowrap tabular-nums">
+                {money(line.netPoisha)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -145,11 +153,13 @@ export function Receipt({
         {isReturn ? null : (
           <>
             <dt>{t('pos.receipt.subtotal')}</dt>
-            <dd className="text-right tabular-nums">{money(data.grossPoisha)}</dd>
+            <dd className="text-right whitespace-nowrap tabular-nums">{money(data.grossPoisha)}</dd>
             {data.discountPoisha === '0' ? null : (
               <>
                 <dt>{t('pos.receipt.discount')}</dt>
-                <dd className="text-right tabular-nums">-{money(data.discountPoisha)}</dd>
+                <dd className="text-right whitespace-nowrap tabular-nums">
+                  -{money(data.discountPoisha)}
+                </dd>
               </>
             )}
           </>
@@ -157,21 +167,30 @@ export function Receipt({
         <dt className="mt-1 text-sm font-bold">
           {t(isReturn ? 'pos.receipt.refund' : 'pos.receipt.total')}
         </dt>
-        <dd className="mt-1 text-right text-sm font-bold tabular-nums" data-testid="receipt-total">
+        <dd
+          className="mt-1 text-right text-sm font-bold whitespace-nowrap tabular-nums"
+          data-testid="receipt-total"
+        >
           {money(data.netPoisha)}
         </dd>
         {data.tenders.map((tender) => (
           <div key={tender.tender} className="contents">
             <dt>{t(TENDER_KEY[tender.tender])}</dt>
-            <dd className="text-right tabular-nums">{money(tender.amountPoisha)}</dd>
+            <dd className="text-right whitespace-nowrap tabular-nums">
+              {money(tender.amountPoisha)}
+            </dd>
           </div>
         ))}
         {data.cashReceivedPoisha === null ? null : (
           <>
             <dt>{t('pos.receipt.cashReceived')}</dt>
-            <dd className="text-right tabular-nums">{money(data.cashReceivedPoisha)}</dd>
+            <dd className="text-right whitespace-nowrap tabular-nums">
+              {money(data.cashReceivedPoisha)}
+            </dd>
             <dt>{t('pos.receipt.change')}</dt>
-            <dd className="text-right tabular-nums">{money(data.changePoisha)}</dd>
+            <dd className="text-right whitespace-nowrap tabular-nums">
+              {money(data.changePoisha)}
+            </dd>
           </>
         )}
       </dl>
