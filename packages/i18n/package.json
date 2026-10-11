@@ -88,6 +88,14 @@
     "./locales/sections/account.bn": {
       "types": "./dist/locales/sections/account.bn.d.ts",
       "default": "./dist/locales/sections/account.bn.js"
+    },
+    "./locales/sections/workflow.en": {
+      "types": "./dist/locales/sections/workflow.en.d.ts",
+      "default": "./dist/locales/sections/workflow.en.js"
+    },
+    "./locales/sections/workflow.bn": {
+      "types": "./dist/locales/sections/workflow.bn.d.ts",
+      "default": "./dist/locales/sections/workflow.bn.js"
     }
   },
   "files": [

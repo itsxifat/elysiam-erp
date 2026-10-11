@@ -54,6 +54,10 @@ const MobileNav = lazy(() =>
 const ScanListener = lazy(() =>
   import('./scan-listener.js').then((module) => ({ default: module.ScanListener })),
 );
+// M41: presence, order offers and news about your orders, after the first paint (D-713).
+const WorkDock = lazy(() =>
+  import('./work-dock.js').then((module) => ({ default: module.WorkDock })),
+);
 
 function readRail(): boolean {
   return readStored(STORAGE_KEYS.sidebar) === 'rail';
@@ -143,6 +147,12 @@ export function AppShell() {
       {session.context === null ? null : (
         <Suspense fallback={null}>
           <ScanListener />
+        </Suspense>
+      )}
+
+      {session.context === null ? null : (
+        <Suspense fallback={null}>
+          <WorkDock />
         </Suspense>
       )}
 

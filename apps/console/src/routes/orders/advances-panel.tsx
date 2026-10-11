@@ -25,6 +25,7 @@ import {
 } from './advances-api.js';
 import type { OrderDetail } from './api.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
+import { useOwnerGuard } from './owner-guard.js';
 
 /**
  * An order's advances, and the agent's way to record one (M17, D-013, D-230).
@@ -57,6 +58,9 @@ export function AdvancesPanel({ order }: { readonly order: OrderDetail }) {
   const { locale } = useLocale();
   const ability = useAbility();
   const [open, setOpen] = useState(false);
+  // M41 (D-710): recording an advance on somebody else's order asks first.
+  const { guard } = useOwnerGuard();
+  const [ack, setAck] = useState(false);
   const [undoing, setUndoing] = useState<AdvanceRow | null>(null);
   // Accounts' grant (D-235): only the people who verify can undo a verification.
   const mayUndo = ability.can('create', 'Wallet');
@@ -73,7 +77,16 @@ export function AdvancesPanel({ order }: { readonly order: OrderDetail }) {
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-medium">{t('orders.advances.heading')}</h2>
         {canRecord ? (
-          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              guard((acknowledged) => {
+                setAck(acknowledged);
+                setOpen(true);
+              })
+            }
+          >
             {t('orders.advances.record')}
           </Button>
         ) : null}
@@ -108,7 +121,7 @@ export function AdvancesPanel({ order }: { readonly order: OrderDetail }) {
           ))}
         </ul>
       )}
-      {open ? <RecordDialog orderId={order.id} onClose={() => setOpen(false)} /> : null}
+      {open ? <RecordDialog orderId={order.id} ack={ack} onClose={() => setOpen(false)} /> : null}
       {undoing === null ? null : <UndoDialog advance={undoing} onClose={() => setUndoing(null)} />}
     </section>
   );
@@ -116,9 +129,11 @@ export function AdvancesPanel({ order }: { readonly order: OrderDetail }) {
 
 function RecordDialog({
   orderId,
+  ack,
   onClose,
 }: {
   readonly orderId: string;
+  readonly ack: boolean;
   readonly onClose: () => void;
 }) {
   const t = useOrdersT();
@@ -135,12 +150,16 @@ function RecordDialog({
 
   const save = useMutation({
     mutationFn: () =>
-      recordAdvance(orderId, {
-        method,
-        transactionRef: reference.trim(),
-        amountPoisha: amountPoisha ?? '0',
-        ...(note.trim() === '' ? {} : { note: note.trim() }),
-      }),
+      recordAdvance(
+        orderId,
+        {
+          method,
+          transactionRef: reference.trim(),
+          amountPoisha: amountPoisha ?? '0',
+          ...(note.trim() === '' ? {} : { note: note.trim() }),
+        },
+        ack,
+      ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
       onClose();

@@ -15,6 +15,7 @@ import { useCallback, type ReactNode } from 'react';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/packing.js';
+import '../../i18n/workflow.js';
 import { useRealtime, type RealtimeStatus } from '../../realtime/use-realtime.js';
 import type { OrderStatus } from './api.js';
 import { ordersPath } from './paths.js';
@@ -62,8 +63,18 @@ export function OrdersNav() {
         {t('orders.nav.returns')}
       </Link>
       {ability.can('update', 'Order') ? (
+        <Link to={ordersPath('/orders/hub')} className={TAB} activeProps={ACTIVE}>
+          {tr('wf.hubPage.title')}
+        </Link>
+      ) : null}
+      {ability.can('update', 'Order') ? (
         <Link to={ordersPath('/orders/packing')} className={TAB} activeProps={ACTIVE}>
           {tr('pk.nav.pack')}
+        </Link>
+      ) : null}
+      {ability.can('read', 'OrderWorkflow') ? (
+        <Link to={ordersPath('/orders/team')} className={TAB} activeProps={ACTIVE}>
+          {tr('wf.team.title')}
         </Link>
       ) : null}
       <Link to={ordersPath('/orders/scan')} className={TAB} activeProps={ACTIVE}>
@@ -123,6 +134,10 @@ const ORDER_EVENTS = [
   'order.claimed',
   'order.assigned',
   'order.status_changed',
+  // M41: back in New, a call logged or a slip printed, and an offer that ended.
+  'order.released',
+  'order.edited',
+  'order.offer_closed',
 ] as const;
 
 export function useOrderEvents(): RealtimeStatus {

@@ -2,6 +2,8 @@ import type { MessageKey } from '@elysium/i18n';
 
 import { sectionCatalogue } from '../../i18n/messages.js';
 import { useLocale } from '../../i18n/locale.js';
+// M41: the Order workflow tab's label lives in the workflow section, registered before use.
+import '../../i18n/workflow.js';
 
 /**
  * The strings the settings screens render (D-394 to D-396).
@@ -20,6 +22,7 @@ const SETTINGS_KEYS = [
   'settings.nav.siteKeys',
   'settings.nav.registers',
   'settings.nav.security',
+  'wf.settings.tab',
   'settings.loading',
   'settings.errorTitle',
   'settings.errorDetail',

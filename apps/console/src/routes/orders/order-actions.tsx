@@ -21,6 +21,7 @@ import {
 } from './api.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { offeredActions } from './order-actions-logic.js';
+import { useOwnerGuard } from './owner-guard.js';
 import { liveParcelOf, useOrderParcels } from './parcel-panel.js';
 import { RETURN_REASONS, type ReturnReason } from './returns-logic.js';
 
@@ -58,6 +59,17 @@ const LABEL: Readonly<Record<OrderTrigger, OrdersMessageKey | null>> = {
   exchange: null,
 };
 
+/**
+ * The desk's moves, which the owner's name guards (M41, D-710): on somebody else's order each
+ * asks "go ahead?" first. The hub's moves (pack, ship, deliver, returns) never do.
+ */
+const OWNER_GATED: ReadonlySet<OrderTrigger> = new Set([
+  'confirm',
+  'hold',
+  'release_hold',
+  'cancel',
+]);
+
 /** The two that move the order straight on; everything else asks something first. */
 const IMMEDIATE: ReadonlySet<OrderTrigger> = new Set(['confirm', 'pack', 'release_hold']);
 
@@ -74,21 +86,26 @@ export function OrderActions({
 }) {
   const t = useOrdersT();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState<OrderTrigger | null>(null);
+  const [open, setOpen] = useState<{ trigger: OrderTrigger; ack: boolean } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const { guard } = useOwnerGuard();
 
   const immediate = useMutation({
-    mutationFn: async (trigger: OrderTrigger) => {
-      if (trigger === 'confirm') await confirmOrder(order.id);
+    mutationFn: async ({ trigger, ack }: { trigger: OrderTrigger; ack: boolean }) => {
+      if (trigger === 'confirm') await confirmOrder(order.id, ack);
       else if (trigger === 'pack') await packOrder(order.id);
-      else if (trigger === 'release_hold') await releaseHold(order.id);
+      else if (trigger === 'release_hold') await releaseHold(order.id, ack);
     },
     onSuccess: async () => {
       setFailure(null);
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
       await queryClient.invalidateQueries({ queryKey: ['courier'] });
     },
-    onError: (error) => setFailure(error instanceof Error ? error.message : String(error)),
+    onError: async (error) => {
+      setFailure(error instanceof Error ? error.message : String(error));
+      // Somebody may have taken the order meanwhile: show who.
+      await queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
   });
 
   const parcels = useOrderParcels(order.id);
@@ -111,8 +128,12 @@ export function OrderActions({
             variant={primary ? 'primary' : quiet ? 'ghost' : 'outline'}
             disabled={immediate.isPending}
             onClick={() => {
-              if (IMMEDIATE.has(trigger)) immediate.mutate(trigger);
-              else setOpen(trigger);
+              const run = (ack: boolean) => {
+                if (IMMEDIATE.has(trigger)) immediate.mutate({ trigger, ack });
+                else setOpen({ trigger, ack });
+              };
+              if (OWNER_GATED.has(trigger)) guard(run);
+              else run(false);
             }}
           >
             {t(label)}
@@ -124,7 +145,7 @@ export function OrderActions({
           {t('orders.detail.actionFailed')} {failure}
         </p>
       )}
-      {open === 'receive_return' && parcel !== null ? (
+      {open?.trigger === 'receive_return' && parcel !== null ? (
         <ReceiveDialog
           parcel={parcel}
           onClose={() => setOpen(null)}
@@ -134,7 +155,13 @@ export function OrderActions({
           }}
         />
       ) : open === null ? null : (
-        <ActionDialog order={order} trigger={open} parcel={parcel} onClose={() => setOpen(null)} />
+        <ActionDialog
+          order={order}
+          trigger={open.trigger}
+          ack={open.ack}
+          parcel={parcel}
+          onClose={() => setOpen(null)}
+        />
       )}
     </>
   );
@@ -144,11 +171,14 @@ export function OrderActions({
 function ActionDialog({
   order,
   trigger,
+  ack,
   parcel,
   onClose,
 }: {
   readonly order: OrderDetail;
   readonly trigger: OrderTrigger;
+  /** M41 (D-710): the person said go ahead on somebody else's order. */
+  readonly ack: boolean;
   /** The order's live parcel, through which a delivery is recorded when there is one. */
   readonly parcel: ParcelRow | null;
   readonly onClose: () => void;
@@ -181,11 +211,11 @@ function ActionDialog({
       case 'hold':
         return reason.trim().length < 3
           ? t('orders.action.reasonNeeded')
-          : () => holdOrder(order.id, reason.trim());
+          : () => holdOrder(order.id, reason.trim(), ack);
       case 'cancel':
         return reason.trim().length < 3
           ? t('orders.action.reasonNeeded')
-          : () => cancelOrder(order.id, reason.trim());
+          : () => cancelOrder(order.id, reason.trim(), ack);
       case 'ship':
         return () =>
           shipOrder(

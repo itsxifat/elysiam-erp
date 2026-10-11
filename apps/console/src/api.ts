@@ -54,11 +54,13 @@ export class NetworkError extends Error {
 interface RequestOptions {
   readonly method?: string;
   readonly body?: unknown;
+  /** Extra request headers, e.g. M41's owner acknowledgement (D-710). */
+  readonly headers?: Readonly<Record<string, string>> | undefined;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? 'GET';
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
 
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (!SAFE_METHODS.has(method)) {
@@ -110,14 +112,16 @@ function safeParse(text: string): unknown {
   }
 }
 
+type ExtraHeaders = Readonly<Record<string, string>> | undefined;
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'POST', ...(body === undefined ? {} : { body }) }),
+  post: <T>(path: string, body?: unknown, headers?: ExtraHeaders) =>
+    request<T>(path, { method: 'POST', headers, ...(body === undefined ? {} : { body }) }),
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', ...(body === undefined ? {} : { body }) }),
-  patch: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'PATCH', ...(body === undefined ? {} : { body }) }),
+  patch: <T>(path: string, body?: unknown, headers?: ExtraHeaders) =>
+    request<T>(path, { method: 'PATCH', headers, ...(body === undefined ? {} : { body }) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
 

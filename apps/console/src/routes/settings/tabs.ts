@@ -57,6 +57,12 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     labelKey: 'settings.nav.security',
     required: { action: 'update', subject: 'SecurityPolicy' },
   },
+  // M41: auto-assign, the offer countdown and the cap on open orders (D-715).
+  {
+    path: '/settings/order-workflow',
+    labelKey: 'wf.settings.tab',
+    required: { action: 'read', subject: 'OrderWorkflow' },
+  },
 ];
 
 export function visibleTabs(ability: AppAbility): readonly SettingsTab[] {

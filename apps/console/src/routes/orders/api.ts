@@ -1,6 +1,7 @@
 import { api } from '../../api.js';
 import { env } from '../../env.js';
 import type { ReturnReason } from './returns-logic.js';
+import { ackHeaders } from './workflow-api.js';
 
 /**
  * `/v1/orders`, `/v1/customers`, `/v1/delivery-zones`, `/v1/catalog/skus` and
@@ -84,9 +85,19 @@ export interface OrderRow {
   readonly holdReason: string | null;
   readonly cancelReason: string | null;
   readonly assignedTo: string | null;
+  /** M41 (D-710): since when its owner has it. */
+  readonly assignedAt?: string | null;
   readonly createdBy: string;
   readonly notes: string | null;
   readonly timestamps: { readonly createdAt: string; readonly confirmedAt: string | null };
+  /** M41 (D-718, D-719): the calls' summary and the hub's stage. */
+  readonly calls?: {
+    readonly attempts: number;
+    readonly lastOutcome: string | null;
+    readonly lastAt: string | null;
+    readonly callBackAt: string | null;
+  };
+  readonly hubStage?: 'to_print' | 'packing' | 'packed' | 'handed_over' | null;
 }
 
 export interface OrderLine {
@@ -244,14 +255,17 @@ export const checkPromo = (body: {
   readonly channel: string;
   readonly customerId?: string;
 }) => api.post<PromoCheck>('/v1/promo/check', body);
-export const confirmOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/confirm`, {});
+// M41 (D-710): `ack` sends the owner acknowledgement, after the person said go ahead.
+export const confirmOrder = (id: string, ack?: boolean) =>
+  api.post<OrderRow>(`/v1/orders/${id}/confirm`, {}, ackHeaders(ack));
 export const claimOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/claim`);
-export const cancelOrder = (id: string, reason: string) =>
-  api.post<OrderRow>(`/v1/orders/${id}/cancel`, { reason });
+export const cancelOrder = (id: string, reason: string, ack?: boolean) =>
+  api.post<OrderRow>(`/v1/orders/${id}/cancel`, { reason }, ackHeaders(ack));
 
-export const holdOrder = (id: string, reason: string) =>
-  api.post<OrderRow>(`/v1/orders/${id}/hold`, { reason });
-export const releaseHold = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/release-hold`, {});
+export const holdOrder = (id: string, reason: string, ack?: boolean) =>
+  api.post<OrderRow>(`/v1/orders/${id}/hold`, { reason }, ackHeaders(ack));
+export const releaseHold = (id: string, ack?: boolean) =>
+  api.post<OrderRow>(`/v1/orders/${id}/release-hold`, {}, ackHeaders(ack));
 export const packOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/pack`, {});
 /** The handover to the courier (§9 `ship`): the dispatch movement and its journal. */
 export const shipOrder = (id: string, input: { readonly consignmentNo?: string } = {}) =>
@@ -301,8 +315,8 @@ export interface BulkConfirmResult {
   )[];
 }
 
-export const bulkConfirm = (ids: readonly string[]) =>
-  api.post<BulkConfirmResult>('/v1/orders/bulk-confirm', { ids });
+export const bulkConfirm = (ids: readonly string[], ack?: boolean) =>
+  api.post<BulkConfirmResult>('/v1/orders/bulk-confirm', { ids }, ackHeaders(ack));
 
 export interface Agent {
   readonly userId: string;
