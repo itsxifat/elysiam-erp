@@ -27,13 +27,13 @@ import { enrolSecondFactor, signIn, stack, user } from './stack/helpers.js';
  *   each named primary action, and every stop's look changes when focus arrives
  *   (measured against the same element blurred). The command palette opens from the
  *   keyboard and navigates.
- * - **Check 9**: every Bangla face carries `size-adjust: 108.1%`, the browser applies
- *   it (a Bangla word is 8.1% wider than in the same face unadjusted), and every taka
- *   amount on the table renders in tabular numerals.
+ * - **Check 9**: the console is set in Inter, its words are English only (D-750: no
+ *   Bangla letter or digit anywhere on the page), and every taka amount on the table
+ *   renders in tabular numerals.
  * - **Check 10**: the review screenshot set, written to `docs/review/M05/`.
  *
  * **One sign-in per person.** The API allows five sign-ins per account per minute
- * (`rate-limit.ts`), and the theme and language passes would spend them in seconds.
+ * (`rate-limit.ts`), and the theme passes would spend them in seconds.
  * The sales user signs in once, and every later context starts from that session.
  *
  * Check 5, the bundle budget, is `scripts/check-bundle.mjs` against a production build:
@@ -41,7 +41,7 @@ import { enrolSecondFactor, signIn, stack, user } from './stack/helpers.js';
  */
 
 type Theme = 'light' | 'dark';
-type Locale = 'en' | 'bn';
+type Locale = 'en';
 
 const REVIEW_DIR = path.resolve(import.meta.dirname, '../../../docs/review/M05');
 const DESK_SESSION = path.join(tmpdir(), `elysium-shell-quality-${String(process.pid)}.json`);
@@ -373,7 +373,6 @@ test('check 7: keyboard only — every tab stop shows focus, and the palette nav
       // and Sign out lives in the account menu.
       /^Search or jump to/,
       /^Switch to dark theme$/,
-      /^Switch to Bangla$/,
       /^Account$/,
     ],
     'shell',
@@ -423,81 +422,28 @@ test('the notifications inbox opens from the keyboard, says when it is empty, an
   expect(found).toEqual([]);
 });
 
-test('check 9: Bangla is scaled to Inter, and every amount is in tabular numerals', async ({
+test('check 9: Inter, English only, and every amount is in tabular numerals', async ({
   browser,
 }) => {
-  const context = await contextFor(browser, { signedIn: true, locale: 'bn' });
+  const context = await contextFor(browser, { signedIn: true });
   const page = await context.newPage();
   await page.goto('/tables');
   await expect(page.getByRole('table')).toBeVisible();
 
-  const typography = await page.evaluate(async () => {
-    await document.fonts.ready;
-    const family = getComputedStyle(document.body).fontFamily;
-
-    // The faces the stylesheet declares for Bangla, and what each scales by.
-    // `sizeAdjust` is in Chromium's FontFace but not yet in TypeScript's DOM types.
-    const sizeOf = (face: FontFace): string =>
-      (face as FontFace & { readonly sizeAdjust: string }).sizeAdjust;
-    const bangla = [...document.fonts]
-      .filter((face) => face.family.replace(/["']/g, '') === 'Hind Siliguri')
-      .map(sizeOf);
-
-    // The proof that the scaling is applied, not just declared: the same Bangla
-    // string set in the console's face, and in a copy of the same file loaded with
-    // no adjustment. The ratio of their widths is the size-adjust the browser used.
-    let src: string | null = null;
-    for (const sheet of [...document.styleSheets]) {
-      let rules: CSSRuleList;
-      try {
-        rules = sheet.cssRules;
-      } catch {
-        continue;
-      }
-      for (const rule of [...rules]) {
-        if (
-          rule instanceof CSSFontFaceRule &&
-          rule.style.getPropertyValue('font-family').includes('Hind Siliguri') &&
-          rule.style.getPropertyValue('src').includes('bengali') &&
-          // The regular face, the one the span below renders in.
-          rule.style.getPropertyValue('font-weight') === '400'
-        ) {
-          src = rule.style.getPropertyValue('src');
-        }
-      }
-    }
-    if (src === null) return { family, sizes: bangla, ratio: null };
-
-    const raw = new FontFace('Hind Siliguri Unadjusted', src);
-    document.fonts.add(await raw.load());
-    await document.fonts.load('64px "Hind Siliguri"', 'অর্ডারনিশ্চিত');
-    const width = (fontFamily: string) => {
-      const span = document.createElement('span');
-      span.textContent = 'অর্ডারনিশ্চিতহয়েছে';
-      span.style.fontFamily = fontFamily;
-      span.style.fontSize = '64px';
-      span.style.position = 'absolute';
-      span.style.whiteSpace = 'nowrap';
-      document.body.append(span);
-      const measured = span.getBoundingClientRect().width;
-      span.remove();
-      return measured;
-    };
-    const adjusted = width('"Hind Siliguri"');
-    const unadjusted = width('"Hind Siliguri Unadjusted"');
-    return {
-      family,
-      sizes: bangla,
-      ratio: Math.round((adjusted / unadjusted) * 1000) / 1000,
-    };
-  });
-
-  expect(typography.family).toMatch(/^"?Inter"?,\s*"?Hind Siliguri"?/);
-  expect(typography.sizes.length).toBeGreaterThan(0);
-  expect(new Set(typography.sizes)).toEqual(new Set(['108.1%']));
-  // 108.1% within rounding: the text is 8.1% larger than the same face unadjusted.
-  expect(typography.ratio).not.toBeNull();
-  expect(Math.abs((typography.ratio ?? 0) - 1.081)).toBeLessThan(0.01);
+  const typography = await page.evaluate(() => ({
+    family: getComputedStyle(document.body).fontFamily,
+    lang: document.documentElement.lang,
+    text: document.body.innerText,
+  }));
+  expect(typography.family).toMatch(/^"?Inter"?/);
+  expect(typography.lang).toBe('en');
+  // Bangla letters, vowel signs and digits: the Bengali block but the taka sign (D-750).
+  const bangla = new RegExp(
+    `[${String.fromCodePoint(0x0980)}-${String.fromCodePoint(0x09f2)}${String.fromCodePoint(0x09f4)}-${String.fromCodePoint(0x09ff)}]`,
+  );
+  expect(bangla.test(typography.text)).toBe(false);
+  // No language switch anywhere in the header (D-750).
+  await expect(page.getByRole('button', { name: /Bangla|English/ })).toHaveCount(0);
 
   // Every amount on the page, found by its taka sign, in tabular numerals.
   const amounts = await page.evaluate(() =>
@@ -517,7 +463,7 @@ test('check 9: Bangla is scaled to Inter, and every amount is in tabular numeral
   await context.close();
 });
 
-test('check 10: the review screenshot set, both themes, both languages', async ({ browser }) => {
+test('check 10: the review screenshot set, both themes, in English', async ({ browser }) => {
   mkdirSync(REVIEW_DIR, { recursive: true });
 
   const shot = async (page: Page, name: string) => {
@@ -526,7 +472,7 @@ test('check 10: the review screenshot set, both themes, both languages', async (
     await page.screenshot({ path: path.join(REVIEW_DIR, `${name}.png`) });
   };
 
-  for (const locale of ['en', 'bn'] as const) {
+  for (const locale of ['en'] as const) {
     for (const theme of ['light', 'dark'] as const) {
       const suffix = `${theme}-${locale}`;
 

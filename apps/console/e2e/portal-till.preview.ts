@@ -14,11 +14,10 @@ import {
  * page, and the showroom till.
  */
 
-/** The portal opens in Bangla; the language button switches it. */
+/** The portal is English only (D-750): no language button, and the page says so. */
 async function inEnglish(page: Page): Promise<void> {
-  if ((await page.locator('html').getAttribute('lang')) === 'en') return;
-  await page.getByRole('button', { name: 'ভাষা বদলান' }).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('button', { name: /language/i })).toHaveCount(0);
 }
 
 test('investor: signs in to the portal, enrols two-step login, sees their money', async ({
@@ -57,7 +56,7 @@ test('a buyer tracks the parcel on its way', async ({ page }) => {
   await snap(page, 'order-tracking');
   // The reload drops the looked-up order; the dark scan covers the tracking form.
   await accessible(page, 'order-tracking', async () => {
-    // Whichever language the page comes back in: the portal opens in Bangla.
+    // English, as the page always is (D-750).
     await expect(page.getByRole('heading').first()).toBeVisible();
   });
 });

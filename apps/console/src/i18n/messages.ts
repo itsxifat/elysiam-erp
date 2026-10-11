@@ -6,13 +6,9 @@ import { catalogueFor } from './catalogue.js';
  * The keys the console shell renders, and the helper each section's catalogue is
  * built with.
  *
- * The strings live in `packages/i18n/src/locales/{en,bn}.ts`. The console kept
- * its own copies only while that file was being written by several agents at
- * once, where a second write silently discarded the first; keeping them would
- * have cost both guarantees the shared catalogue exists for — `bn.ts` is typed
- * against `en.ts`, so a key in one locale and not the other is only impossible
- * while every key is there, and `scripts/check-i18n.mjs` reads that directory
- * and nothing else.
+ * The strings live in `packages/i18n/src/locales/en.ts` and its sections, English
+ * only (D-750). `scripts/check-i18n.mjs` reads that directory and nothing else,
+ * so the console keeps no copies of its own.
  *
  * What stays here is the key *list*, which still earns its keep twice.
  * `satisfies readonly MessageKey[]` makes a typo in the list a build error, and
@@ -61,9 +57,6 @@ const CONSOLE_KEYS = [
   'shell.skipToContent',
   'shell.openPalette',
   'shell.paletteHint',
-  'shell.locale',
-  'shell.localeToBangla',
-  'shell.localeToEnglish',
   'shell.userMenu',
   'palette.title',
   'palette.description',
@@ -169,17 +162,13 @@ const CONSOLE_KEYS = [
 export type ConsoleMessageKey = (typeof CONSOLE_KEYS)[number];
 
 /**
- * A section's two catalogues, read out of the shared one.
+ * A section's catalogue, read out of the shared one.
  *
- * Each locale is built once, on first read, rather than looked up per render,
- * because a section's `useXT` runs in a component body and rebuilding a 160-key
- * object on every keystroke in the order desk is the kind of cost §24's latency
- * budget has no room for. On first read rather than at module load, because
- * Bangla arrives later than the module does (`catalogue.ts`).
- *
- * The locales are named rather than derived from `LOCALES`, so adding a third
- * one is a compile error here instead of a section that silently renders English
- * in it.
+ * Built once, on first read, rather than looked up per render, because a section's
+ * `useXT` runs in a component body and rebuilding a 160-key object on every
+ * keystroke in the order desk is the kind of cost §24's latency budget has no room
+ * for. On first read rather than at module load, because a section's strings are
+ * registered as its chunk loads (`catalogue.ts`).
  */
 export function sectionCatalogue<Key extends MessageKey>(
   keys: readonly Key[],
@@ -196,9 +185,6 @@ export function sectionCatalogue<Key extends MessageKey>(
   return {
     get en() {
       return forLocale('en');
-    },
-    get bn() {
-      return forLocale('bn');
     },
   };
 }

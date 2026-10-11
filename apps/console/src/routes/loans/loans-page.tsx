@@ -162,7 +162,7 @@ export function tableLabels(
 
 export function scheduleColumns(
   l: (key: LoansMessageKey) => string,
-  locale: 'en' | 'bn',
+  locale: 'en',
 ): readonly DataTableColumn<PreviewRow>[] {
   const column = dataTableColumns<PreviewRow>();
   return column.columns([

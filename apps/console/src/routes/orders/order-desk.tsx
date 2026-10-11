@@ -240,7 +240,7 @@ function Desk() {
         const matched = reference.areas.find((entry) => entry.thanaId === preferred.thanaId);
         if (matched !== undefined) {
           setArea((current) => current ?? matched);
-          setAreaQuery((current) => (current === '' ? areaLabel(matched, locale) : current));
+          setAreaQuery((current) => (current === '' ? areaLabel(matched) : current));
         }
         setAddressLine((current) => (current === '' ? preferred.addressLine : current));
         setAreaDetail((current) => (current === '' ? (preferred.area ?? '') : current));
@@ -253,7 +253,7 @@ function Desk() {
   // --- the area combobox -------------------------------------------------------------
   const areaMatches = useMemo(
     () =>
-      area !== null && areaQuery === areaLabel(area, locale)
+      area !== null && areaQuery === areaLabel(area)
         ? []
         : filterAreas(areas.data?.areas ?? [], areaQuery),
     [areas.data, areaQuery, area, locale],
@@ -273,7 +273,7 @@ function Desk() {
 
   function pickArea(chosen: Area) {
     setArea(chosen);
-    setAreaQuery(areaLabel(chosen, locale));
+    setAreaQuery(areaLabel(chosen));
     setAreaOpen(false);
   }
 
@@ -695,7 +695,7 @@ function Desk() {
                   ? t('orders.desk.areaHint')
                   : zone === null
                     ? t('orders.desk.noZone')
-                    : `${t('orders.desk.zone')}: ${locale === 'bn' ? zone.nameBn : zone.nameEn}`}
+                    : `${t('orders.desk.zone')}: ${zone.nameEn}`}
               </p>
               {areaOpen && areaQuery.trim() !== '' && area === null ? (
                 <ul
@@ -724,7 +724,7 @@ function Desk() {
                           pickArea(match);
                         }}
                       >
-                        <span>{areaLabel(match, locale)}</span>
+                        <span>{areaLabel(match)}</span>
                       </li>
                     ))
                   )}
@@ -1226,7 +1226,7 @@ function TotalRow({
 }: {
   readonly label: string;
   readonly poisha: string;
-  readonly locale: 'en' | 'bn';
+  readonly locale: 'en';
 }) {
   return (
     <div className="flex items-baseline justify-between">
@@ -1306,9 +1306,7 @@ function OutcomePanel({
   );
 }
 
-/** "Savar, Dhaka" or "সাভার, ঢাকা", as the console's language reads. */
-function areaLabel(area: Area, locale: 'en' | 'bn'): string {
-  return locale === 'bn'
-    ? `${area.thanaBn}, ${area.districtBn}`
-    : `${area.thanaEn}, ${area.districtEn}`;
+/** "Savar, Dhaka": the English names (D-750, D-756). */
+function areaLabel(area: Area): string {
+  return `${area.thanaEn}, ${area.districtEn}`;
 }

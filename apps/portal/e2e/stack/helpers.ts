@@ -50,11 +50,10 @@ export function totp(secret: string, at: number = Date.now()): string {
   return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0');
 }
 
-/** Switch the page to English, from whichever language it is in. */
+/** The portal is English only (D-750): the page says so, and offers no language switch. */
 export async function inEnglish(page: Page): Promise<void> {
-  if ((await page.locator('html').getAttribute('lang')) === 'en') return;
-  await page.getByRole('button', { name: 'ভাষা বদলান' }).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('button', { name: /language/i })).toHaveCount(0);
 }
 
 export async function signIn(page: Page, email: string): Promise<void> {

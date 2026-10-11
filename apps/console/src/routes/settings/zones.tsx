@@ -60,11 +60,7 @@ export function ZonesPage() {
                 <thead>
                   <tr className={headClass}>
                     <th className="py-1.5 font-medium">{t('settings.zones.colCode')}</th>
-                    <th className="py-1.5 font-medium">
-                      {locale === 'bn'
-                        ? t('settings.zones.colNameBn')
-                        : t('settings.zones.colNameEn')}
-                    </th>
+                    <th className="py-1.5 font-medium">{t('settings.zones.colNameEn')}</th>
                     <th className="py-1.5 text-right font-medium">
                       {t('settings.zones.colCharge')}
                     </th>
@@ -79,7 +75,7 @@ export function ZonesPage() {
                   {data.zones.map((zone) => (
                     <tr key={zone.id} className={rowClass}>
                       <td className="py-1.5 font-mono text-xs">{zone.code}</td>
-                      <td className="py-1.5">{locale === 'bn' ? zone.nameBn : zone.nameEn}</td>
+                      <td className="py-1.5">{zone.nameEn}</td>
                       <td className="py-1.5 text-right">
                         <Money poisha={zone.chargePoisha} locale={locale} />
                       </td>
@@ -130,7 +126,6 @@ function ZoneDialog({
   const queryClient = useQueryClient();
   const [code, setCode] = useState(zone?.code ?? '');
   const [nameEn, setNameEn] = useState(zone?.nameEn ?? '');
-  const [nameBn, setNameBn] = useState(zone?.nameBn ?? '');
   const [charge, setCharge] = useState(zone === null ? '' : poishaToTaka(zone.chargePoisha));
   const [courierId, setCourierId] = useState(zone?.defaultCourierId ?? '');
   const [active, setActive] = useState(zone?.isActive ?? true);
@@ -141,7 +136,6 @@ function ZoneDialog({
       saveZone({
         code: code.trim(),
         nameEn: nameEn.trim(),
-        nameBn: nameBn.trim(),
         chargePoisha,
         ...(courierId === '' ? {} : { defaultCourierId: courierId }),
         ...(zone === null ? {} : { position: zone.position }),
@@ -175,7 +169,6 @@ function ZoneDialog({
               if (
                 !/^[a-z][a-z0-9_]{1,31}$/.test(code.trim()) ||
                 nameEn.trim() === '' ||
-                nameBn.trim() === '' ||
                 poisha === null ||
                 poisha.startsWith('-')
               ) {
@@ -223,16 +216,6 @@ function ZoneDialog({
             maxLength={120}
             className={control}
             onChange={(event) => setNameEn(event.target.value)}
-          />
-        </Field>
-        <Field id={`${id}-bn`} label={t('settings.zones.colNameBn')}>
-          <input
-            id={`${id}-bn`}
-            lang="bn"
-            value={nameBn}
-            maxLength={120}
-            className={control}
-            onChange={(event) => setNameBn(event.target.value)}
           />
         </Field>
         <Field id={`${id}-courier`} label={t('settings.zones.colCourier')}>

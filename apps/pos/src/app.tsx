@@ -2,7 +2,7 @@ import { Button, ErrorState, Skeleton, StatusBadge, cn } from '@elysium/ui';
 import { CloudOff, LogOut, Moon, RefreshCw, Sun } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
-import { LocaleProvider, useLocale, usePosT } from './i18n/locale.js';
+import { LocaleProvider, usePosT } from './i18n/locale.js';
 import type { PosMessageKey } from './i18n/messages.js';
 import { ApiError, endpoints, NetworkError, type RegisterView, type Session } from './lib/api.js';
 import { cartReducer, EMPTY_CART, type PriceListItem } from './lib/cart.js';
@@ -370,7 +370,6 @@ function TopBar({
   readonly onSignOut: () => void;
 }) {
   const t = usePosT();
-  const { locale, setLocale } = useLocale();
   const [dark, setDark] = useState(isDark);
   const selling = session?.openShift?.mine === true;
   const brandName = session?.receiptHeader.displayName ?? '';
@@ -460,17 +459,6 @@ function TopBar({
         >
           <RefreshCw aria-hidden />
           {t('pos.action.syncNow')}
-        </Button>
-        <Button
-          size="lg"
-          variant="ghost"
-          className="min-h-11 text-muted-foreground hover:text-foreground"
-          aria-label={t('pos.locale.label')}
-          onClick={() => {
-            setLocale(locale === 'en' ? 'bn' : 'en');
-          }}
-        >
-          {locale === 'en' ? t('pos.locale.toBangla') : t('pos.locale.toEnglish')}
         </Button>
         <Button
           size="icon"

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  banglaCharactersIn,
   STICKER_MEDIA,
   STICKER_MEDIA_IDS,
   StickerLayoutError,
@@ -104,7 +105,9 @@ describe('sticker layout', () => {
     expect(html).toContain(`aria-label="${internalEan13(1)}"`);
     expect([...html.matchAll(/<text /g)]).toHaveLength(13);
     expect(html).toContain('aria-label="ELY-PNJ-0042-M"');
-    expect(html).toContain('৳2,450');
+    // `Tk 1,490` on a tag (D-751): whole taka, no Bangla-block sign.
+    expect(html).toContain('Tk 2,450');
+    expect(banglaCharactersIn(html)).toEqual([]);
     expect(html).toContain('M / White');
   });
 
@@ -115,7 +118,7 @@ describe('sticker layout', () => {
       startAt: 1,
       fontCss: '',
     });
-    expect(html).not.toContain('৳');
+    expect(html).not.toContain('Tk ');
     expect(html).toContain('Any Brand');
     expect(html).not.toMatch(/elysium/i);
   });
@@ -222,7 +225,7 @@ describe('the custom size and the extra line (D-650, D-651)', () => {
     });
     expect(tight).not.toContain('class="row extra"');
     expect(tight).toContain(`aria-label="${internalEan13(1)}"`);
-    expect(tight).toContain('৳2,450');
+    expect(tight).toContain('Tk 2,450');
 
     const blank = renderStickersHtml({
       stickers: [sticker(0)],

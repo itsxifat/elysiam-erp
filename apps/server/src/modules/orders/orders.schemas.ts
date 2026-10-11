@@ -296,10 +296,25 @@ export type BulkTransitionInput = z.infer<typeof bulkTransitionSchema>;
 export const orderDocumentKinds = ['invoice', 'packing_slip', 'label'] as const;
 export type OrderDocumentKindName = (typeof orderDocumentKinds)[number];
 
+/**
+ * The paper a document prints on (M43): A4, or A5 for the packing slip. The invoice is A4 and
+ * the label 4 × 6 in whatever is asked, so asking A5 of them is refused rather than ignored.
+ */
+export const documentPapers = ['a4', 'a5'] as const;
+
+const a5OnlyForTheSlip = (query: { kind: string; paper: string }) =>
+  query.paper === 'a4' || query.kind === 'packing_slip';
+const A5_MESSAGE = { message: 'A5 is for the packing slip.', path: ['paper'] };
+
 /** Bulk print: one PDF, one page (or label) per order, in the order the ids were given. */
 export const bulkDocumentQuerySchema = z
-  .object({ ids: uuidList(100), kind: z.enum(orderDocumentKinds).default('invoice') })
-  .strict();
+  .object({
+    ids: uuidList(100),
+    kind: z.enum(orderDocumentKinds).default('invoice'),
+    paper: z.enum(documentPapers).default('a4'),
+  })
+  .strict()
+  .refine(a5OnlyForTheSlip, A5_MESSAGE);
 
 /**
  * The buyer list's filters (M11 Build list: product, SKU, size, date, channel).
@@ -516,7 +531,12 @@ export const upsertZoneSchema = z
       .trim()
       .regex(/^[a-z][a-z0-9_]{1,31}$/, 'A zone code is lower snake_case.'),
     nameEn: z.string().trim().min(1).max(120),
-    nameBn: z.string().trim().min(1).max(120),
+    /**
+     * The zone's Bangla name, kept as data for the website (D-756). Optional: the console is
+     * English only (D-750). A new zone without one takes the English name; an existing zone
+     * keeps the one it has.
+     */
+    nameBn: z.string().trim().min(1).max(120).optional(),
     chargePoisha: poishaString,
     defaultCourierId: uuid.optional(),
     position: z.number().int().min(0).max(1000).optional(),
@@ -527,8 +547,12 @@ export const upsertZoneSchema = z
 export type UpsertZoneInput = z.infer<typeof upsertZoneSchema>;
 
 export const documentQuerySchema = z
-  .object({ kind: z.enum(orderDocumentKinds).default('invoice') })
-  .strict();
+  .object({
+    kind: z.enum(orderDocumentKinds).default('invoice'),
+    paper: z.enum(documentPapers).default('a4'),
+  })
+  .strict()
+  .refine(a5OnlyForTheSlip, A5_MESSAGE);
 
 /**
  * The re-engagement list's filters (M16; architecture §10 "no purchase in N days, plus

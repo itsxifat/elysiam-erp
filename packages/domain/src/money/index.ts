@@ -257,14 +257,25 @@ export function takaParts(amount: Poisha): {
 }
 
 /**
- * `Tk 1,100.00`: an amount for a sentence a person reads, such as an approval's reason
- * (m30-followups). Thousands grouped in threes and always two decimals, so it cannot be
- * misread by a factor of a hundred the way a bare poisha figure can. Screens use `<Money>`.
+ * `Tk 1,100.00`: money on paper and in a message (D-751), and in a sentence a person reads,
+ * such as an approval's reason (m30-followups).
+ *
+ * The one format for everything the system prints or sends: invoices, packing slips, parcel
+ * and courier labels, payslips, stickers, till receipts, SMS and email. `Tk`, a space, the
+ * taka grouped in threes and always two decimals, so it cannot be misread by a factor of a
+ * hundred the way a bare poisha figure can; an ASCII minus, so an SMS stays in the GSM
+ * alphabet (no Bangla-block sign forces it into 70-character UCS-2 segments). Screens use
+ * `<Money>`.
+ *
+ * `wholeTaka` drops ".00" from a whole amount — `Tk 1,490` on a price sticker read at arm's
+ * length — and keeps both digits of any other, so nothing is ever rounded.
  */
-export function takaText(amount: Poisha): string {
+export function takaText(amount: Poisha, options: { readonly wholeTaka?: boolean } = {}): string {
   const { negative, taka, poisha: paisa } = takaParts(amount);
   const grouped = taka.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${negative ? '-' : ''}Tk ${grouped}.${paisa.toString().padStart(2, '0')}`;
+  const fraction =
+    options.wholeTaka === true && paisa === 0n ? '' : `.${paisa.toString().padStart(2, '0')}`;
+  return `${negative ? '-' : ''}Tk ${grouped}${fraction}`;
 }
 
 /**

@@ -17,12 +17,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_FONTS = path.resolve(HERE, '../../../../../../packages/ui/src/assets/fonts');
-const FACES = [
-  'hind-siliguri-bengali-400.woff2',
-  'hind-siliguri-bengali-600.woff2',
-  'hind-siliguri-latin-400.woff2',
-  'hind-siliguri-latin-600.woff2',
-];
+/** Inter only (D-753): every document is English (D-750). */
+const FACES = ['inter-latin-400-700.woff2', 'inter-latin-ext-400-700.woff2'];
 
 let scratch: string | undefined;
 
@@ -50,7 +46,7 @@ describe('the PDF font directory', () => {
     expect(defaultFontDir({ PDF_FONT_DIR: fonts })).toBe(fonts);
   });
 
-  it('loads the four faces from PDF_FONT_DIR with no argument, as every PDF service calls it', async () => {
+  it('loads the Inter faces from PDF_FONT_DIR with no argument, as every PDF service calls it', async () => {
     const fonts = await imageLike();
     vi.stubEnv('PDF_FONT_DIR', fonts);
     vi.resetModules();
@@ -71,5 +67,17 @@ describe('the PDF font directory', () => {
     vi.resetModules();
     const { loadFonts } = await import('./fonts.js');
     await expect(loadFonts()).rejects.toThrow(/PDF_FONT_DIR/);
+  });
+});
+
+describe('the document faces (D-753)', () => {
+  it('are Inter alone: no Hind Siliguri is uploaded with any document', async () => {
+    const { loadFonts, fontFaceCss } = await import('./fonts.js');
+    const fonts = await loadFonts(REPO_FONTS);
+    expect(fonts.map((face) => face.filename).sort()).toEqual([...FACES].sort());
+    expect(fonts.every((face) => face.family === 'Inter')).toBe(true);
+    const css = fontFaceCss(fonts);
+    expect(css).not.toMatch(/Hind Siliguri|hind-siliguri/);
+    expect(css).toContain("font-family: 'Inter'");
   });
 });

@@ -15,16 +15,16 @@ import { cn } from '../lib/cn.js';
  * (invariant 8), never an instant. The arithmetic below is on UTC calendar days, so no
  * zone can move a date by one, and a month is `YYYY-MM`.
  *
- * Month and weekday names come from `Intl`, in the caller's locale, so Bangla gets
- * Bangla months and digits without a string table here. The few words that are not
- * names (previous month, today, clear, the presets) come from the caller as labels.
+ * Month and weekday names come from `Intl`, in English (D-750: the product is English
+ * only). The few words that are not names (previous month, today, clear, the presets)
+ * come from the caller as labels.
  *
  * Keyboard: the trigger opens the calendar; arrows move a day or a week, Page Up and
  * Page Down a month, Home and End the week, Enter picks, Escape closes and returns
  * focus to the trigger (Radix).
  */
 
-export type PickerLocale = 'en' | 'bn';
+export type PickerLocale = 'en';
 
 export interface DatePickerLabels {
   readonly previousMonth: string;
@@ -42,7 +42,7 @@ export interface YearSpan {
   readonly to: number;
 }
 
-const INTL: Record<PickerLocale, string> = { en: 'en-GB', bn: 'bn-BD' };
+const INTL: Record<PickerLocale, string> = { en: 'en-GB' };
 
 // --- calendar arithmetic, on UTC days ---------------------------------------------
 

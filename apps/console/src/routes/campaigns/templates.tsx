@@ -80,13 +80,9 @@ function Templates() {
         header: t('campaigns.templates.col.category'),
         cell: (cell) => t(`campaigns.templates.category.${cell.getValue()}` as CampaignsMessageKey),
       }),
-      column.accessor('bodyBn', {
+      column.accessor('bodyEn', {
         header: t('campaigns.templates.col.body'),
-        cell: (cell) => (
-          <span lang="bn" className="line-clamp-2 max-w-md">
-            {cell.getValue()}
-          </span>
-        ),
+        cell: (cell) => <span className="line-clamp-2 max-w-md">{cell.getValue()}</span>,
       }),
       column.accessor('isActive', {
         header: t('campaigns.templates.col.active'),
@@ -184,7 +180,6 @@ function switchTemplate(template: MessageTemplate, isActive: boolean) {
   return upsertTemplate({
     key: template.key,
     category: template.category === 'otp' ? 'transactional' : template.category,
-    bodyBn: template.bodyBn,
     bodyEn: template.bodyEn,
     isActive,
   });
@@ -204,7 +199,6 @@ function TemplateDialog({
   const [category, setCategory] = useState<EditableTemplateCategory>(
     template === null || template.category === 'otp' ? 'marketing' : template.category,
   );
-  const [bodyBn, setBodyBn] = useState(template?.bodyBn ?? '');
   const [bodyEn, setBodyEn] = useState(template?.bodyEn ?? '');
   const [isActive, setIsActive] = useState(template?.isActive ?? true);
   const [errors, setErrors] = useState<{ key?: CampaignsMessageKey; body?: CampaignsMessageKey }>(
@@ -227,14 +221,12 @@ function TemplateDialog({
     setFailure(null);
     const next: typeof errors = {};
     if (!KEY.test(key.trim())) next.key = 'campaigns.templates.form.invalidKey';
-    if (bodyBn.trim() === '' || bodyEn.trim() === '')
-      next.body = 'campaigns.templates.form.required';
+    if (bodyEn.trim() === '') next.body = 'campaigns.templates.form.required';
     setErrors(next);
     if (Object.keys(next).length > 0) return;
     save.mutate({
       key: key.trim(),
       category,
-      bodyBn: bodyBn.trim(),
       bodyEn: bodyEn.trim(),
       isActive,
     });
@@ -292,24 +284,11 @@ function TemplateDialog({
         </Field>
         <div className="sm:col-span-2">
           <Field
-            label={t('campaigns.templates.form.bodyBn')}
-            id={`${id}-bn`}
+            label={t('campaigns.templates.form.bodyEn')}
+            id={`${id}-en`}
             hint={t('campaigns.templates.form.bodyHint')}
             error={errors.body === undefined ? undefined : t(errors.body)}
           >
-            <textarea
-              id={`${id}-bn`}
-              lang="bn"
-              className={area}
-              value={bodyBn}
-              maxLength={1000}
-              aria-invalid={errors.body !== undefined && bodyBn.trim() === ''}
-              onChange={(event) => setBodyBn(event.target.value)}
-            />
-          </Field>
-        </div>
-        <div className="sm:col-span-2">
-          <Field label={t('campaigns.templates.form.bodyEn')} id={`${id}-en`}>
             <textarea
               id={`${id}-en`}
               className={area}

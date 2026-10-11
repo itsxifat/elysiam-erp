@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
-import { maskPhone, normalizeBdPhone } from '@elysium/domain';
+import { isFreeOfBangla, maskPhone, normalizeBdPhone } from '@elysium/domain';
 import {
   inQuietHours,
   nextSendTime,
@@ -67,7 +67,6 @@ export class NotifyService {
     input: {
       readonly templateKey: string;
       readonly phone: string;
-      readonly locale: 'bn' | 'en';
       readonly values: Readonly<Record<string, string>>;
       readonly refType?: string | null;
       readonly refId?: string | null;
@@ -100,12 +99,11 @@ export class NotifyService {
       );
     }
 
+    // English, always (D-750): `body_en` is the one body. `body_bn` stays in the table only
+    // until one migration drops it once the parallel branches have merged (D-755).
     let body: string;
     try {
-      body = renderTemplate(
-        input.locale === 'bn' ? template.body_bn : template.body_en,
-        input.values,
-      );
+      body = renderTemplate(template.body_en, input.values);
     } catch (error) {
       if (error instanceof TemplateError) {
         throw new NotifyError('NOTIFY_TEMPLATE_INVALID', error.message);
@@ -131,7 +129,7 @@ export class NotifyService {
       channel: template.channel,
       category,
       phone,
-      locale: input.locale,
+      locale: 'en',
       body,
       state: suppressed ? 'suppressed' : 'queued',
       sendAfter,
@@ -225,7 +223,6 @@ export class NotifyService {
         key: row.key,
         channel: row.channel,
         category: row.category,
-        bodyBn: row.body_bn,
         bodyEn: row.body_en,
         isActive: row.is_active,
       })),
@@ -239,14 +236,20 @@ export class NotifyService {
   ) {
     // Rendered once with every placeholder filled, so a template that cannot render — a
     // stray `{` — is refused when it is saved rather than when a buyer is due a message.
-    for (const body of [input.bodyBn, input.bodyEn]) {
-      try {
-        renderTemplate(body, new Proxy({}, { get: () => 'x' }));
-      } catch (error) {
-        if (error instanceof TemplateError)
-          throw new NotifyError('NOTIFY_TEMPLATE_INVALID', error.message);
-        throw error;
-      }
+    try {
+      renderTemplate(input.bodyEn, new Proxy({}, { get: () => 'x' }));
+    } catch (error) {
+      if (error instanceof TemplateError)
+        throw new NotifyError('NOTIFY_TEMPLATE_INVALID', error.message);
+      throw error;
+    }
+    // Every SMS is English (D-750): a template written in Bangla is refused when it is saved,
+    // not discovered on a buyer's phone.
+    if (!isFreeOfBangla(input.bodyEn)) {
+      throw new NotifyError(
+        'NOTIFY_TEMPLATE_INVALID',
+        'Write the message in English: every SMS is sent in English.',
+      );
     }
 
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -262,7 +265,6 @@ export class NotifyService {
         key: input.key,
         channel: 'sms',
         category: input.category,
-        bodyBn: input.bodyBn,
         bodyEn: input.bodyEn,
         isActive: input.isActive ?? true,
         updatedBy: context.userId,

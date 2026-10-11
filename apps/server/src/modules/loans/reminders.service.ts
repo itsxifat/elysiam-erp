@@ -104,7 +104,6 @@ export class LoanRemindersService {
                 this.notify.queue(savepoint, orgId, {
                   templateKey: LOAN_REMINDER_TEMPLATE,
                   phone: row.reminder_phone ?? '',
-                  locale: 'bn',
                   values: {
                     lender: row.lender_name,
                     seq: String(row.seq),

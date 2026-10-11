@@ -2,7 +2,7 @@ import type { OrderLabelSize } from '@elysium/contracts';
 import { encode } from 'uqr';
 
 import type { FontFile } from '../files/pdf/fonts.js';
-import { fontFaceCss } from '../files/pdf/fonts.js';
+import { DOCUMENT_FONT_STACK, fontFaceCss } from '../files/pdf/fonts.js';
 
 /**
  * The order label sheet (M35b, D-555): the old admin's `labels` page — a thermal label or a
@@ -12,7 +12,8 @@ import { fontFaceCss } from '../files/pdf/fonts.js';
  *
  * The QR code is what the packing scanner reads (D-554): the scanner resolves a tracking code,
  * an order number or a consignment number to the packing list. Ink is pure black: a thermal
- * head prints grey as patchy ash.
+ * head prints grey as patchy ash. English, in Inter, with money as `Tk 1,250.00` (M43: D-750,
+ * D-751, D-753).
  */
 
 /** Exact paper sizes in millimetres, and whether the label is a small thermal one. */
@@ -159,7 +160,7 @@ export function orderLabelsHtml(input: {
       ${fontFaceCss(input.fonts)}
       @page { size: ${String(paper.w)}mm ${String(paper.h)}mm; margin: 0; }
       * { box-sizing: border-box; }
-      body { margin: 0; color: #000; font-family: Arial, 'Hind Siliguri', sans-serif; font-size: ${small ? '7pt' : '10pt'}; line-height: 1.25; }
+      body { margin: 0; color: #000; font-family: ${DOCUMENT_FONT_STACK}; font-size: ${small ? '7pt' : '10pt'}; line-height: 1.25; }
       .label { width: ${String(paper.w)}mm; height: ${String(paper.h)}mm; padding: ${String(paper.pad)}mm; display: flex; flex-direction: column; gap: ${small ? '0.8mm' : '2mm'}; page-break-after: always; break-after: page; overflow: hidden; }
       .label:last-child { page-break-after: auto; break-after: auto; }
       .landscape { flex-direction: row; }

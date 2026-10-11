@@ -66,7 +66,6 @@ export function listZones(): Promise<{
 export function saveZone(input: {
   readonly code: string;
   readonly nameEn: string;
-  readonly nameBn: string;
   readonly chargePoisha: string;
   readonly defaultCourierId?: string;
   readonly position?: number;

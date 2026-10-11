@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 /**
- * The missing-key checker, tested against throwaway catalogues.
+ * The i18n checker, tested against throwaway catalogues (English only, D-750).
  *
  * A checker that has only ever been run against a repository that passes is a
  * checker nobody has seen fail. Each case below is a failure the real thing has
@@ -59,44 +59,54 @@ afterAll(() => {
   rmSync(fixture, { recursive: true, force: true });
 });
 
+/** A Bangla word, built from code points so this file carries no Bangla of its own. */
+const BANGLA_WORD = [0x098f, 0x0995].map((code) => String.fromCodePoint(code)).join('');
+
 describe('check-i18n', () => {
-  it('passes when both locales have the same keys and every reference exists', () => {
+  it('passes an English catalogue whose every reference exists', () => {
     const result = fixtureWith({
       en: catalogue([['a.one', 'One']]),
-      bn: catalogue([['a.one', 'এক']]),
       source: "import { t } from '@elysium/i18n';\nexport const label = t('a.one');\n",
     });
     expect(result.output).toContain('PASS');
+    expect(result.output).toContain('1 locale(s) (en)');
     expect(result.code).toBe(0);
   });
 
-  it('fails when a key exists in one locale and not the other, in either direction', () => {
-    const missingFromBn = fixtureWith({
-      en: catalogue([
-        ['a.one', 'One'],
-        ['a.two', 'Two'],
-      ]),
-      bn: catalogue([['a.one', 'এক']]),
+  /*
+   * D-750: the brands never wanted Bangla. A `bn.ts` brought back — by a merge from a branch
+   * that still had one — fails, and so does a Bangla sentence typed into the English file.
+   */
+  it('fails on any catalogue but English, and on Bangla text in the English one', () => {
+    const second = fixtureWith({
+      en: catalogue([['a.one', 'One']]),
+      bn: catalogue([['a.one', BANGLA_WORD]]),
     });
-    expect(missingFromBn.code).toBe(1);
-    expect(missingFromBn.output).toContain('missing from bn: a.two');
+    expect(second.code).toBe(1);
+    expect(second.output).toContain('is a "bn" catalogue');
+    expect(second.output).toContain('English only (D-750)');
 
     fixture = mkdtempSync(path.join(tmpdir(), 'elysium-i18n-'));
-    const missingFromEn = fixtureWith({
-      en: catalogue([['a.one', 'One']]),
-      bn: catalogue([
-        ['a.one', 'এক'],
-        ['a.two', 'দুই'],
+    const typed = fixtureWith({
+      en: catalogue([
+        ['a.one', 'One'],
+        ['a.two', `Two ${BANGLA_WORD}`],
       ]),
     });
-    expect(missingFromEn.code).toBe(1);
-    expect(missingFromEn.output).toContain('missing from en: a.two');
+    expect(typed.code).toBe(1);
+    expect(typed.output).toContain('Bangla text in en: a.two');
+  });
+
+  it('allows the taka sign on a staff screen, which is a symbol and not Bangla (D-751)', () => {
+    const result = fixtureWith({
+      en: catalogue([['a.price', `Price (${String.fromCodePoint(0x09f3)})`]]),
+    });
+    expect(result.code).toBe(0);
   });
 
   it('fails when code names a key the catalogue does not have, and says where', () => {
     const result = fixtureWith({
       en: catalogue([['a.one', 'One']]),
-      bn: catalogue([['a.one', 'এক']]),
       source: "export const label = t('a.typo');\n",
     });
     expect(result.code).toBe(1);
@@ -106,37 +116,35 @@ describe('check-i18n', () => {
 
   /*
    * The one a reviewer misses: a duplicated key compiles, imports cleanly, and
-   * quietly drops the first translation. Only a text read of the file finds it.
+   * quietly drops the first value. Only a text read of the file finds it.
    */
   it('fails when a catalogue names the same key twice', () => {
     const result = fixtureWith({
-      en: catalogue([['a.one', 'One']]),
-      bn: `const c = {\n  'a.one': 'এক',\n  'a.one': 'একক',\n};\nexport default c;\n`,
+      en: `const c = {
+  'a.one': 'One',
+  'a.one': 'Uno',
+};
+export default c;
+`,
     });
     expect(result.code).toBe(1);
-    expect(result.output).toContain('duplicate key "a.one" in bn');
+    expect(result.output).toContain('duplicate key "a.one" in en');
   });
 
   /*
-   * Section catalogues (M38a, D-607): `sections/<area>.<locale>.ts` join their locale, so a
-   * key used from code may live there, must exist in every locale, and may not repeat a key
-   * the locale file already has.
+   * Section catalogues (M38a, D-607): `sections/<area>.en.ts` join the catalogue, so a key
+   * used from code may live there, and may not repeat a key the locale file already has. A
+   * section in another language is refused like a locale file.
    */
-  it('reads section catalogues as part of their locale', () => {
+  it('reads section catalogues as part of the catalogue', () => {
     mkdirSync(path.join(fixture, 'locales/sections'), { recursive: true });
     writeFileSync(
       path.join(fixture, 'locales/sections/area.en.ts'),
       catalogue([['s.one', 'Section one']]).replace('as LOCALE', 'as en'),
       'utf8',
     );
-    writeFileSync(
-      path.join(fixture, 'locales/sections/area.bn.ts'),
-      catalogue([['s.one', 'অংশ এক']]).replace('as LOCALE', 'as bn'),
-      'utf8',
-    );
     const passing = fixtureWith({
       en: catalogue([['a.one', 'One']]),
-      bn: catalogue([['a.one', 'এক']]),
       source: "export const label = t('s.one') + t('a.one');\n",
     });
     expect(passing.output).toContain('PASS');
@@ -146,33 +154,29 @@ describe('check-i18n', () => {
     mkdirSync(path.join(fixture, 'locales/sections'), { recursive: true });
     writeFileSync(
       path.join(fixture, 'locales/sections/area.en.ts'),
-      catalogue([['s.one', 'Section one']]).replace('as LOCALE', 'as en'),
+      catalogue([['a.one', 'One again']]).replace('as LOCALE', 'as en'),
       'utf8',
     );
     writeFileSync(
       path.join(fixture, 'locales/sections/area.bn.ts'),
-      catalogue([['a.one', 'এক আবার']]).replace('as LOCALE', 'as bn'),
+      catalogue([['s.one', BANGLA_WORD]]).replace('as LOCALE', 'as bn'),
       'utf8',
     );
-    const failing = fixtureWith({
-      en: catalogue([['a.one', 'One']]),
-      bn: catalogue([['a.one', 'এক']]),
-    });
+    const failing = fixtureWith({ en: catalogue([['a.one', 'One']]) });
     expect(failing.code).toBe(1);
-    expect(failing.output).toContain('missing from bn: s.one');
-    expect(failing.output).toContain('duplicate key "a.one" in bn');
+    expect(failing.output).toContain('duplicate key "a.one" in en');
+    expect(failing.output).toContain('area.bn.ts is a "bn" catalogue');
   });
 
-  it('fails rather than passing vacuously when a locale is missing entirely', () => {
-    const result = fixtureWith({ en: catalogue([['a.one', 'One']]) });
+  it('fails rather than passing vacuously when there is no English catalogue', () => {
+    const result = fixtureWith({ bn: catalogue([['a.one', BANGLA_WORD]]) });
     expect(result.code).toBe(1);
-    expect(result.output).toContain('this product ships bn and en');
+    expect(result.output).toContain('this product ships English (D-750)');
   });
 
   it('ignores a dynamic key instead of guessing, and reports that it did', () => {
     const result = fixtureWith({
       en: catalogue([['a.one', 'One']]),
-      bn: catalogue([['a.one', 'এক']]),
       source: 'export const label = (key: string) => t(key);\n',
     });
     expect(result.code).toBe(0);
@@ -189,7 +193,6 @@ describe('check-i18n', () => {
   it('resolves an interpolated key against the family it names', () => {
     const result = fixtureWith({
       en: catalogue([['a.status.open', 'Open']]),
-      bn: catalogue([['a.status.open', 'চালু']]),
       source: 'export const label = (row) => t(`a.status.${row.status}`);\n',
     });
     expect(result.output).toContain('1 interpolated famil');
@@ -199,7 +202,6 @@ describe('check-i18n', () => {
   it('fails when an interpolated key names a family the catalogue has none of', () => {
     const result = fixtureWith({
       en: catalogue([['a.status.open', 'Open']]),
-      bn: catalogue([['a.status.open', 'চালু']]),
       source: 'export const label = (row) => t(`a.statsu.${row.status}`);\n',
     });
     expect(result.code).toBe(1);

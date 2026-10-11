@@ -11,6 +11,7 @@ import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
+import { decodeCode128Svg } from '../../testing/code128-decode.js';
 import {
   ORG_A,
   ORG_B,
@@ -24,6 +25,8 @@ import { FILES_QUEUE_DEFINITIONS } from '../files/files.queues.js';
 import { FilesService } from '../files/files.service.js';
 import { registerFilesJobs } from '../files/files.worker.js';
 import { seedProductWithSkus } from '../inventory/inventory.testing.js';
+import { renderLabelHtml, renderPackingSlipHtml } from '../orders/order-documents.js';
+import { SAMPLE_BRAND, SAMPLE_ORDER } from '../orders/order-documents.sample.js';
 import { applyOrderMigrations, seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { PACKING_QUEUE_DEFINITIONS } from './packing.queues.js';
 import { ORPHAN_AFTER_MS, PackingVideoService } from './video.service.js';
@@ -461,6 +464,25 @@ describe('the packing station (M38b check 1, M38 check 5)', () => {
       { orgId: ORG_A },
     );
     expect(audit.map((row) => row.actor_user_id)).toEqual([packer.userId]);
+  });
+
+  it('opens the order from the barcode printed on its packing slip and its label (M43 check 1)', async () => {
+    const order = await confirmedOrder([{ sku: shirtM, qty: 1 }]);
+    const data = { ...SAMPLE_ORDER, orderNo: order.orderNo };
+    const pages = [
+      renderPackingSlipHtml({ brand: SAMPLE_BRAND, data, fonts: [] }),
+      renderPackingSlipHtml({ brand: SAMPLE_BRAND, data, fonts: [], paper: 'a5' }),
+      renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts: [] }),
+    ];
+    for (const html of pages) {
+      // Read from the bars, as the scanner reads them, not from the text printed beneath.
+      const svg = /<svg [^>]*data-barcode="[^"]*"[\s\S]*?<\/svg>/.exec(html)?.[0] ?? '';
+      const code = decodeCode128Svg(svg);
+      expect(code).toBe(order.orderNo);
+      const opened = await open(packer, { code });
+      expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+      expect(opened.body).toMatchObject({ session: { status: 'open', orderNo: order.orderNo } });
+    }
   });
 
   it('opens only a confirmed order', async () => {

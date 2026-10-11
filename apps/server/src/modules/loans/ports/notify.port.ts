@@ -16,7 +16,6 @@ export interface LoansNotifyPort {
     input: {
       readonly templateKey: string;
       readonly phone: string;
-      readonly locale: 'bn' | 'en';
       readonly values: Readonly<Record<string, string>>;
       readonly refType?: string | null;
       readonly refId?: string | null;

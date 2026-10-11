@@ -45,12 +45,7 @@ export function CourierPerformancePage() {
   });
 
   const zoneName = useMemo(() => {
-    const names = new Map(
-      (zones.data?.zones ?? []).map((zone) => [
-        zone.id,
-        locale === 'bn' ? zone.nameBn : zone.nameEn,
-      ]),
-    );
+    const names = new Map((zones.data?.zones ?? []).map((zone) => [zone.id, zone.nameEn]));
     return (id: string | null) =>
       id === null ? t('courier.performance.noZone') : (names.get(id) ?? id.slice(0, 8));
   }, [zones.data, locale, t]);

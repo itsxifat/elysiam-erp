@@ -11,7 +11,6 @@ describe('rates and ratios from basis points', () => {
     expect(percent('5', 'en')).toBe('0.1%');
     expect(percent('0', 'en')).toBe('0.0%');
     expect(percent(null, 'en')).toBe('—');
-    expect(percent('1040', 'bn')).toBe('১০.৪%');
     expect(times('25000', 'en')).toBe('2.50×');
     expect(times('12345', 'en')).toBe('1.23×');
     expect(signedPercent(1040n, 'en')).toBe('+10.4%');

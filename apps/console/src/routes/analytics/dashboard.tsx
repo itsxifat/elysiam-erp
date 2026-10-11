@@ -163,10 +163,11 @@ function Dashboard() {
                     {data.coverage.computedAt === null
                       ? null
                       : ` · ${fill(t('analytics.coverage.at'), {
-                          at: new Date(data.coverage.computedAt).toLocaleString(
-                            locale === 'bn' ? 'bn-BD' : 'en-GB',
-                            { timeZone: 'Asia/Dhaka', dateStyle: 'medium', timeStyle: 'short' },
-                          ),
+                          at: new Date(data.coverage.computedAt).toLocaleString('en-GB', {
+                            timeZone: 'Asia/Dhaka',
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          }),
                         })}`}
                   </MenuLabel>
                 )}

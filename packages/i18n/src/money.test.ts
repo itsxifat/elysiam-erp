@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { formatMoney } from './money.js';
+import { formatMoney, formatMoneyText } from './money.js';
 
 /** M03 check 8, and the grouping rules around it. */
 
@@ -34,8 +34,8 @@ describe('check 8: formatMoney', () => {
     expect(formatMoney(-5)).toBe('-৳0.05');
   });
 
-  it('renders Bangla digits for bn, and can omit the symbol', () => {
-    expect(formatMoney(12345678, { locale: 'bn' })).toBe('৳১,২৩,৪৫৬.৭৮');
+  it('renders Latin digits only, and can omit the symbol', () => {
+    expect(formatMoney(12345678, { locale: 'en' })).toBe('৳1,23,456.78');
     expect(formatMoney(12345678, { symbol: false })).toBe('1,23,456.78');
   });
 
@@ -61,5 +61,27 @@ describe('check 8: formatMoney', () => {
       }),
       { numRuns: 1_000 },
     );
+  });
+});
+
+describe('formatMoneyText: money on paper and in messages (D-751)', () => {
+  it('is the domain takaText: "Tk", thousands in threes, two decimals', () => {
+    expect(formatMoneyText(125000n)).toBe('Tk 1,250.00');
+    expect(formatMoneyText('12345678')).toBe('Tk 123,456.78');
+    expect(formatMoneyText(-5)).toBe('-Tk 0.05');
+    expect(formatMoneyText(0)).toBe('Tk 0.00');
+  });
+
+  it('never writes a Bangla-block character, for any amount', () => {
+    fc.assert(
+      fc.property(fc.bigInt({ min: -(10n ** 15n), max: 10n ** 15n }), (value) => {
+        expect(formatMoneyText(value)).toMatch(/^-?Tk [\d,]+\.\d{2}$/);
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it('refuses a fraction of a poisha', () => {
+    expect(() => formatMoneyText(1.5)).toThrow(RangeError);
   });
 });

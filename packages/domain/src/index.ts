@@ -13,6 +13,7 @@
 export const PACKAGE_NAME = '@elysium/domain' as const;
 
 export * from './money/index.js';
+export * from './text/index.js';
 export * from './dates/index.js';
 export * from './ledger/index.js';
 export * from './posting/index.js';

@@ -132,13 +132,7 @@ function OrderList() {
     [agents.data],
   );
   const zoneName = useMemo(
-    () =>
-      new Map(
-        (areas.data?.zones ?? []).map((zone) => [
-          zone.id,
-          locale === 'bn' ? zone.nameBn : zone.nameEn,
-        ]),
-      ),
+    () => new Map((areas.data?.zones ?? []).map((zone) => [zone.id, zone.nameEn])),
     [areas.data, locale],
   );
 
@@ -313,7 +307,7 @@ function OrderList() {
     { value: '', label: t('orders.filter.allZones') },
     ...(areas.data?.zones ?? []).map((zone) => ({
       value: zone.id,
-      label: locale === 'bn' ? zone.nameBn : zone.nameEn,
+      label: zone.nameEn,
     })),
   ];
   const labelOf = (options: readonly { value: string; label: string }[], value: string) =>

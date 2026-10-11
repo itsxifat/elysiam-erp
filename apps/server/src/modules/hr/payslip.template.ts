@@ -1,40 +1,30 @@
-import { takaParts, type Poisha } from '@elysium/domain';
+import { takaText, type Poisha } from '@elysium/domain';
 
-import { fontFaceCss, type FontFile } from '../files/pdf/fonts.js';
+import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fonts.js';
 
 /**
- * The payslip, in Bangla (architecture §12 "payslip PDF in Bangla", §22, §24, D-036).
+ * The payslip (architecture §12, §22, §24; M43).
  *
- * ## Why it is Bangla and not English
- *
- * D-036: the staff console is English and everything the business hands to a person
- * outside it is Bangla. A payslip is handed to a packer in a Gazipur warehouse and a
- * showroom assistant in Gulshan. Writing it in English would be a decision to give
- * somebody a document about their own pay that they cannot read, and doing that "for
- * now" is how it ships forever.
- *
- * The labels below are real Bangla, and several of them exercise the shaping that §22's
- * font requirement exists for: `বেতনের`, `কর্তন`, `প্রাপ্য` and `উপস্থিতি` each contain a
- * conjunct that a font without the right GSUB table renders as separate letters. Numbers
- * stay in Latin digits per D-036, and the taka sign ৳ is U+09F3 from the Bengali block —
- * which is why a single amount needs both font subsets present.
+ * In formal English (D-750: the brands never wanted Bangla), in Inter (D-753), with every
+ * amount as `Tk 1,250.00` through the money module's `takaText` (D-751) and the same black,
+ * hairline-ruled page as the order documents, so it prints cleanly on any office printer.
  *
  * ## What is deliberately not on it
  *
- * **No national ID and no bank account number**, not even masked. A payslip is the
- * document most likely to be photographed, forwarded on WhatsApp and left on a desk, and
- * nothing on it needs an identity number to be useful (invariant 10). The employee code
- * identifies the person to the company, which is what a payslip is for.
+ * **No national ID and no bank account number**, not even masked. A payslip is the document
+ * most likely to be photographed, forwarded and left on a desk, and nothing on it needs an
+ * identity number to be useful (invariant 10). The employee code identifies the person to the
+ * company, which is what a payslip is for.
  *
- * **No signature line.** The document is generated, and a printed line saying
- * "authorised signatory" above nothing is worse than saying so.
+ * **No signature line.** The document is generated, and a printed line saying "authorised
+ * signatory" above nothing is worse than saying so.
  */
 
 export interface PayslipBrand {
   readonly displayName: string;
   readonly legalName: string;
   readonly address?: string | undefined;
-  /** OKLCH hue, 0–360. The one accent (§24). Defaults to a neutral ink. */
+  /** Kept for callers that pass the brand block's accent; the page is black ink only. */
   readonly accentHue?: number | undefined;
 }
 
@@ -44,7 +34,7 @@ export interface PayslipRow {
 }
 
 export interface PayslipData {
-  /** `2026-03`. Rendered as a Bangla month name plus a Latin year. */
+  /** `2026-03`. Rendered as `March 2026`. */
   readonly month: string;
   readonly employeeCode: string;
   readonly employeeName: string;
@@ -66,35 +56,42 @@ export interface PayslipData {
   readonly paidOn: string | null;
 }
 
-/** Bangla month names, indexed by the `MM` in a `YYYY-MM`. */
-const BANGLA_MONTHS: readonly string[] = [
-  'জানুয়ারি',
-  'ফেব্রুয়ারি',
-  'মার্চ',
-  'এপ্রিল',
-  'মে',
-  'জুন',
-  'জুলাই',
-  'আগস্ট',
-  'সেপ্টেম্বর',
-  'অক্টোবর',
-  'নভেম্বর',
-  'ডিসেম্বর',
+const MONTHS: readonly string[] = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
-export function banglaMonth(month: string): string {
+/** `2026-03` → `March 2026`. */
+export function payslipMonth(month: string): string {
   const index = Number(month.slice(5, 7)) - 1;
-  return `${BANGLA_MONTHS[index] ?? month.slice(5, 7)} ${month.slice(0, 4)}`;
+  return `${MONTHS[index] ?? month.slice(5, 7)} ${month.slice(0, 4)}`;
+}
+
+/** `2026-03-07` → `7 Mar 2026`; anything else is printed as it came. */
+function printedDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (match === null) return value;
+  const [, year = '', month = '', day = ''] = match;
+  return `${String(Number(day))} ${(MONTHS[Number(month) - 1] ?? month).slice(0, 3)} ${year}`;
 }
 
 /**
  * HTML-escape.
  *
- * Every interpolated value goes through this without exception, the same rule
- * `invoice.template.ts` states: an employee's name is text a person typed and this
- * document is rendered by a real browser inside Gotenberg. The dev container runs
- * `--chromium-disable-javascript=true`, and relying on a container flag for correctness
- * is exactly the dependency that breaks when somebody tunes the compose file.
+ * Every interpolated value goes through this without exception: an employee's name is text a
+ * person typed and this document is rendered by a real browser inside Gotenberg. The dev
+ * container runs `--chromium-disable-javascript=true`, and relying on a container flag for
+ * correctness is exactly the dependency that breaks when somebody tunes the compose file.
  */
 function escape(value: string): string {
   return value
@@ -105,30 +102,16 @@ function escape(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/**
- * Money, from integer poisha, with thousands separators.
- *
- * Never a float and never division into a `number` (invariant 1): the split happens in
- * bigint arithmetic inside `takaParts`, and only the already-split integer parts become
- * strings. A `poisha / 100` here would be the exact bug the invariant exists to prevent,
- * and on a payslip it would be visible to the person whose salary it is.
- */
-export function formatTaka(amount: Poisha): string {
-  const { negative, taka, poisha } = takaParts(amount);
-  const grouped = taka.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${negative ? '−' : ''}৳${grouped}.${poisha.toString().padStart(2, '0')}`;
-}
-
 function rows(list: readonly PayslipRow[]): string {
   if (list.length === 0) {
-    return `<tr><td colspan="2" class="empty">—</td></tr>`;
+    return `<tr><td colspan="2" class="empty">None</td></tr>`;
   }
   return list
     .map(
       (row) => `
       <tr>
         <td>${escape(row.label)}</td>
-        <td class="money">${formatTaka(row.amountPoisha)}</td>
+        <td class="money">${escape(takaText(row.amountPoisha))}</td>
       </tr>`,
     )
     .join('');
@@ -140,109 +123,75 @@ export function renderPayslipHtml(input: {
   readonly fonts: readonly FontFile[];
 }): string {
   const { brand, data, fonts } = input;
-  const accent = `oklch(0.55 0.12 ${String(brand.accentHue ?? 250)})`;
+  const paid = data.runStatus === 'paid';
 
   return `<!doctype html>
-<html lang="bn">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>${escape(data.employeeCode)} ${escape(data.month)}</title>
     <style>
 ${fontFaceCss(fonts)}
-
-      /* §24: neutral chrome, one accent, hairlines rather than shadows. A printed
-         document has no hover states and no dark mode, so the token set collapses to
-         ink, hairline and the org's accent. */
-      :root {
-        --ink: oklch(0.22 0.01 260);
-        --muted: oklch(0.52 0.01 260);
-        --hairline: oklch(0.9 0.005 260);
-        --accent: ${accent};
-      }
-
+      :root { --ink: #000; --ink-soft: #2b2b2b; --ink-muted: #555; --hairline: #bdbdbd; }
       * { box-sizing: border-box; }
-
+      html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       body {
         margin: 0;
-        /* Hind Siliguri for both scripts, so Bangla labels and Latin digits sit on one
-           baseline. The fallback exists so a missing font is visibly a different
-           typeface rather than a row of boxes. */
-        font-family: 'Hind Siliguri', 'Noto Sans Bengali', sans-serif;
-        font-size: 11pt;
-        line-height: 1.6;
+        font-family: ${DOCUMENT_FONT_STACK};
+        font-size: 9.5pt;
+        line-height: 1.45;
         color: var(--ink);
       }
-
+      .caption {
+        font-size: 7pt; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+        color: var(--ink-muted);
+      }
+      .gap { margin-top: 2.4mm; }
       header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 24px;
-        padding-bottom: 14px;
-        border-bottom: 2px solid var(--accent);
+        display: flex; justify-content: space-between; align-items: flex-start; gap: 7mm;
+        padding-bottom: 4mm; border-bottom: 2pt solid var(--ink);
       }
-      .brand-name { font-size: 17pt; font-weight: 600; line-height: 1.3; }
-      .brand-legal { color: var(--muted); font-size: 9.5pt; }
-      .doc-title { font-size: 15pt; font-weight: 600; text-align: right; }
-      .doc-meta { color: var(--muted); font-size: 9.5pt; text-align: right; }
+      .brand-name { font-size: 15pt; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+      .brand-meta { margin-top: 1.2mm; font-size: 8pt; color: var(--ink-muted); }
+      .doc { text-align: right; }
+      .doc-title { font-size: 7pt; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; }
+      .month { margin-top: 0.6mm; font-size: 22pt; font-weight: 700; line-height: 1.05; }
+      .status { margin-top: 1.6mm; display: inline-block; border: 1pt solid var(--ink); padding: 0.6mm 2mm; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 
-      .facts { display: flex; gap: 32px; margin: 18px 0 8px; }
-      .fact { flex: 1; }
-      .fact h2 {
-        margin: 0 0 4px;
-        font-size: 9.5pt;
-        font-weight: 600;
-        color: var(--muted);
-        letter-spacing: 0.04em;
-      }
+      .facts { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 7mm; margin-top: 7mm; }
+      .facts .caption { margin-bottom: 1mm; }
+      .facts .value { font-weight: 600; }
+      .facts .name { font-size: 13pt; font-weight: 700; line-height: 1.2; }
 
+      .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; margin-top: 7mm; }
       table { width: 100%; border-collapse: collapse; }
       thead th {
-        background: oklch(0.97 0.004 260);
-        font-size: 9.5pt;
-        font-weight: 600;
-        text-align: left;
-        padding: 7px 8px;
-        border-bottom: 1px solid var(--hairline);
+        font-size: 7pt; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+        text-align: left; padding: 0 0 1.6mm; border-bottom: 1.5pt solid var(--ink);
       }
-      tbody td { padding: 7px 8px; border-bottom: 1px solid var(--hairline); }
-      /* Tabular figures so the money column aligns digit for digit (§24). */
-      .money { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      tbody td { padding: 2mm 0; border-bottom: 1px solid var(--hairline); }
+      tbody tr:last-child td { border-bottom: 1pt solid var(--ink); }
+      .money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
       thead th.money { text-align: right; }
-      .empty { color: var(--muted); }
+      .empty { color: var(--ink-muted); }
 
-      .columns { display: flex; gap: 20px; margin-top: 12px; }
-      .columns > section { flex: 1; }
+      .summary { display: grid; grid-template-columns: 1fr 80mm; gap: 7mm; margin-top: 7mm; align-items: start; }
+      .attendance { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 1.6mm; border-top: 1pt solid var(--ink); border-bottom: 1pt solid var(--ink); }
+      .attendance > div { padding: 2mm 2.4mm; border-left: 1px solid var(--hairline); }
+      .attendance > div:first-child { border-left: none; padding-left: 0; }
+      .attendance .value { margin-top: 0.5mm; font-size: 12pt; font-weight: 700; }
+      .totals td { padding: 1.2mm 0; border: none; }
+      .totals td + td { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .totals .label { color: var(--ink-soft); }
+      .net { margin-top: 2mm; border: 2pt solid var(--ink); }
+      .net-label { background: #000; color: #fff; padding: 1.4mm 3mm; font-size: 7pt; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+      .net-amount { padding: 2.2mm 3mm; font-size: 20pt; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-      .totals { margin-top: 16px; margin-left: auto; width: 55%; }
-      .totals tr td { border: none; padding: 3px 8px; }
-      .totals .label { color: var(--muted); }
-      .totals .grand td {
-        border-top: 1px solid var(--hairline);
-        padding-top: 8px;
-        font-weight: 600;
-        font-size: 12.5pt;
-      }
-      .totals .grand .money { color: var(--accent); }
-
-      .attendance { margin-top: 14px; font-size: 10pt; color: var(--muted); }
-      .attendance strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-
-      .notice {
-        margin-top: 14px;
-        padding: 8px 10px;
-        border: 1px solid var(--hairline);
-        border-radius: 6px;
-        font-size: 9.5pt;
-        color: var(--muted);
-      }
+      .notice { margin-top: 6mm; border-left: 2pt solid var(--ink); padding: 0.6mm 0 0.6mm 3mm; font-weight: 500; }
 
       footer {
-        margin-top: 24px;
-        padding-top: 10px;
-        border-top: 1px solid var(--hairline);
-        color: var(--muted);
-        font-size: 9.5pt;
+        margin-top: 10mm; padding-top: 3mm; border-top: 1px solid var(--hairline);
+        color: var(--ink-soft); font-size: 8pt;
       }
     </style>
   </head>
@@ -250,32 +199,36 @@ ${fontFaceCss(fonts)}
     <header>
       <div>
         <div class="brand-name">${escape(brand.displayName)}</div>
-        <div class="brand-legal">${escape(brand.legalName)}</div>
-        ${brand.address === undefined ? '' : `<div class="brand-legal">${escape(brand.address)}</div>`}
+        <div class="brand-meta">${escape(brand.legalName)}${
+          brand.address === undefined ? '' : `<br />${escape(brand.address)}`
+        }</div>
       </div>
-      <div>
-        <div class="doc-title">বেতনের বিবরণী</div>
-        <div class="doc-meta">মাস: ${escape(banglaMonth(data.month))}</div>
-        <div class="doc-meta">
-          ${data.runStatus === 'paid' ? 'পরিশোধিত' : 'অনুমোদিত, পরিশোধ বাকি'}
-        </div>
+      <div class="doc">
+        <div class="doc-title">Payslip</div>
+        <div class="month">${escape(payslipMonth(data.month))}</div>
+        <div class="status">${paid ? 'Paid' : 'Approved, not yet paid'}</div>
       </div>
     </header>
 
     <section class="facts">
-      <div class="fact">
-        <h2>কর্মীর বিবরণ</h2>
-        <div>${escape(data.employeeName)}</div>
-        <div class="brand-legal">কর্মী নম্বর: ${escape(data.employeeCode)}</div>
-        ${data.designation === null ? '' : `<div class="brand-legal">পদ: ${escape(data.designation)}</div>`}
+      <div>
+        <div class="caption">Employee</div>
+        <div class="name">${escape(data.employeeName)}</div>
+        ${data.designation === null ? '' : `<div class="value">${escape(data.designation)}</div>`}
       </div>
-      <div class="fact">
-        <h2>চাকরির তথ্য</h2>
-        <div class="brand-legal">যোগদান: ${escape(data.joinDate)}</div>
+      <div>
+        <div class="caption">Employee code</div>
+        <div class="value">${escape(data.employeeCode)}</div>
+        <div class="caption gap">Joined</div>
+        <div class="value">${escape(printedDate(data.joinDate))}</div>
+      </div>
+      <div>
+        <div class="caption">Pay period</div>
+        <div class="value">${escape(payslipMonth(data.month))}</div>
         ${
           data.paidOn === null
             ? ''
-            : `<div class="brand-legal">পরিশোধের তারিখ: ${escape(data.paidOn)}</div>`
+            : `<div class="caption gap">Paid on</div><div class="value">${escape(printedDate(data.paidOn))}</div>`
         }
       </div>
     </section>
@@ -283,66 +236,53 @@ ${fontFaceCss(fonts)}
     <div class="columns">
       <section>
         <table>
-          <thead>
-            <tr>
-              <th>বেতন ও ভাতা</th>
-              <th class="money">টাকা</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Earnings</th><th class="money">Amount</th></tr></thead>
           <tbody>${rows(data.earnings)}
           </tbody>
         </table>
       </section>
       <section>
         <table>
-          <thead>
-            <tr>
-              <th>কর্তন</th>
-              <th class="money">টাকা</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Deductions</th><th class="money">Amount</th></tr></thead>
           <tbody>${rows(data.deductions)}
           </tbody>
         </table>
       </section>
     </div>
 
-    <table class="totals">
-      <tbody>
-        <tr>
-          <td class="label">মোট বেতন ও ভাতা</td>
-          <td class="money">${formatTaka(data.grossPoisha)}</td>
-        </tr>
-        <tr>
-          <td class="label">মোট কর্তন</td>
-          <td class="money">${formatTaka(data.deductionsPoisha)}</td>
-        </tr>
-        <tr class="grand">
-          <td>প্রাপ্য বেতন</td>
-          <td class="money">${formatTaka(data.netPoisha)}</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <p class="attendance">
-      উপস্থিতি — কর্মদিবস <strong>${String(data.workingDays)}</strong>,
-      উপস্থিত <strong>${String(data.presentDays)}</strong>,
-      অনুপস্থিত <strong>${String(data.absentDays)}</strong>,
-      অর্ধদিবস <strong>${String(data.halfDays)}</strong>
-    </p>
+    <section class="summary">
+      <div>
+        <div class="caption">Attendance</div>
+        <div class="attendance">
+          <div><div class="caption">Working days</div><div class="value">${String(data.workingDays)}</div></div>
+          <div><div class="caption">Present</div><div class="value">${String(data.presentDays)}</div></div>
+          <div><div class="caption">Absent</div><div class="value">${String(data.absentDays)}</div></div>
+          <div><div class="caption">Half days</div><div class="value">${String(data.halfDays)}</div></div>
+        </div>
+      </div>
+      <div>
+        <table class="totals">
+          <tbody>
+            <tr><td class="label">Total earnings</td><td>${escape(takaText(data.grossPoisha))}</td></tr>
+            <tr><td class="label">Total deductions</td><td>${escape(takaText(data.deductionsPoisha))}</td></tr>
+          </tbody>
+        </table>
+        <div class="net">
+          <div class="net-label">Net pay</div>
+          <div class="net-amount">${escape(takaText(data.netPoisha))}</div>
+        </div>
+      </div>
+    </section>
 
     ${
       data.loanShortfallPoisha > 0n
-        ? `<p class="notice">
-             এই মাসে ঋণের কিস্তি থেকে ${formatTaka(data.loanShortfallPoisha)} কাটা যায়নি;
-             বাকি অংশ পরের মাসের বেতন থেকে কাটা হবে।
-           </p>`
+        ? `<p class="notice">${escape(takaText(data.loanShortfallPoisha))} of this month's loan instalment could not be deducted; the balance will be deducted from next month's salary.</p>`
         : ''
     }
 
     <footer>
-      <div>এই বিবরণীটি কম্পিউটারে তৈরি, তাই কোনো স্বাক্ষরের প্রয়োজন নেই।</div>
-      <div>হিসাবে কোনো ভুল মনে হলে এইচআর বিভাগে যোগাযোগ করুন।</div>
+      <div>This payslip is computer-generated and needs no signature.</div>
+      <div>If anything here looks wrong, please contact the HR department.</div>
     </footer>
   </body>
 </html>`;

@@ -3,26 +3,15 @@ import type { Locale } from './locale.js';
 /**
  * Digits and grouping, in one place.
  *
- * Money, dates, quantities and invoice numbers all have to render the same
- * digits, and they used to have their own copies: `formatMoney` carried a
- * Bangla digit table and the date helpers would have carried a second one. Two
- * tables is one table that can be wrong — a customer reading `৳১,২০০.০০` next
- * to `17 সেপ্টেম্বর 2026` sees a document that looks half-translated, and
- * nothing in the build would have complained.
+ * Money, dates, quantities and invoice numbers all render the same Latin digits
+ * with the same grouping, so the grouping lives here once: two copies is one
+ * copy that can be wrong.
  *
- * `Intl` is deliberately not used for this. Its Bangla numbering system comes
- * from whatever ICU the runtime shipped, so the same invoice could render Latin
- * digits on one Node version and Bangla on the next. A document that changes
- * shape on a runtime upgrade is not a document.
+ * `Intl` is deliberately not used for this. Its grouping comes from whatever ICU
+ * the runtime shipped, so the same figure could group differently on one Node
+ * version and the next. A screen that changes shape on a runtime upgrade is a
+ * screen nobody can write a test for.
  */
-
-const BANGLA_DIGITS = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'] as const;
-
-/** Latin `0-9` → Bangla digits, for `bn` only. Anything else is returned as is. */
-export function localiseDigits(text: string, locale: Locale): string {
-  if (locale !== 'bn') return text;
-  return text.replace(/\d/g, (digit) => BANGLA_DIGITS[Number(digit)] ?? digit);
-}
 
 /**
  * South Asian grouping of a string of digits: last three, then pairs.
@@ -53,13 +42,14 @@ export function groupSouthAsian(digits: string): string {
  * Quantities, not money — money goes through `formatMoney`, which knows about
  * poisha. Refuses a fractional value because every count in this system is a
  * whole thing (pieces, orders, days), and a fraction means a division happened
- * upstream that nobody meant.
+ * upstream that nobody meant. The locale argument is the one locale (D-750),
+ * kept so call sites that pass the screen's locale need not change.
  */
-export function formatCount(value: bigint | number, locale: Locale = 'en'): string {
+export function formatCount(value: bigint | number, _locale?: Locale): string {
   if (typeof value === 'number' && !Number.isInteger(value)) {
     throw new RangeError(`formatCount needs a whole number, received ${String(value)}.`);
   }
   const negative = value < 0;
   const magnitude = (negative ? -value : value).toString();
-  return localiseDigits(`${negative ? '-' : ''}${groupSouthAsian(magnitude)}`, locale);
+  return `${negative ? '-' : ''}${groupSouthAsian(magnitude)}`;
 }

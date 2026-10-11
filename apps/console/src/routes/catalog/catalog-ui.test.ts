@@ -1,14 +1,7 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { catalogEn, catalogMessages } from './messages.js';
 import { slugify } from './slug.js';
-import { loadLocale } from '../../i18n/catalogue.js';
-
-// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
-// the app does before reading it.
-beforeAll(async () => {
-  await loadLocale('bn');
-});
 
 /**
  * The catalog screens' two pure pieces.
@@ -17,20 +10,18 @@ beforeAll(async () => {
  * already covers; these two are the bits that can be wrong on their own, and both
  * have a failure mode a manual click-through would not show:
  *
- * - a missing Bangla key throws at render time, on whichever screen happens to
- *   need it, for whichever user switched language;
+ * - a missing key throws at render time, on whichever screen happens to need it;
  * - a slug that does not match the server's `^[a-z0-9]+(-[a-z0-9]+)*$` is a 400 on
  *   create, and the operator reads it as "the product name is invalid".
  */
 
 describe('the catalog catalogue', () => {
-  it('has the same keys in bn as in en', () => {
-    const english = Object.keys(catalogEn).sort();
-    const bangla = Object.keys(catalogMessages.bn).sort();
-    expect(bangla).toEqual(english);
+  it('is English only (D-750)', () => {
+    expect(Object.keys(catalogMessages)).toEqual(['en']);
+    expect(Object.keys(catalogEn).length).toBeGreaterThan(10);
   });
 
-  it('has a non-empty value for every key in both locales', () => {
+  it('has a non-empty value for every key', () => {
     const empty: string[] = [];
     for (const [locale, catalogue] of Object.entries(catalogMessages)) {
       for (const [key, value] of Object.entries(catalogue)) {
@@ -40,13 +31,9 @@ describe('the catalog catalogue', () => {
     expect(empty).toEqual([]);
   });
 
-  it('leaves ERP nouns in English inside the Bangla strings', () => {
-    // Not pedantry: Dhaka ops staff say "SKU" and "barcode" in English, and D-036's
-    // reasoning is that translated jargon slows an operator down rather than
-    // helping. A Bangla transliteration here would be a regression nobody would
-    // notice until a picker could not find the column they were told about.
-    expect(catalogMessages.bn['catalog.colCode']).toContain('SKU');
-    expect(catalogMessages.bn['catalog.labelsHelp']).toContain('Code 128');
+  it('names the columns the way Dhaka ops staff say them', () => {
+    expect(catalogEn['catalog.colCode']).toContain('SKU');
+    expect(catalogEn['catalog.labelsHelp']).toContain('Code 128');
   });
 });
 

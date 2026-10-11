@@ -54,9 +54,9 @@ async function cacheRunningPage(): Promise<void> {
   /*
    * Every font the stylesheet names, not only the ones this visit happened to use.
    * A browser fetches a face when text first needs it, so a till that has only
-   * shown English has never downloaded Hind Siliguri — and the receipt is Bangla.
-   * Without this the first Bangla receipt printed offline falls back to whatever
-   * the tablet has, on the one document the customer takes away.
+   * shown digits may not have every subset yet — and a customer's name typed in
+   * Bangla needs its face. Without this the first such receipt printed offline
+   * falls back to whatever the tablet has, on the one document the customer takes.
    */
   for (const sheet of document.styleSheets) {
     let rules: CSSRuleList;

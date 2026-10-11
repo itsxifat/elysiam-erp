@@ -3,9 +3,9 @@ import { messages, type Locale, type MessageKey } from '@elysium/i18n';
 /**
  * The investor portal's strings (M25).
  *
- * **Bangla first** (D-036, D-310): an investor is a partner, not staff, so the pages open in
- * Bangla with an English toggle. The strings live in `packages/i18n/src/locales/{bn,en}.ts`,
- * where a key on one side only does not compile. Most of them are shared on purpose: the
+ * **English only** (D-750): the brands never wanted Bangla, so an investor reads the same
+ * formal English as the staff. The strings live in `packages/i18n/src/locales/en.ts`. Most of
+ * them are shared on purpose: the
  * sign-in journey is the console's (`auth.*`) and the money words are the console's
  * investor screens' (`investors.*`), so an investor and the accounts team call the same
  * figure by the same name. Only what the portal says and the console does not is
@@ -124,8 +124,6 @@ const PORTAL_KEYS = [
   'portal.investor.documentsCaption',
   'portal.investor.documentsEmptyDetail',
   'portal.investor.openFailed',
-  'portal.language',
-  'portal.languageLabel',
   'portal.themeLight',
   'portal.themeDark',
 ] as const satisfies readonly MessageKey[];

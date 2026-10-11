@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { formatCount, groupSouthAsian, localiseDigits } from './digits.js';
+import { formatCount, groupSouthAsian } from './digits.js';
 import { formatMoney } from './money.js';
 
 /**
@@ -34,21 +34,13 @@ describe('groupSouthAsian', () => {
   });
 });
 
-describe('localiseDigits', () => {
-  it('leaves English alone and converts Bangla', () => {
-    expect(localiseDigits('12,34,567', 'en')).toBe('12,34,567');
-    expect(localiseDigits('12,34,567', 'bn')).toBe('১২,৩৪,৫৬৭');
-    expect(localiseDigits('SKU-2026', 'bn')).toBe('SKU-২০২৬');
-  });
-});
-
 describe('formatCount', () => {
-  it('groups whole counts and localises them', () => {
+  it('groups whole counts, in Latin digits only', () => {
     expect(formatCount(0)).toBe('0');
     expect(formatCount(1_200)).toBe('1,200');
     expect(formatCount(10_000_000)).toBe('1,00,00,000');
     expect(formatCount(-45)).toBe('-45');
-    expect(formatCount(1_200, 'bn')).toBe('১,২০০');
+    expect(formatCount(1_200, 'en')).toBe('1,200');
     // Past `Number.MAX_SAFE_INTEGER`, which is why counts take a bigint at all.
     expect(formatCount(9_007_199_254_740_993n)).toBe('9,00,71,99,25,47,40,993');
   });

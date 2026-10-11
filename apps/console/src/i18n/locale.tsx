@@ -1,44 +1,25 @@
-import {
-  DEFAULT_LOCALE,
-  fontClassFor,
-  isLocale,
-  type Locale,
-  type MessageKey,
-} from '@elysium/i18n';
-import { readStored, STORAGE_KEYS, writeStored } from '@elysium/ui';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { DEFAULT_LOCALE, type Locale, type MessageKey } from '@elysium/i18n';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 
-import { catalogueFor, loadLocale } from './catalogue.js';
+import { catalogueFor } from './catalogue.js';
 
 /**
- * The console's locale, and the lookup every screen uses (D-036, §24).
+ * The console's locale, and the lookup every screen uses (§24; D-750).
  *
- * `t()` from `@elysium/i18n` is a pure function of (key, locale), which is right
- * for a server rendering an invoice and wrong for a React tree: every component
- * would have to be handed the locale, and the one that forgot would render half
- * the screen in English inside a Bangla page. So the locale lives in context and
- * `useT()` closes over it. The console never imports that `t`: it defaults to
- * English, and three components that did rendered the login screen in English for
- * a Bangla user until 2026-09-30.
+ * English only: the owner's decision of 2026-10-11 is that the brands never wanted Bangla,
+ * so there is no language switch and one catalogue. The locale still lives in context, and
+ * `useT()` still closes over it, because every screen already reads `locale` for its dates
+ * and counts; it is simply always English now.
  *
- * The key type is `MessageKey`, the shared catalogue's own. What matters is that
- * the type is not `string`: that would turn the missing-key check into a CI grep,
- * and the failure it guards against — `nav.orders` rendered literally on screen —
- * is one a user finds, not a test.
- *
- * `<html lang>` and the font class are set from the same state. The font class is
- * not cosmetic: Bangla renders in Hind Siliguri with its own `size-adjust`, and
- * without it a mixed bn/en string sits on two optical baselines (check 9).
- *
- * Bangla is fetched on demand (`catalogue.ts`), so switching waits for it: the
- * locale changes only once its strings are here, and never renders a half-loaded
- * screen.
+ * The key type is `MessageKey`, the shared catalogue's own. What matters is that the type is
+ * not `string`: that would turn the missing-key check into a CI grep, and the failure it
+ * guards against — `nav.orders` rendered literally on screen — is one a user finds, not a
+ * test.
  */
 
 interface LocaleContextValue {
   readonly locale: Locale;
-  readonly setLocale: (locale: Locale) => void;
   readonly t: (key: MessageKey) => string;
 }
 
@@ -47,56 +28,27 @@ const LocaleContext = createContext<LocaleContextValue | null>(null);
 function lookup(key: MessageKey, locale: Locale): string {
   const value = catalogueFor(locale)[key] as string | undefined;
   if (value === undefined) {
-    // Unreachable while the key type holds. Thrown rather than returned so a
-    // catalogue edit that breaks it fails loudly in development instead of
-    // shipping a screen that reads like a variable name.
+    // Unreachable while the key type holds. Thrown rather than returned so a catalogue edit
+    // that breaks it fails loudly in development instead of shipping a screen that reads
+    // like a variable name.
     throw new Error(`No ${locale} message for "${key}".`);
   }
   return value;
 }
 
-export function readStoredLocale(): Locale {
-  // Private browsing denies storage: English for this session, per D-036.
-  const saved = readStored(STORAGE_KEYS.consoleLocale);
-  if (saved !== null && isLocale(saved)) return saved;
-  return DEFAULT_LOCALE;
-}
-
-/** Fetch the stored locale's strings. `entry.tsx` awaits this before mounting. */
-export function preloadStoredLocale(): Promise<void> {
-  return loadLocale(readStoredLocale());
-}
-
 export function LocaleProvider({ children }: { readonly children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(readStoredLocale);
+  const locale = DEFAULT_LOCALE;
 
   useEffect(() => {
     const root = document.documentElement;
     root.lang = locale;
-    // Both classes are toggled rather than one being set, because the Bangla
-    // stack has to *replace* the Latin one — leaving `font-sans` on means the
-    // Bangla glyphs fall through to Inter's fallback and the `size-adjust` never
-    // applies.
-    root.classList.toggle('font-bangla', locale === 'bn');
-    root.classList.toggle('font-sans', locale !== 'bn');
+    root.classList.add('font-sans');
+    root.classList.remove('font-bangla');
   }, [locale]);
 
-  const setLocale = useCallback((next: Locale) => {
-    void loadLocale(next)
-      .then(() => {
-        setLocaleState(next);
-        // Storage denied: the choice still applies to this session.
-        writeStored(STORAGE_KEYS.consoleLocale, next);
-      })
-      .catch(() => {
-        // The strings could not be fetched (offline). Stay in the current locale
-        // rather than switch to a screen of missing keys.
-      });
-  }, []);
-
   const value = useMemo<LocaleContextValue>(
-    () => ({ locale, setLocale, t: (key: MessageKey) => lookup(key, locale) }),
-    [locale, setLocale],
+    () => ({ locale, t: (key: MessageKey) => lookup(key, locale) }),
+    [locale],
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
@@ -113,5 +65,4 @@ export function useT(): (key: MessageKey) => string {
   return useLocale().t;
 }
 
-export { fontClassFor };
 export type { MessageKey as ConsoleT };

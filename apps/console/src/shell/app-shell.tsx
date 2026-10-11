@@ -13,7 +13,7 @@ import { Bell, ChevronRight, Menu as MenuIcon, Moon, Search, Sun } from 'lucide-
 import { lazy, Suspense, useEffect, useState } from 'react';
 
 import { useSession } from '../auth/session.js';
-import { useLocale, useT } from '../i18n/locale.js';
+import { useT } from '../i18n/locale.js';
 import { locate } from './navigation.js';
 import { SidebarContent } from './sidebar.js';
 import { applyTheme, isDark } from '../theme.js';
@@ -190,7 +190,6 @@ function Topbar({
   readonly onOpenPalette: () => void;
   readonly onOpenMenu: () => void;
 }) {
-  const { locale, setLocale } = useLocale();
   const t = useT();
   const [dark, setDark] = useState(isDark);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -274,21 +273,6 @@ function Topbar({
             {dark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
           </Button>
         </Hint>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          className="px-2 text-muted-foreground hover:text-foreground"
-          aria-label={t(locale === 'bn' ? 'shell.localeToEnglish' : 'shell.localeToBangla')}
-          onClick={() => setLocale(locale === 'bn' ? 'en' : 'bn')}
-        >
-          <span
-            lang={locale === 'bn' ? 'en' : 'bn'}
-            className={locale === 'bn' ? '' : 'font-bangla'}
-          >
-            {locale === 'bn' ? t('shell.languageEnglish') : t('shell.languageBangla')}
-          </span>
-        </Button>
       </div>
 
       <Suspense

@@ -1,30 +1,28 @@
-import { readStored, STORAGE_KEYS, writeStored } from '@elysium/ui';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { STORAGE_KEYS, writeStored } from '@elysium/ui';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 
 import { POS_MESSAGES, type PosMessageKey } from './messages.js';
 
 /**
- * The till's screen language, and the lookup every screen uses (D-036).
+ * The till's language, and the lookup every screen uses (D-750).
  *
- * Staff screens default to English like the console; the cashier can switch. The
- * receipt does **not** follow this: it is customer-facing and prints in Bangla
- * unless changed on the receipt itself (`receiptT`).
+ * English only: the brands never wanted Bangla, so the cashier's screens and the customer's
+ * receipt are both formal English and there is no switch.
  */
 
-export type PosLocale = 'en' | 'bn';
+export type PosLocale = 'en';
 
 type Translate = (key: PosMessageKey, values?: Readonly<Record<string, string>>) => string;
 
 interface LocaleValue {
   readonly locale: PosLocale;
-  readonly setLocale: (locale: PosLocale) => void;
   readonly t: Translate;
 }
 
 const LocaleContext = createContext<LocaleValue | null>(null);
 
-/** A message in a given locale, with `{name}` placeholders filled. */
+/** A message, with `{name}` placeholders filled. */
 export function translate(
   locale: PosLocale,
   key: PosMessageKey,
@@ -34,33 +32,21 @@ export function translate(
   return template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
 }
 
-function stored(): PosLocale {
-  // Storage denied: English for this session.
-  const value = readStored(STORAGE_KEYS.tillLocale);
-  if (value === 'bn' || value === 'en') return value;
-  return 'en';
-}
-
 export function LocaleProvider({ children }: { readonly children: ReactNode }) {
-  const [locale, setState] = useState<PosLocale>(stored);
+  const locale: PosLocale = 'en';
 
   useEffect(() => {
     const root = document.documentElement;
     root.lang = locale;
-    // The Bangla stack replaces the Latin one, so its `size-adjust` applies.
-    root.classList.toggle('font-bangla', locale === 'bn');
-    root.classList.toggle('font-sans', locale !== 'bn');
+    root.classList.add('font-sans');
+    root.classList.remove('font-bangla');
+    // A language chosen before D-750 is forgotten: there is only English now.
+    writeStored(STORAGE_KEYS.tillLocale, null);
   }, [locale]);
 
-  const setLocale = useCallback((next: PosLocale) => {
-    setState(next);
-    // Storage denied: still applies to this session.
-    writeStored(STORAGE_KEYS.tillLocale, next);
-  }, []);
-
   const value = useMemo<LocaleValue>(
-    () => ({ locale, setLocale, t: (key, values) => translate(locale, key, values) }),
-    [locale, setLocale],
+    () => ({ locale, t: (key, values) => translate(locale, key, values) }),
+    [locale],
   );
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }

@@ -101,9 +101,8 @@ describe('distributions', () => {
 });
 
 describe('dates', () => {
-  it('reads a business date in either language', () => {
+  it('reads a business date in English (D-750)', () => {
     expect(readableDate('2026-09-17', 'en')).toBe('17 Sep 2026');
-    expect(readableDate('2026-09-17', 'bn')).toMatch(/^১৭ /);
   });
 
   it('reads a timestamp as its Asia/Dhaka calendar day (invariant 8)', () => {
@@ -133,19 +132,19 @@ describe('withdrawal statuses', () => {
 
 describe('the catalogue', () => {
   const en = portalCatalogue('en');
-  const bn = portalCatalogue('bn');
+  /** Bangla letters, vowel signs and digits: the Bengali block but the taka sign (D-750). */
+  const bangla = new RegExp(
+    `[${String.fromCodePoint(0x0980)}-${String.fromCodePoint(0x09f2)}${String.fromCodePoint(0x09f4)}-${String.fromCodePoint(0x09ff)}]`,
+  );
 
-  it('has every key in both languages', () => {
-    expect(Object.keys(bn)).toEqual(Object.keys(en));
-    for (const [key, value] of Object.entries({ ...en, ...bn })) {
+  it('has a non-empty English value for every key, and no Bangla (D-750)', () => {
+    for (const [key, value] of Object.entries(en)) {
       expect(value.trim(), key).not.toBe('');
+      expect(bangla.test(value), key).toBe(false);
     }
   });
 
-  it('has a Bangla sentence, not an English one, for every portal string', () => {
-    for (const key of Object.keys(en) as (keyof typeof en)[]) {
-      if (!key.startsWith('portal.')) continue;
-      expect(bn[key], key).not.toBe(en[key]);
-    }
+  it('offers no language switch', () => {
+    expect(Object.keys(en).filter((key) => key.startsWith('portal.language'))).toEqual([]);
   });
 });

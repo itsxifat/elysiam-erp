@@ -711,7 +711,7 @@ function WalletCard({
   label,
 }: {
   readonly wallet: WalletRow;
-  readonly locale: 'en' | 'bn';
+  readonly locale: 'en';
   readonly label: (key: AccountsMessageKey) => string;
 }) {
   const Icon = WALLET_ICONS[wallet.subtype] ?? Wallet;
@@ -756,7 +756,7 @@ function Tile({
 }: {
   readonly label: string;
   readonly poisha: string;
-  readonly locale: 'en' | 'bn';
+  readonly locale: 'en';
 }) {
   return (
     <div className="px-5 py-4">

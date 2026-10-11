@@ -428,7 +428,6 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     body: {
       code: 'route_matrix',
       nameEn: 'Route matrix zone',
-      nameBn: 'রুট ম্যাট্রিক্স এলাকা',
       chargePoisha: '9000',
     },
   }),

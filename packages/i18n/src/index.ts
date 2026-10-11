@@ -1,15 +1,15 @@
 /**
  * @elysium/i18n
  *
- * bn and en messages, plus the money, date and number formatters every surface
- * shares (architecture §4, §24; D-036).
+ * The English messages, plus the money, date and number formatters every surface
+ * shares (architecture §4, §24; D-750: English only).
  *
  * The package is deliberately four small modules behind this barrel rather than
  * one file:
  *
  * - `locale.ts`   which locales exist, and which one each audience gets
- * - `locales/*`   the catalogues — English is the source, Bangla is typed against it
- * - `digits.ts`   Bangla digits and lakh/crore grouping, used by money and dates alike
+ * - `locales/*`   the catalogue and its sections, English only (D-750)
+ * - `digits.ts`   lakh/crore grouping, used by money and counts alike
  * - `money.ts`, `dates.ts`  the formatters
  *
  * M02a seeded the catalogue with the login flow's strings, because the UI rule
@@ -24,41 +24,24 @@
  */
 
 import { DEFAULT_LOCALE, type Locale } from './locale.js';
-import { bn } from './locales/bn.js';
 import { en, type MessageKey as CoreMessageKey } from './locales/en.js';
-import { bn as catalogPricingBn } from './locales/sections/catalog-pricing.bn.js';
 import {
   en as catalogPricingEn,
   type CatalogPricingKey,
 } from './locales/sections/catalog-pricing.en.js';
-import { bn as packingBn } from './locales/sections/packing.bn.js';
 import { en as packingEn, type PackingKey } from './locales/sections/packing.en.js';
-import { bn as packStationBn } from './locales/sections/pack-station.bn.js';
 import { en as packStationEn, type PackStationKey } from './locales/sections/pack-station.en.js';
-import { bn as stockToolsBn } from './locales/sections/stock-tools.bn.js';
 import { en as stockToolsEn, type StockToolsKey } from './locales/sections/stock-tools.en.js';
-import { bn as websiteBn } from './locales/sections/website.bn.js';
-import { bn as webMarketingBn } from './locales/sections/web-marketing.bn.js';
 import { en as webMarketingEn, type WebMarketingKey } from './locales/sections/web-marketing.en.js';
 import { en as websiteEn, type WebsiteKey } from './locales/sections/website.en.js';
-import { bn as manageBn } from './locales/sections/manage.bn.js';
 import { en as manageEn, type ManageKey } from './locales/sections/manage.en.js';
-import { bn as trustBn } from './locales/sections/trust.bn.js';
 import { en as trustEn, type TrustKey } from './locales/sections/trust.en.js';
-import { bn as accountBn } from './locales/sections/account.bn.js';
 import { en as accountEn, type AccountKey } from './locales/sections/account.en.js';
 
-export {
-  CUSTOMER_LOCALE,
-  DEFAULT_LOCALE,
-  LOCALES,
-  fontClassFor,
-  isLocale,
-  type Locale,
-} from './locale.js';
+export { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './locale.js';
 
-export { formatCount, groupSouthAsian, localiseDigits } from './digits.js';
-export { formatMoney, type FormatMoneyOptions } from './money.js';
+export { formatCount, groupSouthAsian } from './digits.js';
+export { formatMoney, formatMoneyText, type FormatMoneyOptions } from './money.js';
 export {
   BUSINESS_TIME_ZONE,
   businessDate,
@@ -105,7 +88,7 @@ export type {
 };
 
 /**
- * Every catalogue, by locale.
+ * The catalogue, by locale: English, the one locale (D-750).
  *
  * Exported because the console hands the whole map to its provider once rather
  * than calling `t()` through a closure, and because the checker and the parity
@@ -125,18 +108,6 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...packStationEn,
     ...trustEn,
     ...accountEn,
-  },
-  bn: {
-    ...bn,
-    ...stockToolsBn,
-    ...websiteBn,
-    ...catalogPricingBn,
-    ...manageBn,
-    ...webMarketingBn,
-    ...packingBn,
-    ...packStationBn,
-    ...trustBn,
-    ...accountBn,
   },
 };
 

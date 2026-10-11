@@ -194,7 +194,7 @@ export interface MessageTemplate {
   readonly key: string;
   readonly channel: string;
   readonly category: TemplateCategory;
-  readonly bodyBn: string;
+  /** The message, in English: every SMS is sent in English (D-750). */
   readonly bodyEn: string;
   readonly isActive: boolean;
 }
@@ -202,7 +202,6 @@ export interface MessageTemplate {
 export interface UpsertTemplateBody {
   readonly key: string;
   readonly category: EditableTemplateCategory;
-  readonly bodyBn: string;
   readonly bodyEn: string;
   readonly isActive: boolean;
 }

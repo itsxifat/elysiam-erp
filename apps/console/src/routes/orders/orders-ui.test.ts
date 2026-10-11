@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { Area } from './api.js';
 import {
@@ -13,27 +13,20 @@ import {
 import { ordersEn, ordersMessages } from './messages.js';
 import { offeredActions } from './order-actions-logic.js';
 import { formatShare, monthStartOf, RETURN_REASONS, todayInDhaka } from './returns-logic.js';
-import { loadLocale } from '../../i18n/catalogue.js';
-
-// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
-// the app does before reading it.
-beforeAll(async () => {
-  await loadLocale('bn');
-});
 
 /**
  * The order desk's pure pieces, and its catalogue.
  *
- * Each of these fails silently in the browser: a Bangla key missing on one side throws only
- * for the user who switched language, a phone rule that disagrees with the server's saves
+ * Each of these fails silently in the browser: a key missing from the catalogue throws at
+ * render time, a phone rule that disagrees with the server's saves
  * orders under the wrong buyer, and a preview that adds money in floating point reads a COD
  * to a buyer that the invoice then contradicts.
  */
 
 describe('the orders catalogue', () => {
-  it('has the same keys in bn as in en, and no empty string', () => {
-    expect(Object.keys(ordersMessages.bn).sort()).toEqual(Object.keys(ordersEn).sort());
-    for (const value of [...Object.values(ordersEn), ...Object.values(ordersMessages.bn)]) {
+  it('is English only (D-750), with no empty string', () => {
+    expect(Object.keys(ordersMessages)).toEqual(['en']);
+    for (const value of Object.values(ordersEn)) {
       expect(value.trim()).not.toBe('');
     }
   });
@@ -191,11 +184,10 @@ describe('returns by reason (M17)', () => {
     expect(formatShare(5)).toBe('0.05%');
   });
 
-  it('has a label for every reason the server knows, in both languages', () => {
+  it('has a label for every reason the server knows', () => {
     for (const reason of RETURN_REASONS) {
       const key = `orders.reason.${reason}` as const;
       expect(ordersEn[key]).toBeTruthy();
-      expect(ordersMessages.bn[key]).toBeTruthy();
     }
   });
 });

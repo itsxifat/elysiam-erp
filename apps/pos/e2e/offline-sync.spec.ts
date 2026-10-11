@@ -204,7 +204,7 @@ test('a sale the shelf cannot give is held for review, not lost and not retried 
   expect(state.wallets).toEqual({ cash: '0', bkash: '0', card: '0' });
 });
 
-test('a receipt prints through the print stylesheet: 80 mm, Bangla, and nothing else on the paper', async ({
+test('a receipt prints through the print stylesheet: 80 mm, English, and nothing else on the paper', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -240,10 +240,14 @@ test('a receipt prints through the print stylesheet: 80 mm, Bangla, and nothing 
   expect(box?.width).toBeLessThan(304);
   expect(await page.evaluate(() => document.body.getBoundingClientRect().width)).toBeLessThan(304);
 
-  // Customer-facing, so Bangla by default (D-036), digits included.
-  await expect(receipt).toContainText('ক্যাশ মেমো');
+  // The customer's document, in formal English with money as `Tk` (D-750, D-751).
+  await expect(receipt).toContainText('Sales receipt');
   await expect(receipt).toContainText('Elysiam Lifestyle BD');
-  await expect(receipt.getByTestId('receipt-total')).toHaveText('৳১,৫০০.০০');
+  await expect(receipt.getByTestId('receipt-total')).toHaveText('Tk 1,500.00');
+  // Not one character of the Bengali block on the paper, the taka sign included.
+  const printed = await receipt.innerText();
+  const bengali = new RegExp(`[${String.fromCodePoint(0x0980)}-${String.fromCodePoint(0x09ff)}]`);
+  expect(bengali.test(printed), printed).toBe(false);
   await expect(receipt.getByTestId('receipt-no')).toHaveText('GUL1-1-0001');
 
   // And the browser's own print pipeline lays it out on an 80 mm page.

@@ -1,5 +1,6 @@
 import { withOrg, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
+import { banglaCharactersIn } from '@elysium/domain';
 import { pino } from 'pino';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -54,7 +55,6 @@ async function queueAt(templateKey: string, phone: string, now: Date) {
     notify.queue(tx, ORG_A, {
       templateKey,
       phone,
-      locale: 'en',
       values: { code: 'EID25' },
       now,
     }),
@@ -265,6 +265,48 @@ describe('what an opt-out leaves behind, and what it stops', () => {
   });
 });
 
+describe('every SMS is English (M43, D-750)', () => {
+  it('sends the English body, never the Bangla one a template still holds', async () => {
+    // The suite's templates were written with a Bangla `body_bn` beside the English one.
+    const queued = await queueAt('offer.weekend', PHONE, NOON);
+    expect(await notify.deliver(ORG_A, queued.messageId, NOON)).toBe('sent');
+    const sent = gateway.sent.at(-1)?.body ?? '';
+    expect(sent).toBe('Your code is EID25');
+    expect(banglaCharactersIn(sent)).toEqual([]);
+    const stored = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ locale: string; body: string }>(
+            sql`select locale, body from notify.messages where org_id = ${ORG_A} and id = ${queued.messageId}`,
+          )
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(stored).toEqual({ locale: 'en', body: 'Your code is EID25' });
+  });
+
+  it('refuses a template written in Bangla, and saves an English one with one body', async () => {
+    const marketing = await harness.asRole('marketing', ORG_A);
+    const bangla = String.fromCodePoint(0x09b9, 0x09cd, 0x09af, 0x09be, 0x09b2, 0x09cb);
+    const refused = await marketing.client.request('PUT', '/v1/notify/templates', {
+      body: { key: 'offer.bangla', category: 'marketing', bodyEn: `${bangla} {name}` },
+    });
+    expect(refused.statusCode).toBeGreaterThanOrEqual(400);
+    expect(refused.body).toContain('NOTIFY_TEMPLATE_INVALID');
+
+    const saved = await marketing.client.request('PUT', '/v1/notify/templates', {
+      body: { key: 'offer.english', category: 'marketing', bodyEn: 'Hello {name}' },
+    });
+    expect(saved.statusCode, saved.body).toBeLessThan(300);
+    const listed = await marketing.client.request('GET', '/v1/notify/templates');
+    const row = (
+      JSON.parse(listed.body) as { items: { key: string; bodyEn: string; bodyBn?: string }[] }
+    ).items.find((item) => item.key === 'offer.english');
+    expect(row?.bodyEn).toBe('Hello {name}');
+    expect(row).not.toHaveProperty('bodyBn');
+  });
+});
+
 describe('a template’s category is not a marketer’s to turn into a sign-in code (W4)', () => {
   it('refuses otp over HTTP, and refuses to overwrite a sign-in template', async () => {
     const marketing = await harness.asRole('marketing', ORG_A);
@@ -272,7 +314,6 @@ describe('a template’s category is not a marketer’s to turn into a sign-in c
       body: {
         key: 'occasion.sneaky',
         category: 'otp',
-        bodyBn: 'কোড {code}',
         bodyEn: 'Code {code}',
       },
     });
@@ -281,7 +322,7 @@ describe('a template’s category is not a marketer’s to turn into a sign-in c
     // `auth.code` is the suite's sign-in template; turning it into an offer would hold
     // sign-in codes overnight.
     const overwrite = await marketing.client.request('PUT', '/v1/notify/templates', {
-      body: { key: 'auth.code', category: 'marketing', bodyBn: 'অফার', bodyEn: 'Offer' },
+      body: { key: 'auth.code', category: 'marketing', bodyEn: 'Offer' },
     });
     expect(overwrite.statusCode).toBeGreaterThanOrEqual(400);
     expect(overwrite.body).toContain('NOTIFY_TEMPLATE_INVALID');
@@ -293,7 +334,6 @@ describe('a template’s category is not a marketer’s to turn into a sign-in c
         notify.queue(tx, ORG_A, {
           templateKey: 'auth.code',
           phone: PHONE,
-          locale: 'en',
           values: { code: 'X' },
           category: 'marketing',
           now: NOON,

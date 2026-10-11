@@ -1,8 +1,10 @@
-import { groupSouthAsian, localiseDigits } from './digits.js';
+import { poisha, takaText } from '@elysium/domain';
+
+import { groupSouthAsian } from './digits.js';
 import type { Locale } from './locale.js';
 
 /**
- * Money for people to read (architecture §7, §24).
+ * Money on a staff screen (architecture §7, §24).
  *
  * Amounts are integer poisha everywhere (invariant 1), so this takes poisha
  * and never a taka float. It works in `bigint` digits end to end — no
@@ -11,10 +13,14 @@ import type { Locale } from './locale.js';
  *
  * Grouping is South Asian: the last three digits, then pairs, so ten million
  * poisha is `৳1,00,000.00` (one lakh taka) and a crore is `৳1,00,00,000.00`.
+ *
+ * Screens only (D-751). Everything printed or sent — invoices, slips, labels,
+ * receipts, payslips, SMS, email — reads `Tk 1,250.00` through `takaText` in
+ * `@elysium/domain`, so no Bangla-block character ever reaches paper or a phone.
  */
 
 export interface FormatMoneyOptions {
-  /** `bn` renders Bangla digits. Defaults to Latin digits, as the console does (D-036). */
+  /** The one locale (D-750); accepted so a screen can pass its own. */
   readonly locale?: Locale;
   /** Omit the ৳ sign, for table cells whose header already names the currency. */
   readonly symbol?: boolean;
@@ -60,7 +66,16 @@ export function formatMoney(
   const fraction = (magnitude % 100n).toString().padStart(2, '0');
   const symbol = options.symbol === false ? '' : '৳';
   const paisa = options.trimWholePaisa === true && fraction === '00' ? '' : `.${fraction}`;
-  const text = `${negative ? '-' : ''}${symbol}${whole}${paisa}`;
+  return `${negative ? '-' : ''}${symbol}${whole}${paisa}`;
+}
 
-  return localiseDigits(text, options.locale ?? 'en');
+/**
+ * `formatMoneyText(125000)` → `Tk 1,250.00`: money on paper or in a message (D-751).
+ *
+ * The till's receipt and any other printed or sent amount in an app that renders it itself.
+ * It is `takaText` from `@elysium/domain/money`, the one formatter every document, SMS and
+ * email uses, reached from here so an app need not depend on the domain package for it.
+ */
+export function formatMoneyText(value: bigint | number | string): string {
+  return takaText(poisha(toPoisha(value)));
 }

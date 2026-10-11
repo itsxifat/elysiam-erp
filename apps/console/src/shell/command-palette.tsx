@@ -1,11 +1,11 @@
 import { Kbd, readStored, STORAGE_KEYS, writeStored } from '@elysium/ui';
 import { useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
-import { ArrowRight, CornerDownLeft, History, Languages, Moon, Search, Sun } from 'lucide-react';
+import { ArrowRight, CornerDownLeft, History, Moon, Search, Sun } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 import { useAbility } from '../auth/session.js';
-import { useLocale, useT } from '../i18n/locale.js';
+import { useT } from '../i18n/locale.js';
 import {
   navigableItems,
   visiblePaletteActions,
@@ -79,7 +79,6 @@ export function CommandPalette({
 }) {
   const navigate = useNavigate();
   const ability = useAbility();
-  const { locale, setLocale } = useLocale();
   const t = useT();
   const [query, setQuery] = useState('');
 
@@ -206,13 +205,6 @@ export function CommandPalette({
               )
             }
             label={isDark() ? t('theme.toLight') : t('theme.toDark')}
-            trail={null}
-          />
-          <Item
-            value={`${t(locale === 'bn' ? 'shell.localeToEnglish' : 'shell.localeToBangla')} language bangla english`}
-            onSelect={() => run(() => setLocale(locale === 'bn' ? 'en' : 'bn'))}
-            icon={<Languages aria-hidden="true" className="size-4 text-muted-foreground" />}
-            label={t(locale === 'bn' ? 'shell.localeToEnglish' : 'shell.localeToBangla')}
             trail={null}
           />
         </Command.Group>

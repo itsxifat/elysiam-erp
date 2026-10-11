@@ -1,14 +1,7 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { investorsEn, investorsMessages } from './messages.js';
 import { bpsFromPercent, lastFinishedMonth, percentOfBps } from './share.js';
-import { loadLocale } from '../../i18n/catalogue.js';
-
-// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
-// the app does before reading it.
-beforeAll(async () => {
-  await loadLocale('bn');
-});
 
 /**
  * The investor screens' pure pieces.
@@ -17,8 +10,7 @@ beforeAll(async () => {
  * covers. These are the bits that can be wrong on their own, and each has a failure
  * mode a manual click-through would not show:
  *
- * - a missing Bangla key throws at render time, on whichever screen happens to need
- *   it, for whichever user switched language;
+ * - a missing key throws at render time, on whichever screen happens to need it;
  * - a profit share that survives a round trip through the form as 11.99% instead of
  *   12% pays the wrong amount for as long as nobody re-reads it;
  * - a default month that has not ended yet makes the declare dialog open pre-filled
@@ -26,11 +18,12 @@ beforeAll(async () => {
  */
 
 describe('the investor catalogue', () => {
-  it('has the same keys in bn as in en', () => {
-    expect(Object.keys(investorsMessages.bn).sort()).toEqual(Object.keys(investorsEn).sort());
+  it('is English only (D-750)', () => {
+    expect(Object.keys(investorsMessages)).toEqual(['en']);
+    expect(Object.keys(investorsEn).length).toBeGreaterThan(10);
   });
 
-  it('has a non-empty value for every key in both locales', () => {
+  it('has a non-empty value for every key', () => {
     const empty: string[] = [];
     for (const [locale, catalogue] of Object.entries(investorsMessages)) {
       for (const [key, value] of Object.entries(catalogue)) {

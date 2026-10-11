@@ -250,18 +250,14 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
               <p className="text-sm text-muted-foreground">
                 {[
                   order.shipTo.area,
-                  area === undefined
-                    ? null
-                    : locale === 'bn'
-                      ? `${area.thanaBn}, ${area.districtBn}`
-                      : `${area.thanaEn}, ${area.districtEn}`,
+                  area === undefined ? null : `${area.thanaEn}, ${area.districtEn}`,
                 ]
                   .filter((part) => part !== null && part !== '')
                   .join(', ')}
               </p>
               {zone === undefined ? null : (
                 <p className="text-xs text-muted-foreground">
-                  {t('orders.desk.zone')}: {locale === 'bn' ? zone.nameBn : zone.nameEn}
+                  {t('orders.desk.zone')}: {zone.nameEn}
                 </p>
               )}
             </div>

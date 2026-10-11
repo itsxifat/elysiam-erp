@@ -1,4 +1,3 @@
-import { bn } from '@elysium/i18n/locales/sections/website.bn';
 import { en } from '@elysium/i18n/locales/sections/website.en';
 
 import { registerSection } from './catalogue.js';
@@ -10,4 +9,4 @@ import { registerSection } from './catalogue.js';
  * travel in that screen's chunk rather than in the first download. The shell's own labels
  * (`web.nav.*`) stay in the core catalogue. Registering twice is harmless.
  */
-registerSection({ en, bn });
+registerSection({ en });

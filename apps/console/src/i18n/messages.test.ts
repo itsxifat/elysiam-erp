@@ -1,63 +1,27 @@
 import { LOCALES } from '@elysium/i18n';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { consoleEn, consoleMessages } from './messages.js';
-import { loadLocale } from './catalogue.js';
-
-// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
-// the app does before reading it.
-beforeAll(async () => {
-  await loadLocale('bn');
-});
 
 /**
- * M05 acceptance checks 3 and 4, for the console's own catalogue.
+ * M05 acceptance checks 3 and 4, for the console's own catalogue, English only (D-750).
  *
- * Check 3 is "every UI string key exists in both bn and en"; check 4 is the lint
- * rule that forbids emoji in UI source. `consoleBn`'s type already makes a missing
- * key a compile error, so what is left to assert at runtime is the two things a
- * type cannot see: that no value was left as an empty string or as the English
- * text pasted into the Bangla file, and that no emoji crept in.
- *
- * The empty-string case matters because it type-checks perfectly and renders as a
- * missing label — a button with no words on it.
+ * Check 3 is "every UI string key exists"; check 4 is the lint rule that forbids emoji in
+ * UI source. What is left to assert at runtime is what a type cannot see: that no value was
+ * left as an empty string (it type-checks perfectly and renders as a button with no words on
+ * it), and that no emoji crept in.
  */
 
-describe('the console catalogue is complete in both locales (check 3)', () => {
-  it('has both locales', () => {
-    expect(Object.keys(consoleMessages).sort()).toStrictEqual([...LOCALES].sort());
+describe('the console catalogue is complete and English (check 3, D-750)', () => {
+  it('has English and nothing else', () => {
+    expect(Object.keys(consoleMessages)).toStrictEqual([...LOCALES]);
+    expect([...LOCALES]).toStrictEqual(['en']);
   });
 
-  it('has the same key set in bn and en', () => {
-    expect(Object.keys(consoleMessages.bn).sort()).toStrictEqual(Object.keys(consoleEn).sort());
-  });
-
-  it('leaves no value empty in either locale', () => {
-    for (const [locale, catalogue] of Object.entries(consoleMessages)) {
-      for (const [key, value] of Object.entries(catalogue)) {
-        expect(value.trim(), `${locale}:${key}`).not.toBe('');
-      }
+  it('leaves no value empty', () => {
+    for (const [key, value] of Object.entries(consoleEn)) {
+      expect(value.trim(), key).not.toBe('');
     }
-  });
-
-  it('actually translated the Bangla values', () => {
-    /*
-     * A Bangla catalogue that is a copy of the English one passes every other
-     * check here and every CI key check, and a Bangladeshi user opening the
-     * console in Bangla sees English. Exempting the handful of values that are
-     * *supposed* to be identical — a keyboard shortcut, a role identifier — keeps
-     * this honest rather than making it noise.
-     */
-    const identicalByDesign = new Set(['shell.paletteHint']);
-
-    const untranslated = Object.keys(consoleEn).filter(
-      (key) =>
-        !identicalByDesign.has(key) &&
-        consoleMessages.bn[key as keyof typeof consoleEn] ===
-          consoleEn[key as keyof typeof consoleEn],
-    );
-
-    expect(untranslated).toStrictEqual([]);
   });
 });
 

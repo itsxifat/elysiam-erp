@@ -1,6 +1,6 @@
 import { findCostFields } from '@elysium/contracts';
 import { withSystem } from '@elysium/db';
-import { poisha } from '@elysium/domain';
+import { banglaCharactersIn } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -23,6 +23,7 @@ import {
   type SeededSku,
 } from '../inventory/inventory.testing.js';
 import { renderOrderInvoiceHtml, renderPackingSlipHtml } from './documents.service.js';
+import { SAMPLE_BRAND, SAMPLE_ORDER } from './order-documents.sample.js';
 import { OrdersModule } from './orders.module.js';
 import { ORDERS_ROUTE_KEYS } from './orders.route-fixtures.js';
 import {
@@ -578,74 +579,48 @@ describe('check 6, through the customers endpoint', () => {
 describe('§22’s invoice and packing slip', () => {
   /*
    * The page contents are asserted without Gotenberg, because that is the part this module
-   * owns; the bytes are Chromium's business and are asserted separately when it is up.
+   * owns; the bytes are Chromium's business and are asserted separately when it is up. The
+   * documents' own suite (`order-documents.test.ts`) reads every field; this one keeps the
+   * two promises the endpoints are built on.
    */
-  const brand = {
-    displayName: 'Elysiam Lifestyle BD',
-    legalName: 'Elysiam Lifestyle BD Limited',
-    address: 'বাড়ি ১২, সড়ক ৫, ধানমন্ডি, ঢাকা ১২০৫',
-    vatNo: '004512345678',
-    invoiceFooter: 'পণ্য বদলাতে চাইলে ডেলিভারির ৭ দিনের মধ্যে যোগাযোগ করুন।',
-    accentHue: 268,
-  };
-
-  const data = {
-    orderNo: 'ELY-2609-00042',
-    issuedOn: '2026-09-25',
-    customerName: 'রহিমা খাতুন',
-    customerPhone: '01712-345678',
-    addressLine: 'ফ্ল্যাট ৪বি, বাড়ি ২৩, সড়ক ১১, বনানী',
-    areaBn: 'গুলশান, ঢাকা',
-    areaEn: 'Gulshan, Dhaka',
-    lines: [
-      {
-        name: 'ক্ষুদ্র নকশার ওড়না',
-        sku: 'ELY-ODN-PRT-1',
-        qty: 3,
-        unitPricePoisha: poisha(68_500n),
-        lineDiscountPoisha: poisha(0n),
-      },
-    ],
-    itemsPoisha: poisha(205_500n),
-    discountPoisha: poisha(5_500n),
-    deliveryChargePoisha: poisha(6_000n),
-    advancePaidPoisha: poisha(6_000n),
-    codAmountPoisha: poisha(200_000n),
-    notes: 'ফোন করে তারপর ডেলিভারি দিন',
-  };
-
-  it('writes the invoice in Bangla, with the money the customer will be asked for', () => {
-    const html = renderOrderInvoiceHtml({ brand, data, fonts: [] });
-    expect(html).toContain('lang="bn"');
-    expect(html).toContain('বিক্রয় চালান');
-    // The conjuncts §22's font requirement exists for: a renderer without the right GSUB
-    // table draws these as separate letters, which still looks like text.
-    expect(html).toContain('ক্ষুদ্র');
-    expect(html).toContain('ELY-2609-00042');
-    expect(html).toContain('৳2,055.00');
-    expect(html).toContain('৳2,000.00');
-    expect(html).toContain('01712-345678');
-    expect(html).toContain(brand.invoiceFooter);
+  it('writes the invoice in English, with the money the customer will be asked for (D-750)', () => {
+    const html = renderOrderInvoiceHtml({ brand: SAMPLE_BRAND, data: SAMPLE_ORDER, fonts: [] });
+    expect(html).toContain('lang="en"');
+    expect(html).toContain('Invoice');
+    expect(html).toContain('ELY-2610-00042');
+    expect(html).toContain('Tk 8,895.00');
+    expect(html).toContain('Tk 8,460.00');
+    expect(html).toContain('01700-000123');
+    expect(banglaCharactersIn(html)).toEqual([]);
   });
 
   it('keeps line prices off the packing slip and the collectable amount on it', () => {
-    const html = renderPackingSlipHtml({ brand, data, fonts: [] });
-    expect(html).toContain('প্যাকিং স্লিপ');
-    expect(html).toContain('৳2,000.00');
+    const html = renderPackingSlipHtml({ brand: SAMPLE_BRAND, data: SAMPLE_ORDER, fonts: [] });
+    expect(html).toContain('Packing slip');
+    expect(html).toContain('Tk 8,460.00');
     // A priced slip taped to a box is an argument at the door about a discount the buyer
     // did not expect, and the picker has no use for the number.
-    expect(html).not.toContain('৳685.00');
-    expect(html).not.toContain('৳2,055.00');
+    expect(html).not.toContain('Tk 685.00');
+    expect(html).not.toContain('Tk 2,055.00');
   });
 
   it('escapes a buyer’s name rather than letting it become markup', () => {
     const html = renderOrderInvoiceHtml({
-      brand,
-      data: { ...data, customerName: '<script>alert(1)</script>' },
+      brand: SAMPLE_BRAND,
+      data: { ...SAMPLE_ORDER, customerName: '<script>alert(1)</script>' },
       fonts: [],
     });
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('refuses A5 for anything but the packing slip', async () => {
+    const order = await takeOrder(admin);
+    const refused = await admin.client.request(
+      'GET',
+      `/v1/orders/${order.id}/document?kind=invoice&paper=a5`,
+    );
+    expect(refused.statusCode).toBe(400);
   });
 
   it('renders a real order to PDF through Gotenberg', async () => {
@@ -659,15 +634,26 @@ describe('§22’s invoice and packing slip', () => {
     }
 
     const order = await takeOrder(admin);
-    for (const kind of ['invoice', 'packing_slip']) {
+    for (const query of [
+      'kind=invoice',
+      'kind=packing_slip',
+      'kind=packing_slip&paper=a5',
+      'kind=label',
+    ]) {
       const response = await admin.client.request(
         'GET',
-        `/v1/orders/${order.id}/document?kind=${kind}`,
+        `/v1/orders/${order.id}/document?${query}`,
       );
-      expect(response.statusCode, `${kind}: ${response.body.slice(0, 200)}`).toBe(200);
+      expect(response.statusCode, `${query}: ${response.body.slice(0, 200)}`).toBe(200);
       expect(response.headers['content-type']).toBe('application/pdf');
       expect(response.body.slice(0, 5)).toBe('%PDF-');
     }
+    const batch = await admin.client.request(
+      'GET',
+      `/v1/orders/documents?ids=${order.id}&kind=packing_slip&paper=a5`,
+    );
+    expect(batch.statusCode, batch.body.slice(0, 200)).toBe(200);
+    expect(batch.headers['content-disposition']).toContain('packing-slip-a5');
   }, 180_000);
 });
 

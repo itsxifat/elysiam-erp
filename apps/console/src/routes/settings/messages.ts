@@ -48,7 +48,6 @@ const SETTINGS_KEYS = [
   'settings.zones.caption',
   'settings.zones.colCode',
   'settings.zones.colNameEn',
-  'settings.zones.colNameBn',
   'settings.zones.colCharge',
   'settings.zones.chargeInput',
   'settings.zones.colCourier',

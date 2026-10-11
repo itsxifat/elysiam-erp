@@ -105,11 +105,8 @@ test('templates: the birthday greeting the occasions job needs', async () => {
   const dialog = page.getByRole('dialog', { name: 'New template' });
   await dialog.getByRole('textbox', { name: 'Template key' }).fill('occasion.birthday');
   await dialog
-    .getByRole('textbox', { name: 'Bangla text' })
-    .fill('শুভ জন্মদিন {name}! আপনার কোড {code}');
-  await dialog
-    .getByRole('textbox', { name: 'English text' })
-    .fill('Happy birthday {name}! Your code is {code}');
+    .getByRole('textbox', { name: 'Message' })
+    .fill('Happy birthday, {name}! Your code is {code}');
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('row', { name: /occasion\.birthday/ })).toContainText('Offer');

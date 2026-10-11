@@ -646,7 +646,6 @@ describe('the training org, seeded from anonymised data (D-223)', () => {
       return notify.queue(tx, orgId, {
         templateKey: 'practice',
         phone: buyer[0]?.phone_e164 ?? '',
-        locale: 'en',
         values: {},
       });
     });

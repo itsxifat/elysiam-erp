@@ -477,10 +477,12 @@ export class BuyingService {
           });
         }
 
+        // The website's language for the order, kept as it said; every email is English
+        // (D-750), so it decides nothing here.
         const locale =
           account?.locale === 'en' || account?.locale === 'bn'
             ? (input.locale ?? account.locale)
-            : (input.locale ?? 'bn');
+            : (input.locale ?? 'en');
         await buying.insertWebOrder(tx, {
           orgId,
           orderId: created.id,
@@ -537,7 +539,6 @@ export class BuyingService {
             orderNo: created.orderNo,
             template: 'order.placed',
             to: orderEmail,
-            locale,
             name: input.contact.name,
             totalPoisha: quote.totalPoisha,
           });

@@ -20,7 +20,7 @@ export const upsertTemplateSchema = z
      * system's, seeded rather than edited (ledger audit W4).
      */
     category: z.enum(['transactional', 'marketing']),
-    bodyBn: z.string().trim().min(1).max(1000),
+    /** The message, in English: the one body every SMS is sent from (D-750, D-755). */
     bodyEn: z.string().trim().min(1).max(1000),
     isActive: z.boolean().optional(),
   })

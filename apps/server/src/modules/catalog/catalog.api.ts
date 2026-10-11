@@ -42,6 +42,13 @@ export interface CatalogSku {
   readonly status: 'active' | 'archived';
 }
 
+/** A SKU's values by kind (M43): `M`, `Navy`, and the rest joined (`Long sleeve`). */
+export interface VariantParts {
+  readonly size: string | null;
+  readonly colour: string | null;
+  readonly other: string | null;
+}
+
 export interface CatalogApi {
   /**
    * Resolve SKU ids inside an existing transaction.
@@ -121,6 +128,16 @@ export interface CatalogApi {
    * screens (D-427). A SKU with no values is absent from the map.
    */
   variantLabels(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<Map<string, string>>;
+
+  /**
+   * Each SKU's size, colour and any other values, apart (M43): the order documents print size
+   * and colour in their own columns. A SKU with no values is absent from the map.
+   */
+  variantParts(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, VariantParts>>;
 
   /** A category's id and every id below it; empty when the brand has no such category. */
   categorySubtree(tx: Tx, orgId: string, categoryId: string): Promise<string[]>;
@@ -615,6 +632,14 @@ export class CatalogApiService implements CatalogApi {
     skuIds: readonly string[],
   ): Promise<Map<string, string>> {
     return repo.variantLabels(tx, orgId, skuIds);
+  }
+
+  async variantParts(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, VariantParts>> {
+    return repo.variantParts(tx, orgId, skuIds);
   }
 
   async categorySubtree(tx: Tx, orgId: string, categoryId: string): Promise<string[]> {

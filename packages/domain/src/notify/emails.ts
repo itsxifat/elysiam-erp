@@ -1,6 +1,6 @@
 /**
  * The website's emails (M34, D-529): one-time codes, password resets and order news, in
- * Bangla and English.
+ * English (D-750: the brands never wanted Bangla, so there is one copy of each).
  *
  * Templates are code, not rows: each needs a particular set of values and a link shape the
  * website serves, and a template a person could edit is one that could drop the code out of a
@@ -21,7 +21,6 @@ export const EMAIL_TEMPLATE_KEYS = [
 ] as const;
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number];
-export type EmailLocale = 'bn' | 'en';
 
 export function isEmailTemplateKey(value: string): value is EmailTemplateKey {
   return (EMAIL_TEMPLATE_KEYS as readonly string[]).includes(value);
@@ -65,140 +64,71 @@ const REQUIRED: Readonly<Record<EmailTemplateKey, readonly string[]>> = {
 
 const v = (values: Values, key: string): string => values[key] ?? '';
 
-const COPY: Readonly<Record<EmailLocale, Readonly<Record<EmailTemplateKey, Copy>>>> = {
-  en: {
-    'account.email_code': {
-      subject: (x) => `Your ${v(x, 'brand')} verification code`,
-      lines: (x) => [
-        `Hi ${v(x, 'name')},`,
-        'Use this code to verify your email address. It works for 15 minutes.',
-        'If you did not ask for it, you can ignore this email.',
-      ],
-      highlight: (x) => v(x, 'code'),
-    },
-    'account.password_reset': {
-      subject: (x) => `Reset your ${v(x, 'brand')} password`,
-      lines: (x) => [
-        `Hi ${v(x, 'name')},`,
-        'Someone asked to reset the password of your account. The link works for one hour.',
-        'If it was not you, ignore this email; your password stays as it is.',
-      ],
-      action: { label: () => 'Reset password', urlKey: 'resetUrl' },
-    },
-    'order.placed': {
-      subject: (x) => `Order ${v(x, 'orderNo')} received — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `Hi ${v(x, 'name')},`,
-        `Thank you. We have received your order ${v(x, 'orderNo')} for ${v(x, 'total')}.`,
-        'We will call you to confirm it before it is sent.',
-      ],
-      action: { label: () => 'View your order', urlKey: 'orderUrl' },
-    },
-    'order.confirmed': {
-      subject: (x) => `Order ${v(x, 'orderNo')} confirmed — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `Hi ${v(x, 'name')},`,
-        `Your order ${v(x, 'orderNo')} is confirmed and is being prepared.`,
-      ],
-      action: { label: () => 'View your order', urlKey: 'orderUrl' },
-    },
-    'order.shipped': {
-      subject: (x) => `Order ${v(x, 'orderNo')} is on its way — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `Hi ${v(x, 'name')},`,
-        `Your order ${v(x, 'orderNo')} has been handed to ${v(x, 'courier')}.`,
-        v(x, 'trackingCode') === '' ? '' : `Tracking code: ${v(x, 'trackingCode')}`,
-      ],
-      action: { label: () => 'Track your order', urlKey: 'orderUrl' },
-    },
-    'order.delivered': {
-      subject: (x) => `Order ${v(x, 'orderNo')} delivered — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `Hi ${v(x, 'name')},`,
-        `Your order ${v(x, 'orderNo')} has been delivered. Thank you for shopping with us.`,
-      ],
-      action: { label: () => 'View your order', urlKey: 'orderUrl' },
-    },
-    'order.cancelled': {
-      subject: (x) => `Order ${v(x, 'orderNo')} cancelled — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `Hi ${v(x, 'name')},`,
-        `Your order ${v(x, 'orderNo')} has been cancelled.`,
-        'If you paid online, the refund is arranged with you separately.',
-      ],
-      action: { label: () => 'View your order', urlKey: 'orderUrl' },
-    },
-    'smtp.test': {
-      subject: (x) => `Test email from ${v(x, 'brand')}`,
-      lines: () => ['This is a test. The email settings work.'],
-    },
+const COPY: Readonly<Record<EmailTemplateKey, Copy>> = {
+  'account.email_code': {
+    subject: (x) => `Your ${v(x, 'brand')} verification code`,
+    lines: (x) => [
+      `Dear ${v(x, 'name')},`,
+      'Use this code to verify your email address. It works for 15 minutes.',
+      'If you did not ask for it, you can ignore this email.',
+    ],
+    highlight: (x) => v(x, 'code'),
   },
-  bn: {
-    'account.email_code': {
-      subject: (x) => `${v(x, 'brand')} যাচাই কোড`,
-      lines: (x) => [
-        `প্রিয় ${v(x, 'name')},`,
-        'আপনার ইমেইল যাচাই করতে এই কোডটি ব্যবহার করুন। কোডটি ১৫ মিনিট কাজ করবে।',
-        'আপনি অনুরোধ না করে থাকলে এই ইমেইলটি উপেক্ষা করুন।',
-      ],
-      highlight: (x) => v(x, 'code'),
-    },
-    'account.password_reset': {
-      subject: (x) => `${v(x, 'brand')} পাসওয়ার্ড রিসেট`,
-      lines: (x) => [
-        `প্রিয় ${v(x, 'name')},`,
-        'আপনার অ্যাকাউন্টের পাসওয়ার্ড রিসেটের অনুরোধ এসেছে। লিংকটি এক ঘণ্টা কাজ করবে।',
-        'আপনি অনুরোধ না করে থাকলে এই ইমেইলটি উপেক্ষা করুন; পাসওয়ার্ড বদলাবে না।',
-      ],
-      action: { label: () => 'পাসওয়ার্ড রিসেট করুন', urlKey: 'resetUrl' },
-    },
-    'order.placed': {
-      subject: (x) => `অর্ডার ${v(x, 'orderNo')} গ্রহণ করা হয়েছে — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `প্রিয় ${v(x, 'name')},`,
-        `ধন্যবাদ। আপনার অর্ডার ${v(x, 'orderNo')} (${v(x, 'total')}) আমরা পেয়েছি।`,
-        'পাঠানোর আগে নিশ্চিত করতে আমরা আপনাকে ফোন করব।',
-      ],
-      action: { label: () => 'অর্ডার দেখুন', urlKey: 'orderUrl' },
-    },
-    'order.confirmed': {
-      subject: (x) => `অর্ডার ${v(x, 'orderNo')} নিশ্চিত — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `প্রিয় ${v(x, 'name')},`,
-        `আপনার অর্ডার ${v(x, 'orderNo')} নিশ্চিত হয়েছে এবং প্রস্তুত করা হচ্ছে।`,
-      ],
-      action: { label: () => 'অর্ডার দেখুন', urlKey: 'orderUrl' },
-    },
-    'order.shipped': {
-      subject: (x) => `অর্ডার ${v(x, 'orderNo')} পাঠানো হয়েছে — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `প্রিয় ${v(x, 'name')},`,
-        `আপনার অর্ডার ${v(x, 'orderNo')} ${v(x, 'courier')}-এর কাছে হস্তান্তর করা হয়েছে।`,
-        v(x, 'trackingCode') === '' ? '' : `ট্র্যাকিং কোড: ${v(x, 'trackingCode')}`,
-      ],
-      action: { label: () => 'অর্ডার ট্র্যাক করুন', urlKey: 'orderUrl' },
-    },
-    'order.delivered': {
-      subject: (x) => `অর্ডার ${v(x, 'orderNo')} ডেলিভারি হয়েছে — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `প্রিয় ${v(x, 'name')},`,
-        `আপনার অর্ডার ${v(x, 'orderNo')} ডেলিভারি হয়েছে। আমাদের সাথে কেনাকাটার জন্য ধন্যবাদ।`,
-      ],
-      action: { label: () => 'অর্ডার দেখুন', urlKey: 'orderUrl' },
-    },
-    'order.cancelled': {
-      subject: (x) => `অর্ডার ${v(x, 'orderNo')} বাতিল — ${v(x, 'brand')}`,
-      lines: (x) => [
-        `প্রিয় ${v(x, 'name')},`,
-        `আপনার অর্ডার ${v(x, 'orderNo')} বাতিল করা হয়েছে।`,
-        'অনলাইনে টাকা দিয়ে থাকলে ফেরতের বিষয়ে আমরা আপনার সাথে যোগাযোগ করব।',
-      ],
-      action: { label: () => 'অর্ডার দেখুন', urlKey: 'orderUrl' },
-    },
-    'smtp.test': {
-      subject: (x) => `${v(x, 'brand')} থেকে পরীক্ষামূলক ইমেইল`,
-      lines: () => ['এটি একটি পরীক্ষা। ইমেইল সেটিংস কাজ করছে।'],
-    },
+  'account.password_reset': {
+    subject: (x) => `Reset your ${v(x, 'brand')} password`,
+    lines: (x) => [
+      `Dear ${v(x, 'name')},`,
+      'Someone asked to reset the password of your account. The link works for one hour.',
+      'If it was not you, ignore this email; your password stays as it is.',
+    ],
+    action: { label: () => 'Reset password', urlKey: 'resetUrl' },
+  },
+  'order.placed': {
+    subject: (x) => `Order ${v(x, 'orderNo')} received — ${v(x, 'brand')}`,
+    lines: (x) => [
+      `Dear ${v(x, 'name')},`,
+      `Thank you. We have received your order ${v(x, 'orderNo')} for ${v(x, 'total')}.`,
+      'We will call you to confirm it before it is sent.',
+    ],
+    action: { label: () => 'View your order', urlKey: 'orderUrl' },
+  },
+  'order.confirmed': {
+    subject: (x) => `Order ${v(x, 'orderNo')} confirmed — ${v(x, 'brand')}`,
+    lines: (x) => [
+      `Dear ${v(x, 'name')},`,
+      `Your order ${v(x, 'orderNo')} is confirmed and is being prepared.`,
+    ],
+    action: { label: () => 'View your order', urlKey: 'orderUrl' },
+  },
+  'order.shipped': {
+    subject: (x) => `Order ${v(x, 'orderNo')} is on its way — ${v(x, 'brand')}`,
+    lines: (x) => [
+      `Dear ${v(x, 'name')},`,
+      `Your order ${v(x, 'orderNo')} has been handed to ${v(x, 'courier')}.`,
+      v(x, 'trackingCode') === '' ? '' : `Tracking code: ${v(x, 'trackingCode')}`,
+    ],
+    action: { label: () => 'Track your order', urlKey: 'orderUrl' },
+  },
+  'order.delivered': {
+    subject: (x) => `Order ${v(x, 'orderNo')} delivered — ${v(x, 'brand')}`,
+    lines: (x) => [
+      `Dear ${v(x, 'name')},`,
+      `Your order ${v(x, 'orderNo')} has been delivered. Thank you for shopping with us.`,
+    ],
+    action: { label: () => 'View your order', urlKey: 'orderUrl' },
+  },
+  'order.cancelled': {
+    subject: (x) => `Order ${v(x, 'orderNo')} cancelled — ${v(x, 'brand')}`,
+    lines: (x) => [
+      `Dear ${v(x, 'name')},`,
+      `Your order ${v(x, 'orderNo')} has been cancelled.`,
+      'If you paid online, the refund is arranged with you separately.',
+    ],
+    action: { label: () => 'View your order', urlKey: 'orderUrl' },
+  },
+  'smtp.test': {
+    subject: (x) => `Test email from ${v(x, 'brand')}`,
+    lines: () => ['This is a test. The email settings work.'],
   },
 };
 
@@ -217,21 +147,17 @@ function safeLink(url: string): string | null {
 }
 
 /**
- * One email, in the shopper's language. Throws `EmailTemplateError` naming any missing value,
- * so a template change and its caller cannot drift into a blank code or a dead link.
+ * One email, in English (D-750). Throws `EmailTemplateError` naming any missing value, so a
+ * template change and its caller cannot drift into a blank code or a dead link.
  */
-export function renderEmail(
-  key: EmailTemplateKey,
-  locale: EmailLocale,
-  values: Values,
-): RenderedEmail {
+export function renderEmail(key: EmailTemplateKey, values: Values): RenderedEmail {
   const missing = REQUIRED[key].filter((name) => values[name] === undefined);
   if (missing.length > 0) throw new EmailTemplateError(missing);
   // A header is one line: no value may break the subject across two.
   const clean: Values = Object.fromEntries(
     Object.entries(values).map(([name, value]) => [name, value.replace(/[\r\n]+/g, ' ').trim()]),
   );
-  const copy = COPY[locale][key];
+  const copy = COPY[key];
   const subject = copy.subject(clean).slice(0, 200);
   const lines = copy.lines(clean).filter((line) => line !== '');
   const highlight = copy.highlight?.(clean) ?? null;
@@ -259,7 +185,7 @@ export function renderEmail(
     link === null
       ? ''
       : `<p style="margin:20px 0"><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 18px;border:1px solid #222;color:#222;text-decoration:none;border-radius:6px">${escapeHtml(label)}</a></p>`;
-  const html = `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:24px;background:#ffffff;color:#222;font-family:system-ui,sans-serif"><div style="max-width:520px;margin:0 auto"><p style="margin:0 0 20px;font-size:13px;letter-spacing:2px;text-transform:uppercase">${escapeHtml(v(clean, 'brand'))}</p>${paragraphs}${code}${button}</div></body></html>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head><body style="margin:0;padding:24px;background:#ffffff;color:#222;font-family:system-ui,sans-serif"><div style="max-width:520px;margin:0 auto"><p style="margin:0 0 20px;font-size:13px;letter-spacing:2px;text-transform:uppercase">${escapeHtml(v(clean, 'brand'))}</p>${paragraphs}${code}${button}</div></body></html>`;
 
   return { subject, text, html };
 }

@@ -103,7 +103,7 @@ export class LegacyCustomersImporter {
           name: account.name,
           phoneE164,
           customerId,
-          locale: 'bn',
+          locale: 'en',
           source: 'legacy_import',
           emailVerifiedAt: account.emailVerified ? (account.createdAt ?? new Date()) : null,
           createdAt: account.createdAt,

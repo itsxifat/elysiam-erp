@@ -5,7 +5,6 @@ import { withOrg, type Tx } from '@elysium/db';
 import {
   maskEmail,
   renderEmail,
-  type EmailLocale,
   type EmailTemplateKey,
   type RenderedEmail,
 } from '@elysium/domain/notify';
@@ -31,7 +30,6 @@ export const EMAIL_MAX_ATTEMPTS = 3;
 export interface QueueEmailInput {
   readonly templateKey: EmailTemplateKey;
   readonly to: string;
-  readonly locale: EmailLocale;
   readonly values: Readonly<Record<string, string>>;
   readonly refType?: string | null;
   readonly refId?: string | null;
@@ -99,7 +97,7 @@ export class EmailService {
     if (to === null) {
       throw new NotifyError('VALIDATION_FAILED', 'That is not an email address.');
     }
-    const rendered = renderEmail(input.templateKey, input.locale, input.values);
+    const rendered = renderEmail(input.templateKey, input.values);
     const id = randomUUID();
 
     let skipped: string | null = null;
@@ -124,7 +122,8 @@ export class EmailService {
       id,
       orgId,
       templateKey: input.templateKey,
-      locale: input.locale,
+      // Every email is English (D-750); the column stays until one migration retires it.
+      locale: 'en',
       toEmail: to,
       subject: rendered.subject,
       bodySealed,
@@ -290,12 +289,7 @@ export class EmailService {
    * A test email through the saved server, now, with no transaction open (the settings are
    * read in their own): the console's "Send a test" answers with what the server said.
    */
-  async sendTest(
-    orgId: string,
-    to: string,
-    brand: string,
-    locale: EmailLocale = 'en',
-  ): Promise<MailResult> {
+  async sendTest(orgId: string, to: string, brand: string): Promise<MailResult> {
     const address = normaliseEmail(to);
     if (address === null) {
       throw new NotifyError('VALIDATION_FAILED', 'That is not an email address.');
@@ -313,7 +307,7 @@ export class EmailService {
       }
       throw error;
     }
-    const rendered: RenderedEmail = renderEmail('smtp.test', locale, { brand });
+    const rendered: RenderedEmail = renderEmail('smtp.test', { brand });
     const result = await this.mailer.send(
       smtp,
       { to: address, ...rendered },

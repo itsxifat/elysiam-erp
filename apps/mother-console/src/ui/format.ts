@@ -1,4 +1,4 @@
-import { formatCount, localiseDigits, type Locale } from '@elysium/i18n';
+import { formatCount, type Locale } from '@elysium/i18n';
 
 /**
  * Rates and ratios for people to read, from the basis points the API sends (integer
@@ -16,13 +16,13 @@ function roundedDivide(value: bigint, by: bigint): bigint {
 }
 
 /** 1040 bps → "10.4%". */
-export function percent(bps: string | null, locale: Locale): string {
+export function percent(bps: string | null, _locale: Locale): string {
   if (bps === null) return DASH;
   const tenths = roundedDivide(BigInt(bps), 10n);
   const negative = tenths < 0n;
   const magnitude = negative ? -tenths : tenths;
   const text = `${negative ? '-' : ''}${(magnitude / 10n).toString()}.${(magnitude % 10n).toString()}%`;
-  return localiseDigits(text, locale);
+  return text;
 }
 
 /** A signed percentage change: 1040 bps → "+10.4%". */
@@ -33,7 +33,7 @@ export function signedPercent(bps: bigint | null, locale: Locale): string {
 }
 
 /** ROAS: 25000 bps → "2.50×". */
-export function times(bps: string | null, locale: Locale): string {
+export function times(bps: string | null, _locale: Locale): string {
   if (bps === null) return DASH;
   const hundredths = roundedDivide(BigInt(bps), 100n);
   const negative = hundredths < 0n;
@@ -41,7 +41,7 @@ export function times(bps: string | null, locale: Locale): string {
   const text = `${negative ? '-' : ''}${(magnitude / 100n).toString()}.${(magnitude % 100n)
     .toString()
     .padStart(2, '0')}×`;
-  return localiseDigits(text, locale);
+  return text;
 }
 
 export function count(value: number, locale: Locale): string {

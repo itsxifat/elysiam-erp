@@ -29,7 +29,6 @@ export const NOTIFY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     body: {
       key: 'matrix.probe',
       category: 'transactional',
-      bodyBn: 'আপনার অর্ডার {order} পাঠানো হয়েছে।',
       bodyEn: 'Your order {order} is on its way.',
     },
   }),

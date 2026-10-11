@@ -28,7 +28,7 @@ import { divideRounded } from '../money/index.js';
 import { normalizeBdPhone } from '../orders/phone.js';
 import type { MigrationKind } from './common.js';
 
-/** Names a trainee will recognise as made up. Bangla and English, as buyers write them. */
+/** Names a trainee will recognise as made up, in English like everything else (D-750). */
 export const DEMO_NAMES: readonly string[] = [
   'Demo Buyer',
   'Training Customer',
@@ -36,8 +36,8 @@ export const DEMO_NAMES: readonly string[] = [
   'Karim Practice',
   'Ayesha Sample',
   'Nusrat Example',
-  'ডেমো ক্রেতা',
-  'অনুশীলন গ্রাহক',
+  'Sadia Trial',
+  'Practice Customer',
 ];
 
 /** The money scale: the demo's figures are 7/10 of the source's. */

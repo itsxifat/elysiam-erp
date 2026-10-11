@@ -1,16 +1,12 @@
 import { messages, type MessageKey } from '@elysium/i18n';
 
 /**
- * The keys the till renders (M23, D-036).
+ * The keys the till renders (M23; D-750: English only).
  *
- * The strings are in `packages/i18n/src/locales/{en,bn}.ts` under `pos.`, where
- * `bn` is typed `Record<MessageKey, string>`, so a string translated on one side
- * only does not compile, and `scripts/check-i18n.mjs` sees every key the till
- * names. This file keeps the key list, which keeps the till's key type narrower
- * than the whole catalogue.
- *
- * **Receipts are customer-facing, so Bangla by default** — whatever the cashier's
- * screen language. The `pos.receipt.*` keys are read with the receipt's own locale.
+ * The strings are in `packages/i18n/src/locales/en.ts` under `pos.`, and
+ * `scripts/check-i18n.mjs` sees every key the till names. This file keeps the key
+ * list, which keeps the till's key type narrower than the whole catalogue. The
+ * customer's receipt (`pos.receipt.*`) is English like every screen.
  */
 
 const POS_KEYS = [
@@ -32,9 +28,6 @@ const POS_KEYS = [
   'pos.action.continue',
   'pos.theme.toDark',
   'pos.theme.toLight',
-  'pos.locale.toBangla',
-  'pos.locale.toEnglish',
-  'pos.locale.label',
   'pos.signIn.title',
   'pos.signIn.email',
   'pos.signIn.password',
@@ -188,13 +181,12 @@ const POS_KEYS = [
 
 export type PosMessageKey = (typeof POS_KEYS)[number];
 
-function pick(locale: 'en' | 'bn'): Record<PosMessageKey, string> {
+function pick(locale: 'en'): Record<PosMessageKey, string> {
   return Object.fromEntries(POS_KEYS.map((key) => [key, messages[locale][key]])) as Record<
     PosMessageKey,
     string
   >;
 }
 
-export const POS_MESSAGES = { en: pick('en'), bn: pick('bn') } as const;
+export const POS_MESSAGES = { en: pick('en') } as const;
 export const posEn = POS_MESSAGES.en;
-export const posBn = POS_MESSAGES.bn;

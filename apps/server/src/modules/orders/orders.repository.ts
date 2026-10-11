@@ -376,7 +376,8 @@ export async function upsertZone(
     readonly orgId: string;
     readonly code: string;
     readonly nameEn: string;
-    readonly nameBn: string;
+    /** Null keeps an existing zone's Bangla name; a new zone then takes the English one. */
+    readonly nameBn: string | null;
     readonly chargePoisha: bigint;
     readonly defaultCourierId: string | null;
     readonly position: number;
@@ -386,12 +387,13 @@ export async function upsertZone(
   const rows = await tx.execute<{ id: string }>(sql`
     insert into sales.delivery_zones
       (org_id, code, name_en, name_bn, charge_poisha, default_courier_id, position, is_active)
-    values (${input.orgId}, ${input.code}, ${input.nameEn}, ${input.nameBn},
+    values (${input.orgId}, ${input.code}, ${input.nameEn},
+            coalesce(${input.nameBn}::text, ${input.nameEn}::text),
             ${input.chargePoisha.toString()}::bigint, ${input.defaultCourierId}::uuid,
             ${input.position}, ${input.isActive})
     on conflict (org_id, code) do update set
       name_en = excluded.name_en,
-      name_bn = excluded.name_bn,
+      name_bn = coalesce(${input.nameBn}::text, sales.delivery_zones.name_bn),
       charge_poisha = excluded.charge_poisha,
       default_courier_id = excluded.default_courier_id,
       position = excluded.position,

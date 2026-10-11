@@ -1,7 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
-import { poisha, type OrderStatus } from '@elysium/domain';
-import { takaDecimal } from '@elysium/domain/storefront';
+import { poisha, takaText, type OrderStatus } from '@elysium/domain';
 
 import type { DeliveredEvent } from '../../platform/events/dispatcher.js';
 import { NOTIFY_API, type NotifyApi } from '../notify/notify.api.js';
@@ -48,7 +47,6 @@ export class OrderMail {
       readonly orderNo: string;
       readonly template: OrderEmailTemplate;
       readonly to: string;
-      readonly locale: string;
       readonly name: string;
       readonly totalPoisha?: bigint;
       readonly courier?: string;
@@ -71,13 +69,13 @@ export class OrderMail {
     await this.notify.queueEmail(tx, orgId, {
       templateKey: input.template,
       to: input.to,
-      locale: input.locale === 'en' ? 'en' : 'bn',
       values: {
         brand: settings.siteInfo.siteName,
         name: input.name,
         orderNo: input.orderNo,
         orderUrl,
-        total: input.totalPoisha === undefined ? '' : `৳${takaDecimal(poisha(input.totalPoisha))}`,
+        // Money in a message is `Tk 1,250.00` (D-751).
+        total: input.totalPoisha === undefined ? '' : takaText(poisha(input.totalPoisha)),
         courier: input.courier ?? '',
         trackingCode: input.trackingCode ?? '',
       },
@@ -112,7 +110,6 @@ export class OrderMail {
         orderNo: order.orderNo,
         template,
         to: web.email,
-        locale: web.locale,
         name: order.shipTo.name,
         ...(tracking === null
           ? {}

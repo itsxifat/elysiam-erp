@@ -1,7 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import { normalizeBdPhone } from '@elysium/domain';
-import type { EmailLocale } from '@elysium/domain/notify';
 
 import {
   EmailService,
@@ -29,9 +28,8 @@ export interface NotifyApi {
     orgId: string,
     input: {
       readonly templateKey: string;
-      /** Any form `normalizeBdPhone` accepts; stored national. */
+      /** Any form `normalizeBdPhone` accepts; stored national. Sent in English (D-750). */
       readonly phone: string;
-      readonly locale: 'bn' | 'en';
       readonly values: Readonly<Record<string, string>>;
       /** What caused it, ids only: `occasion`, `order`. */
       readonly refType?: string | null;
@@ -73,12 +71,7 @@ export interface NotifyApi {
   ): Promise<void>;
 
   /** A test email through the saved server, now, with no transaction open. */
-  sendTestEmail(
-    orgId: string,
-    to: string,
-    brand: string,
-    locale?: EmailLocale,
-  ): Promise<MailResult>;
+  sendTestEmail(orgId: string, to: string, brand: string): Promise<MailResult>;
 
   /** The latest emails, newest first, without bodies. */
   recentEmails(
@@ -128,13 +121,8 @@ export class NotifyApiService implements NotifyApi {
     await this.emails.saveSettings(tx, orgId, input, userId);
   }
 
-  async sendTestEmail(
-    orgId: string,
-    to: string,
-    brand: string,
-    locale?: EmailLocale,
-  ): Promise<MailResult> {
-    return this.emails.sendTest(orgId, to, brand, locale);
+  async sendTestEmail(orgId: string, to: string, brand: string): Promise<MailResult> {
+    return this.emails.sendTest(orgId, to, brand);
   }
 
   async recentEmails(tx: Tx, orgId: string, limit: number) {

@@ -33,6 +33,7 @@ import { CrmService } from './crm.service.js';
 import { BuyerProfileService } from './profile.service.js';
 import { ReengagementService } from './reengagement.service.js';
 import { NOTIFY_PORT } from './ports/notify.port.js';
+import { BrandLogoRegistry } from './ports/brand-logo.port.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { DeliveryObserverRegistry } from './ports/delivery-observer.port.js';
 import { PROMO_PORT } from './ports/promo.port.js';
@@ -104,6 +105,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
   providers: [
     CustomersService,
     CourierBookingRegistry,
+    // M43 (D-754): the website's logo for the order documents, registered by the storefront.
+    BrandLogoRegistry,
     // M18: the marketing module registers here to hear of deliveries (D-262).
     DeliveryObserverRegistry,
     // M17: advances end inside the order's own transitions (D-232, D-233).
@@ -136,6 +139,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
     CustomersService,
     CourierBookingRegistry,
     DeliveryObserverRegistry,
+    // M43 (D-754): the storefront registers the website's logo for the order documents.
+    BrandLogoRegistry,
     CrmService,
   ],
 })

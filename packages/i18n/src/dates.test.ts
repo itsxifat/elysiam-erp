@@ -9,21 +9,19 @@ import { formatDate, formatDateTime, formatMonth, formatTime, today } from './da
  *
  * The cases that earn their place here are the ones that have bitten this kind
  * of code before: a zoneless date shifted by a formatter, midnight rendered as
- * `24:00`, and Latin digits leaking into Bangla output.
+ * `24:00`, and a Bangla-block character reaching output that is English only (D-750).
  */
 
 describe('formatDate', () => {
-  it('writes day, month name, year in both locales', () => {
+  it('writes day, month name, year', () => {
     expect(formatDate('2026-09-17')).toBe('17 Sep 2026');
     expect(formatDate('2026-09-17', { style: 'long' })).toBe('17 September 2026');
-    expect(formatDate('2026-09-17', { locale: 'bn' })).toBe('১৭ সেপ্টে ২০২৬');
-    expect(formatDate('2026-09-17', { locale: 'bn', style: 'long' })).toBe('১৭ সেপ্টেম্বর ২০২৬');
+    expect(formatDate('2026-09-17', { locale: 'en', style: 'long' })).toBe('17 September 2026');
   });
 
   it('drops the day’s leading zero in prose but keeps it in the numeric form', () => {
     expect(formatDate('2026-09-07')).toBe('7 Sep 2026');
     expect(formatDate('2026-09-07', { style: 'numeric' })).toBe('07/09/2026');
-    expect(formatDate('2026-09-07', { locale: 'bn', style: 'numeric' })).toBe('০৭/০৯/২০২৬');
   });
 
   /*
@@ -43,7 +41,7 @@ describe('formatDate', () => {
     expect(() => formatDate('17/09/2026')).toThrow(RangeError);
   });
 
-  it('puts no Latin digit in Bangla output, for any date', () => {
+  it('puts no Bangla-block character in any date, in any style (D-750)', () => {
     fc.assert(
       fc.property(
         fc.date({
@@ -54,8 +52,8 @@ describe('formatDate', () => {
         fc.constantFrom('short' as const, 'long' as const, 'numeric' as const),
         (instant, style) => {
           fc.pre(!Number.isNaN(instant.getTime()));
-          const text = formatDate(businessDate(instant), { locale: 'bn', style });
-          expect(text).not.toMatch(/\d/);
+          const text = formatDate(businessDate(instant), { style });
+          expect(text).not.toMatch(/[\u0980-\u09FF]/);
         },
       ),
       { numRuns: 500 },
@@ -68,7 +66,6 @@ describe('formatMonth', () => {
     expect(formatMonth('2026-09')).toBe('Sep 2026');
     expect(formatMonth('2026-09', { style: 'long' })).toBe('September 2026');
     expect(formatMonth('2026-09', { style: 'numeric' })).toBe('09/2026');
-    expect(formatMonth('2026-09', { locale: 'bn', style: 'long' })).toBe('সেপ্টেম্বর ২০২৬');
   });
 
   it('refuses a month that does not exist', () => {
@@ -80,7 +77,6 @@ describe('formatMonth', () => {
 describe('formatTime and formatDateTime work in Dhaka wall clock', () => {
   it('shifts an instant by six hours', () => {
     expect(formatTime(new Date('2026-09-17T11:30:00Z'))).toBe('17:30');
-    expect(formatTime(new Date('2026-09-17T11:30:00Z'), 'bn')).toBe('১৭:৩০');
   });
 
   /*
@@ -96,9 +92,7 @@ describe('formatTime and formatDateTime work in Dhaka wall clock', () => {
     const instant = new Date('2026-09-01T23:30:00Z');
     expect(businessDate(instant)).toBe('2026-09-02');
     expect(formatDateTime(instant)).toBe('2 Sep 2026, 05:30');
-    expect(formatDateTime(instant, { locale: 'bn', style: 'long' })).toBe(
-      '২ সেপ্টেম্বর ২০২৬, ০৫:৩০',
-    );
+    expect(formatDateTime(instant, { style: 'long' })).toBe('2 September 2026, 05:30');
   });
 
   it('refuses an invalid instant rather than printing Invalid Date', () => {

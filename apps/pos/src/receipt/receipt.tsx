@@ -1,4 +1,4 @@
-import { formatDateTime, formatMoney, localiseDigits } from '@elysium/i18n';
+import { formatDateTime, formatMoneyText } from '@elysium/i18n';
 import { createPortal } from 'react-dom';
 
 import type { ReceiptHeader } from '../lib/api.js';
@@ -15,10 +15,10 @@ import type { PosMessageKey } from '../i18n/messages.js';
  * below hide everything but this block when printing (`print:hidden` on the app,
  * `hidden print:block` here).
  *
- * **Bangla by default** (D-036): the receipt is the customer's document, so it
- * prints in Bangla whatever the cashier's screen language, with Bangla digits in
- * the amounts. Every amount goes through `formatMoney` — the same formatter
- * `<Money>` uses — never through `toFixed`.
+ * **English** (D-750): the receipt is the customer's document, in the same formal
+ * English as every other one. Every amount is `Tk 1,250.00` through
+ * `formatMoneyText`, which is the money module's `takaText` (D-751) — never
+ * `toFixed`, and no Bangla-block sign on the paper.
  *
  * No cost appears here and none can: the receipt is built from the till's own
  * document, which never carries one (invariant 5).
@@ -60,7 +60,7 @@ const TENDER_KEY: Record<'cash' | 'bkash' | 'card', PosMessageKey> = {
 
 export function Receipt({
   data,
-  locale = 'bn',
+  locale = 'en',
   pending = false,
 }: {
   readonly data: ReceiptData;
@@ -68,17 +68,20 @@ export function Receipt({
   readonly pending?: boolean;
 }) {
   const t = (key: PosMessageKey) => translate(locale, key);
-  const money = (poisha: string) => formatMoney(poisha, { locale });
+  const money = (poisha: string) => formatMoneyText(poisha);
   const isReturn = data.kind === 'return';
 
   return (
     <article
       data-receipt
       aria-label={t(isReturn ? 'pos.receipt.returnTitle' : 'pos.receipt.title')}
-      className={`w-[80mm] bg-background px-3 py-4 text-xs leading-snug text-foreground ${locale === 'bn' ? 'font-bangla' : 'font-sans'}`}
+      lang="en"
+      className="w-[80mm] bg-background px-3 py-4 font-sans text-xs leading-snug text-foreground tabular-nums"
     >
       <header className="text-center">
-        <p className="text-sm font-semibold">{data.header.legalName || data.header.displayName}</p>
+        <p className="text-base font-bold tracking-tight">
+          {data.header.legalName || data.header.displayName}
+        </p>
         <p>{data.header.branchName}</p>
         {data.header.address === null ? null : <p>{data.header.address}</p>}
         {data.header.phone === null ? null : <p className="tabular-nums">{data.header.phone}</p>}
@@ -127,13 +130,11 @@ export function Receipt({
                 </span>
                 {line.discountPoisha === '0' ? null : (
                   <span className="block tabular-nums">
-                    {t('pos.receipt.discount')} −{money(line.discountPoisha)}
+                    {t('pos.receipt.discount')} -{money(line.discountPoisha)}
                   </span>
                 )}
               </td>
-              <td className="py-0.5 text-right tabular-nums">
-                {localiseDigits(String(line.qty), locale)}
-              </td>
+              <td className="py-0.5 text-right tabular-nums">{String(line.qty)}</td>
               <td className="py-0.5 text-right tabular-nums">{money(line.netPoisha)}</td>
             </tr>
           ))}
@@ -148,15 +149,15 @@ export function Receipt({
             {data.discountPoisha === '0' ? null : (
               <>
                 <dt>{t('pos.receipt.discount')}</dt>
-                <dd className="text-right tabular-nums">−{money(data.discountPoisha)}</dd>
+                <dd className="text-right tabular-nums">-{money(data.discountPoisha)}</dd>
               </>
             )}
           </>
         )}
-        <dt className="text-sm font-semibold">
+        <dt className="mt-1 text-sm font-bold">
           {t(isReturn ? 'pos.receipt.refund' : 'pos.receipt.total')}
         </dt>
-        <dd className="text-right text-sm font-semibold tabular-nums" data-testid="receipt-total">
+        <dd className="mt-1 text-right text-sm font-bold tabular-nums" data-testid="receipt-total">
           {money(data.netPoisha)}
         </dd>
         {data.tenders.map((tender) => (

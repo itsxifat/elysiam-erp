@@ -87,6 +87,18 @@ export interface FilesApi {
     readonly originalName: string;
     readonly bytes: Uint8Array;
   }): Promise<{ readonly fileId: string; readonly sizeBytes: number; readonly sha256: string }>;
+
+  /**
+   * The bytes of one size of a stored, public website image of this brand (M43: the brand's
+   * logo on its order documents, uploaded to Gotenberg with the page). Null for anything else,
+   * so a caller never learns whether a private file of that id exists. Reads storage, so it
+   * runs with no transaction open (invariant 6).
+   */
+  publicImage(
+    orgId: string,
+    fileId: string,
+    size: 'thumb' | 'card' | 'full',
+  ): Promise<{ readonly bytes: Uint8Array; readonly mime: string } | null>;
 }
 
 export const FILES_API = Symbol('FilesApi');
@@ -156,5 +168,14 @@ export class FilesApiService implements FilesApi {
     readonly bytes: Uint8Array;
   }): Promise<{ readonly fileId: string; readonly sizeBytes: number; readonly sha256: string }> {
     return this.files.storeProduced(input);
+  }
+
+  async publicImage(
+    orgId: string,
+    fileId: string,
+    size: 'thumb' | 'card' | 'full',
+  ): Promise<{ readonly bytes: Uint8Array; readonly mime: string } | null> {
+    const media = await this.files.publicVariant(orgId, fileId, size);
+    return media === null ? null : { bytes: media.bytes, mime: media.mime };
   }
 }

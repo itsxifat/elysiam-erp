@@ -1026,6 +1026,7 @@ describe('the IP camera after the ledger audit (M38c)', () => {
       signCheckedDownload: real.signCheckedDownload.bind(real),
       forget: real.forget.bind(real),
       filesOfPurposeBefore: real.filesOfPurposeBefore.bind(real),
+      publicImage: real.publicImage.bind(real),
       storeProduced: async (input) => {
         stores += 1;
         if (stores === 2) throw new Error('storage went away');

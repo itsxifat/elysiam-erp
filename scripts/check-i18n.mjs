@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * The i18n missing-key check (M04 acceptance check 6, second half).
+ * The i18n check (M04 acceptance check 6, second half; M43: English only, D-750).
  *
- * Three failures, all of which have shipped in other systems and none of which
- * the TypeScript compiler can catch on its own:
+ * Four failures, none of which the TypeScript compiler can catch on its own:
  *
- * 1. **A key in one locale and not the other.** `packages/i18n` types Bangla as
- *    `Record<MessageKey, string>`, so today this is also a compile error — but
- *    that guarantee lasts exactly as long as nobody widens the type, and the
- *    consequence is a customer-facing invoice with an English word on it
- *    (D-036).
+ * 1. **Any language but English.** The owner's decision of 2026-10-11 is that the
+ *    brands never wanted Bangla, so the catalogue directory holds `en` and nothing
+ *    else — no `bn.ts`, no `sections/*.bn.ts` brought back by a merge — and no
+ *    value in it is written in Bangla: no Bangla letter, vowel sign or digit (the
+ *    Bengali block, U+0980 to U+09FF, but the taka sign U+09F3, which a staff
+ *    screen's column header may still show, D-751).
  * 2. **A key referenced from code that the catalogue does not have.** `t()` is
  *    typed, so a `.ts` call site is safe. Keys do not only come from typed call
  *    sites: a PDF template, an SMS body, a Puck block, a seed file and a JSON
@@ -145,7 +145,13 @@ function exists(target) {
   }
 }
 
-/** Every catalogue file in the directory: `en.ts`, `bn.ts`, and any locale added later. */
+/** Every catalogue file in the directory: `en.ts`, and any other locale that should not be. */
+/** The one locale this product ships (D-750). */
+const ONLY_LOCALE = 'en';
+
+/** Bangla letters, vowel signs and digits: the Bengali block but the taka sign (U+09F3). */
+const BANGLA_TEXT = /[\u0980-\u09F2\u09F4-\u09FF]/u;
+
 function catalogueFiles(directory) {
   return readdirSync(directory)
     .filter((name) => /\.(ts|mts|js|mjs)$/.test(name) && !/\.test\./.test(name))
@@ -290,15 +296,23 @@ async function main() {
   }
 
   const files = catalogueFiles(catalogueDir);
-  if (files.length < 2) {
+  if (!files.some((file) => file.locale === ONLY_LOCALE)) {
     console.error(
-      `check-i18n: FAIL — found ${files.length} catalogue file(s) in ${catalogueDir}; ` +
-        'this product ships bn and en (D-036).',
+      `check-i18n: FAIL — no ${ONLY_LOCALE}.ts in ${catalogueDir}; this product ships English (D-750).`,
     );
     return 1;
   }
 
   const failures = [];
+  const sections = sectionFiles(catalogueDir);
+  for (const { locale, file } of [...files, ...sections]) {
+    if (locale !== ONLY_LOCALE) {
+      failures.push(
+        `${path.relative(REPO_ROOT, file).replace(/\\/g, '/')} is a "${locale}" catalogue — ` +
+          'this product is English only (D-750); delete it.',
+      );
+    }
+  }
   const catalogues = new Map();
 
   for (const { locale, file } of files) {
@@ -314,7 +328,7 @@ async function main() {
     }
   }
 
-  for (const { locale, file } of sectionFiles(catalogueDir)) {
+  for (const { locale, file } of sections) {
     const module = await import(`file://${file.replace(/\\/g, '/')}`);
     const section = catalogueOf(module, locale, file);
     const { duplicates } = duplicateKeysIn(file);
@@ -346,6 +360,11 @@ async function main() {
     for (const key of union) {
       if (!(key in catalogue)) failures.push(`missing from ${locale}: ${key}`);
     }
+    for (const [key, value] of Object.entries(catalogue)) {
+      if (BANGLA_TEXT.test(value)) {
+        failures.push(`Bangla text in ${locale}: ${key} — every string is English (D-750).`);
+      }
+    }
   }
 
   const { found, families, dynamic } = references({ scan, catalogueDir, exclude });
@@ -373,8 +392,8 @@ async function main() {
     console.error(`check-i18n: FAIL — ${failures.length} problem(s)\n`);
     for (const failure of failures) console.error(`  ${failure}`);
     console.error(
-      '\nEvery string goes through packages/i18n in both bn and en (CLAUDE.md, D-036).\n' +
-        'Add the key to every catalogue, or fix the reference.',
+      '\nEvery string goes through packages/i18n, in English only (CLAUDE.md, D-750).\n' +
+        'Add the key to the catalogue, or fix the reference.',
     );
     return 1;
   }

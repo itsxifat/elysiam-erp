@@ -130,7 +130,7 @@ function Navigation({ onNavigate }: { readonly onNavigate?: () => void }) {
 }
 
 export function Shell() {
-  const { t, locale, setLocale } = useLocale();
+  const { t } = useLocale();
   const me = useMe();
   const queryClient = useQueryClient();
   const [dark, setDark] = useState(isDark);
@@ -175,13 +175,6 @@ export function Shell() {
                 <Menu aria-hidden="true" />
               </Button>
               <div className="flex-1" />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setLocale(locale === 'en' ? 'bn' : 'en')}
-              >
-                {locale === 'en' ? t('shell.toBangla') : t('shell.toEnglish')}
-              </Button>
               <Button
                 variant="ghost"
                 size="icon-sm"

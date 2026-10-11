@@ -485,7 +485,6 @@ describe('SMS templates and ad campaigns (D-632)', () => {
     await ok(admin, 'PUT', '/v1/notify/templates', {
       key,
       category,
-      bodyBn: 'হ্যালো {name}',
       bodyEn: 'Hello {name}',
     });
     const listed = await ok<{ items: { id: string; key: string }[] }>(
@@ -1015,7 +1014,6 @@ describe('another brand never reaches them (RLS)', () => {
     await ok(admin, 'PUT', '/v1/notify/templates', {
       key,
       category: 'marketing',
-      bodyBn: 'হ্যালো {name}',
       bodyEn: 'Hello {name}',
     });
     const template =

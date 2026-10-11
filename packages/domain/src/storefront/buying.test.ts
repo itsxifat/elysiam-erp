@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { EMAIL_TEMPLATE_KEYS, maskEmail, renderEmail } from '../notify/emails.js';
+import { banglaCharactersIn } from '../text/index.js';
 import { add, poisha, sub, ZERO, type Poisha } from '../money/index.js';
 import { ORDER_STATUSES } from '../orders/state.js';
 import { computeOrderTotals } from '../orders/totals.js';
@@ -744,36 +745,43 @@ describe('the website’s emails (D-529)', () => {
     code: '123456',
     resetUrl: 'https://shop.example/reset?token=abc',
     orderNo: 'ABC-2610-00001',
-    total: '৳1,250.00',
+    total: 'Tk 1,250.00',
     orderUrl: 'https://shop.example/order-confirmation/ABC-2610-00001?token=t',
     courier: 'Steadfast',
     trackingCode: 'TRK1',
   };
 
-  it('renders every template in both languages, escaped, naming no brand of its own', () => {
+  it('renders every template in English, escaped, naming no brand of its own', () => {
     for (const key of EMAIL_TEMPLATE_KEYS) {
-      for (const locale of ['bn', 'en'] as const) {
-        const email = renderEmail(key, locale, values);
-        expect(email.subject.length).toBeGreaterThan(0);
-        expect(email.html).not.toContain('<Rahim>');
-        expect(email.text).toContain('Brand & Co');
-        expect(email.html.toLowerCase()).not.toContain('elysium');
+      const email = renderEmail(key, values);
+      expect(email.subject.length).toBeGreaterThan(0);
+      expect(email.html).not.toContain('<Rahim>');
+      expect(email.text).toContain('Brand & Co');
+      expect(email.html.toLowerCase()).not.toContain('elysium');
+      expect(email.html).toContain('<html lang="en">');
+    }
+    expect(renderEmail('account.email_code', values).text).toContain('123456');
+    expect(renderEmail('order.shipped', values).text).toContain('TRK1');
+    expect(renderEmail('order.placed', values).text).toContain('Tk 1,250.00');
+  });
+
+  it('puts no Bangla-block character in any subject, text or HTML (D-750)', () => {
+    for (const key of EMAIL_TEMPLATE_KEYS) {
+      const email = renderEmail(key, values);
+      for (const part of [email.subject, email.text, email.html]) {
+        expect(banglaCharactersIn(part), `${key}: ${part.slice(0, 60)}`).toEqual([]);
       }
     }
-    expect(renderEmail('account.email_code', 'en', values).text).toContain('123456');
-    expect(renderEmail('order.shipped', 'bn', values).text).toContain('TRK1');
   });
 
   it('refuses a missing value and keeps a header on one line', () => {
-    expect(() => renderEmail('account.email_code', 'en', { brand: 'B', name: 'N' })).toThrow(
-      /code/,
-    );
-    const email = renderEmail('order.confirmed', 'en', { ...values, orderNo: 'A\r\nBcc: x@y.z' });
+    expect(() => renderEmail('account.email_code', { brand: 'B', name: 'N' })).toThrow(/code/);
+    const email = renderEmail('order.confirmed', { ...values, orderNo: 'A\r\nBcc: x@y.z' });
     expect(email.subject).not.toMatch(/[\r\n]/);
   });
 
   it('leaves a non-https link out of the button', () => {
-    const email = renderEmail('account.password_reset', 'en', {
+    const email = renderEmail('account.password_reset', {
       ...values,
       resetUrl: 'javascript:alert(1)',
     });

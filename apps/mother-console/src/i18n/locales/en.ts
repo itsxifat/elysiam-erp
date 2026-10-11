@@ -83,8 +83,6 @@ const en = {
   'shell.skip': 'Skip to content',
   'shell.toDark': 'Use the dark theme',
   'shell.toLight': 'Use the light theme',
-  'shell.toBangla': 'বাংলায় দেখুন',
-  'shell.toEnglish': 'Show in English',
   'shell.menu': 'Menu',
   'shell.signedInAs': 'Signed in as',
 

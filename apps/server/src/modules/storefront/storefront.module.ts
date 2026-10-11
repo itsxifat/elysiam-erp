@@ -41,6 +41,7 @@ import {
   WebMarketingPublicController,
 } from './web-marketing.controller.js';
 import { STOREFRONT_RATE_LIMITER, StorefrontSignatureGuard } from './signature.guard.js';
+import { BrandLogoBinding } from './brand-logo.binding.js';
 import { StorefrontReferencesBinding } from './references.binding.js';
 import { StorefrontDeletesController } from './storefront-deletes.controller.js';
 import { StorefrontDeletesService } from './storefront-deletes.service.js';
@@ -134,6 +135,8 @@ class StorefrontValkey implements OnModuleDestroy {
     StorefrontService,
     // M39a: what the website holds about catalog rows, locations and promotions (D-621).
     StorefrontReferencesBinding,
+    // M43 (D-754): the website's logo on the order documents.
+    BrandLogoBinding,
     StorefrontDeletesService,
     StorefrontPublicService,
     StorefrontSignatureGuard,

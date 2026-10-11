@@ -1,11 +1,10 @@
-import { CUSTOMER_LOCALE, fontClassFor, isLocale, type Locale } from '@elysium/i18n';
+import { DEFAULT_LOCALE, type Locale } from '@elysium/i18n';
 import {
   Button,
   EmptyState,
   ErrorState,
   Monogram,
   PermissionDeniedState,
-  readStored,
   Skeleton,
   STORAGE_KEYS,
   cn,
@@ -114,16 +113,10 @@ async function loadSession(): Promise<SessionState> {
   return { kind: 'investor', brands, context, chooseBrand: plan.kind === 'choose' };
 }
 
-function readLocale(): Locale {
-  // Storage can be denied; Bangla it is.
-  const saved = readStored(STORAGE_KEYS.portalLocale);
-  if (saved !== null && isLocale(saved)) return saved;
-  return CUSTOMER_LOCALE;
-}
-
 function Portal() {
   const queryClient = useQueryClient();
-  const [locale, setLocale] = useState<Locale>(readLocale);
+  // English only (D-750): an investor reads the same formal English as everyone else.
+  const locale: Locale = DEFAULT_LOCALE;
   const [dark, setDark] = useState(isDark);
   const t = useMemo(() => portalTranslator(locale), [locale]);
   const session = useQuery({
@@ -143,16 +136,14 @@ function Portal() {
     });
   }, [queryClient, userId]);
 
-  // `<html lang>` and the font stack follow the language: Bangla renders in Hind Siliguri
-  // with its own size-adjust, and a Latin stack on a Bangla line puts it on two baselines.
   useEffect(() => {
     const root = document.documentElement;
     root.lang = locale;
-    root.classList.toggle('font-bangla', fontClassFor(locale) === 'font-bangla');
-    root.classList.toggle('font-sans', fontClassFor(locale) === 'font-sans');
+    root.classList.add('font-sans');
+    root.classList.remove('font-bangla');
     document.title = t('portal.investor.title');
-    // Storage denied: the choice still holds for this visit.
-    writeStored(STORAGE_KEYS.portalLocale, locale);
+    // A language chosen before D-750 is forgotten: there is only English now.
+    writeStored(STORAGE_KEYS.portalLocale, null);
   }, [locale, t]);
 
   async function refreshSession(): Promise<void> {
@@ -231,14 +222,6 @@ function Portal() {
             </span>
           </span>
           <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => setLocale(locale === 'bn' ? 'en' : 'bn')}
-              aria-label={t('portal.languageLabel')}
-              className={`inline-flex h-8 items-center rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${FOCUS}`}
-            >
-              <span lang={locale === 'bn' ? 'en' : 'bn'}>{t('portal.language')}</span>
-            </button>
             <button
               type="button"
               onClick={() => {

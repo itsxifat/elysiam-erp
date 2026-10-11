@@ -1020,7 +1020,7 @@ function Tile({
 }: {
   readonly label: string;
   readonly poisha: string;
-  readonly locale: 'en' | 'bn';
+  readonly locale: 'en';
 }) {
   return (
     <div className="rounded-md border border-border p-3">

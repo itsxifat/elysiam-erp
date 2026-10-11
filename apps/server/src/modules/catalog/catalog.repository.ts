@@ -1134,6 +1134,40 @@ export async function variantLabels(
   return new Map(rows.map((row) => [row.sku_id, row.label]));
 }
 
+/**
+ * Each SKU's size, colour and other values apart (M43's order documents). Several values of
+ * one kind (rare: two custom attributes) are joined with ' / ' in the attribute's order.
+ */
+export async function variantParts(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<Map<string, { size: string | null; colour: string | null; other: string | null }>> {
+  if (skuIds.length === 0) return new Map();
+  const rows = await tx.execute<{
+    sku_id: string;
+    size: string | null;
+    colour: string | null;
+    other: string | null;
+  }>(sql`
+    select v.sku_id,
+           string_agg(av.label, ' / ' order by a.position, a.code)
+             filter (where a.kind = 'size') as size,
+           string_agg(av.label, ' / ' order by a.position, a.code)
+             filter (where a.kind = 'colour') as colour,
+           string_agg(av.label, ' / ' order by a.position, a.code)
+             filter (where a.kind not in ('size', 'colour')) as other
+    from catalog.sku_values v
+    join catalog.attributes a on a.org_id = v.org_id and a.id = v.attribute_id
+    join catalog.attribute_values av on av.org_id = v.org_id and av.id = v.value_id
+    where v.org_id = ${orgId} and v.sku_id = any (${sql.param([...skuIds])}::uuid[])
+    group by v.sku_id
+  `);
+  return new Map(
+    rows.map((row) => [row.sku_id, { size: row.size, colour: row.colour, other: row.other }]),
+  );
+}
+
 /** A category and every category below it, through the maintained path (D-427). */
 export async function categorySubtree(
   tx: Tx,

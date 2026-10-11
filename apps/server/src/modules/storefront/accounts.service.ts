@@ -100,7 +100,8 @@ export class AccountsService {
     const phone = input.phone === undefined ? null : this.phoneOf(input.phone);
     await this.limitCodes(orgId, email);
     const passwordHash = await hash(input.password, BCRYPT_COST);
-    const locale = input.locale ?? 'bn';
+    // English unless the website names a language; everything is sent in English (D-750).
+    const locale = input.locale ?? 'en';
 
     const outcome = await withOrg({ orgId, userId: 'storefront:account' }, async (tx) => {
       const existing = await buying.accountByEmail(tx, orgId, email, { forUpdate: true });
@@ -135,7 +136,7 @@ export class AccountsService {
         });
         accountId = existing.id;
       }
-      await this.sendEmailCode(tx, orgId, { accountId, email, name: input.name, locale });
+      await this.sendEmailCode(tx, orgId, { accountId, email, name: input.name });
       await this.audit.record(tx, {
         orgId,
         actorUserId: 'storefront:account',
@@ -235,7 +236,6 @@ export class AccountsService {
         accountId: account.id,
         email,
         name: account.name,
-        locale: account.locale,
       });
     });
     return { ok: true };
@@ -299,7 +299,7 @@ export class AccountsService {
           name: (input.name ?? '').trim() || email.slice(0, email.indexOf('@')).slice(0, 120),
           phoneE164: null,
           customerId: null,
-          locale: input.locale ?? 'bn',
+          locale: input.locale ?? 'en',
           source: 'google',
           emailVerifiedAt: new Date(),
         });
@@ -378,7 +378,6 @@ export class AccountsService {
       await this.notify.queueEmail(tx, orgId, {
         templateKey: 'account.password_reset',
         to: email,
-        locale: account.locale === 'en' ? 'en' : 'bn',
         values: {
           brand: settings.siteInfo.siteName,
           name: account.name,
@@ -587,7 +586,6 @@ export class AccountsService {
       readonly accountId: string;
       readonly email: string;
       readonly name: string;
-      readonly locale: string;
     },
   ): Promise<void> {
     const code = newCode();
@@ -606,7 +604,6 @@ export class AccountsService {
     const queued = await this.notify.queueEmail(tx, orgId, {
       templateKey: 'account.email_code',
       to: input.email,
-      locale: input.locale === 'en' ? 'en' : 'bn',
       values: { brand: settings.siteInfo.siteName, name: input.name, code },
       refType: 'storefront.customer_account',
       refId: input.accountId,

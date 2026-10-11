@@ -217,9 +217,9 @@ export class OrdersController {
     @Query() query: unknown,
     @Res() reply: FastifyReply,
   ) {
-    const { ids, kind } = parse(bulkDocumentQuerySchema, query ?? {});
+    const { ids, kind, paper } = parse(bulkDocumentQuerySchema, query ?? {});
     const rendered = await mapOrderErrors(() =>
-      this.documents.renderMany(requireContext(request), request, ids, kind),
+      this.documents.renderMany(requireContext(request), request, ids, kind, paper),
     );
     await reply
       .header('content-type', 'application/pdf')
@@ -487,9 +487,15 @@ export class OrdersController {
     @Query() query: unknown,
     @Res() reply: FastifyReply,
   ) {
-    const { kind } = parse(documentQuerySchema, query ?? {});
+    const { kind, paper } = parse(documentQuerySchema, query ?? {});
     const rendered = await mapOrderErrors(() =>
-      this.documents.render(requireContext(request), request, parse(orderIdSchema, id), kind),
+      this.documents.render(
+        requireContext(request),
+        request,
+        parse(orderIdSchema, id),
+        kind,
+        paper,
+      ),
     );
     await reply
       .header('content-type', 'application/pdf')

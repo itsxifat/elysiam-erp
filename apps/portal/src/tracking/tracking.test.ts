@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { trackingBn, trackingEn } from './messages.js';
+import { trackingEn } from './messages.js';
 import {
   brandFromPath,
   digitsOf,
@@ -55,13 +55,13 @@ describe('what a customer typed', () => {
 });
 
 describe('the tracking catalogue', () => {
-  it('has the same keys in bn and en, and no empty string', () => {
-    expect(Object.keys(trackingEn).sort()).toEqual(Object.keys(trackingBn).sort());
-    for (const catalogue of [trackingBn, trackingEn]) {
-      for (const [key, value] of Object.entries(catalogue)) {
-        expect(value.trim(), key).not.toBe('');
-      }
+  it('is English with no empty string, and offers no language switch (D-750)', () => {
+    for (const [key, value] of Object.entries(trackingEn)) {
+      expect(value.trim(), key).not.toBe('');
     }
+    expect(Object.keys(trackingEn).filter((key) => key.startsWith('tracking.language'))).toEqual(
+      [],
+    );
   });
 
   it('names every stage the server can send', () => {
@@ -74,7 +74,7 @@ describe('the tracking catalogue', () => {
       'returned',
       'cancelled',
     ]) {
-      expect(Object.hasOwn(trackingBn, `tracking.stage.${stage}`), stage).toBe(true);
+      expect(Object.hasOwn(trackingEn, `tracking.stage.${stage}`), stage).toBe(true);
     }
   });
 });

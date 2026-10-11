@@ -1,11 +1,10 @@
 /**
  * The English catalogue, and the key union every call site is checked against.
  *
- * English is the *source* locale: `MessageKey` is `keyof typeof en`, so this
- * file decides which keys exist and every other locale is typed against it.
- * That direction is deliberate. The console defaults to English (D-036), so a
- * key that only exists in Bangla would be an operator staring at nothing,
- * which is worse than a customer receiving an English word.
+ * English is the only locale (D-750): `MessageKey` is `keyof typeof en`, so
+ * this file and its sections decide which keys exist. The brands never wanted
+ * Bangla, so no other catalogue exists, and `scripts/check-i18n.mjs` fails if
+ * one is added or a value here is written in Bangla.
  *
  * The catalogue is a flat object rather than nested namespaces on purpose: a
  * flat key is greppable, survives a rename, and lets `MessageKey` be a real
@@ -90,7 +89,7 @@ const en = {
 
   // Chrome that every screen from M05 onward needs. Added here rather than
   // when each screen lands so that two screens cannot invent two spellings of
-  // "Cancel" and two Bangla translations of it.
+  // "Cancel".
   'common.retry': 'Try again',
   'common.loading': 'Loading…',
   'common.save': 'Save',
@@ -125,11 +124,8 @@ const en = {
   /*
    * Customer-facing document copy (§22).
    *
-   * These ship in Bangla (D-036) — the English side exists so a super admin
-   * reviewing a rendered invoice can read it, and so the missing-key check has
-   * both sides to compare. A document string that only exists in English is a
-   * customer-facing regression, which is why they live in the same catalogue
-   * as the console's rather than in the PDF template.
+   * English, like every document (D-750). The rendered documents spell their
+   * own labels in their templates; these are the console's names for them.
    */
   'doc.invoice.title': 'Invoice',
   'doc.invoice.number': 'Invoice no.',
@@ -198,9 +194,6 @@ const en = {
   'shell.skipToContent': 'Skip to content',
   'shell.openPalette': 'Open the command palette',
   'shell.paletteHint': 'Ctrl K',
-  'shell.locale': 'Language',
-  'shell.localeToBangla': 'Switch to Bangla',
-  'shell.localeToEnglish': 'Switch to English',
   'shell.userMenu': 'Account',
   'shell.notifications': 'Notifications',
   'shell.unread': 'unread',
@@ -1401,8 +1394,6 @@ const en = {
   'portal.investor.documentsCaption': 'Your agreements and papers',
   'portal.investor.documentsEmptyDetail': 'The brand has not filed a document for you yet.',
   'portal.investor.openFailed': 'The document could not be opened. Try again.',
-  'portal.language': 'বাংলা',
-  'portal.languageLabel': 'Change language',
   'portal.themeLight': 'Light theme',
   'portal.themeDark': 'Dark theme',
 
@@ -1457,7 +1448,7 @@ const en = {
   'orders.desk.subtitle':
     'Tab moves on. Ctrl+Enter saves and confirms. Press ? for every shortcut.',
   'orders.desk.phone': 'Phone',
-  'orders.desk.phoneHint': '01XXXXXXXXX, +880 or Bangla digits',
+  'orders.desk.phoneHint': '01XXXXXXXXX or +880',
   'orders.desk.phoneInvalid': 'Not a Bangladeshi mobile number yet',
   'orders.desk.name': 'Buyer name',
   'orders.desk.newBuyer': 'New buyer',
@@ -1916,13 +1907,13 @@ const en = {
   'courier.parcel.settled': 'Settled',
   'courier.parcel.notSettled': 'Not settled',
 
-  // The public tracking page in the portal (M15). Customer-facing, so Bangla is its default.
+  // The public tracking page in the portal (M15). Customer-facing, in English (D-750).
   'tracking.title': 'Track your order',
   'tracking.subtitle': 'Enter your order number and the last 4 digits of the phone on the order.',
   'tracking.orderNo': 'Order number',
   'tracking.orderNoHint': 'For example OUR-2609-00042 — it is in your confirmation SMS.',
   'tracking.phoneLast4': 'Last 4 digits of the phone',
-  'tracking.phoneLast4Hint': 'Bangla or English digits are both fine.',
+  'tracking.phoneLast4Hint': 'The last four digits of the phone number on the order.',
   'tracking.submit': 'Track',
   'tracking.checking': 'Checking…',
   'tracking.notFound':
@@ -1944,8 +1935,6 @@ const en = {
   'tracking.cod': 'To pay on delivery',
   'tracking.lastUpdate': 'Last update',
   'tracking.again': 'Track another order',
-  'tracking.language': 'বাংলা',
-  'tracking.languageLabel': 'Change language',
   'tracking.themeLight': 'Light theme',
   'tracking.themeDark': 'Dark theme',
 
@@ -2069,7 +2058,7 @@ const en = {
   'branch.closing.historyEmpty': 'No day closed in this range.',
   'branch.closing.countInvalid': 'Enter the count as taka, for example 12500 or 12500.50.',
 
-  // The showroom till (M23). `pos.receipt.*` is customer-facing: Bangla by default.
+  // The showroom till (M23). `pos.receipt.*` is the customer's receipt, in English (D-750).
   'pos.app.name': 'Till',
   'pos.app.skipToContent': 'Skip to the till',
   'pos.status.online': 'Online',
@@ -2088,9 +2077,6 @@ const en = {
   'pos.action.continue': 'Continue',
   'pos.theme.toDark': 'Switch to dark theme',
   'pos.theme.toLight': 'Switch to light theme',
-  'pos.locale.toBangla': 'বাংলা',
-  'pos.locale.toEnglish': 'English',
-  'pos.locale.label': 'Language',
 
   'pos.signIn.title': 'Sign in to the till',
   'pos.signIn.email': 'Email',
@@ -2200,8 +2186,8 @@ const en = {
   'pos.receipt.preview': 'Receipt',
   'pos.receipt.print': 'Print receipt',
   'pos.receipt.newSale': 'New sale',
-  'pos.receipt.title': 'Cash memo',
-  'pos.receipt.returnTitle': 'Return slip',
+  'pos.receipt.title': 'Sales receipt',
+  'pos.receipt.returnTitle': 'Return receipt',
   'pos.receipt.no': 'Receipt no.',
   'pos.receipt.date': 'Date',
   'pos.receipt.cashier': 'Cashier',
@@ -2635,14 +2621,13 @@ const en = {
   'campaigns.codes.form.invalidCount': 'Enter a whole number.',
   'campaigns.codes.form.invalidWindow': 'The end date is before the start.',
   'campaigns.codes.form.failed': 'The discount was not saved.',
-  'campaigns.templates.subtitle':
-    'What each message says, in Bangla and English. Buyers receive Bangla.',
+  'campaigns.templates.subtitle': 'What each SMS says. Every message is sent in English.',
   'campaigns.templates.new': 'New template',
   'campaigns.templates.edit': 'Edit',
   'campaigns.templates.editTitle': 'Edit template',
   'campaigns.templates.col.key': 'Template',
   'campaigns.templates.col.category': 'Kind',
-  'campaigns.templates.col.body': 'Bangla text',
+  'campaigns.templates.col.body': 'Message',
   'campaigns.templates.col.active': 'Active',
   'campaigns.templates.yes': 'Yes',
   'campaigns.templates.no': 'No',
@@ -2652,13 +2637,12 @@ const en = {
   'campaigns.templates.form.key': 'Template key',
   'campaigns.templates.form.keyHint':
     'For example occasion.birthday. Birthday and anniversary greetings need occasion.birthday and occasion.anniversary.',
-  'campaigns.templates.form.bodyBn': 'Bangla text',
-  'campaigns.templates.form.bodyEn': 'English text',
+  'campaigns.templates.form.bodyEn': 'Message',
   'campaigns.templates.form.bodyHint':
     'Write {name} and {code} where the buyer’s name and code go.',
   'campaigns.templates.form.active': 'Active',
   'campaigns.templates.form.invalidKey': 'Lower-case words joined by dots, like occasion.birthday.',
-  'campaigns.templates.form.required': 'Both texts are needed.',
+  'campaigns.templates.form.required': 'Write the message.',
   'campaigns.templates.form.failed': 'The template was not saved.',
   'campaigns.templates.emptyTitle': 'No templates yet',
   'campaigns.templates.emptyDetail':
@@ -3294,8 +3278,7 @@ const en = {
   'settings.zones.caption':
     'What each zone charges for delivery and which courier takes it by default. The order desk prices an address from these.',
   'settings.zones.colCode': 'Code',
-  'settings.zones.colNameEn': 'Name (English)',
-  'settings.zones.colNameBn': 'Name (Bangla)',
+  'settings.zones.colNameEn': 'Name',
   'settings.zones.colCharge': 'Charge',
   'settings.zones.chargeInput': 'Charge (৳)',
   'settings.zones.colCourier': 'Default courier',
@@ -3530,8 +3513,6 @@ const en = {
   'nav.sidebar': 'Workspace',
   'shell.search': 'Search or jump to…',
   'shell.openMenu': 'Open navigation',
-  'shell.languageBangla': 'বাংলা',
-  'shell.languageEnglish': 'English',
   'shell.signedInAs': 'Signed in as',
   'shell.breadcrumb': 'Breadcrumb',
   'palette.groupActions': 'Actions',

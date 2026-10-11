@@ -1,4 +1,4 @@
-import { fontClassFor, formatDate, type Locale } from '@elysium/i18n';
+import { DEFAULT_LOCALE, formatDate, type Locale } from '@elysium/i18n';
 import { Button, Money, cn, controlClassName } from '@elysium/ui';
 import { Check, Loader2, Moon, PackageSearch, Sun } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
@@ -11,8 +11,8 @@ import { readyToSubmit } from './tracking-input.js';
 /**
  * The public tracking page (M15: "order number plus the last 4 digits of the phone").
  *
- * Bangla by default (D-036) with an English toggle, light and dark, and usable on a phone
- * over a slow connection — which is where it is opened, from an SMS link.
+ * In English (D-750), light and dark, and usable on a phone over a slow connection — which is
+ * where it is opened, from an SMS link.
  *
  * What it shows is what the server decided a customer may see: a stage out of five, the
  * courier's name and tracking code once the parcel is with one, what to pay at the door, and
@@ -25,7 +25,7 @@ const FOCUS =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
 export function TrackingPage({ brand }: { readonly brand: string | null }) {
-  const [locale, setLocale] = useState<Locale>('bn');
+  const locale: Locale = DEFAULT_LOCALE;
   const [dark, setDark] = useState(isDark);
   const t = (key: TrackingMessageKey) => trackingText(locale, key);
 
@@ -36,13 +36,11 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
   const resultRef = useRef<HTMLDivElement>(null);
   const ids = { order: useId(), phone: useId(), orderHint: useId(), phoneHint: useId() };
 
-  // `<html lang>` and the font stack follow the language: Bangla renders in Hind Siliguri
-  // with its own size-adjust, and leaving the Latin stack on puts a mixed line on two baselines.
   useEffect(() => {
     const root = document.documentElement;
     root.lang = locale;
-    root.classList.toggle('font-bangla', fontClassFor(locale) === 'font-bangla');
-    root.classList.toggle('font-sans', fontClassFor(locale) === 'font-sans');
+    root.classList.add('font-sans');
+    root.classList.remove('font-bangla');
   }, [locale]);
 
   // Move focus to the answer, so a screen reader hears it and a phone scrolls to it.
@@ -83,14 +81,6 @@ export function TrackingPage({ brand }: { readonly brand: string | null }) {
           {t('tracking.title')}
         </span>
         <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => setLocale(locale === 'bn' ? 'en' : 'bn')}
-            aria-label={t('tracking.languageLabel')}
-            className={`inline-flex h-9 items-center rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${FOCUS}`}
-          >
-            <span lang={locale === 'bn' ? 'en' : 'bn'}>{t('tracking.language')}</span>
-          </button>
           <button
             type="button"
             onClick={() => {

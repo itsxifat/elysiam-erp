@@ -40,9 +40,9 @@ export function isoToDhakaLocal(iso: string | null): string {
 }
 
 /** An instant as people read it in Dhaka: `5 Oct 2026, 21:00`. */
-export function dhakaText(iso: string | null, locale: string): string {
+export function dhakaText(iso: string | null, _locale: string): string {
   if (iso === null) return '';
-  return new Intl.DateTimeFormat(locale === 'bn' ? 'bn-BD' : 'en-GB', {
+  return new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Dhaka',
     day: 'numeric',
     month: 'short',

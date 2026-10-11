@@ -44,19 +44,31 @@ export function shopperStatusOf(status: OrderStatus): ShopperStatus {
   }
 }
 
-/** The words the plan names, for a website that shows them as given (it may use its own). */
+/**
+ * The words the plan names, for a website that shows them as given (it may use its own).
+ *
+ * English only (D-750). The `{ en, bn }` shape stays because the brand's website reads it, and
+ * a website still reading `bn` now shows the same English words rather than breaking.
+ */
+const STATUS_WORDS: Readonly<Record<ShopperStatus, string>> = {
+  placed: 'Order placed',
+  processing: 'Processing',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+  partly_delivered: 'Partly delivered',
+  returned: 'Returned',
+  cancelled: 'Cancelled',
+  exchanged: 'Exchanged',
+};
+
 export const SHOPPER_STATUS_LABELS: Readonly<
   Record<ShopperStatus, { readonly en: string; readonly bn: string }>
-> = {
-  placed: { en: 'Order placed', bn: 'অর্ডার গ্রহণ করা হয়েছে' },
-  processing: { en: 'Processing', bn: 'প্রস্তুত হচ্ছে' },
-  shipped: { en: 'Shipped', bn: 'পাঠানো হয়েছে' },
-  delivered: { en: 'Delivered', bn: 'ডেলিভারি হয়েছে' },
-  partly_delivered: { en: 'Partly delivered', bn: 'আংশিক ডেলিভারি হয়েছে' },
-  returned: { en: 'Returned', bn: 'ফেরত এসেছে' },
-  cancelled: { en: 'Cancelled', bn: 'বাতিল হয়েছে' },
-  exchanged: { en: 'Exchanged', bn: 'বদল করা হয়েছে' },
-};
+> = Object.fromEntries(
+  (Object.keys(STATUS_WORDS) as ShopperStatus[]).map((status) => [
+    status,
+    { en: STATUS_WORDS[status], bn: STATUS_WORDS[status] },
+  ]),
+) as Record<ShopperStatus, { readonly en: string; readonly bn: string }>;
 
 /** How the shopper paid, as the website shows it. */
 export type ShopperPaymentStatus = 'cash_on_delivery' | 'awaiting_payment' | 'paid' | 'refund_due';

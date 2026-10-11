@@ -24,6 +24,7 @@ import {
   unitCovering,
   type Poisha,
 } from './index.js';
+import { isFreeOfBangla } from '../text/index.js';
 
 /**
  * Money (architecture §7, M03 check 6).
@@ -333,5 +334,26 @@ describe('takaText (m30-followups)', () => {
     expect(takaText(poisha(11_000_000n))).toBe('Tk 110,000.00');
     expect(takaText(poisha(5n))).toBe('Tk 0.05');
     expect(takaText(poisha(-12_345n))).toBe('-Tk 123.45');
+  });
+
+  it('drops ".00" from a whole amount only when asked, for a price sticker (D-751)', () => {
+    expect(takaText(poisha(149_000n), { wholeTaka: true })).toBe('Tk 1,490');
+    expect(takaText(poisha(149_050n), { wholeTaka: true })).toBe('Tk 1,490.50');
+    expect(takaText(poisha(149_000n))).toBe('Tk 1,490.00');
+  });
+
+  it('never writes a Bangla-block character, for any amount (D-750)', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: -MAX_POISHA, max: MAX_POISHA }),
+        fc.boolean(),
+        (value, whole) => {
+          const text = takaText(poisha(value), { wholeTaka: whole });
+          expect(isFreeOfBangla(text)).toBe(true);
+          expect(parseTaka(text)).toBe(value);
+        },
+      ),
+      { numRuns: 1_000 },
+    );
   });
 });

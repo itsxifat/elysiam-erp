@@ -5,28 +5,19 @@ import '@elysium/ui/styles/tailwind.css';
 import { STORAGE_KEYS, writeStored } from '@elysium/ui';
 
 import { ConsoleApp } from './console-app.js';
-import { preloadStoredLocale } from './i18n/locale.js';
 
 /**
- * The browser entry point.
- *
- * It waits for the stored locale's strings before mounting. English is bundled, so
- * for most sessions that is already resolved; a Bangla session fetches its
- * catalogue first, so no screen ever renders before its strings exist. A failed
- * fetch still mounts, in English, rather than leaving a blank page.
+ * The browser entry point. The console is English only (D-750), so its strings are bundled
+ * and nothing waits before mounting.
  */
 const container = document.getElementById('root');
 if (container === null) throw new Error('#root is missing from index.html');
 
-const mount = () =>
-  createRoot(container).render(
-    <StrictMode>
-      <ConsoleApp />
-    </StrictMode>,
-  );
+// A language chosen before D-750 is forgotten: there is only English now.
+writeStored(STORAGE_KEYS.consoleLocale, null);
 
-preloadStoredLocale().then(mount, () => {
-  // Storage denied: the default applies anyway.
-  writeStored(STORAGE_KEYS.consoleLocale, null);
-  mount();
-});
+createRoot(container).render(
+  <StrictMode>
+    <ConsoleApp />
+  </StrictMode>,
+);

@@ -97,7 +97,6 @@ const CAMPAIGNS_KEYS = [
   'campaigns.templates.category.marketing',
   'campaigns.templates.form.key',
   'campaigns.templates.form.keyHint',
-  'campaigns.templates.form.bodyBn',
   'campaigns.templates.form.bodyEn',
   'campaigns.templates.form.bodyHint',
   'campaigns.templates.form.active',

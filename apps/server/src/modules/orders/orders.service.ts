@@ -537,7 +537,7 @@ export class OrdersService {
     input: {
       code: string;
       nameEn: string;
-      nameBn: string;
+      nameBn?: string | undefined;
       chargePoisha: string;
       defaultCourierId?: string;
       position?: number;
@@ -550,7 +550,7 @@ export class OrdersService {
           orgId: context.orgId,
           code: input.code,
           nameEn: input.nameEn,
-          nameBn: input.nameBn,
+          nameBn: input.nameBn ?? null,
           chargePoisha: BigInt(input.chargePoisha),
           defaultCourierId: input.defaultCourierId ?? null,
           position: input.position ?? 0,

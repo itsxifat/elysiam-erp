@@ -1,14 +1,7 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { daysBefore, percentOfBps, quantity, receiptProblem, todayInDhaka } from './courier-ui.js';
 import { courierEn, courierMessages } from './messages.js';
-import { loadLocale } from '../../i18n/catalogue.js';
-
-// Bangla is fetched on demand in the console (`i18n/catalogue.ts`); load it the way
-// the app does before reading it.
-beforeAll(async () => {
-  await loadLocale('bn');
-});
 
 /**
  * The courier screens' pure pieces (M15).
@@ -16,18 +9,19 @@ beforeAll(async () => {
  * The screens themselves are React over endpoints the server suites cover. These are the
  * parts that can be wrong on their own, each with a failure a click-through would miss:
  *
- * - a Bangla key missing on one side throws at render time, for whichever user switched;
+ * - a key missing from the catalogue throws at render time;
  * - a rate rendered through a float shows 66.66999999999999%;
  * - a "today" computed in UTC is yesterday in Dhaka for six hours of every night;
  * - a return inspection that lets more units back than left puts phantom stock on a shelf.
  */
 
 describe('the courier catalogue', () => {
-  it('has the same keys in bn as in en', () => {
-    expect(Object.keys(courierMessages.bn).sort()).toEqual(Object.keys(courierEn).sort());
+  it('is English only (D-750)', () => {
+    expect(Object.keys(courierMessages)).toEqual(['en']);
+    expect(Object.keys(courierEn).length).toBeGreaterThan(10);
   });
 
-  it('has a non-empty value for every key in both locales', () => {
+  it('has a non-empty value for every key', () => {
     const empty: string[] = [];
     for (const [locale, catalogue] of Object.entries(courierMessages)) {
       for (const [key, value] of Object.entries(catalogue)) {

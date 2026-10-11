@@ -1,60 +1,44 @@
-import { isLocale, type Locale } from '@elysium/i18n';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { type Locale } from '@elysium/i18n';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 
-import { bn } from './locales/bn.js';
 import { en, type MessageKey } from './locales/en.js';
 
 /**
- * The console's language (D-036, D-494): English by default, Bangla on request, both
- * bundled (the catalogue is small). `<html lang>` and the Bangla font class follow it.
+ * The console's language (D-494; D-750: English only). The owner's decision of 2026-10-11 is
+ * that the brands never wanted Bangla, so there is one catalogue and no switch.
  */
 
-const STORAGE_KEY = 'owner-locale';
-const catalogues: Record<Locale, Record<MessageKey, string>> = { en, bn };
+const catalogues: Record<Locale, Record<MessageKey, string>> = { en };
 
 export type { MessageKey };
 
 interface LocaleValue {
   readonly locale: Locale;
-  readonly setLocale: (locale: Locale) => void;
   readonly t: (key: MessageKey) => string;
 }
 
 const LocaleContext = createContext<LocaleValue | null>(null);
 
-function stored(): Locale {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved !== null && isLocale(saved)) return saved;
-  } catch {
-    // Storage denied: English for this visit.
-  }
-  return 'en';
-}
-
 export function LocaleProvider({ children }: { readonly children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(stored);
+  const locale: Locale = 'en';
 
   useEffect(() => {
     const root = document.documentElement;
     root.lang = locale;
-    root.classList.toggle('font-bangla', locale === 'bn');
-    root.classList.toggle('font-sans', locale !== 'bn');
+    root.classList.add('font-sans');
+    root.classList.remove('font-bangla');
+    try {
+      // A language chosen before D-750 is forgotten: there is only English now.
+      localStorage.removeItem('owner-locale');
+    } catch {
+      // Storage denied: nothing was kept.
+    }
   }, [locale]);
 
-  const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // The choice still holds for this visit.
-    }
-  }, []);
-
   const value = useMemo<LocaleValue>(
-    () => ({ locale, setLocale, t: (key: MessageKey) => catalogues[locale][key] }),
-    [locale, setLocale],
+    () => ({ locale, t: (key: MessageKey) => catalogues[locale][key] }),
+    [locale],
   );
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }

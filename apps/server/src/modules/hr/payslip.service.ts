@@ -125,6 +125,10 @@ export class PayslipService {
           bytes: font.bytes,
           contentType: 'font/woff2',
         })),
+        // Exactly A4 (210 × 297 mm), with a 12 mm margin, like the order invoice (M43).
+        paperWidth: 210 / 25.4,
+        paperHeight: 297 / 25.4,
+        marginInches: 12 / 25.4,
       });
 
       return { pdf, filename: `payslip-${payslip.employeeCode}-${run.month}.pdf` };

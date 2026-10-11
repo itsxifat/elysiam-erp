@@ -147,15 +147,14 @@ test.afterAll(async () => {
 test('an investor sees nothing until a second factor is enrolled', async ({ browser }) => {
   alpha = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   await alpha.goto('/');
-  // The bare domain is the investor portal, and it opens in Bangla (D-036, D-310).
+  // The bare domain is the investor portal, in English (D-750).
   await expect(alpha).toHaveURL(/\/investor$/);
-  await expect(alpha.locator('html')).toHaveAttribute('lang', 'bn');
-  await expect(alpha.getByRole('heading', { name: 'সাইন ইন' })).toBeVisible();
-  await settled(alpha);
-  await bothThemesInPlace(alpha, 'sign-in (bn)');
-  await shot(alpha, 'sign-in-bn');
-
   await inEnglish(alpha);
+  await expect(alpha.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await settled(alpha);
+  await bothThemesInPlace(alpha, 'sign-in');
+  await shot(alpha, 'sign-in-en');
+
   expect((await apiFromPage(alpha, '/v1/investors')).status).toBe(401);
 
   await signIn(alpha, user('alpha').email);
@@ -286,13 +285,8 @@ test('alpha’s other brand shows only that brand’s stake', async () => {
   await expectNoneOf(alpha, ['INV-A', '৳12,00,000.00', '৳25,000.00', ...BETA_ONLY]);
   await shot(alpha, 'dashboard-oura-light');
 
-  // Bangla, as an investor first sees it.
-  await alpha.getByRole('button', { name: 'Change language' }).click();
-  await expect(alpha.locator('html')).toHaveAttribute('lang', 'bn');
   await settled(alpha);
-  await noBlockingViolations(alpha, 'dashboard (bn)');
-  await shot(alpha, 'dashboard-oura-bn');
-  await inEnglish(alpha);
+  await noBlockingViolations(alpha, 'dashboard');
   await openBrand(alpha, 'Elysiam Lifestyle BD');
 });
 

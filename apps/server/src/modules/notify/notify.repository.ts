@@ -61,7 +61,7 @@ export async function upsertTemplate(
     readonly key: string;
     readonly channel: string;
     readonly category: string;
-    readonly bodyBn: string;
+    /** The English body (D-750); also written to the retired `body_bn` until it is dropped. */
     readonly bodyEn: string;
     readonly isActive: boolean;
     readonly updatedBy: string;
@@ -70,7 +70,7 @@ export async function upsertTemplate(
   const rows = await tx.execute<TemplateRow>(sql`
     insert into notify.templates (org_id, key, channel, category, body_bn, body_en, is_active, updated_by)
     values (${input.orgId}, ${input.key}, ${input.channel}, ${input.category},
-            ${input.bodyBn}, ${input.bodyEn}, ${input.isActive}, ${input.updatedBy})
+            ${input.bodyEn}, ${input.bodyEn}, ${input.isActive}, ${input.updatedBy})
     on conflict (org_id, key, channel) do update
       set category = excluded.category, body_bn = excluded.body_bn,
           body_en = excluded.body_en, is_active = excluded.is_active,

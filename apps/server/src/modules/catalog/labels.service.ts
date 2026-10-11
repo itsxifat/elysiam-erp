@@ -17,7 +17,7 @@ import {
   stickerLayoutFor,
   stickerPageSize,
   stickerPages,
-  takaParts,
+  takaText,
   type StickerContent,
   type StickerLayout,
   type StickerMediumSpec,
@@ -25,7 +25,7 @@ import {
 
 import type { ActiveContext } from '../../platform/http/context.js';
 import { GotenbergClient } from '../files/pdf/gotenberg.client.js';
-import { loadFonts, fontFaceCss } from '../files/pdf/fonts.js';
+import { DOCUMENT_FONT_STACK, loadFonts, fontFaceCss } from '../files/pdf/fonts.js';
 import { CATALOG_API, type CatalogApi } from './catalog.api.js';
 import { CatalogError } from './catalog.errors.js';
 import * as repo from './catalog.repository.js';
@@ -59,7 +59,8 @@ import type { LabelSheetInput } from './catalog.schemas.js';
  * `CatalogApi.stickerData` selects the selling price and nothing else (invariant 5).
  */
 
-const FONT = `'Hind Siliguri', sans-serif`;
+/** Inter, as every document (D-753); the font stack's fallbacks carry a Bangla product name. */
+const FONT = DOCUMENT_FONT_STACK;
 
 /** The medium a request prints on: a fixed one, or the custom size it names (D-650). */
 export function mediumOf(input: LabelSheetInput): StickerMediumSpec {
@@ -158,12 +159,12 @@ export class LabelsService {
   }
 }
 
+/**
+ * A sticker's price, `Tk 1,490` (D-751): whole taka print without decimals, because a tag is
+ * read at arm's length; a price with poisha keeps both digits, so nothing reads truncated.
+ */
 export function formatTakaLabel(pricePoisha: string): string {
-  const { taka, poisha: fraction } = takaParts(poisha(pricePoisha));
-  // Whole taka print without decimals ("৳1,490"): a tag is read at arm's length. A price
-  // with poisha keeps both digits, so ৳1490.5 never reads as a truncated number.
-  const whole = taka.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return fraction === 0n ? `৳${whole}` : `৳${whole}.${fraction.toString().padStart(2, '0')}`;
+  return takaText(poisha(pricePoisha), { wholeTaka: true });
 }
 
 /** One sticker's text and symbol. */
@@ -336,7 +337,7 @@ export function renderStickersHtml(input: {
     .join('');
 
   return `<!doctype html>
-<html lang="bn">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <style>
@@ -374,8 +375,7 @@ body { font-family: ${FONT}; color: #000; -webkit-print-color-adjust: exact; }
 .digits { letter-spacing: 0.08em; line-height: 1.15; white-space: nowrap;
   font-variant-numeric: tabular-nums; }
 .code { font-size: ${String(scale.code)}pt; text-align: center; line-height: 1.1;
-  letter-spacing: 0.03em; font-variant-numeric: tabular-nums; white-space: nowrap;
-  overflow: hidden; }
+  letter-spacing: 0.03em; white-space: nowrap; overflow: hidden; }
 </style>
 </head>
 <body>${body}</body>

@@ -338,14 +338,12 @@ async function ensureMarketing(ctx: Context): Promise<void> {
   await marketing.put('/v1/notify/templates', {
     key: 'occasion.birthday',
     category: 'marketing',
-    bodyBn: 'শুভ জন্মদিন {name}! আপনার জন্য ১০% ছাড়ের কোড: {code}',
-    bodyEn: 'Happy birthday {name}! Your 10% off code: {code}',
+    bodyEn: 'Happy birthday, {name}! Here is your 10% off code: {code}',
   });
   await marketing.put('/v1/notify/templates', {
     key: 'loan.instalment_due',
     category: 'transactional',
-    bodyBn: '{lender}-এর কিস্তি {seq} বাকি {due}: ৳{amount}',
-    bodyEn: '{lender} instalment {seq} due {due}: Tk {amount}',
+    bodyEn: 'Reminder: {lender} instalment {seq} of Tk {amount} is due on {due}.',
   });
 }
 

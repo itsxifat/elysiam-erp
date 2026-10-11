@@ -116,8 +116,6 @@ export class CrmService {
           const { messageId } = await this.notify.queue(tx, orgId, {
             templateKey: OCCASION_TEMPLATES[occasion.occasion],
             phone: buyer.phone_e164,
-            // Customer-facing output is Bangla (D-036).
-            locale: 'bn',
             values: { name: buyer.name, code },
             refType: 'occasion',
             refId: codeId,
