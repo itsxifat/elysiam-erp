@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { SEED_ORG_IDS, withGlobal, withSystem } from '@elysium/db';
-import { grantMembership } from '@elysium/db/testing';
+import { createTestUser, grantMembership } from '@elysium/db/testing';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -129,15 +129,20 @@ async function interestOn(conversation: { id: string; contactId: string }): Prom
   );
 }
 
-/** D-748: a live offer of a fresh conversation, to the teammate: every caller is someone else. */
+/**
+ * D-748: a live offer of a fresh conversation to a fresh agent, so every caller is someone else.
+ * Its own agent each time: a person holds one live conversation offer at a time.
+ */
 async function freshOffer(): Promise<string> {
   const conversation = await freshConversation();
+  const agent = await createTestUser({ name: 'Route matrix conversation offeree' });
+  await grantMembership({ userId: agent.id, orgId: ORG_A, role: 'sales' });
   return withSystem(
     async (tx) =>
       (
         await tx.execute<{ id: string }>(sql`
           insert into inbox.conversation_offers (org_id, conversation_id, user_id, expires_at)
-          values (${ORG_A}, ${conversation.id}, ${TEAMMATE}, now() + interval '10 minutes')
+          values (${ORG_A}, ${conversation.id}, ${agent.id}, now() + interval '10 minutes')
           returning id
         `)
       )[0]?.id ?? randomUUID(),

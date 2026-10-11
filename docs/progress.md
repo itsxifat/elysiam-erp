@@ -3168,4 +3168,7 @@ dry-run|commit --file <users.json>`.
   New `IamApi.memberBranches`, carried on `TeamApi`'s members. `workflow.e2e.test.ts` (16 tests,
   one new) and the contracts' permission suite green. Left: `team.presence_changed` still goes to
   every branch manager (an id and a state); routing it by branch is a follow-up.
+- **After all four:** the route matrix and the cost sweep e2e green on the final tree (the
+  conversation-offer fixture gives each offer its own agent, as M41's does); plans M41 to M43
+  carry the integration in their Status. `docs/build-status.md` does not count M41 to M43 yet.
 - **New dependencies:** none.
