@@ -96,6 +96,13 @@ export interface PanelView {
     readonly saved: boolean;
     readonly matchesCustomer: boolean;
   }[];
+  readonly addressesFound: readonly {
+    readonly districtId: number;
+    readonly thanaId: number;
+    readonly thanaName: string;
+    readonly districtName: string;
+    readonly line: string;
+  }[];
   readonly customer: {
     readonly id: string;
     readonly name: string;

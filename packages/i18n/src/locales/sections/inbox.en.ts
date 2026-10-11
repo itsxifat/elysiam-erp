@@ -120,6 +120,8 @@ const en = {
   'inbox.panel.area': 'Area (optional)',
   'inbox.panel.addressLine': 'House, road and landmark',
   'inbox.panel.saveAddress': 'Save address',
+  'inbox.panel.addressesFound': 'Addresses in the chat',
+  'inbox.panel.useAddress': 'Use this address',
   'inbox.panel.customer': 'Orders',
   'inbox.panel.noCustomer': 'Save their phone to see their orders.',
   'inbox.panel.orders': 'Orders',

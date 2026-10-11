@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { isE164Phone } from '../orders/phone.js';
 import {
+  addressesInTexts,
+  areaMatcher,
   automaticStage,
   chooseStage,
   CONTACT_STAGES,
@@ -254,5 +256,56 @@ describe('delivery status (M42, D-735)', () => {
     expect(mapWhatsAppStatus('deleted')).toBeNull();
     expect(mapWhatsAppStatus('toString')).toBeNull();
     expect(MESSENGER_RECEIPT_MAP).toEqual({ delivery: 'delivered', read: 'read' });
+  });
+});
+
+describe('addresses in a chat (D-739)', () => {
+  const areas = [
+    {
+      thanaId: 11,
+      districtId: 1,
+      thanaNames: ['Mirpur', 'মিরপুর'],
+      districtNames: ['Dhaka', 'ঢাকা'],
+    },
+    { thanaId: 12, districtId: 1, thanaNames: ['Dhanmondi'], districtNames: ['Dhaka', 'ঢাকা'] },
+    { thanaId: 21, districtId: 2, thanaNames: ['Kotwali'], districtNames: ['Chattogram'] },
+    { thanaId: 31, districtId: 3, thanaNames: ['Kotwali'], districtNames: ['Barishal'] },
+    { thanaId: 41, districtId: 4, thanaNames: ['Ra'], districtNames: ['Xy'] },
+  ];
+  const matcher = areaMatcher(areas);
+
+  it('finds a thana named as a word, in English or Bangla, with the message as the line', () => {
+    expect(addressesInTexts(['House 12, Road 3, Mirpur 10, Dhaka'], matcher)).toEqual([
+      { thanaId: 11, districtId: 1, line: 'House 12, Road 3, Mirpur 10, Dhaka' },
+    ]);
+    expect(addressesInTexts(['বাসা ৫, মিরপুর ২'], matcher)).toEqual([
+      { thanaId: 11, districtId: 1, line: 'বাসা ৫, মিরপুর ২' },
+    ]);
+    expect(addressesInTexts(['dhanmondi 27,   road 4'], matcher)[0]?.line).toBe(
+      'dhanmondi 27, road 4',
+    );
+  });
+
+  it('needs the district for a thana name two districts share, and ignores parts of words', () => {
+    expect(addressesInTexts(['Kotwali thana'], matcher)).toEqual([]);
+    expect(addressesInTexts(['Kotwali, Barishal'], matcher)).toEqual([
+      { thanaId: 31, districtId: 3, line: 'Kotwali, Barishal' },
+    ]);
+    expect(addressesInTexts(['Mirpuri food'], matcher)).toEqual([]);
+    expect(addressesInTexts(['Ra road'], matcher)).toEqual([]);
+  });
+
+  it('takes the newest message first, each thana once, at most the limit, and never throws', () => {
+    const found = addressesInTexts(
+      ['now in Dhanmondi', null, 'before: Mirpur', 'Mirpur again'],
+      matcher,
+      5,
+    );
+    expect(found.map((entry) => entry.thanaId)).toEqual([12, 11]);
+    fc.assert(
+      fc.property(fc.string({ maxLength: 120 }), (text) => {
+        expect(() => addressesInTexts([text], matcher)).not.toThrow();
+      }),
+    );
   });
 });

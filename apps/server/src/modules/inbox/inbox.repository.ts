@@ -284,11 +284,18 @@ export async function ensureIdentity(
 export async function ensureConversation(
   tx: Tx,
   orgId: string,
-  values: { readonly channelId: string; readonly contactId: string; readonly identityId: string },
+  values: {
+    readonly channelId: string;
+    readonly contactId: string;
+    readonly identityId: string;
+    /** The first message's time, so the list orders by when people wrote, not when Meta told us. */
+    readonly at: Date;
+  },
 ): Promise<{ readonly id: string; readonly created: boolean }> {
   const inserted = await tx.execute<{ id: string }>(sql`
-    insert into inbox.conversations (org_id, channel_id, contact_id, identity_id)
-    values (${orgId}, ${values.channelId}, ${values.contactId}, ${values.identityId})
+    insert into inbox.conversations (org_id, channel_id, contact_id, identity_id, last_message_at)
+    values (${orgId}, ${values.channelId}, ${values.contactId}, ${values.identityId},
+            ${values.at.toISOString()}::timestamptz)
     on conflict (org_id, identity_id) do nothing
     returning id
   `);
@@ -990,4 +997,26 @@ export async function interestsFor(
       and ${column === 'product_id' ? sql`product_id` : sql`sku_id`} = any (${sql.param([...ids])}::uuid[])
   `);
   return rows[0]?.n ?? 0;
+}
+
+// --- geography, for addresses found in a chat (reference data, `ref`) ------------------------
+
+export interface AreaNameRow extends Record<string, unknown> {
+  readonly thana_id: number;
+  readonly district_id: number;
+  readonly thana_en: string;
+  readonly thana_bn: string;
+  readonly district_en: string;
+  readonly district_bn: string;
+}
+
+/** Every thana with its district, both languages: global reference data, read once. */
+export async function areaNames(tx: Tx): Promise<AreaNameRow[]> {
+  const rows = await tx.execute<AreaNameRow>(sql`
+    select t.id as thana_id, t.district_id, t.name_en as thana_en, t.name_bn as thana_bn,
+           d.name_en as district_en, d.name_bn as district_bn
+    from ref.thanas t
+    join ref.districts d on d.id = t.district_id
+  `);
+  return [...rows];
 }

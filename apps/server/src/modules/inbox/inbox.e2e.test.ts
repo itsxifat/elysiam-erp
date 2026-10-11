@@ -80,6 +80,8 @@ let adminB: RoleClient;
 let skuId = '';
 let skuCode = '';
 let productId = '';
+let imageFileId = '';
+const subscribers = new Map<string, (event: DeliveredEvent) => Promise<void> | void>();
 
 function readBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
@@ -230,7 +232,13 @@ beforeAll(async () => {
   });
   await registerInboxJobs({
     jobs,
-    dispatcher: { on: () => undefined } as unknown as OutboxDispatcher,
+    // Records what the inbox subscribes to, so the tests hand an outbox row to the handler the
+    // worker would run (the dispatcher's own delivery is `dispatcher.db.test.ts`'s).
+    dispatcher: {
+      on: (name: string, subscriber: (event: DeliveredEvent) => Promise<void> | void) => {
+        subscribers.set(name, subscriber);
+      },
+    } as unknown as OutboxDispatcher,
     webhooks: harness.app.get(InboxWebhookService),
     sender: harness.app.get(InboxSendService),
     orders: harness.app.get(InboxOrderListener),
@@ -246,6 +254,24 @@ beforeAll(async () => {
   productId = seeded.productId;
   skuId = seeded.skus[0]?.id ?? '';
   skuCode = seeded.skus[0]?.code ?? '';
+  // A photo for the product, as the catalog keeps one: a stored file and its image row.
+  imageFileId = randomUUID();
+  await withSystem(
+    async (tx) => {
+      await tx.execute(sql`
+        insert into files.objects
+          (id, org_id, storage_key, driver, visibility, status, purpose, mime, size_bytes, sha256)
+        values (${imageFileId}, ${ORG_A}, ${`public/${ORG_A}/${imageFileId}.webp`}, 'local',
+                'public'::files.file_visibility, 'stored', 'product-image', 'image/webp', 1024,
+                ${'a'.repeat(64)})
+      `);
+      await tx.execute(sql`
+        insert into catalog.product_images (org_id, product_id, file_id, position)
+        values (${ORG_A}, ${productId}, ${imageFileId}, 0)
+      `);
+    },
+    { orgId: ORG_A },
+  );
   await seedStockLevel(ORG_A, {
     skuId,
     locationId: await warehouseId(ORG_A),
@@ -808,6 +834,49 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
       phonesFound: { phone: string; matchesCustomer: boolean; saved: boolean }[];
       customer: unknown;
     }>(await salesA.client.request('GET', `/v1/inbox/conversations/${id}/panel`));
+
+    // An address the customer typed: a thana the geography knows by a name no other has.
+    const place = await withSystem(async (tx) => {
+      const rows = await tx.execute<{ id: number; district_id: number; name_en: string }>(sql`
+        select t.id, t.district_id, t.name_en from ref.thanas t
+        where char_length(t.name_en) >= 5 and t.name_en ~ '^[A-Za-z]+$'
+          and (select count(*) from ref.thanas o where lower(o.name_en) = lower(t.name_en)) = 1
+        order by t.id limit 1
+      `);
+      return rows[0];
+    });
+    if (place === undefined) throw new Error('no thana to write an address with');
+    await deliverAndThread(
+      whatsAppText({
+        phoneNumberId: PHONE_ID,
+        waId,
+        name: 'Farhana',
+        wamid: `wamid.${randomUUID()}`,
+        text: `House 7, Road 3, ${place.name_en}`,
+      }),
+    );
+    const withAddress = json<{
+      addressesFound: { districtId: number; thanaId: number; line: string }[];
+    }>(await salesA.client.request('GET', `/v1/inbox/conversations/${id}/panel`));
+    expect(withAddress.addressesFound[0]).toEqual(
+      expect.objectContaining({
+        thanaId: place.id,
+        districtId: place.district_id,
+        line: `House 7, Road 3, ${place.name_en}`,
+      }),
+    );
+    const usedAddress = await salesA.client.request(
+      'PUT',
+      `/v1/inbox/conversations/${id}/contact/address`,
+      {
+        body: {
+          districtId: place.district_id,
+          thanaId: place.id,
+          addressLine: `House 7, Road 3, ${place.name_en}`,
+        },
+      },
+    );
+    expect(usedAddress.statusCode, usedAddress.body).toBe(200);
     expect(panel.phonesFound).toEqual(
       expect.arrayContaining([{ phone: '+8801712345678', matchesCustomer: true, saved: false }]),
     );
@@ -926,8 +995,12 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
       occurredAt: new Date(event.created_at),
       actorUserId: salesA.userId,
     };
-    await harness.app.get(InboxOrderListener).onOrderCreated(delivered);
-    await harness.app.get(InboxOrderListener).onOrderCreated(delivered);
+    // What the worker registered for `order.created` (`inbox.worker.ts`), twice: a redelivery.
+    const onOrderCreated = subscribers.get('order.created');
+    if (onOrderCreated === undefined)
+      throw new Error('the inbox did not subscribe to order.created');
+    await onOrderCreated(delivered);
+    await onOrderCreated(delivered);
     const ordered = await withSystem(
       async (tx) =>
         tx.execute<{ action: string; actor_user_id: string }>(sql`
@@ -982,7 +1055,7 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
         })
       ).statusCode,
     ).toBe(200);
-    await harness.app.get(InboxOrderListener).onOrderCreated(delivered);
+    await onOrderCreated(delivered);
     const flags = json<{ fraud: boolean; contacts: { conversationId: string }[] }>(
       await salesB.client.request('GET', '/v1/inbox/phone-flags?phone=01888000222'),
     );
@@ -992,6 +1065,18 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
       await salesB.client.request('GET', '/v1/inbox/phone-flags?phone=01999999999'),
     );
     expect(clean.fraud).toBe(false);
+
+    // The list's stage and unread filters.
+    const frauds = json<{ items: { id: string; contact: { stage: string } }[] }>(
+      await salesB.client.request('GET', '/v1/inbox/conversations?stage=fraud&status=any'),
+    );
+    expect(frauds.items.map((item) => item.id)).toContain(id);
+    expect(frauds.items.every((item) => item.contact.stage === 'fraud')).toBe(true);
+    const unread = json<{ items: { unreadCount: number }[] }>(
+      await salesB.client.request('GET', '/v1/inbox/conversations?unread=true&status=any'),
+    );
+    expect(unread.items.length).toBeGreaterThan(0);
+    expect(unread.items.every((item) => item.unreadCount > 0)).toBe(true);
   });
 
   it('links a typed number only for a buyer the agent may open; the panel lists only orders they may open (W1)', async () => {
@@ -1104,11 +1189,14 @@ describe('check 4: notes and product interests, with live catalog data and no co
         interests: {
           product: {
             name: string;
+            imageFileId: string | null;
             variants: { skuId: string; pricePoisha: string; available: number }[];
           };
         }[];
         contact: { tags: string[] };
       }>(response);
+      // The product's photo, as the catalog keeps it (fetched by the console as a signed URL).
+      expect(panel.interests[0]?.product.imageFileId).toBe(imageFileId);
       expect(panel.notes[0]).toMatchObject({
         body: 'Wants the black kurti in M; call after 6 pm.',
         author: { userId: salesA.userId },

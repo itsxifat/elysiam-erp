@@ -205,6 +205,7 @@ export class InboxWebhookService {
       channelId,
       contactId: identity.contactId,
       identityId: identity.id,
+      at: event.occurredAt,
     });
 
     if (event.echo && (await this.isOwnReplyInFlight(tx, orgId, conversation.id, event.text))) {

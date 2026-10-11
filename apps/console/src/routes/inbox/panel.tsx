@@ -150,7 +150,15 @@ function PanelBody({
       )}
       <ContactBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
       <PhonesBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
-      <AddressBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
+      <AddressBlock
+        // A saved address (one click from the chat, or typed) starts the form again from it.
+        key={JSON.stringify(view.contact.address)}
+        view={view}
+        mayWrite={mayWrite}
+        busy={save.isPending}
+        run={run}
+        id={id}
+      />
       <CustomerBlock view={view} />
       <NotesBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
       <InterestsBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
@@ -303,6 +311,40 @@ function AddressBlock({ view, mayWrite, busy, run, id }: BlockProps) {
 
   return (
     <Block title={t('inbox.panel.address')}>
+      {view.addressesFound.length === 0 ? null : (
+        <ul className="space-y-2" aria-label={t('inbox.panel.addressesFound')}>
+          {view.addressesFound.map((found) => (
+            <li key={found.thanaId} className="space-y-1 rounded-md border border-border p-2">
+              <p className="text-sm font-medium">
+                {found.thanaName}, {found.districtName}
+              </p>
+              <p className="text-xs break-words text-muted-foreground">{found.line}</p>
+              {mayWrite ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || found.line.length < 3}
+                  onClick={() =>
+                    run((ack) =>
+                      saveAddress(
+                        id,
+                        {
+                          districtId: found.districtId,
+                          thanaId: found.thanaId,
+                          addressLine: found.line,
+                        },
+                        ack,
+                      ),
+                    )
+                  }
+                >
+                  {t('inbox.panel.useAddress')}
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
       <form
         className="space-y-2"
         onSubmit={(event) => {

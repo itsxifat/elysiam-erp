@@ -10,6 +10,8 @@ import type {
 import { withOrg, type Tx } from '@elysium/db';
 import { isNormalizableBdPhone, normalizeBdPhone } from '@elysium/domain';
 import {
+  addressesInTexts,
+  areaMatcher,
   chooseStage,
   phoneFromWhatsAppId,
   phonesAcrossMessages,
@@ -24,6 +26,34 @@ import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { ConversationsService } from './conversations.service.js';
 import { InboxError, mapInboxErrors } from './inbox.errors.js';
 import * as repo from './inbox.repository.js';
+
+/** The geography as a matcher, compiled once per process: it is reference data. */
+let geography:
+  | Promise<{
+      readonly matcher: ReturnType<typeof areaMatcher>;
+      readonly names: ReadonlyMap<number, { thana: string; district: string }>;
+    }>
+  | undefined;
+
+function geographyIn(tx: Tx) {
+  geography ??= repo.areaNames(tx).then((rows) => ({
+    matcher: areaMatcher(
+      rows.map((row) => ({
+        thanaId: row.thana_id,
+        districtId: row.district_id,
+        thanaNames: [row.thana_en, row.thana_bn],
+        districtNames: [row.district_en, row.district_bn],
+      })),
+    ),
+    names: new Map(
+      rows.map((row) => [row.thana_id, { thana: row.thana_en, district: row.district_en }]),
+    ),
+  }));
+  geography.catch(() => {
+    geography = undefined;
+  });
+  return geography;
+}
 
 /** How many recent inbound messages are read for phone numbers. */
 const PHONE_SCAN_MESSAGES = 50;
@@ -93,6 +123,16 @@ export class ContactPanelService {
           })),
         );
 
+        // Addresses the customer typed (D-739): the thana, the district, the message as the line.
+        const places = await geographyIn(tx);
+        const addressesFound = addressesInTexts(texts, places.matcher).map((found) => ({
+          districtId: found.districtId,
+          thanaId: found.thanaId,
+          thanaName: places.names.get(found.thanaId)?.thana ?? '',
+          districtName: places.names.get(found.thanaId)?.district ?? '',
+          line: found.line,
+        }));
+
         const customer =
           contact.customer_id === null
             ? undefined
@@ -139,6 +179,7 @@ export class ContactPanelService {
             tags: contact.tags,
           },
           phonesFound,
+          addressesFound,
           customer:
             customer === undefined
               ? null
