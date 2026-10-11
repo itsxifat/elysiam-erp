@@ -50,5 +50,21 @@ export function settingsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     path: '/settings/inbox',
     component: lazyRouteComponent(() => import('./inbox.js'), 'InboxSettingsPage'),
   });
-  return [index, thresholds, zones, couriers, siteKeys, registers, security, inbox] as const;
+  // M41: auto-assign and the order workflow (D-715).
+  const workflow = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/settings/order-workflow',
+    component: lazyRouteComponent(() => import('./workflow.js'), 'WorkflowSettingsPage'),
+  });
+  return [
+    index,
+    thresholds,
+    zones,
+    couriers,
+    siteKeys,
+    registers,
+    security,
+    inbox,
+    workflow,
+  ] as const;
 }

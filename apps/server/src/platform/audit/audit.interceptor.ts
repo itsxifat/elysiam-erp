@@ -72,6 +72,20 @@ export const AUDIT_EXEMPT_KEY = 'elysium:audit-exempt';
  */
 export const AuditExempt = (reason: string) => SetMetadata(AUDIT_EXEMPT_KEY, reason);
 
+/**
+ * Tell the audit net that this request, though a mutation, changed nothing a row is for.
+ *
+ * The one sanctioned way for a route to leave no audit row with an org in context (M41, D-713):
+ * the console's presence beat, which every thirty seconds moves only the caller's own
+ * last-seen instant; a beat that changes the person's state is audited by the service in its
+ * own transaction. Every call site is listed in `audit-exempt.test.ts`, with its reason, so a
+ * new one is read by a reviewer before it ships.
+ */
+export function auditNothingChanged(request: AuditableRequest, why: string): void {
+  void why;
+  request[ALREADY_AUDITED] = true;
+}
+
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(

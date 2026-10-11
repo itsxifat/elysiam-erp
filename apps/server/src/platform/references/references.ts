@@ -161,6 +161,7 @@ const REASON_WORDS: Readonly<Record<UsageReason, readonly [string, string]>> = {
   marketplace_holds: ['ncom.bd stock hold', 'ncom.bd stock holds'],
   packing_scans: ['packing scan', 'packing scans'],
   inbox_interests: ['customer interest in the inbox', 'customer interests in the inbox'],
+  desk_profiles: ['staff member whose hub it is', 'staff members whose hub it is'],
   leads: ['lead', 'leads'],
   campaigns: ['ad campaign', 'ad campaigns'],
   ad_spend: ['ad spend entry', 'ad spend entries'],

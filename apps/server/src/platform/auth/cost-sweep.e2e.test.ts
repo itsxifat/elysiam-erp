@@ -72,6 +72,7 @@ import {
 } from '../../modules/wallets/wallets.route-fixtures.js';
 import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
 import { ACCOUNT_ROUTE_FIXTURES } from '../../modules/iam/account.route-fixtures.js';
+import { TEAM_ROUTE_FIXTURES } from '../../modules/team/team.route-fixtures.js';
 import {
   prepareStorefrontFixtures,
   STOREFRONT_PUBLIC_FIXTURES,
@@ -200,6 +201,8 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...PACKING_ROUTE_FIXTURES,
   // M42: the unified inbox.
   ...INBOX_ROUTE_FIXTURES,
+  // M41: presence and desk profiles.
+  ...TEAM_ROUTE_FIXTURES,
 };
 
 /**

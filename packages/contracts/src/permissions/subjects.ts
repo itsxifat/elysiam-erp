@@ -162,6 +162,19 @@ export const SUBJECTS = [
    * are; the secrets are never shown to anyone, only that they are set.
    */
   'InboxChannel',
+  /**
+   * A person's own presence at the desk (M41, D-713, D-723): the console's heartbeat and the
+   * "Not taking orders" switch. `own`: nobody reports or pauses for anybody else. Held by the
+   * roles that work a desk (orders, messages, the hub) and their supervisors. Not a row in §6's
+   * grid, which predates the order workflow.
+   */
+  'Presence',
+  /**
+   * The brand's order workflow (M41, D-715, D-720): auto-assign, the offer countdown and the cap
+   * on open orders per person, and the supervisors' team board. org_admin reads and changes it;
+   * branch_manager reads it (the team board). Not a row in §6's grid.
+   */
+  'OrderWorkflow',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];

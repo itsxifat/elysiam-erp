@@ -24,6 +24,22 @@ function sources(directory: string): string[] {
   });
 }
 
+describe('auditNothingChanged', () => {
+  it('is called from these places and no others', () => {
+    const sites: string[] = [];
+    for (const file of sources(SRC)) {
+      if (file.endsWith('audit.interceptor.ts')) continue;
+      if (readFileSync(file, 'utf8').includes('auditNothingChanged(')) {
+        sites.push(path.relative(SRC, file).split(path.sep).join('/'));
+      }
+    }
+    expect(sites.sort()).toEqual([
+      // M41 (D-713): a presence beat that changed nothing but the caller's last-seen instant.
+      'modules/team/team.controller.ts',
+    ]);
+  });
+});
+
 describe('@AuditExempt', () => {
   it('is on these handlers and no others, never on a class', () => {
     const exempt: string[] = [];

@@ -562,6 +562,13 @@ export interface OrderRow extends Record<string, unknown> {
   readonly stock_held_at: string | null;
   readonly notes: string | null;
   readonly created_at: string;
+  /** M41 (D-710, D-718, D-719): since when its owner has it, its calls, its slip. */
+  readonly assigned_at: string | null;
+  readonly call_attempts: number;
+  readonly last_call_outcome: string | null;
+  readonly last_call_at: string | null;
+  readonly call_back_at: string | null;
+  readonly slip_printed_at: string | null;
 }
 
 const ORDER_COLUMNS = sql`o.id, o.branch_id, o.order_no, o.channel::text as channel, o.source,
@@ -572,7 +579,8 @@ const ORDER_COLUMNS = sql`o.id, o.branch_id, o.order_no, o.channel::text as chan
   o.cod_amount_poisha, o.status::text as status, o.hold_reason, o.assigned_to, o.created_by,
   o.confirmed_at, o.packed_at, o.handed_over_at, o.delivered_at, o.returned_at,
   o.cancelled_at, o.cancel_reason, o.reseller_id, o.exchange_of_order_id, o.promo_code_id,
-  o.stock_held_at, o.notes, o.created_at`;
+  o.stock_held_at, o.notes, o.created_at, o.assigned_at, o.call_attempts, o.last_call_outcome,
+  o.last_call_at, o.call_back_at, o.slip_printed_at`;
 
 export async function insertOrder(
   tx: Tx,
@@ -612,7 +620,8 @@ export async function insertOrder(
       ship_name, ship_phone_e164, ship_district_id, ship_thana_id, ship_area, ship_address_line,
       delivery_zone_id, courier_id, location_id,
       items_poisha, discount_poisha, delivery_charge_poisha, advance_paid_poisha, cod_amount_poisha,
-      promo_code_id, assigned_to, created_by, notes, exchange_of_order_id, stock_held_at
+      promo_code_id, assigned_to, assigned_at, created_by, notes, exchange_of_order_id,
+      stock_held_at
     ) values (
       ${input.orgId}, ${input.branchId}::uuid, ${input.orderNo},
       ${input.channel}::sales.order_channel, ${JSON.stringify(input.source)}::jsonb,
@@ -623,7 +632,9 @@ export async function insertOrder(
       ${input.itemsPoisha.toString()}::bigint, ${input.discountPoisha.toString()}::bigint,
       ${input.deliveryChargePoisha.toString()}::bigint, ${input.advancePaidPoisha.toString()}::bigint,
       ${input.codAmountPoisha.toString()}::bigint,
-      ${input.promoCodeId}::uuid, ${input.assignedTo}, ${input.createdBy}, ${input.notes},
+      ${input.promoCodeId}::uuid, ${input.assignedTo},
+      case when ${input.assignedTo}::text is null then null else now() end,
+      ${input.createdBy}, ${input.notes},
       ${input.exchangeOfOrderId}::uuid, ${input.stockHeldAt?.toISOString() ?? null}::timestamptz
     )
     returning id
@@ -808,11 +819,24 @@ export async function listOrders(
     readonly channel?: string | undefined;
     readonly assignedTo?: string | undefined;
     readonly zoneId?: string | undefined;
+    /** M41 (D-719): the hub's stock location. */
+    readonly locationId?: string | undefined;
+    /**
+     * The location is the brand's default warehouse, so a desk order that named none (it
+     * reserves and ships from that default, `locationFor`) is at this hub too.
+     */
+    readonly locationIncludesUnset?: boolean | undefined;
+    /** M41 (D-719): a desk or hub queue's own condition, already narrowed by `scope`. */
+    readonly queue?: SQL | undefined;
+    /** M41: the queue's order; newest first when absent. */
+    readonly orderBy?: SQL | undefined;
   },
-): Promise<OrderRow[]> {
+): Promise<ListedOrderRow[]> {
   const pattern = filters.q === undefined ? undefined : `%${filters.q}%`;
-  const rows = await tx.execute<OrderRow>(sql`
-    select ${ORDER_COLUMNS}
+  const rows = await tx.execute<ListedOrderRow>(sql`
+    select ${ORDER_COLUMNS},
+      (select coalesce(sum(l.qty), 0)::int from sales.order_lines l
+        where l.org_id = o.org_id and l.order_id = o.id) as item_count
     from sales.orders o
     join sales.customers c on c.org_id = o.org_id and c.id = o.customer_id
     where o.org_id = ${orgId}
@@ -822,6 +846,15 @@ export async function listOrders(
       and ${filters.channel === undefined ? sql`true` : sql`o.channel = ${filters.channel}::sales.order_channel`}
       and ${filters.assignedTo === undefined ? sql`true` : sql`o.assigned_to = ${filters.assignedTo}`}
       and ${filters.zoneId === undefined ? sql`true` : sql`o.delivery_zone_id = ${filters.zoneId}::uuid`}
+      and ${
+        filters.locationId === undefined
+          ? sql`true`
+          : filters.locationIncludesUnset === true
+            ? sql`(o.location_id = ${filters.locationId}::uuid
+                or (o.location_id is null and o.branch_id is null))`
+            : sql`o.location_id = ${filters.locationId}::uuid`
+      }
+      and ${filters.queue ?? sql`true`}
       and ${
         pattern === undefined
           ? sql`true`
@@ -837,10 +870,15 @@ export async function listOrders(
           ? sql`true`
           : sql`(o.created_at at time zone 'Asia/Dhaka')::date <= ${filters.to}::date`
       }
-    order by o.created_at desc
+    order by ${filters.orderBy ?? sql`o.created_at desc`}, o.id
     limit ${filters.limit} offset ${filters.offset}
   `);
   return [...rows];
+}
+
+/** A listed order, with how many pieces it holds (M41: the hub and the offer card). */
+export interface ListedOrderRow extends OrderRow {
+  readonly item_count: number;
 }
 
 /**
@@ -904,18 +942,117 @@ export async function assignOrder(
   input: {
     readonly orgId: string;
     readonly orderId: string;
-    readonly assignedTo: string;
+    /** Null puts it back in the unassigned queue (M41, D-712). */
+    readonly assignedTo: string | null;
     /** Set for a claim: only an order nobody holds may be taken from the queue. */
     readonly onlyIfUnassigned: boolean;
   },
 ): Promise<boolean> {
   const rows = await tx.execute<{ id: string }>(sql`
-    update sales.orders set assigned_to = ${input.assignedTo}, updated_at = now()
+    update sales.orders set
+      assigned_to = ${input.assignedTo},
+      assigned_at = case when ${input.assignedTo}::text is null then null else now() end,
+      updated_at = now()
     where org_id = ${input.orgId} and id = ${input.orderId}
       and ${input.onlyIfUnassigned ? sql`assigned_to is null` : sql`true`}
     returning id
   `);
   return rows.length > 0;
+}
+
+/**
+ * Record one verification call on the order (M41, D-718): the attempt, append-only, and the
+ * queue's summary of it, in the caller's transaction and under its lock on the order.
+ */
+export async function recordCallAttempt(
+  tx: Tx,
+  input: {
+    readonly orgId: string;
+    readonly orderId: string;
+    readonly outcome: string;
+    readonly callBackAt: Date | null;
+    readonly note: string | null;
+    readonly calledBy: string;
+  },
+): Promise<CallAttemptRow> {
+  const callBack = input.callBackAt === null ? null : input.callBackAt.toISOString();
+  const [row] = await tx.execute<CallAttemptRow>(sql`
+    insert into sales.call_attempts (org_id, order_id, outcome, call_back_at, note, called_by)
+    values (${input.orgId}, ${input.orderId}, ${input.outcome}, ${callBack}::timestamptz,
+            ${input.note}, ${input.calledBy})
+    returning id, outcome, call_back_at, note, called_by, called_at
+  `);
+  if (row === undefined) throw new Error('the call attempt was not recorded');
+  await tx.execute(sql`
+    update sales.orders set
+      call_attempts = call_attempts + 1,
+      last_call_outcome = ${input.outcome},
+      last_call_at = ${new Date(row.called_at).toISOString()}::timestamptz,
+      call_back_at = ${callBack}::timestamptz,
+      updated_at = now()
+    where org_id = ${input.orgId} and id = ${input.orderId}
+  `);
+  return row;
+}
+
+export interface CallAttemptRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly outcome: string;
+  readonly call_back_at: string | Date | null;
+  readonly note: string | null;
+  readonly called_by: string;
+  readonly called_at: string | Date;
+}
+
+export async function callAttemptsOf(
+  tx: Tx,
+  orgId: string,
+  orderId: string,
+): Promise<CallAttemptRow[]> {
+  const rows = await tx.execute<CallAttemptRow>(sql`
+    select id, outcome, call_back_at, note, called_by, called_at
+    from sales.call_attempts
+    where org_id = ${orgId} and order_id = ${orderId}
+    order by called_at desc, id
+    limit 200
+  `);
+  return [...rows];
+}
+
+/**
+ * Mark the slips of these confirmed orders printed (M41, D-719), in the caller's scope. Returns
+ * the orders it marked; an order already marked keeps its first time.
+ */
+export async function markSlipsPrinted(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+  scope: SQL,
+): Promise<{ id: string; order_no: string }[]> {
+  if (ids.length === 0) return [];
+  // Locked in id order first, so two overlapping batches queue rather than deadlock.
+  await tx.execute(sql`
+    select o.id from sales.orders o
+    where o.org_id = ${orgId}
+      and o.id in (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+    order by o.id
+    for update
+  `);
+  const rows = await tx.execute<{ id: string; order_no: string }>(sql`
+    update sales.orders o set slip_printed_at = coalesce(o.slip_printed_at, now()), updated_at = now()
+    where o.org_id = ${orgId}
+      and o.id in (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+      and o.status = 'confirmed'
+      and ${scope}
+    returning o.id, o.order_no
+  `);
+  return [...rows];
 }
 
 export async function setLineDispatchCost(

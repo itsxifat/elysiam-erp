@@ -298,7 +298,7 @@ function Desk() {
           const matched = reference.areas.find((entry) => entry.thanaId === address.thanaId);
           if (matched !== undefined) {
             setArea((current) => current ?? matched);
-            setAreaQuery((current) => (current === '' ? areaLabel(matched, locale) : current));
+            setAreaQuery((current) => (current === '' ? areaLabel(matched) : current));
           }
           setAddressLine((current) => (current === '' ? address.addressLine : current));
           setAreaDetail((current) => (current === '' ? (address.area ?? '') : current));

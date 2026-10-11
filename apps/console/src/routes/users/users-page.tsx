@@ -62,6 +62,7 @@ import {
   type StaffStatus,
   type TrustView,
 } from './api.js';
+import { DeskSection } from './desk-section.js';
 import { orderedRoles, passwordLinkUrl, rolesToSubmit } from './link.js';
 import { useUsersT, type UsersMessageKey } from './messages.js';
 
@@ -1084,6 +1085,9 @@ function ManageDialog({
         </section>
 
         {row.trust === null ? null : <TrustSection row={row} trust={row.trust} onSaved={onSaved} />}
+
+        {/* M41 (D-714): what this person may be offered, and the hub they pack at. */}
+        {row.status === 'active' ? <DeskSection userId={row.userId} locked={locked} /> : null}
 
         {row.superAdminNomination === null ? null : (
           <SuperAdminSection row={row} nomination={row.superAdminNomination} onNotice={onNotice} />

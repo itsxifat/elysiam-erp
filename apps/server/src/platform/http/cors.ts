@@ -1,3 +1,5 @@
+import { OWNER_ACK_HEADER } from '@elysium/contracts';
+
 import { CSRF_HEADER } from './csrf.js';
 import { IDEMPOTENCY_HEADER } from './idempotency.js';
 import { isTrustedOrigin, type OriginPolicy } from './origins.js';
@@ -49,8 +51,10 @@ function credentialedOptions(policy: OriginPolicy) {
     // request is sent. Every browser client would have been silently unable to
     // send one, while the server-side tests — which use `inject` and never
     // preflight — passed.
-    // M42 (D-737): the inbox's acknowledgement that a conversation is someone else's.
-    allowedHeaders: ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER, 'x-acknowledge-owner'],
+    // M41 (D-710) and M42 (D-737): "I know somebody else is handling this order or this
+    // conversation", on every write the owner's name guards. One custom header for both, so it
+    // is preflighted like the other two.
+    allowedHeaders: ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER, OWNER_ACK_HEADER],
     maxAge: 600,
   };
 }

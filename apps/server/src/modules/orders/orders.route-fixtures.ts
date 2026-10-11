@@ -1,4 +1,6 @@
-import { SEED_ORG_IDS } from '@elysium/db';
+import { SEED_ORG_IDS, withSystem } from '@elysium/db';
+import { createTestUser, grantMembership } from '@elysium/db/testing';
+import { sql } from 'drizzle-orm';
 
 import {
   seedProductWithSkus,
@@ -61,6 +63,8 @@ const UNIT_COST = 40_000n;
 const UNIT_PRICE = 150_000n;
 
 interface Fixtures {
+  /** M41: a real sales agent, so an order can be handed to somebody who may hold it. */
+  readonly agentId: string;
   readonly location: string;
   readonly customerId: string;
   readonly courierId: string;
@@ -86,7 +90,11 @@ export async function prepareOrderFixtures(): Promise<void> {
     });
   }
 
+  const agent = await createTestUser({ name: 'Route matrix agent' });
+  await grantMembership({ userId: agent.id, orgId: ORG_A, role: 'sales' });
+
   prepared = {
+    agentId: agent.id,
     location,
     customerId: await seedCustomer(ORG_A, {
       phoneE164: '+8801711000000',
@@ -149,6 +157,28 @@ async function freshOrder(
       : { advancePaidPoisha: options.advancePaidPoisha }),
   });
   return order.id;
+}
+
+/**
+ * A live offer of a fresh pending order to a fresh agent (M41). Its own agent each time: a
+ * person holds one live offer at a time.
+ */
+async function freshOffer(): Promise<string> {
+  const orderId = await freshOrder('pending');
+  const agent = await createTestUser({ name: 'Route matrix offeree' });
+  await grantMembership({ userId: agent.id, orgId: ORG_A, role: 'sales' });
+  const rows = await withSystem(
+    (tx) =>
+      tx.execute<{ id: string }>(sql`
+        insert into sales.order_offers (org_id, order_id, user_id, expires_at)
+        values (${ORG_A}, ${orderId}, ${agent.id}, now() + interval '10 minutes')
+        returning id
+      `),
+    { orgId: ORG_A },
+  );
+  const id = [...rows][0]?.id;
+  if (id === undefined) throw new Error('the fixture offer was not written');
+  return id;
 }
 
 /** A line as a shipped order carries it: the dispatch cost is already recorded. */
@@ -245,9 +275,53 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
   },
 
   'POST /v1/orders/:id/assign': async () => ({
+    // M41 (D-712): a queued order routed to an agent, which only a supervisor may do; everyone
+    // else admitted is refused by the rule, not by the guard.
     url: `/v1/orders/${await freshOrder('pending')}/assign`,
-    body: { assignedTo: FIXTURE_USER },
+    body: { assignedTo: state().agentId },
   }),
+
+  // --- M41: release, calls, the hub's slips, offers, settings, the team board ----------
+
+  'POST /v1/orders/:id/release': async () => ({
+    // The agent's order, released by a supervisor; anyone else is refused by the rule.
+    url: `/v1/orders/${await freshOrder('pending', { assignedTo: state().agentId })}/release`,
+  }),
+
+  'POST /v1/orders/:id/calls': async () => ({
+    // Nobody holds it, so the owner's gate lets every admitted role in.
+    url: `/v1/orders/${await freshOrder('pending')}/calls`,
+    body: { outcome: 'no_answer', note: 'Route matrix call' },
+  }),
+
+  'GET /v1/orders/:id/calls': async () => ({
+    url: `/v1/orders/${await freshOrder('pending')}/calls`,
+  }),
+
+  'POST /v1/orders/mark-printed': async () => ({
+    url: '/v1/orders/mark-printed',
+    body: { ids: [await freshOrder('confirmed', { reserve: true })] },
+  }),
+
+  'GET /v1/orders/offers/mine': () => ({ url: '/v1/orders/offers/mine' }),
+
+  'POST /v1/orders/offers/:id/accept': async () => ({
+    // Offered to the agent, so every caller here is somebody else: refused, never 5xx.
+    url: `/v1/orders/offers/${await freshOffer()}/accept`,
+  }),
+
+  'POST /v1/orders/offers/:id/decline': async () => ({
+    url: `/v1/orders/offers/${await freshOffer()}/decline`,
+  }),
+
+  'GET /v1/orders/workflow-settings': () => ({ url: '/v1/orders/workflow-settings' }),
+
+  'PUT /v1/orders/workflow-settings': () => ({
+    url: '/v1/orders/workflow-settings',
+    body: { autoAssign: false, offerSeconds: 45, maxOpen: 25 },
+  }),
+
+  'GET /v1/orders/team-board': () => ({ url: '/v1/orders/team-board' }),
 
   'POST /v1/orders/:id/claim': async () => ({
     url: `/v1/orders/${await freshOrder('pending')}/claim`,

@@ -67,11 +67,24 @@ export function ordersRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./pack-station.js'), 'PackStationPage'),
   });
 
+  // M41: the fulfilment hub's stages and the supervisors' team board (D-719, D-720).
+  const hub = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/orders/hub',
+    component: lazyRouteComponent(() => import('./hub.js'), 'HubPage'),
+  });
+
+  const team = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/orders/team',
+    component: lazyRouteComponent(() => import('./team-board.js'), 'TeamBoardPage'),
+  });
+
   const detail = createRoute({
     getParentRoute: () => rootRoute,
     path: '/orders/$orderId',
     component: lazyRouteComponent(() => import('./order-detail.js'), 'OrderDetailPage'),
   });
 
-  return [list, desk, queue, buyers, returns, scan, packing, detail] as const;
+  return [list, desk, queue, buyers, returns, scan, packing, hub, team, detail] as const;
 }

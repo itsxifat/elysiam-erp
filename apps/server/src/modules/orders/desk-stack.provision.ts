@@ -154,6 +154,9 @@ async function create(): Promise<void> {
     { label: 'inboxadmin', grants: [{ orgId, role: 'org_admin' }] },
     { label: 'agent', grants: [{ orgId, role: 'sales' }] },
     { label: 'agent2', grants: [{ orgId, role: 'sales' }] },
+    // M41: the order workflow's supervisor (order-workflow.stack.ts), an org admin of their own
+    // so their two-step enrolment never races another suite's.
+    { label: 'supervisor', grants: [{ orgId, role: 'org_admin' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];

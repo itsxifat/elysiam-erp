@@ -54,8 +54,8 @@ export class NetworkError extends Error {
 export interface RequestOptions {
   readonly method?: string;
   readonly body?: unknown;
-  /** Extra request headers, e.g. the inbox's `x-acknowledge-owner` (M42, D-737). */
-  readonly headers?: Readonly<Record<string, string>>;
+  /** Extra request headers: the owner acknowledgement, `x-acknowledge-owner` (M41 D-710, M42 D-737). */
+  readonly headers?: Readonly<Record<string, string>> | undefined;
 }
 
 /**
@@ -116,14 +116,16 @@ function safeParse(text: string): unknown {
   }
 }
 
+type ExtraHeaders = Readonly<Record<string, string>> | undefined;
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'POST', ...(body === undefined ? {} : { body }) }),
+  post: <T>(path: string, body?: unknown, headers?: ExtraHeaders) =>
+    request<T>(path, { method: 'POST', headers, ...(body === undefined ? {} : { body }) }),
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', ...(body === undefined ? {} : { body }) }),
-  patch: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'PATCH', ...(body === undefined ? {} : { body }) }),
+  patch: <T>(path: string, body?: unknown, headers?: ExtraHeaders) =>
+    request<T>(path, { method: 'PATCH', headers, ...(body === undefined ? {} : { body }) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
 

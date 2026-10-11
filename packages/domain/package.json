@@ -87,6 +87,10 @@
     "./inbox": {
       "types": "./dist/inbox/index.d.ts",
       "default": "./dist/inbox/index.js"
+    },
+    "./assignment": {
+      "types": "./dist/assignment/index.d.ts",
+      "default": "./dist/assignment/index.js"
     }
   },
   "files": [

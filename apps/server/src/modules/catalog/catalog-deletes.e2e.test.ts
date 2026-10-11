@@ -300,6 +300,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       'pos',
       'storefront',
       'supply',
+      // M41: a desk profile's hub.
+      'team',
     ]);
     const keys = await withSystem(async (tx) =>
       tx.execute<{ child: string; action: string }>(sql`
@@ -331,6 +333,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       'storefront.web_locations': 'storefront',
       'supply.returns': 'supply',
       'supply.supplies': 'supply',
+      // M41: a staff member's desk profile names its hub.
+      'team.desk_profiles': 'team',
     };
     const uncovered = keys
       .filter((key) => key.action !== 'c')

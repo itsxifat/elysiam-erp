@@ -324,6 +324,12 @@ export const APPEND_ONLY_TABLES: readonly string[] = [
    * `erp_owner` is held to the same rule as `erp_app`.
    */
   'packing.scans',
+  /*
+   * M41: every verification call to a buyer (D-718), the record a "nobody ever called me"
+   * complaint is settled from. The M41 policies migration refuses UPDATE and DELETE with a
+   * trigger as well.
+   */
+  'sales.call_attempts',
 ];
 
 /**
@@ -467,6 +473,16 @@ export const NO_DELETE_TABLES: readonly string[] = [
    * filmed and the videos cut from its stream name it (D-668).
    */
   'packing.cameras',
+  /*
+   * M41. An offer is answered once (the M41 policies migration's trigger) and kept, because who
+   * declined an order is what keeps it from going round the same person twice; the brand's
+   * workflow settings, a person's presence and their desk profile are rows that change and are
+   * never removed (D-713 to D-717).
+   */
+  'sales.order_offers',
+  'sales.workflow_settings',
+  'team.presence',
+  'team.desk_profiles',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

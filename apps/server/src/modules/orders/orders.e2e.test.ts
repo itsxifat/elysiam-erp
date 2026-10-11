@@ -724,6 +724,8 @@ describe('the route gate (D-070), scoped to this module', () => {
         'ReengagementController',
         // M17's advances and returns by reason.
         'AdvancesController',
+        // M41's offers, workflow settings and team board.
+        'WorkflowController',
       ].includes(route.controller),
     );
 
@@ -963,7 +965,10 @@ describe('M30: a short collection at the desk needs a reason', () => {
   it('refuses a shortfall with no reason, and takes it with one', async () => {
     const order = await takeOrder(admin, { assignedTo: sales.userId });
     for (const step of ['confirm', 'pack']) {
-      const response = await admin.client.request('POST', `/v1/orders/${order.id}/${step}`);
+      // M41 (D-710): the order is the agent's, so the admin acknowledges them to confirm it.
+      const response = await admin.client.request('POST', `/v1/orders/${order.id}/${step}`, {
+        headers: { 'x-acknowledge-owner': '1' },
+      });
       expect(response.statusCode, `${step}: ${response.body}`).toBe(201);
     }
     const shipped = await warehouse.client.request('POST', `/v1/orders/${order.id}/ship`, {

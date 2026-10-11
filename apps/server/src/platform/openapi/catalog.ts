@@ -1,5 +1,11 @@
 import {
   approvalDecisionSchema,
+  callAttemptSchema,
+  deskProfileSchema,
+  markPrintedSchema,
+  presenceBeatSchema,
+  presencePauseSchema,
+  workflowSettingsSchema,
   approvalListSchema,
   approvalRequestSchema,
   cashInSchema,
@@ -252,6 +258,74 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     operationId: 'setTwoFactorPolicy',
     summary: 'Choose which roles must use two-step sign-in in this brand (super admins only).',
     body: named('TwoFactorPolicy', twoFactorPolicySchema, 'TwoFactorPolicyInput'),
+  },
+
+  // M41: the order workflow, presence and desk profiles.
+  'POST /v1/team/presence': {
+    operationId: 'reportPresence',
+    summary: 'The console reports whether its tab is visible and how long since the last input.',
+    body: named('PresenceBeat', presenceBeatSchema, 'PresenceBeat'),
+  },
+  'POST /v1/team/presence/pause': {
+    operationId: 'setNotTakingOrders',
+    summary: 'Switch "Not taking orders" on or off for yourself.',
+    body: named('PresencePause', presencePauseSchema, 'PresencePause'),
+  },
+  'GET /v1/team/me': {
+    operationId: 'getMyDesk',
+    summary: 'Your presence and your desk profile.',
+  },
+  'GET /v1/team/profiles': {
+    operationId: 'listDeskProfiles',
+    summary: "Every staff member's work types and hub, with their presence.",
+  },
+  'PUT /v1/team/profiles/:userId': {
+    operationId: 'saveDeskProfile',
+    summary: "Set a staff member's work types and hub location.",
+    body: named('DeskProfile', deskProfileSchema, 'DeskProfileInput'),
+  },
+  'POST /v1/orders/:id/release': {
+    operationId: 'releaseOrder',
+    summary: 'Put an order back in the unassigned queue (its owner or a supervisor).',
+  },
+  'POST /v1/orders/:id/calls': {
+    operationId: 'logOrderCall',
+    summary: 'Record one verification call to the buyer.',
+    body: named('CallAttempt', callAttemptSchema, 'CallAttemptInput'),
+  },
+  'GET /v1/orders/:id/calls': {
+    operationId: 'listOrderCalls',
+    summary: "An order's verification calls, newest first.",
+  },
+  'POST /v1/orders/mark-printed': {
+    operationId: 'markSlipsPrinted',
+    summary: "The hub printed these confirmed orders' slips.",
+    body: named('MarkPrinted', markPrintedSchema, 'MarkPrintedInput'),
+  },
+  'GET /v1/orders/offers/mine': {
+    operationId: 'myOrderOffers',
+    summary: 'The orders offered to you right now, with their countdown.',
+  },
+  'POST /v1/orders/offers/:id/accept': {
+    operationId: 'acceptOrderOffer',
+    summary: 'Accept an offered order: it is yours if nobody took it first.',
+  },
+  'POST /v1/orders/offers/:id/decline': {
+    operationId: 'declineOrderOffer',
+    summary: 'Decline an offered order; it goes to the next person.',
+  },
+  'GET /v1/orders/workflow-settings': {
+    operationId: 'getWorkflowSettings',
+    summary: 'Auto-assign, the offer countdown and the cap on open orders per person.',
+  },
+  'PUT /v1/orders/workflow-settings': {
+    operationId: 'saveWorkflowSettings',
+    summary: 'Change auto-assign, the offer countdown and the cap on open orders per person.',
+    body: named('WorkflowSettings', workflowSettingsSchema, 'WorkflowSettingsInput'),
+  },
+  'GET /v1/orders/team-board': {
+    operationId: 'teamBoard',
+    summary: "Who is active, idle or away, their open orders, today's confirmations and offers.",
   },
 
   'GET /v1/approvals': {

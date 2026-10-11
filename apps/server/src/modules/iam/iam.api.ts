@@ -5,7 +5,7 @@ import { maskEmail } from '@elysium/domain';
 import type { TrustTally } from '@elysium/domain/iam';
 
 import { isActiveOrgAdmin, lockTrust, loadTrust } from './trust.repository.js';
-import { activeMembers, ownersAmong } from './users.repository.js';
+import { activeMembers, membershipsOfUser, ownersAmong } from './users.repository.js';
 
 /**
  * Identity's service interface for other modules (invariant 12, D-419).
@@ -77,6 +77,17 @@ export interface IamApi {
     userId: string,
     options?: { readonly requesterId?: string },
   ): Promise<TrustTally>;
+
+  /**
+   * The active roles one person holds in this brand, each with the branches it is limited to
+   * (empty: the whole brand), for a caller deciding whether that person would reach a row
+   * (M41: who may be handed an order, D-712).
+   */
+  roleScopes(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+  ): Promise<readonly { readonly role: MembershipRole; readonly branchIds: readonly string[] }[]>;
 }
 
 export const IAM_API = Symbol('IAM_API');
@@ -107,6 +118,17 @@ export class IamApiService implements IamApi {
       emailMasked: maskEmail(row.email),
       roles: row.roles,
     }));
+  }
+
+  async roleScopes(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+  ): Promise<readonly { readonly role: MembershipRole; readonly branchIds: readonly string[] }[]> {
+    const rows = await membershipsOfUser(tx, orgId, userId);
+    return rows
+      .filter((row) => row.is_active)
+      .map((row) => ({ role: row.role, branchIds: row.branch_ids }));
   }
 
   async checkerTrust(

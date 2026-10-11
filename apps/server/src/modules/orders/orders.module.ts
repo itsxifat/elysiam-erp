@@ -19,6 +19,7 @@ import {
   DeliveryZonesController,
   OrdersController,
   ReengagementController,
+  WorkflowController,
 } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { ReturnReasonsService } from './returns.service.js';
@@ -37,6 +38,9 @@ import { BrandLogoRegistry } from './ports/brand-logo.port.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { DeliveryObserverRegistry } from './ports/delivery-observer.port.js';
 import { PROMO_PORT } from './ports/promo.port.js';
+import { TeamModule } from '../team/team.module.js';
+import { OffersService } from './offers.service.js';
+import { OwnershipGate } from './ownership.gate.js';
 
 /**
  * Orders, customers, delivery zones and the state machine (architecture §9, §7).
@@ -92,6 +96,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
     NotifyModule,
     // Who on an order is an owner (M31, D-473), through identity's interface.
     IamDirectoryModule,
+    // M41: who is at the desks, for auto-assign and the hub's queues (D-713, D-714).
+    TeamModule,
   ],
   controllers: [
     OrdersController,
@@ -101,6 +107,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
     ReengagementController,
     // M17: advance claims, the accounts queue, and returns by reason.
     AdvancesController,
+    // M41: offers, the workflow settings and the team board.
+    WorkflowController,
   ],
   providers: [
     CustomersService,
@@ -133,6 +141,9 @@ import { PROMO_PORT } from './ports/promo.port.js';
     BuyerProfileService,
     ReengagementService,
     { provide: ORDERS_API, useClass: OrdersApiService },
+    // M41: the owner's gate on every desk write, and auto-assign (D-710, D-717).
+    OwnershipGate,
+    OffersService,
   ],
   exports: [
     ORDERS_API,
@@ -142,6 +153,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
     // M43 (D-754): the storefront registers the website's logo for the order documents.
     BrandLogoRegistry,
     CrmService,
+    // M41: the worker's auto-assign handlers.
+    OffersService,
   ],
 })
 export class OrdersModule {}

@@ -995,6 +995,20 @@
       "when": 1791738968206,
       "tag": "0143_m42_inbox_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1791754272096,
+      "tag": "0144_m41_order_workflow_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1791754286986,
+      "tag": "0145_m41_order_workflow_policies",
+      "breakpoints": true
     }
   ]
 }

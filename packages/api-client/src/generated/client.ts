@@ -10,12 +10,14 @@
 import type {
   ApprovalDecisionInput,
   ApprovalRequestInput,
+  CallAttemptInput,
   CashInInput,
   ClosePeriodInput,
   ConfirmWithCode,
   CreateUser,
   CredentialResetInput,
   DeactivateUser,
+  DeskProfileInput,
   InboxAddressInput,
   InboxChannelUpdateInput,
   InboxHandOverInput,
@@ -26,8 +28,11 @@ import type {
   InboxReplyInput,
   InboxStageInput,
   InboxTagsInput,
+  MarkPrintedInput,
   PackingCameraCreateInput,
   PackingCameraUpdateInput,
+  PresenceBeat,
+  PresencePause,
   ReopenPeriodInput,
   ReplacementCode,
   SetRoles,
@@ -35,12 +40,18 @@ import type {
   ThresholdInput,
   TwoFactorPolicyInput,
   UpdateProfile,
+  WorkflowSettingsInput,
 } from '@elysium/contracts';
 
 import { request, type ApiRuntime, type RequestOptions } from '../runtime.js';
 
 /** Every operation, with the ability its route declares (§6). */
 export const OPERATIONS = {
+  acceptOrderOffer: {
+    method: 'POST',
+    path: '/v1/orders/offers/{id}/accept',
+    ability: 'update:Order',
+  },
   accountLedger: {
     method: 'GET',
     path: '/v1/ledger/accounts/{id}/ledger',
@@ -83,6 +94,11 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/approvals/{id}/decide',
     ability: 'approve:ApprovalRequest',
+  },
+  declineOrderOffer: {
+    method: 'POST',
+    path: '/v1/orders/offers/{id}/decline',
+    ability: 'update:Order',
   },
   deletePackingCamera: {
     method: 'DELETE',
@@ -232,6 +248,7 @@ export const OPERATIONS = {
     ability: 'public',
   },
   getMyAccount: { method: 'GET', path: '/v1/account', ability: 'authenticated' },
+  getMyDesk: { method: 'GET', path: '/v1/team/me', ability: 'read:Presence' },
   getNcomByOrgIdV1: { method: 'GET', path: '/ncom/{orgId}/v1', ability: 'public' },
   getNcomByOrgIdV1Categories: {
     method: 'GET',
@@ -997,6 +1014,11 @@ export const OPERATIONS = {
     ability: 'update:Supply',
   },
   getWebhooksMetaByOrgId: { method: 'GET', path: '/webhooks/meta/{orgId}', ability: 'public' },
+  getWorkflowSettings: {
+    method: 'GET',
+    path: '/v1/orders/workflow-settings',
+    ability: 'read:OrderWorkflow',
+  },
   handOverInboxConversation: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/hand-over',
@@ -1006,6 +1028,7 @@ export const OPERATIONS = {
   healthReady: { method: 'GET', path: '/health/ready', ability: 'public' },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
+  listDeskProfiles: { method: 'GET', path: '/v1/team/profiles', ability: 'read:User' },
   listInboxChannels: { method: 'GET', path: '/v1/inbox/channels', ability: 'read:InboxChannel' },
   listInboxConversations: {
     method: 'GET',
@@ -1016,12 +1039,16 @@ export const OPERATIONS = {
   listLedgerAccounts: { method: 'GET', path: '/v1/ledger/accounts', ability: 'read:LedgerReport' },
   listMyOrgs: { method: 'GET', path: '/v1/me/orgs', ability: 'authenticated' },
   listMySessions: { method: 'GET', path: '/v1/account/sessions', ability: 'authenticated' },
+  listOrderCalls: { method: 'GET', path: '/v1/orders/{id}/calls', ability: 'read:Order' },
   listPackingCameras: { method: 'GET', path: '/v1/packing/cameras', ability: 'update:Order' },
   listPeriods: { method: 'GET', path: '/v1/ledger/periods', ability: 'read:LedgerPeriod' },
   listUsers: { method: 'GET', path: '/v1/users', ability: 'read:User' },
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
+  logOrderCall: { method: 'POST', path: '/v1/orders/{id}/calls', ability: 'update:Order' },
+  markSlipsPrinted: { method: 'POST', path: '/v1/orders/mark-printed', ability: 'update:Order' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
+  myOrderOffers: { method: 'GET', path: '/v1/orders/offers/mine', ability: 'read:Order' },
   newMyRecoveryCodes: {
     method: 'POST',
     path: '/v1/account/two-factor/recovery-codes',
@@ -2033,6 +2060,7 @@ export const OPERATIONS = {
     path: '/v1/inbox/conversations/{id}/release',
     ability: 'update:Conversation',
   },
+  releaseOrder: { method: 'POST', path: '/v1/orders/{id}/release', ability: 'update:Order' },
   removeInboxInterest: {
     method: 'DELETE',
     path: '/v1/inbox/conversations/{id}/interests/{interestId}',
@@ -2053,11 +2081,13 @@ export const OPERATIONS = {
     path: '/v1/inbox/conversations/{id}/messages',
     ability: 'update:Conversation',
   },
+  reportPresence: { method: 'POST', path: '/v1/team/presence', ability: 'update:Presence' },
   resetUserTwoFactor: {
     method: 'POST',
     path: '/v1/users/{id}/two-factor/reset',
     ability: 'update:User',
   },
+  saveDeskProfile: { method: 'PUT', path: '/v1/team/profiles/{userId}', ability: 'update:User' },
   saveInboxChannel: {
     method: 'PUT',
     path: '/v1/inbox/channels/{kind}',
@@ -2074,6 +2104,11 @@ export const OPERATIONS = {
     ability: 'update:Conversation',
   },
   saveInboxMetaApp: { method: 'PUT', path: '/v1/inbox/meta-app', ability: 'update:InboxChannel' },
+  saveWorkflowSettings: {
+    method: 'PUT',
+    path: '/v1/orders/workflow-settings',
+    ability: 'update:OrderWorkflow',
+  },
   setApprovalThresholds: {
     method: 'PUT',
     path: '/v1/approvals/thresholds',
@@ -2088,6 +2123,11 @@ export const OPERATIONS = {
     method: 'PUT',
     path: '/v1/inbox/conversations/{id}/contact/tags',
     ability: 'update:Conversation',
+  },
+  setNotTakingOrders: {
+    method: 'POST',
+    path: '/v1/team/presence/pause',
+    ability: 'update:Presence',
   },
   setTwoFactorPolicy: {
     method: 'PUT',
@@ -2112,6 +2152,7 @@ export const OPERATIONS = {
     path: '/v1/inbox/conversations/{id}/take',
     ability: 'update:Conversation',
   },
+  teamBoard: { method: 'GET', path: '/v1/orders/team-board', ability: 'read:OrderWorkflow' },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
   turnOffMyTwoFactor: {
     method: 'POST',
@@ -2166,6 +2207,11 @@ export type OperationName = keyof typeof OPERATIONS;
  */
 export function createApiClient(runtime: ApiRuntime) {
   return {
+    /** Accept an offered order: it is yours if nobody took it first. */
+    acceptOrderOffer: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.acceptOrderOffer, input, options),
     /** Every posting to one account over a date range. */
     accountLedger: (
       input: {
@@ -2243,6 +2289,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: ApprovalDecisionInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.decideApproval, input, options),
+    /** Decline an offered order; it goes to the next person. */
+    declineOrderOffer: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.declineOrderOffer, input, options),
     /** Delete a packing camera from use; past videos keep playing. */
     deletePackingCamera: (
       input: { readonly path: { readonly id: string } },
@@ -2416,6 +2467,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Your name, roles here, and two-step sign-in: on or off, and whether it is required. */
     getMyAccount: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getMyAccount, undefined, options),
+    /** Your presence and your desk profile. */
+    getMyDesk: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getMyDesk, undefined, options),
     /** GET /ncom/:orgId/v1 */
     getNcomByOrgIdV1: (
       input: { readonly path: { readonly orgId: string } },
@@ -3249,6 +3303,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly orgId: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getWebhooksMetaByOrgId, input, options),
+    /** Auto-assign, the offer countdown and the cap on open orders per person. */
+    getWorkflowSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getWorkflowSettings, undefined, options),
     /** Hand a conversation to a colleague; someone else's is a supervisor's. */
     handOverInboxConversation: (
       input: { readonly path: { readonly id: string }; readonly body: InboxHandOverInput },
@@ -3275,6 +3332,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Test fixture for the permission matrix. Not deployed to production. */
     listDemoCostedItems: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listDemoCostedItems, undefined, options),
+    /** Every staff member's work types and hub, with their presence. */
+    listDeskProfiles: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listDeskProfiles, undefined, options),
     /** Settings → Inbox: each channel's id and whether its token is set (never the token). */
     listInboxChannels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listInboxChannels, undefined, options),
@@ -3293,6 +3353,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The devices you are signed in on, with the address partly hidden. */
     listMySessions: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listMySessions, undefined, options),
+    /** An order's verification calls, newest first. */
+    listOrderCalls: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.listOrderCalls, input, options),
     /** The packing tables' IP cameras and whether each is filming now. */
     listPackingCameras: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listPackingCameras, undefined, options),
@@ -3308,9 +3373,22 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The brand name and logo for the login screen, chosen by hostname. */
     loginBranding: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.loginBranding, undefined, options),
+    /** Record one verification call to the buyer. */
+    logOrderCall: (
+      input: { readonly path: { readonly id: string }; readonly body: CallAttemptInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.logOrderCall, input, options),
+    /** The hub printed these confirmed orders' slips. */
+    markSlipsPrinted: (
+      input: { readonly body: MarkPrintedInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.markSlipsPrinted, input, options),
     /** The signed-in user, their roles and active org. */
     me: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.me, undefined, options),
+    /** The orders offered to you right now, with their countdown. */
+    myOrderOffers: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.myOrderOffers, undefined, options),
     /** With your password and a current authenticator code, make ten new recovery codes; the old ones stop working. */
     newMyRecoveryCodes: (
       input: { readonly body: ConfirmWithCode },
@@ -4425,6 +4503,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.releaseInboxConversation, input, options),
+    /** Put an order back in the unassigned queue (its owner or a supervisor). */
+    releaseOrder: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.releaseOrder, input, options),
     /** Remove a product interest. */
     removeInboxInterest: (
       input: { readonly path: { readonly id: string; readonly interestId: string } },
@@ -4445,11 +4528,21 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: InboxReplyInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.replyInInboxConversation, input, options),
+    /** The console reports whether its tab is visible and how long since the last input. */
+    reportPresence: (
+      input: { readonly body: PresenceBeat },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.reportPresence, input, options),
     /** Remove a person's second factor, so they enrol again at next sign-in. */
     resetUserTwoFactor: (
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.resetUserTwoFactor, input, options),
+    /** Set a staff member's work types and hub location. */
+    saveDeskProfile: (
+      input: { readonly path: { readonly userId: string }; readonly body: DeskProfileInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.saveDeskProfile, input, options),
     /** Save a channel: its Meta id, on or off, and (write-only) its token. */
     saveInboxChannel: (
       input: { readonly path: { readonly kind: string }; readonly body: InboxChannelUpdateInput },
@@ -4470,6 +4563,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: InboxMetaAppInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.saveInboxMetaApp, input, options),
+    /** Change auto-assign, the offer countdown and the cap on open orders per person. */
+    saveWorkflowSettings: (
+      input: { readonly body: WorkflowSettingsInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.saveWorkflowSettings, input, options),
     /** Set this organization's maker-checker thresholds. */
     setApprovalThresholds: (
       input: { readonly body: ThresholdInput },
@@ -4485,6 +4583,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: InboxTagsInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.setInboxContactTags, input, options),
+    /** Switch "Not taking orders" on or off for yourself. */
+    setNotTakingOrders: (
+      input: { readonly body: PresencePause },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.setNotTakingOrders, input, options),
     /** Choose which roles must use two-step sign-in in this brand (super admins only). */
     setTwoFactorPolicy: (
       input: { readonly body: TwoFactorPolicyInput },
@@ -4516,6 +4619,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.takeInboxConversation, input, options),
+    /** Who is active, idle or away, their open orders, today's confirmations and offers. */
+    teamBoard: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.teamBoard, undefined, options),
     /** Debit and credit totals per account as of a business date. */
     trialBalance: (
       input: { readonly query: { readonly asOf: string } },

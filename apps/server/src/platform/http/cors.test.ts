@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CORS_METHODS, corsOptions } from './cors.js';
 import { CSRF_HEADER } from './csrf.js';
 import { IDEMPOTENCY_HEADER } from './idempotency.js';
+import { OWNER_ACK_HEADER } from '@elysium/contracts';
 
 /**
  * The preflight a browser sends, answered by the real plugin with the real
@@ -56,7 +57,7 @@ describe('the CORS preflight', () => {
       const response = await preflight(
         CONSOLE,
         method,
-        `content-type, ${CSRF_HEADER}, ${IDEMPOTENCY_HEADER}`,
+        `content-type, ${CSRF_HEADER}, ${IDEMPOTENCY_HEADER}, ${OWNER_ACK_HEADER}`,
       );
 
       expect(response.statusCode).toBe(204);
@@ -67,7 +68,8 @@ describe('the CORS preflight', () => {
       const allowed = String(response.headers['access-control-allow-headers'])
         .toLowerCase()
         .split(/,\s*/);
-      for (const header of ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER]) {
+      // M41: the owner acknowledgement rides on desk writes (D-710).
+      for (const header of ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER, OWNER_ACK_HEADER]) {
         expect(allowed).toContain(header.toLowerCase());
       }
     },

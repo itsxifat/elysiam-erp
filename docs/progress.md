@@ -2987,6 +2987,7 @@ dry-run|commit --file <users.json>`.
   calls. A follow-up migration drops `notify.templates.body_bn` and sets the four `locale`
   defaults to `en` (D-755). Staff screens still show `৳` through `<Money>` (D-751): switching
   them to `Tk` is the owner's call.
+
 ## 2026-10-12 · M42 · the unified inbox and customer panel (not merged or deployed)
 
 - **Asked for:** the owner's brief of 2026-10-11: Messenger, Instagram and WhatsApp in one inbox in
@@ -3051,3 +3052,91 @@ dry-run|commit --file <users.json>`.
   Valkey rate limit on the webhook (D-744); WhatsApp media download and templates, Meta's human
   agent tag, merging two contacts, feeding `marketing.leads` from chats (D-734, D-738, D-744).
 - New dependencies: none.
+
+## 2026-10-11 · M41 · order workflow, ownership and auto-assignment (not merged or deployed)
+
+- **Asked for:** the owner's brief of 2026-10-11: the sales desk and the fulfilment hub work
+  2 km apart; one person handles each order; whoever else touches it is warned at every step;
+  new orders are offered evenly to the people active in the ERP and accepted like a ride offer.
+  Branch `m41-order-workflow` from `integration-wave2` (02b3571a), worktree
+  `D:/Projects/elysium-erp-m41`. Plan `docs/plans/M41.md`. Decisions D-710 to D-724 (D-712,
+  D-714, D-715 and D-720 ASSUMED; D-724 OPEN, the owner's questions). Migrations
+  `0142_m41_order_workflow_schema` and `0143_m41_order_workflow_policies` (renumbered at
+  integration; M42 and M43 build in parallel).
+- **Built:**
+  - The owner's gate (`OwnershipGate`): one check behind every desk write, the header
+    `x-acknowledge-owner`, `ORDER_HANDLED_BY_OTHER`, the audit row `order.acted_over_owner`,
+    and the owner's room told.
+  - Taking an order, where the loser of a race is told who won; release, hand over and a
+    supervisor's reassign (`assignmentDecision`); the person named must be able to hold the
+    order (`canHoldOrder`), on create as on assign.
+  - Verification calls in `sales.call_attempts` (append-only) with the order's summary; due
+    call-backs come first.
+  - Presence in `team.presence`: a 30-second heartbeat; active, idle or away; "Not taking
+    orders"; only changes are audited, through the named `auditNothingChanged`.
+  - Desk profiles in `team.desk_profiles` (a new `team` module with `TeamApi`); a hub location
+    counts as a location's use.
+  - Auto-assign: the pure `pickAssignee` (generic, for M42's conversations); `sales.order_offers`;
+    a one-statement accept; dispatch, expiry and minute-sweep jobs; outbox subscribers. Off by
+    default under Settings → Order workflow.
+  - The desk's and the hub's queues on `GET /v1/orders`, `mark-printed`, and the team board.
+  - Subjects `Presence` (own) and `OrderWorkflow`; five events; route matrix, cost sweep,
+    OpenAPI catalog and api-client; CORS allows the header.
+  - Console:
+    - the lazy work dock: heartbeat, offer card with a countdown, owner notices;
+    - the order page's ownership banner, and a "go ahead?" before every desk action on
+      somebody else's order;
+    - the calls panel and the hub stage;
+    - the sales desk's five tabs, with the status switch;
+    - `/orders/hub` (print, pack, scan to hand over) and `/orders/team`;
+    - Settings → Order workflow, and the Staff dialog's desk profile.
+  - Strings in a new `workflow` section, in English in both locale files until M43. The
+    invite/reset password screen became its own chunk, keeping the first download at 249.7 KB.
+- **Audit:** the ledger-auditor found 0 critical and 3 warnings, all fixed and tested:
+  - W1, deadlocks between expiries, the sweep and dispatchers (reproduced). Expiries and
+    declines now enqueue the next dispatch; the sweep lapses one offer per transaction; a
+    dispatcher counts every unanswered offer as busy; a concurrent test was added.
+  - W2, creating an order for a colleague bypassed D-712.
+  - W3, an order could be handed to a branch manager who cannot reach it.
+  - Notes also acted on: offers are withdrawn whenever an order leaves `pending`, on any path;
+    only orders with desk work left can be taken; a reseller sees no call notes; overdue
+    offers are read per order; printed slips are locked in id order; and a call or a print
+    emits no `order.edited` (which would have resent ncom.bd orders).
+- **Evidence:**
+  - `pnpm verify` exit 0: 275 files, 4105 tests, every check PASS
+    (`D:/Projects/erp-tools/verify-m41-4.log`, on 3b739122, after every fix).
+  - `workflow.e2e.test.ts` (14 tests): checks 1 to 5, the gate on every desk act, the
+    assignment rules, the expiry and sweep concurrency, presence audit and desk profiles.
+  - The domain's property tests (`assignment.test.ts`, `ownership.test.ts`).
+  - Route matrix, cost sweep, tenancy guard, module boundaries and catalog deletes.
+  - `order-workflow.stack.ts`: 6 of 6 in a real browser, axe clean in both themes, 30
+    screenshots in `docs/review/M41/`; run with the touched specs (`advances`, `order-desk`,
+    `order-lifecycle`, `packing`): 21 of 21 (`D:/Projects/erp-tools/stack-m41-5.log`). The
+    stubbed `pnpm e2e`: 13 of 13.
+  - The acceptance auditor's gaps closed: an expiry now provably moves the order to the next
+    person (a busier agent who had not passed on it), the touched stack specs re-run, and the
+    progress entry and plan status written.
+- **New dependencies:** none.
+- **Follow-ups (owner: human, D-724):**
+  - Switch auto-assign on per brand.
+  - Decide whether the packing station should warn a second packer.
+  - Decide whether sales agents should see colleagues' orders read-only.
+  - Decide whether to narrow the team board to a branch manager's branches.
+- **Follow-up (claude):** M42 reuses `pickAssignee`, `TeamApi` and presence for conversations.
+
+## 2026-10-12 · integration wave 2 · M41 merged onto M42 and M43 (not merged to main or deployed)
+
+- **Merge:** `m41-order-workflow` into `integration-wave2`, keeping both sides. M41's strings
+  are English only (`workflow.en.ts`, `registerSection({ en })`); its Bangla sections are gone.
+  The permission matrix, subjects, spec-6 fixture, events, usage reasons, queues, CORS (one
+  `x-acknowledge-owner` header for orders and conversations), the stack spec's people and the
+  route fixtures carry both milestones. M42's migrations stay 0142 and 0143; M41's became
+  `0144_m41_order_workflow_schema` (regenerated by drizzle-kit: the same SQL as M41's own) and
+  `0145_m41_order_workflow_policies` (M41's hand-written RLS, grants and triggers, unchanged).
+  The typed client was regenerated. The order desk's `areaLabel(matched, locale)` call left by
+  the M42 and M43 merge (a console type error) now takes the one argument.
+- **Evidence:** server build, `pnpm api:client`, `check:routes` (575 routes, PASS), every
+  package's typecheck, lint of the touched packages, `check:migrations`, `check:schema`,
+  `check-i18n`, and the contracts, domain assignment, i18n, CORS, module-boundaries and
+  console workflow unit tests. The full verify and the stack specs are the integrator's.
+- **New dependencies:** none.

@@ -207,6 +207,21 @@ export const updateOrderSchema = z
 
 export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
 
+/** The order list's queues (M11, M41). */
+export const ORDER_QUEUES = [
+  'unassigned',
+  'mine',
+  'new',
+  'verifying',
+  'callbacks',
+  'confirmed_today',
+  'hub_print',
+  'hub_packing',
+  'hub_packed',
+  'hub_handed',
+] as const;
+export type OrderQueue = (typeof ORDER_QUEUES)[number];
+
 export const orderQuerySchema = z
   .object({
     status: z
@@ -224,8 +239,14 @@ export const orderQuerySchema = z
         'exchange',
       ])
       .optional(),
-    /** `unassigned` is §6's queue; `mine` is what the caller is working. */
-    queue: z.enum(['unassigned', 'mine']).optional(),
+    /**
+     * `unassigned` is §6's queue; `mine` is what the caller is working. M41 (D-719) adds the
+     * desk's tabs (`new`, `verifying`, `callbacks`, `confirmed_today`) and the hub's
+     * (`hub_print`, `hub_packing`, `hub_packed`, `hub_handed`); every one narrows the scope.
+     */
+    queue: z.enum(ORDER_QUEUES).optional(),
+    /** M41: the hub's stock location. Narrows; never widens. */
+    locationId: uuid.optional(),
     customerId: uuid.optional(),
     q: z.string().trim().min(2).max(64).optional(),
     from: z.string().date().optional(),

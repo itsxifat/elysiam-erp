@@ -54,6 +54,8 @@ export const USAGE_REASONS = [
   'packing_scans',
   // M42: a customer's interest in a product (or one of its sizes) in the inbox.
   'inbox_interests',
+  // M41: a staff member's desk profile names it as the hub they pack at.
+  'desk_profiles',
   // Marketing and messages.
   'leads',
   'campaigns',

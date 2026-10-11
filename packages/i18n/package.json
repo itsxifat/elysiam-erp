@@ -52,6 +52,10 @@
     "./locales/sections/inbox.en": {
       "types": "./dist/locales/sections/inbox.en.d.ts",
       "default": "./dist/locales/sections/inbox.en.js"
+    },
+    "./locales/sections/workflow.en": {
+      "types": "./dist/locales/sections/workflow.en.d.ts",
+      "default": "./dist/locales/sections/workflow.en.js"
     }
   },
   "files": [

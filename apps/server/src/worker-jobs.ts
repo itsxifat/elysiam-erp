@@ -28,6 +28,8 @@ import { NotifyService } from './modules/notify/notify.service.js';
 import { registerNotifyJobs } from './modules/notify/notify.worker.js';
 import { CrmService } from './modules/orders/crm.service.js';
 import { registerCrmJobs } from './modules/orders/crm.worker.js';
+import { OffersService } from './modules/orders/offers.service.js';
+import { registerOfferJobs } from './modules/orders/offers.worker.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { OrderMail } from './modules/storefront/order-mail.js';
 import { PaymentsService } from './modules/storefront/payments.service.js';
@@ -128,6 +130,8 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     report,
   });
   await registerCrmJobs({ jobs, crm: context.get(CrmService), report });
+  // M41: auto-assign's offers, deadlines and sweep, and the outbox events that start them.
+  await registerOfferJobs({ jobs, dispatcher, offers: context.get(OffersService), report });
   await registerMarketingJobs({ jobs, meta: context.get(MetaJobsService), report });
   // M20: desk events from the outbox, and the target progress recompute they trigger.
   await registerPerformanceJobs({

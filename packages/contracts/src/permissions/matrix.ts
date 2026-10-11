@@ -341,6 +341,9 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Conversation', scope: 'org' },
     { action: 'update', subject: 'ConversationAssignment', scope: 'org' },
     { action: ['read', 'update'], subject: 'InboxChannel', scope: 'org' },
+    // M41 (D-713, D-715, D-720): their own presence; the order workflow and the team board.
+    { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
+    { action: ['read', 'update'], subject: 'OrderWorkflow', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *
@@ -416,6 +419,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
      * is; the owner is protected by the acknowledgement every other writer must give (D-737).
      */
     { action: ['read', 'update'], subject: 'Conversation', scope: 'org' },
+    // M41 (D-713): their own presence at the desk, and "Not taking orders".
+    { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
     // No `request ApprovalRequest`: §6 gives sales no action that goes through
     // maker-checker, and REQUESTER_TYPES lists none (D-072).
     /*
@@ -453,6 +458,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update'], subject: 'LandingPage', scope: 'org' },
     // M33 (D-508): the website is marketing's work as much as the landing pages are.
     { action: ['read', 'create', 'update', 'delete'], subject: 'Storefront', scope: 'org' },
+    // M41 (D-713): their own presence, for the inbox's messages (M42).
+    { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'read', subject: 'Target', scope: 'own' },
     /*
@@ -503,6 +510,9 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Stock', scope: 'org' },
     { action: ['read', 'request'], subject: 'StockAdjustment', scope: 'branch' },
     { action: ['read', 'create', 'update'], subject: 'Order', scope: 'branch' },
+    // M41 (D-713, D-720): their own presence, and the team board they supervise from.
+    { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
+    { action: 'read', subject: 'OrderWorkflow', scope: 'org' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Wallet', scope: 'branch' },
     // §6: branch P&L without cost detail. The scope grants the report; the
@@ -537,6 +547,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Order', scope: 'org' },
     // M38b (D-614): the packing videos of the brand's parcels.
     { action: 'read', subject: 'PackingVideo', scope: 'org' },
+    // M41 (D-713): their own presence at the hub.
+    { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'request', subject: 'ApprovalRequest', scope: 'org' },
     /*
