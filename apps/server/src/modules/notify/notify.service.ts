@@ -99,9 +99,8 @@ export class NotifyService {
       );
     }
 
-    // English, always (D-750): `body_en` is the one body. `body_bn` stays in the table only
-    // until one migration drops it once the parallel branches have merged (D-755). A body saved
-    // before the save-time check, with Bangla in it, is refused here rather than texted.
+    // English, always (D-750): `body_en` is the one body (`body_bn` was dropped, D-755). A body
+    // saved before the save-time check, with Bangla in it, is refused here rather than texted.
     if (!isFreeOfBangla(template.body_en)) {
       throw new NotifyError(
         'NOTIFY_TEMPLATE_INVALID',

@@ -18,13 +18,12 @@ export interface TemplateRow extends Record<string, unknown> {
   readonly key: string;
   readonly channel: string;
   readonly category: string;
-  readonly body_bn: string;
   readonly body_en: string;
   readonly is_active: boolean;
   readonly updated_at: Date;
 }
 
-const TEMPLATE_COLUMNS = sql`id, key, channel, category, body_bn, body_en, is_active, updated_at`;
+const TEMPLATE_COLUMNS = sql`id, key, channel, category, body_en, is_active, updated_at`;
 
 export async function templateByKey(
   tx: Tx,
@@ -61,18 +60,18 @@ export async function upsertTemplate(
     readonly key: string;
     readonly channel: string;
     readonly category: string;
-    /** The English body (D-750); also written to the retired `body_bn` until it is dropped. */
+    /** The one body, in English (D-750). */
     readonly bodyEn: string;
     readonly isActive: boolean;
     readonly updatedBy: string;
   },
 ): Promise<TemplateRow> {
   const rows = await tx.execute<TemplateRow>(sql`
-    insert into notify.templates (org_id, key, channel, category, body_bn, body_en, is_active, updated_by)
+    insert into notify.templates (org_id, key, channel, category, body_en, is_active, updated_by)
     values (${input.orgId}, ${input.key}, ${input.channel}, ${input.category},
-            ${input.bodyEn}, ${input.bodyEn}, ${input.isActive}, ${input.updatedBy})
+            ${input.bodyEn}, ${input.isActive}, ${input.updatedBy})
     on conflict (org_id, key, channel) do update
-      set category = excluded.category, body_bn = excluded.body_bn,
+      set category = excluded.category,
           body_en = excluded.body_en, is_active = excluded.is_active,
           updated_by = excluded.updated_by, updated_at = now()
     returning ${TEMPLATE_COLUMNS}

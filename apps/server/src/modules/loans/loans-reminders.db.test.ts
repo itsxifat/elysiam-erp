@@ -138,9 +138,8 @@ beforeAll(async () => {
   await withSystem(
     (tx) =>
       tx.execute(sql`
-        insert into notify.templates (org_id, key, channel, category, body_bn, body_en, updated_by)
+        insert into notify.templates (org_id, key, channel, category, body_en, updated_by)
         values (${ORG_A}, ${LOAN_REMINDER_TEMPLATE}, 'sms', 'transactional',
-                ${'{lender}-এর কিস্তি {seq}, {due}, ৳{amount}'},
                 ${'{lender} instalment {seq} due {due}: Tk {amount}'}, 'usr_m26_test')
       `),
     { orgId: ORG_A },

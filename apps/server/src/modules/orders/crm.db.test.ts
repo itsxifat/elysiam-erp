@@ -90,9 +90,8 @@ beforeAll(async () => {
     async (tx) => {
       for (const [occasion, key] of Object.entries(OCCASION_TEMPLATES)) {
         await tx.execute(sql`
-          insert into notify.templates (org_id, key, channel, category, body_bn, body_en, updated_by)
+          insert into notify.templates (org_id, key, channel, category, body_en, updated_by)
           values (${ORG_A}, ${key}, 'sms', 'marketing',
-                  ${`শুভ ${occasion}, {name}! আপনার কোড {code}`},
                   ${`Happy ${occasion}, {name}! Your code is {code}`}, 'usr_crm_test')
           on conflict (org_id, key, channel) do nothing
         `);

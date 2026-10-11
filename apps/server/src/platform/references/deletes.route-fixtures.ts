@@ -165,8 +165,8 @@ async function freshSale(archived = false): Promise<string> {
 
 async function freshTemplate(): Promise<string> {
   const row = await one<{ id: string }>(sql`
-    insert into notify.templates (org_id, key, category, body_bn, body_en, updated_by)
-    values (${ORG_A}, ${`matrix.delete_${lower(10)}`}, 'marketing', 'Hello', 'Hello', ${ACTOR})
+    insert into notify.templates (org_id, key, category, body_en, updated_by)
+    values (${ORG_A}, ${`matrix.delete_${lower(10)}`}, 'marketing', 'Hello', ${ACTOR})
     returning id
   `);
   return row.id;

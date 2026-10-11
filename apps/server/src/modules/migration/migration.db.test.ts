@@ -633,9 +633,8 @@ describe('the training org, seeded from anonymised data (D-223)', () => {
       (tx) =>
         tx.execute(sql`
           insert into notify.templates
-            (org_id, key, channel, category, body_bn, body_en, is_active, updated_by)
-          values (${orgId}, 'practice', 'sms', 'transactional', 'অনুশীলন', 'Practice', true,
-                  'usr_trainee')
+            (org_id, key, channel, category, body_en, is_active, updated_by)
+          values (${orgId}, 'practice', 'sms', 'transactional', 'Practice', true, 'usr_trainee')
         `),
       { orgId },
     );

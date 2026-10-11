@@ -41,9 +41,8 @@ async function template(key: string, category: 'otp' | 'transactional' | 'market
   await withSystem(
     (tx) =>
       tx.execute(sql`
-        insert into notify.templates (org_id, key, channel, category, body_bn, body_en, updated_by)
-        values (${ORG_A}, ${key}, 'sms', ${category},
-                ${'আপনার কোড {code}'}, ${'Your code is {code}'}, 'usr_notify_test')
+        insert into notify.templates (org_id, key, channel, category, body_en, updated_by)
+        values (${ORG_A}, ${key}, 'sms', ${category}, ${'Your code is {code}'}, 'usr_notify_test')
         on conflict (org_id, channel, key) do update set category = excluded.category
       `),
     { orgId: ORG_A },
@@ -266,8 +265,7 @@ describe('what an opt-out leaves behind, and what it stops', () => {
 });
 
 describe('every SMS is English (M43, D-750)', () => {
-  it('sends the English body, never the Bangla one a template still holds', async () => {
-    // The suite's templates were written with a Bangla `body_bn` beside the English one.
+  it('sends the English body and stores the message as English', async () => {
     const queued = await queueAt('offer.weekend', PHONE, NOON);
     expect(await notify.deliver(ORG_A, queued.messageId, NOON)).toBe('sent');
     const sent = gateway.sent.at(-1)?.body ?? '';
@@ -290,9 +288,9 @@ describe('every SMS is English (M43, D-750)', () => {
     await withSystem(
       (tx) =>
         tx.execute(sql`
-          insert into notify.templates (org_id, key, channel, category, body_bn, body_en, updated_by)
-          values (${ORG_A}, 'offer.legacy', 'sms', 'marketing',
-                  ${`${bangla} {code}`}, ${`${bangla} {code}`}, 'usr_notify_test')
+          insert into notify.templates (org_id, key, channel, category, body_en, updated_by)
+          values (${ORG_A}, 'offer.legacy', 'sms', 'marketing', ${`${bangla} {code}`},
+                  'usr_notify_test')
           on conflict (org_id, channel, key) do update set body_en = excluded.body_en
         `),
       { orgId: ORG_A },
@@ -321,6 +319,38 @@ describe('every SMS is English (M43, D-750)', () => {
     ).items.find((item) => item.key === 'offer.english');
     expect(row?.bodyEn).toBe('Hello {name}');
     expect(row).not.toHaveProperty('bodyBn');
+  });
+});
+
+describe('D-755: the English defaults migration', () => {
+  it('drops the retired Bangla body and defaults every stored locale to English', async () => {
+    const shape = await withSystem(
+      async (tx) => {
+        const columns = await tx.execute<{
+          table: string;
+          column: string;
+          fallback: string | null;
+        }>(sql`
+        select table_schema || '.' || table_name as "table", column_name as "column",
+               column_default as fallback
+        from information_schema.columns
+        where (table_schema, table_name) in (
+          ('notify', 'templates'), ('notify', 'messages'), ('notify', 'emails'),
+          ('storefront', 'customer_accounts'), ('storefront', 'web_orders')
+        ) and column_name in ('body_bn', 'locale')
+        order by 1, 2
+      `);
+        return [...columns];
+      },
+      { orgId: ORG_A },
+    );
+    expect(shape.some((row) => row.column === 'body_bn')).toBe(false);
+    expect(shape.map((row) => [row.table, row.fallback])).toEqual([
+      ['notify.emails', "'en'::text"],
+      ['notify.messages', "'en'::text"],
+      ['storefront.customer_accounts', "'en'::text"],
+      ['storefront.web_orders', "'en'::text"],
+    ]);
   });
 });
 

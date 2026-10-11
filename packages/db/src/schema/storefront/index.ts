@@ -381,7 +381,7 @@ export const customerAccounts = storefront.table(
     /** E.164, as `sales.customers` keys a buyer. */
     phoneE164: text('phone_e164'),
     customerId: uuid('customer_id'),
-    locale: text('locale').notNull().default('bn'),
+    locale: text('locale').notNull().default('en'),
     /** Saved delivery addresses, `savedAddressSchema` each, at most ten. */
     addresses: jsonb('addresses').notNull().default([]),
     lastSignInAt: timestamp('last_sign_in_at', { withTimezone: true, mode: 'date' }),
@@ -497,7 +497,7 @@ export const webOrders = storefront.table(
     accountId: uuid('account_id'),
     /** The address the checkout gave (normalised), for its emails and for claiming. */
     email: text('email'),
-    locale: text('locale').notNull().default('bn'),
+    locale: text('locale').notNull().default('en'),
     paymentMethod: text('payment_method').notNull(),
     /** For claiming by phone, without reading the orders module's table (invariant 12). */
     phoneE164: text('phone_e164').notNull(),

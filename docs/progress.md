@@ -3148,4 +3148,9 @@ dry-run|commit --file <users.json>`.
   own orders", and the website's online-payments list now asks org-wide `read Customer` so its
   audience is unchanged. No cost field on any of it. Tests: the contracts' permission suite,
   `workflow`, `orders`, `desk`, `inbox`, `pack-station`, `packing` and `buying` e2e, all green.
+- **Follow-up c, D-755's migration (D-757):** `0146_m43_english_defaults` sets the four `locale`
+  defaults to `en` and drops `notify.templates.body_bn` (only ever a copy of `body_en` since
+  D-750); the repository, the SQL fixtures and the tests no longer name it, and a new
+  `notify.db.test.ts` case reads the columns back. `check:schema` PASS; `notify`, `crm`,
+  `loans-reminders` and `migration` db tests green.
 - **New dependencies:** none.

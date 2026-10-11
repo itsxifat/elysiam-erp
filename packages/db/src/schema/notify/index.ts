@@ -42,7 +42,7 @@ export const notifyTemplates = notify.table(
     channel: text('channel').notNull().default('sms'),
     /** Decides quiet hours: only `otp` is sent between 21:00 and 09:00 Dhaka. */
     category: text('category').notNull(),
-    bodyBn: text('body_bn').notNull(),
+    /** The one body, in English (D-750); `body_bn` was dropped by D-755's migration. */
     bodyEn: text('body_en').notNull(),
     isActive: boolean('is_active').notNull().default(true),
     updatedBy: text('updated_by').notNull(),
@@ -58,10 +58,7 @@ export const notifyTemplates = notify.table(
       'notify_templates_category',
       sql`${table.category} in ('otp', 'transactional', 'marketing')`,
     ),
-    check(
-      'notify_templates_bodies',
-      sql`length(${table.bodyBn}) between 1 and 1000 and length(${table.bodyEn}) between 1 and 1000`,
-    ),
+    check('notify_templates_bodies', sql`length(${table.bodyEn}) between 1 and 1000`),
   ],
 );
 
@@ -103,7 +100,7 @@ export const notifyMessages = notify.table(
     channel: text('channel').notNull().default('sms'),
     category: text('category').notNull(),
     phone: text('phone').notNull(),
-    locale: text('locale').notNull().default('bn'),
+    locale: text('locale').notNull().default('en'),
     body: text('body').notNull(),
     state: text('state').notNull().default('queued'),
     /** Not before this instant: quiet hours move it to the next 09:00 Dhaka. */
@@ -208,7 +205,7 @@ export const notifyEmails = notify.table(
       .notNull()
       .references(() => organizations.id, { onDelete: 'restrict' }),
     templateKey: text('template_key').notNull(),
-    locale: text('locale').notNull().default('bn'),
+    locale: text('locale').notNull().default('en'),
     toEmail: text('to_email').notNull(),
     subject: text('subject').notNull(),
     bodySealed: sealedBytes('body_sealed'),
