@@ -1110,3 +1110,42 @@ describe('D-725: a colleague’s order, read by any agent and worked only throug
     expect(own.transitions.map((row) => row.trigger)).toContain('pack');
   }, 120_000);
 });
+
+// --- D-726: a branch manager's team board ---------------------------------------------------
+
+describe('D-726: the team board narrows to a branch manager’s branches', () => {
+  it('shows a branch manager the people of their branches only, and an org admin everyone', async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const north = await createBranch(ORG_A, `TBN${suffix}`);
+    const south = await createBranch(ORG_A, `TBS${suffix}`);
+    const manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [north] });
+    const everywhere = await harness.asRole('branch_manager', ORG_A);
+    const northAgent = await harness.asRole('sales', ORG_A, { branchIds: [north] });
+    const southAgent = await harness.asRole('sales', ORG_A, { branchIds: [south] });
+
+    async function boardOf(actor: RoleClient): Promise<Set<string>> {
+      const response = await actor.client.request('GET', '/v1/orders/team-board');
+      expect(response.statusCode, response.body).toBe(200);
+      return new Set(
+        body<{ people: { userId: string }[] }>(response).people.map((person) => person.userId),
+      );
+    }
+
+    // Their own branch's agent and themselves; nobody of another branch, nor anyone whose role
+    // reaches the whole brand (Rahim, the warehouse).
+    const narrowed = await boardOf(manager);
+    expect(narrowed.has(northAgent.userId)).toBe(true);
+    expect(narrowed.has(manager.userId)).toBe(true);
+    expect(narrowed.has(southAgent.userId)).toBe(false);
+    expect(narrowed.has(rahim.userId)).toBe(false);
+    expect(narrowed.has(warehouse.userId)).toBe(false);
+
+    // An org admin, and a branch manager kept to no branch (§6: the whole brand), see everyone.
+    for (const actor of [admin, everywhere]) {
+      const all = await boardOf(actor);
+      for (const person of [northAgent, southAgent, rahim, warehouse, manager]) {
+        expect(all.has(person.userId), person.userId).toBe(true);
+      }
+    }
+  }, 120_000);
+});

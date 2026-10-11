@@ -5,7 +5,12 @@ import { maskEmail } from '@elysium/domain';
 import type { TrustTally } from '@elysium/domain/iam';
 
 import { isActiveOrgAdmin, lockTrust, loadTrust } from './trust.repository.js';
-import { activeMembers, membershipsOfUser, ownersAmong } from './users.repository.js';
+import {
+  activeMembers,
+  activeRoleBranches,
+  membershipsOfUser,
+  ownersAmong,
+} from './users.repository.js';
 
 /**
  * Identity's service interface for other modules (invariant 12, D-419).
@@ -88,6 +93,13 @@ export interface IamApi {
     orgId: string,
     userId: string,
   ): Promise<readonly { readonly role: MembershipRole; readonly branchIds: readonly string[] }[]>;
+
+  /**
+   * Each active member's branches (D-726): the union of the branches their active roles are
+   * limited to, or null when any of their roles reaches the whole brand. For a caller placing
+   * people in branches (the team board), never for deciding what a person may do.
+   */
+  memberBranches(tx: Tx, orgId: string): Promise<ReadonlyMap<string, readonly string[] | null>>;
 }
 
 export const IAM_API = Symbol('IAM_API');
@@ -118,6 +130,30 @@ export class IamApiService implements IamApi {
       emailMasked: maskEmail(row.email),
       roles: row.roles,
     }));
+  }
+
+  async memberBranches(
+    tx: Tx,
+    orgId: string,
+  ): Promise<ReadonlyMap<string, readonly string[] | null>> {
+    const reach = new Map<string, Set<string> | null>();
+    for (const row of await activeRoleBranches(tx, orgId)) {
+      const known = reach.get(row.user_id);
+      if (known === null) continue;
+      if (row.branch_ids.length === 0) {
+        reach.set(row.user_id, null);
+        continue;
+      }
+      const branches = known ?? new Set<string>();
+      for (const id of row.branch_ids) branches.add(id);
+      reach.set(row.user_id, branches);
+    }
+    return new Map(
+      [...reach].map(([userId, branches]) => [
+        userId,
+        branches === null ? null : [...branches].sort(),
+      ]),
+    );
   }
 
   async roleScopes(

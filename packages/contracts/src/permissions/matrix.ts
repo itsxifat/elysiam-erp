@@ -520,7 +520,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'create', 'update'], subject: 'Order', scope: 'branch' },
     // M41 (D-713, D-720): their own presence, and the team board they supervise from.
     { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
-    { action: 'read', subject: 'OrderWorkflow', scope: 'org' },
+    // D-726: the team board lists the people of their own branches; the settings have no rows.
+    { action: 'read', subject: 'OrderWorkflow', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Wallet', scope: 'branch' },
     // §6: branch P&L without cost detail. The scope grants the report; the

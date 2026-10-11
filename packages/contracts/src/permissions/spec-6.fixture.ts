@@ -426,5 +426,6 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'warehouse|update|Presence|own',
   'org_admin|read|OrderWorkflow|org',
   'org_admin|update|OrderWorkflow|org',
-  'branch_manager|read|OrderWorkflow|org',
+  // D-726: a branch manager's team board is the people of their own branches.
+  'branch_manager|read|OrderWorkflow|branch',
 ];

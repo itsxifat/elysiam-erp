@@ -31,6 +31,11 @@ export interface TeamMember {
   readonly hubLocationId: string | null;
   /** No desk profile saved: the role's defaults apply (D-714). */
   readonly defaultProfile: boolean;
+  /**
+   * The branches their roles are limited to, or null when a role reaches the whole brand
+   * (D-726: a branch manager's team board lists the people of their branches).
+   */
+  readonly branchIds: readonly string[] | null;
   readonly presence: PresenceFacts;
 }
 
@@ -59,10 +64,11 @@ export class TeamApiService implements TeamApi {
   }
 
   async members(tx: Tx, orgId: string): Promise<readonly TeamMember[]> {
-    const [people, profiles, presence] = await Promise.all([
+    const [people, profiles, presence, branches] = await Promise.all([
       this.iam.activeMembers(tx, orgId),
       repo.allDeskProfiles(tx, orgId),
       repo.allPresence(tx, orgId),
+      this.iam.memberBranches(tx, orgId),
     ]);
     const profileOf = new Map(profiles.map((row) => [row.user_id, row]));
     const presenceOf = new Map(presence.map((row) => [row.user_id, row]));
@@ -77,6 +83,7 @@ export class TeamApiService implements TeamApi {
           profile === undefined ? defaultWorkTypes(person.roles) : workTypesOf(profile.work_types),
         hubLocationId: profile?.hub_location_id ?? null,
         defaultProfile: profile === undefined,
+        branchIds: branches.get(person.userId) ?? null,
         presence: {
           lastSeenAt: dateOf(seen?.last_seen_at),
           lastActiveAt: dateOf(seen?.last_active_at),

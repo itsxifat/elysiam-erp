@@ -3162,4 +3162,10 @@ dry-run|commit --file <users.json>`.
   work dock shows the same card for a conversation. `inbox.e2e.test.ts` (21 tests, two new:
   off by default; messages-only, accept against a racing take, decline, lapse, switched off)
   green; `check:routes` (578 routes) and `check:schema` PASS; the client regenerated.
+- **Follow-up d, the team board by branch (D-726):** a branch manager's `read OrderWorkflow` is
+  `branch` scope, and the board lists only people whose roles are limited to one of their
+  branches (a branch manager kept to no branch, an org admin and a super admin see everyone).
+  New `IamApi.memberBranches`, carried on `TeamApi`'s members. `workflow.e2e.test.ts` (16 tests,
+  one new) and the contracts' permission suite green. Left: `team.presence_changed` still goes to
+  every branch manager (an id and a state); routing it by branch is a follow-up.
 - **New dependencies:** none.

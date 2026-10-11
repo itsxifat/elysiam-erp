@@ -74,6 +74,30 @@ export async function activeMembers(
   return [...rows];
 }
 
+/**
+ * Every active role of every active member, with the branches it is limited to (empty: the
+ * whole brand), for a caller placing people in branches (D-726: the team board).
+ */
+export async function activeRoleBranches(
+  tx: Tx,
+  orgId: string,
+): Promise<{ user_id: string; branch_ids: string[] }[]> {
+  const rows = await tx.execute<{ user_id: string; branch_ids: string[] }>(sql`
+    select m.user_id,
+           coalesce(
+             array_agg(mb.branch_id::text order by mb.branch_id)
+               filter (where mb.branch_id is not null),
+             '{}'
+           ) as branch_ids
+    from iam.memberships m
+    join iam.users u on u.id = m.user_id
+    left join iam.membership_branches mb on mb.org_id = m.org_id and mb.membership_id = m.id
+    where m.org_id = ${orgId} and m.is_active and u.is_active and not u.is_owner
+    group by m.id, m.user_id
+  `);
+  return [...rows];
+}
+
 /** The owners among these people (D-473), with their names, for the caller to mask. */
 export async function ownersAmong(
   tx: Tx,

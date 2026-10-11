@@ -12,7 +12,7 @@ import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
-import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
+import { scopeHasNoRowDimension, scopeOf } from '../../platform/auth/scope.js';
 import { emit } from '../../platform/events/outbox.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { enqueue } from '../../platform/jobs/enqueue.js';
@@ -293,9 +293,23 @@ export class OffersService {
    * orders, their confirmations today and the offer they are looking at, beside the brand's
    * settings and how many new orders wait. People and counts, never an order's contents; the
    * board's reassign goes through the order's own route and its scope.
+   *
+   * D-726: the people are the caller's `read OrderWorkflow` scope. An org admin's is the brand; a
+   * branch manager's is `branch`, so they see the people whose roles are limited to one of
+   * their branches (themselves included), and nobody whose role reaches the whole brand or only
+   * other branches. A branch manager kept to no branch reaches the whole brand, as §6 has it.
    */
   async board(context: ActiveContext, request: object) {
-    scopeHasNoRowDimension(request, 'the team board is people and counts, not order rows');
+    const filter = scopeOf(request);
+    scopeHasNoRowDimension(request, 'the people are filtered by their branches below (D-726)');
+    const inScope = (branchIds: readonly string[] | null): boolean => {
+      if (filter.kind === 'all') return true;
+      if (filter.kind === 'none' || branchIds === null) return false;
+      return filter.anyOf.some(
+        (condition) =>
+          condition.field === 'branchId' && branchIds.some((id) => condition.in.includes(id)),
+      );
+    };
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const now = await transactionNow(tx);
       const [settings, members, loads, confirmed, live, waiting] = await Promise.all([
@@ -314,6 +328,7 @@ export class OffersService {
             member.workTypes.length > 0 ||
             loads.has(member.userId),
         )
+        .filter((member) => inScope(member.branchIds))
         .map((member) => {
           const offer = offerOf.get(member.userId);
           return {
