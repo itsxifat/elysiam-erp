@@ -272,7 +272,7 @@ test('check 4: verification calls are logged and order the desk', async () => {
   await desk.goto('/orders/queue?tab=verifying');
   const row = desk.locator(`[data-order-id="${order.id}"]`);
   await expect(row).toBeVisible();
-  await expect(row).toContainText('2');
+  await expect(row.getByTestId('call-count')).toHaveText('2');
   await bothThemes(desk, 'desk-verifying');
 });
 

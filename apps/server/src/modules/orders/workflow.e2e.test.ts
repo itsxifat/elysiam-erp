@@ -256,6 +256,20 @@ async function beat(actor: RoleClient, input: { visible: boolean; idleSeconds: n
   return body<{ state: string; paused: boolean; available: boolean }>(response);
 }
 
+/** How many `orders.offer_dispatch` jobs name this order (pg-boss, written in the act's transaction). */
+async function dispatchJobs(orderId: string): Promise<number> {
+  return withSystem(
+    async (tx) => {
+      const rows = await tx.execute<{ n: number }>(sql`
+        select count(*)::int as n from pgboss.job
+        where name = 'orders.offer_dispatch' and data->'payload'->>'orderId' = ${orderId}
+      `);
+      return rows[0]?.n ?? 0;
+    },
+    { orgId: ORG_A },
+  );
+}
+
 async function liveOfferOf(orderId: string): Promise<{ id: string; user_id: string } | undefined> {
   return withSystem(
     async (tx) => {
@@ -637,26 +651,39 @@ describe('check 3: auto-assign', () => {
       `/v1/orders/offers/${first?.id ?? ''}/decline`,
     );
     expect(declined.statusCode, declined.body).toBe(201);
-    const queued = await withSystem(
-      async (tx) => {
-        const rows = await tx.execute<{ n: number }>(sql`
-          select count(*)::int as n from pgboss.job
-          where name = 'orders.offer_dispatch' and data->'payload'->>'orderId' = ${order.id}
-        `);
-        return rows[0]?.n ?? 0;
-      },
-      { orgId: ORG_A },
-    );
-    expect(queued).toBeGreaterThanOrEqual(1);
+    expect(await dispatchJobs(order.id)).toBeGreaterThanOrEqual(1);
     expect(await offers.dispatch(ORG_A, order.id)).toBe(1);
     const second = await liveOfferOf(order.id);
     expect(second?.user_id).toBe(busy.userId);
 
-    // Busy lets it run out. The deadline passes; the expiry moves it on, and with nobody
-    // left who has not passed on it, it waits in New.
+    // Spare is active too, and busier than Busy (three open orders against two), so only
+    // somebody's passing on the order can bring it to Spare.
+    const spare = await harness.asRole('sales', ORG_A);
+    for (let n = 0; n < 3; n += 1) await take(admin, { assignedTo: spare.userId });
+
+    // Busy lets it run out. Before the deadline the expiry does nothing; after it, the offer
+    // lapses and the order is queued to be offered again.
     expect(await offers.expire(ORG_A, second?.id ?? '')).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 16_000));
+    await beat(spare, { visible: true, idleSeconds: 0 });
+    const before = await dispatchJobs(order.id);
     expect(await offers.expire(ORG_A, second?.id ?? '')).toBe(true);
+    expect(await dispatchJobs(order.id)).toBeGreaterThan(before);
+    expect(await liveOfferOf(order.id)).toBeUndefined();
+
+    // The dispatch the expiry queued offers it to the next person: Spare, not back to Busy
+    // (still active and less loaded) nor to Fresh, who both passed on it.
+    expect(await offers.dispatch(ORG_A, order.id)).toBe(1);
+    const third = await liveOfferOf(order.id);
+    expect(third?.user_id).toBe(spare.userId);
+
+    // Spare declines too: with nobody left who has not passed on it, it waits in New.
+    const spareDeclined = await spare.client.request(
+      'POST',
+      `/v1/orders/offers/${third?.id ?? ''}/decline`,
+    );
+    expect(spareDeclined.statusCode, spareDeclined.body).toBe(201);
+    expect(await offers.dispatch(ORG_A, order.id)).toBe(0);
     expect(await liveOfferOf(order.id)).toBeUndefined();
     expect((await detail(order.id)).assignedTo).toBeNull();
     expect((await queue(admin, 'queue=new')).some((row) => row.id === order.id)).toBe(true);
@@ -684,12 +711,12 @@ describe('check 3: auto-assign', () => {
     // Dozing comes back to the screen: available now, offered what waits.
     expect((await beat(dozing, { visible: true, idleSeconds: 1 })).available).toBe(true);
     expect(await offers.dispatch(ORG_A, null)).toBeGreaterThanOrEqual(1);
-    const third = await liveOfferOf(order.id);
-    expect(third?.user_id).toBe(dozing.userId);
+    const fourth = await liveOfferOf(order.id);
+    expect(fourth?.user_id).toBe(dozing.userId);
 
     // An accept racing a take: exactly one wins, and the order is the winner's.
     const [accepted, claimed] = await Promise.all([
-      dozing.client.request('POST', `/v1/orders/offers/${third?.id ?? ''}/accept`),
+      dozing.client.request('POST', `/v1/orders/offers/${fourth?.id ?? ''}/accept`),
       karim.client.request('POST', `/v1/orders/${order.id}/claim`),
     ]);
     const statuses = [accepted.statusCode, claimed.statusCode].sort((a, b) => a - b);
@@ -703,7 +730,7 @@ describe('check 3: auto-assign', () => {
     // An accepted offer cannot be accepted again.
     const twice = await dozing.client.request(
       'POST',
-      `/v1/orders/offers/${third?.id ?? ''}/accept`,
+      `/v1/orders/offers/${fourth?.id ?? ''}/accept`,
     );
     expect(twice.statusCode).toBe(409);
   }, 180_000);

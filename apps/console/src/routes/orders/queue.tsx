@@ -216,7 +216,9 @@ function QueueTable({ tab }: { readonly tab: DeskTab }) {
                   <td className="px-3 text-right">
                     <Money poisha={order.amounts.codAmountPoisha} locale={locale} />
                   </td>
-                  <td className="px-3 text-right tabular-nums">{order.calls.attempts}</td>
+                  <td className="px-3 text-right tabular-nums" data-testid="call-count">
+                    {order.calls.attempts}
+                  </td>
                   <td className="px-3">
                     {tab === 'confirmed_today' ? (
                       order.hubStage === null ? (
