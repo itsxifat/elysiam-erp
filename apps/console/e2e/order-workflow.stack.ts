@@ -72,7 +72,12 @@ async function api<T>(
   const origin = new URL(page.url()).origin;
   const response = await page.request.fetch(`${stack().apiUrl}${url}`, {
     method,
-    headers: { 'x-csrf-token': csrf, origin, 'content-type': 'application/json' },
+    headers: {
+      'x-csrf-token': csrf,
+      origin,
+      // A bodyless POST (a take) sends no content type: Fastify refuses an empty JSON body.
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
     ...(body === undefined ? {} : { data: JSON.stringify(body) }),
   });
   expect(response.status(), `${method} ${url}: ${await response.text()}`).toBeLessThan(300);
