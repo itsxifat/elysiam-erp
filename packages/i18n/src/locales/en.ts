@@ -3578,6 +3578,7 @@ const en = {
   'common.nextMonth': 'Next month',
   // M33: the brand’s website, run from its ERP (the Website section, D-500 to D-508).
   'nav.website': 'Website',
+  'nav.inbox': 'Inbox',
   'web.nav.settings': 'Settings',
   'web.nav.hero': 'Hero slides',
   'web.nav.menu': 'Menu',
@@ -3602,6 +3603,7 @@ const en = {
   'common.nextYear': 'Next year',
   // M40: My account in the account menu, and a session walled by the brand's two-step setting.
   'settings.nav.security': 'Security',
+  'settings.nav.inbox': 'Inbox',
   'shell.myAccount': 'My account',
   'auth.walled.detail':
     'Your role now requires two-step sign-in. Enter your password to set it up; it takes about a minute.',

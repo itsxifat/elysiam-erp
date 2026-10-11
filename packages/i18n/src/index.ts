@@ -47,6 +47,8 @@ import { bn as trustBn } from './locales/sections/trust.bn.js';
 import { en as trustEn, type TrustKey } from './locales/sections/trust.en.js';
 import { bn as accountBn } from './locales/sections/account.bn.js';
 import { en as accountEn, type AccountKey } from './locales/sections/account.en.js';
+import { bn as inboxBn } from './locales/sections/inbox.bn.js';
+import { en as inboxEn, type InboxKey } from './locales/sections/inbox.en.js';
 
 export {
   CUSTOMER_LOCALE,
@@ -90,9 +92,11 @@ export type MessageKey =
   | PackingKey
   | PackStationKey
   | TrustKey
-  | AccountKey;
+  | AccountKey
+  | InboxKey;
 export type {
   AccountKey,
+  InboxKey,
   CatalogPricingKey,
   CoreMessageKey,
   ManageKey,
@@ -125,6 +129,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...packStationEn,
     ...trustEn,
     ...accountEn,
+    ...inboxEn,
   },
   bn: {
     ...bn,
@@ -137,6 +142,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...packStationBn,
     ...trustBn,
     ...accountBn,
+    ...inboxBn,
   },
 };
 

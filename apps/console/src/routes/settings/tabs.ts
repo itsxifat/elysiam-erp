@@ -19,6 +19,7 @@ import type { SettingsMessageKey } from './messages.js';
  * - registers: `update Wallet` (org_admin, accounts, branch managers for their branches).
  * - security: `update SecurityPolicy` (M40, D-692), which no membership role holds: super
  *   admins only.
+ * - inbox: `read InboxChannel` (M42, D-733), org_admin; saving is `update`, the same role.
  */
 export interface SettingsTab {
   readonly path: string;
@@ -56,6 +57,12 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     path: '/settings/security',
     labelKey: 'settings.nav.security',
     required: { action: 'update', subject: 'SecurityPolicy' },
+  },
+  // M42 (D-733): the brand's Meta app and channels, org_admin only.
+  {
+    path: '/settings/inbox',
+    labelKey: 'settings.nav.inbox',
+    required: { action: 'read', subject: 'InboxChannel' },
   },
 ];
 

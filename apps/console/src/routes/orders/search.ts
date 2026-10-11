@@ -77,3 +77,12 @@ export const buyerSearchSchema = z.object({
 export type BuyerSearch = z.infer<typeof buyerSearchSchema>;
 
 export const BUYER_PAGE_SIZE = 50;
+
+/**
+ * The order desk's own search (M42, D-742): the inbox conversation an order is being taken
+ * from, so the form starts from the chat. Only the id: the phone, name and address are fetched,
+ * never carried in the address bar.
+ */
+export const deskSearchSchema = z.object({
+  conversation: z.string().uuid().optional().catch(undefined),
+});

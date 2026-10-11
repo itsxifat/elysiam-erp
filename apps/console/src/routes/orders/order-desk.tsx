@@ -14,7 +14,7 @@ import {
   Select,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { getRouteApi, Link } from '@tanstack/react-router';
 import { AlertTriangle, CheckCircle2, Keyboard, Trash2 } from 'lucide-react';
 import {
   useEffect,
@@ -51,6 +51,8 @@ import {
   toAsciiDigits,
   type DeskLine,
 } from './desk-logic.js';
+import { getOrderDraft, getPhoneFlags, type OrderDraft } from '../inbox/api.js';
+import { useInboxT } from '../inbox/messages.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrdersNav, OrderStatusBadge, ShortcutsHelp, type Shortcut } from './parts.js';
 import { ordersPath } from './paths.js';
@@ -114,6 +116,9 @@ interface Outcome {
   readonly orderNo?: string;
   readonly message?: string;
 }
+
+/** `/orders/new?conversation=<id>`: the inbox chat an order is taken from (M42, D-742). */
+const deskRoute = getRouteApi('/orders/new');
 
 function messageOf(error: unknown): string {
   return error instanceof ApiError || error instanceof Error ? error.message : String(error);
@@ -249,6 +254,96 @@ function Desk() {
       // query below renders the error state for the buyer panel.
       .catch(() => undefined);
   }
+
+  // --- from an inbox chat (M42, D-742) and the inbox's fraud warning (D-738) -----------------
+  const tInbox = useInboxT();
+  const mayInbox = ability.can('read', 'Conversation');
+  const conversationId = deskRoute.useSearch().conversation ?? null;
+  const draft = useQuery({
+    queryKey: ['inbox', 'order-draft', conversationId],
+    queryFn: () => getOrderDraft(conversationId ?? ''),
+    enabled: conversationId !== null && mayInbox,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  /*
+   * The chat fills the form once, when its draft arrives: the channel, the phone (which then
+   * answers as a typed one does), the name, the address and the products asked about. Never
+   * over something the agent already typed, for the reason `prefillFor` gives.
+   */
+  const fromChat = useRef<string | null>(null);
+  function applyDraft(chat: OrderDraft) {
+    if (fromChat.current === chat.conversationId) return;
+    fromChat.current = chat.conversationId;
+    setChannel(chat.channel);
+    const national = chat.phone === null ? null : deskPhone(chat.phone);
+    if (national !== null) {
+      setPhone((current) => (current === '' ? national : current));
+      prefillFor(national);
+    }
+    if (chat.name !== null) setName((current) => (current === '' ? (chat.name ?? '') : current));
+    const address = chat.address;
+    if (address !== null) {
+      void queryClient
+        .ensureQueryData({ queryKey: ['orders', 'areas'], queryFn: listAreas })
+        .then((reference) => {
+          const matched = reference.areas.find((entry) => entry.thanaId === address.thanaId);
+          if (matched !== undefined) {
+            setArea((current) => current ?? matched);
+            setAreaQuery((current) => (current === '' ? areaLabel(matched, locale) : current));
+          }
+          setAddressLine((current) => (current === '' ? address.addressLine : current));
+          setAreaDetail((current) => (current === '' ? (address.area ?? '') : current));
+        })
+        .catch(() => undefined);
+    }
+    const skuIds = chat.lines.map((line) => line.skuId);
+    if (skuIds.length > 0) {
+      void availability(skuIds)
+        .then((result) => {
+          setLines((current) =>
+            result.items.reduce<DeskLine[]>(
+              (lines, item) =>
+                item.status !== 'active' || item.pricePoisha === null
+                  ? lines
+                  : addLine(lines, {
+                      skuId: item.skuId,
+                      skuCode: item.skuCode ?? '',
+                      name: item.productName ?? '',
+                      qty: 1,
+                      unitPricePoisha: item.pricePoisha,
+                      availableQty: item.availableQty,
+                    }),
+              current,
+            ),
+          );
+        })
+        .catch(() => undefined);
+    }
+  }
+  // Fetched (from the same cache entry as `draft`) and applied in its callback: the chat fills
+  // the form once, the way a typed phone does, rather than an effect copying query data.
+  useEffect(() => {
+    if (conversationId === null || !mayInbox) return;
+    void queryClient
+      .fetchQuery({
+        queryKey: ['inbox', 'order-draft', conversationId],
+        queryFn: () => getOrderDraft(conversationId),
+        staleTime: Number.POSITIVE_INFINITY,
+      })
+      .then(applyDraft)
+      .catch(() => undefined);
+    // The conversation is the trigger; `applyDraft` reads only stable setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, mayInbox]);
+
+  const flags = useQuery({
+    queryKey: ['inbox', 'phone-flags', normalized],
+    queryFn: () => getPhoneFlags(normalized ?? ''),
+    enabled: normalized !== null && mayInbox,
+    staleTime: 30_000,
+  });
+  const fraudConversation =
+    flags.data?.fraud === true ? (flags.data.contacts[0]?.conversationId ?? null) : null;
 
   // --- the area combobox -------------------------------------------------------------
   const areaMatches = useMemo(
@@ -465,6 +560,10 @@ function Desk() {
         // The agent who takes the order owns it: it is theirs to confirm, pack-check and
         // chase, and leaving it unassigned would drop it into every colleague's queue.
         ...(session.context === null ? {} : { assignedTo: session.context.userId }),
+        // M42: the chat it came from, so its contact becomes a customer (D-742).
+        ...(draft.data === undefined
+          ? {}
+          : { source: { inboxConversationId: draft.data.conversationId } }),
       });
       if (!confirm) return { kind: 'saved', orderId: created.id, orderNo: created.orderNo };
       try {
@@ -1063,6 +1162,32 @@ function Desk() {
 
         {/* The right-hand column: who, how much, and the buttons. */}
         <aside className="space-y-4" aria-label={t('orders.desk.summary')}>
+          {flags.data?.fraud === true ? (
+            <section
+              role="alert"
+              className="space-y-1.5 rounded-lg border border-destructive/40 bg-destructive-subtle p-3 text-sm text-destructive-subtle-foreground"
+            >
+              <p className="flex items-center gap-1.5 font-medium">
+                <AlertTriangle aria-hidden="true" className="size-4" />
+                {tInbox('inbox.desk.fraudTitle')}
+              </p>
+              <p className="text-xs">{tInbox('inbox.desk.fraudDetail')}</p>
+              {fraudConversation === null ? null : (
+                <Link
+                  to={ordersPath('/inbox')}
+                  search={{ c: fraudConversation } as never}
+                  className="text-xs font-medium underline underline-offset-4"
+                >
+                  {tInbox('inbox.desk.openConversation')}
+                </Link>
+              )}
+            </section>
+          ) : null}
+          {draft.data === undefined ? null : (
+            <p className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+              {tInbox('inbox.desk.fromChat')}
+            </p>
+          )}
           {customer === null ? null : (
             <section className="space-y-3 rounded-lg border border-border bg-card p-5">
               <div className="space-y-1.5">

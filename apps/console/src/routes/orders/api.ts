@@ -204,6 +204,8 @@ export interface CreateOrderBody {
   readonly promoCode?: string;
   readonly notes?: string;
   readonly assignedTo?: string;
+  /** §9's source block; the desk sends the inbox conversation an order came from (M42). */
+  readonly source?: { readonly inboxConversationId?: string };
 }
 
 export interface CreatedOrder {
@@ -389,6 +391,9 @@ export interface Availability {
   readonly skuId: string;
   readonly availableQty: number;
   readonly pricePoisha: string | null;
+  readonly skuCode: string | null;
+  readonly productName: string | null;
+  readonly status: string | null;
 }
 export const availability = (skuIds: readonly string[]) =>
   api.get<{ locationId: string; items: Availability[] }>(

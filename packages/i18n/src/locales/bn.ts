@@ -3512,6 +3512,7 @@ const bn: Record<MessageKey, string> = {
   'common.nextMonth': 'পরের মাস',
   // M33: the brand’s website, run from its ERP (the Website section, D-500 to D-508).
   'nav.website': 'ওয়েবসাইট',
+  'nav.inbox': 'ইনবক্স',
   'web.nav.settings': 'সেটিংস',
   'web.nav.hero': 'হিরো স্লাইড',
   'web.nav.menu': 'মেনু',
@@ -3536,6 +3537,7 @@ const bn: Record<MessageKey, string> = {
   'common.nextYear': 'পরের বছর',
   // M40: My account in the account menu, and a session walled by the brand's two-step setting.
   'settings.nav.security': 'নিরাপত্তা',
+  'settings.nav.inbox': 'ইনবক্স',
   'shell.myAccount': 'আমার অ্যাকাউন্ট',
   'auth.walled.detail':
     'আপনার ভূমিকার জন্য এখন টু-স্টেপ সাইন-ইন বাধ্যতামূলক। চালু করতে পাসওয়ার্ড দিন; প্রায় এক মিনিট লাগবে।',

@@ -1,6 +1,6 @@
 import { createRoute, lazyRouteComponent, type AnyRoute } from '@tanstack/react-router';
 
-import { buyerSearchSchema, orderListSearchSchema } from './search.js';
+import { buyerSearchSchema, deskSearchSchema, orderListSearchSchema } from './search.js';
 
 /**
  * M11's five order routes, as a factory the router calls.
@@ -29,6 +29,8 @@ export function ordersRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
   const desk = createRoute({
     getParentRoute: () => rootRoute,
     path: '/orders/new',
+    // M42: `?conversation=<id>` starts the form from an inbox chat.
+    validateSearch: deskSearchSchema,
     component: lazyRouteComponent(() => import('./order-desk.js'), 'OrderDeskPage'),
   });
 

@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   ListChecks,
   Megaphone,
+  MessagesSquare,
   Package,
   PackageCheck,
   PackagePlus,
@@ -132,6 +133,13 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.customers',
         icon: Users,
         required: { action: 'read', subject: 'Customer' },
+      },
+      // M42 (D-736). The team's inbox: sales and org_admin.
+      {
+        to: '/inbox',
+        labelKey: 'nav.inbox',
+        icon: MessagesSquare,
+        required: { action: 'read', subject: 'Conversation' },
       },
       {
         to: '/courier',
