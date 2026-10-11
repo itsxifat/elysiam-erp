@@ -2962,7 +2962,7 @@ dry-run|commit --file <users.json>`.
     emits no `order.edited` (which would have resent ncom.bd orders).
 - **Evidence:**
   - `pnpm verify` exit 0: 275 files, 4105 tests, every check PASS
-    (`D:/Projects/erp-tools/verify-m41-3.log`; the final run is noted below).
+    (`D:/Projects/erp-tools/verify-m41-4.log`, on 3b739122, after every fix).
   - `workflow.e2e.test.ts` (14 tests): checks 1 to 5, the gate on every desk act, the
     assignment rules, the expiry and sweep concurrency, presence audit and desk profiles.
   - The domain's property tests (`assignment.test.ts`, `ownership.test.ts`).
