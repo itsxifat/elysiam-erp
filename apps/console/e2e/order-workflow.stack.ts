@@ -307,9 +307,9 @@ test('check 5: the hub prints, packs and hands over at its location; the desk se
   await expect(
     packer.getByTestId('hub-table').locator(`[data-order-id="${order.id}"]`),
   ).toBeVisible();
-  await expect(
-    await api<{ hubStage: string }>(desk, 'GET', `/v1/orders/${order.id}`),
-  ).toMatchObject({ hubStage: 'packing' });
+  expect(await api<{ hubStage: string }>(desk, 'GET', `/v1/orders/${order.id}`)).toMatchObject({
+    hubStage: 'packing',
+  });
   await bothThemes(packer, 'hub-packing');
 
   // Packed at the station (its own spec drives the scans); here through the same transition.

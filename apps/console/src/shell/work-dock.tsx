@@ -1,7 +1,7 @@
-import { Button, Money, StatusBadge } from '@elysium/ui';
+import { Button, Money } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { BellRing, Check, CirclePause, CirclePlay, X } from 'lucide-react';
+import { BellRing, Check, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ApiError } from '../api.js';
@@ -16,9 +16,7 @@ import {
   myDesk,
   myOffers,
   reportPresence,
-  setPaused,
   type OfferCard,
-  type PresenceState,
 } from '../routes/orders/workflow-api.js';
 import { actKey, beatFor, offerShareLeft, secondsLeft } from '../routes/orders/workflow-logic.js';
 
@@ -28,22 +26,15 @@ import { actKey, beatFor, offerShareLeft, secondsLeft } from '../routes/orders/w
  * 1. reports this tab's presence about every thirty seconds: whether it is visible and how long
  *    since the last key, pointer or touch input **in this tab** (nothing about any other tab or
  *    application is observed);
- * 2. shows the person's status and the "Not taking orders" switch;
- * 3. shows an order offered to them like a ride offer: number, area, pieces, cash to collect, a
+ * 2. shows an order offered to them like a ride offer: number, area, pieces, cash to collect, a
  *    countdown, Accept and Decline. Announced politely and never stealing focus from what the
  *    person is typing; the card sits first in the tab order after the skip link;
- * 4. tells them when somebody else worked on their order.
+ * 3. tells them when somebody else worked on their order.
  */
 
 const BEAT_MS = 30_000;
 const NOTICE_MS = 15_000;
 const INPUT_EVENTS = ['keydown', 'pointerdown', 'touchstart', 'wheel'] as const;
-
-const STATE_TONE: Readonly<Record<PresenceState, 'success' | 'warning' | 'neutral'>> = {
-  active: 'success',
-  idle: 'warning',
-  away: 'neutral',
-};
 
 interface Notice {
   readonly key: string;
@@ -167,15 +158,6 @@ function Dock() {
     return () => window.clearTimeout(timer);
   }, [notices]);
 
-  const pause = useMutation({
-    mutationFn: (paused: boolean) => setPaused(paused),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['team', 'me'] });
-    },
-  });
-
-  const presence = desk.data?.presence;
-  const showsStatus = (desk.data?.profile.workTypes.length ?? 0) > 0;
   const nameOf = (userId: string) =>
     agents.data?.items.find((agent) => agent.userId === userId)?.name ?? t('wf.someone');
 
@@ -232,31 +214,6 @@ function Dock() {
           onAccepted={(orderId) => void navigate({ to: `/orders/${orderId}` as never })}
         />
       ))}
-
-      {showsStatus && presence !== undefined ? (
-        <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-popover">
-          <span className="sr-only">{t('wf.status.yours')}:</span>
-          <StatusBadge tone={STATE_TONE[presence.state]}>
-            {t(`wf.status.${presence.state}`)}
-          </StatusBadge>
-          <span data-testid="taking-orders">
-            {presence.paused ? t('wf.status.paused') : t('wf.status.taking')}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={pause.isPending}
-            onClick={() => pause.mutate(!presence.paused)}
-          >
-            {presence.paused ? (
-              <CirclePlay aria-hidden="true" />
-            ) : (
-              <CirclePause aria-hidden="true" />
-            )}
-            {presence.paused ? t('wf.status.resume') : t('wf.status.pause')}
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }

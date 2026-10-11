@@ -27,6 +27,7 @@ import { listAgents } from './api.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { LiveIndicator, OrderStatusBadge, OrdersNav, useOrderEvents } from './parts.js';
 import { ordersPath, useSchemaSearch } from './paths.js';
+import { PresenceControl } from './presence-control.js';
 import { listQueue, takeOrder, type QueuedOrder, type WorkflowQueue } from './workflow-api.js';
 import { useNow } from './use-now.js';
 import { callBackIsDue } from './workflow-logic.js';
@@ -81,6 +82,7 @@ function Desk() {
         title={t('wf.desk.title')}
         description={t('wf.desk.subtitle')}
         meta={<LiveIndicator status={live} />}
+        actions={<PresenceControl />}
         tabs={<OrdersNav />}
       />
       <TabList label={t('wf.desk.title')}>
