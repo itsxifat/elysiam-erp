@@ -52,6 +52,9 @@ const sourceSchema = z
     adId: z.string().max(120).optional(),
     landingPageId: uuid.optional(),
     chatwootConversationId: z.string().max(120).optional(),
+    // M42 (D-742): the inbox conversation the order was taken from, so its contact becomes a
+    // customer and the chat links to the order.
+    inboxConversationId: uuid.optional(),
     utmSource: z.string().max(120).optional(),
     utmMedium: z.string().max(120).optional(),
     utmCampaign: z.string().max(120).optional(),

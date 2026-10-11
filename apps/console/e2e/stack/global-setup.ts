@@ -53,7 +53,9 @@ export interface StackInfo {
   /** A 10%-off code seeded for the brand, for M16 check 5. */
   readonly promoCode: string;
   /** A buyer whose only order was delivered a hundred days ago (M16's lapsed list). */
-  readonly lapsedBuyer: { readonly id: string; readonly name: string };
+  readonly lapsedBuyer: { readonly id: string; readonly name: string; readonly phone: string };
+  /** M42: the seeded product, as the inbox's product search finds it. */
+  readonly productName: string;
   /** A pending order the desk agent works, for M17's advance claim. */
   readonly advanceOrder: { readonly id: string; readonly orderNo: string };
   /** A pending order the desk walks to delivered with the lifecycle buttons (D-392). */
@@ -164,6 +166,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       skuCodes: string[];
       promoCode: string;
       lapsedBuyer: StackInfo['lapsedBuyer'];
+      productName: string;
       advanceOrder: StackInfo['advanceOrder'];
       lifecycleOrder: StackInfo['lifecycleOrder'];
       bulkOrder: StackInfo['bulkOrder'];
@@ -241,6 +244,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       skuCodes: provisioned.skuCodes,
       promoCode: provisioned.promoCode,
       lapsedBuyer: provisioned.lapsedBuyer,
+      productName: provisioned.productName,
       advanceOrder: provisioned.advanceOrder,
       lifecycleOrder: provisioned.lifecycleOrder,
       bulkOrder: provisioned.bulkOrder,

@@ -2987,4 +2987,67 @@ dry-run|commit --file <users.json>`.
   calls. A follow-up migration drops `notify.templates.body_bn` and sets the four `locale`
   defaults to `en` (D-755). Staff screens still show `৳` through `<Money>` (D-751): switching
   them to `Tk` is the owner's call.
+## 2026-10-12 · M42 · the unified inbox and customer panel (not merged or deployed)
+
+- **Asked for:** the owner's brief of 2026-10-11: Messenger, Instagram and WhatsApp in one inbox in
+  the brand's ERP, conversations owned like orders, and a customer panel beside the thread. Branch
+  `m42-inbox` from `integration-wave2` (02b3571a), worktree `D:/Projects/elysium-erp-m42`. Plan
+  `docs/plans/M42.md`. Decisions D-730 to D-747 (D-730 brings D-290's inbox back as a native module;
+  D-747 OPEN, the owner's Meta set-up). Migrations `0142_m42_inbox_schema` (generated) and
+  `0143_m42_inbox_policies` (RLS, grants, two update triggers); renumber at integration.
+- **Built:** `@elysium/domain/inbox` (phones in a chat, the 24-hour window, stages, delivery
+  status, property-tested); schema `inbox` (settings, channels, contacts, identities,
+  conversations, messages, notes, interests, webhook_events; RLS ENABLE and FORCE, composite FKs);
+  addresses found in a chat matched to the geography; the `inbox` module:
+  `GET`/`POST /webhooks/meta/<org id>` (subscription check, raw body,
+  `X-Hub-Signature-256` over the bytes and Meta's escaped-unicode form, stored then threaded by
+  `inbox.process_webhook`), the Graph adapter for the Messenger Send API, the Messenger API for
+  Instagram and the WhatsApp Cloud API (UNVERIFIED, fake by default, two keys to switch on), the
+  send job `inbox.send_message`, 23 routes under `/v1/inbox` (`Conversation`,
+  `ConversationAssignment`, `InboxChannel`), ownership with `x-acknowledge-owner: 1`
+  (`INBOX_OWNER_ACK_REQUIRED`), the customer panel through `OrdersApi` (`customerPanel`,
+  `customerReachable`, `inboxOrigin`, `deskAvailability`, new) and `CatalogApi.productSummaries`
+  (new), the `order.created` listener (Customer stage), the auto-offer port for M41, four realtime
+  events, nine error codes, OpenAPI entries and the API client. Console: `/inbox` (list, thread,
+  panel), Settings → Inbox, the order desk from a chat (`/orders/new?conversation=`) and its fraud
+  warning; strings in a new `inbox` section (bn a copy of en). nginx template forwards `/webhooks/`.
+- **Audit:** ledger-auditor 0 critical, 3 warnings, all fixed and tested: W1 the panel listed every
+  order of any buyer whose phone was typed (now the buyer profile's rule: brand-wide counters,
+  orders in the viewer's `read Order` scope, a typed phone linked only for a reachable buyer or one
+  the customer gave in the chat); W2 take-over-then-hand-on bypassed `ConversationAssignment` (now
+  any change of someone else's ownership is a supervisor's); W3 any order taker could name a
+  conversation and relink its contact (now only an inbox role names one, the listener never
+  relinks and audits). Nits fixed: secrets fail closed, readable fingerprints in the audit,
+  explicit conflict targets; webhook-body retention and a webhook rate limit are follow-ups (D-744).
+- **Evidence:** `pnpm verify` exit 0 (1,060 s; 276 files, 4,128 passed, 3 skipped, none new). On
+  Testcontainers Postgres:
+  `inbox.e2e.test.ts` 19 tests (each channel's signed webhook opens or threads a conversation, a
+  bad signature or another brand's address is a 401 that stores nothing, the same body and the
+  same message id are ignored; replies sent by the real worker job through the real Graph adapter
+  to a stand-in for Meta, with the Send API and Cloud API bodies, delivery and read receipts and
+  WhatsApp statuses moving them forward only; free text outside the window refused at the route
+  with `window_expired` and in the job without calling Meta; Meta's 4xx kept as `meta:190`; two
+  people taking at once, one 409 naming the owner; a non-owner's note refused without the header
+  and with it audited (`acknowledgedOwner`) and the owner told in their room; take-over and
+  release refused to sales, hand-over to a supervisor only; the phone and address found in a
+  chat, the matched buyer's counters and orders, Customer on an order from the chat through the
+  worker's `order.created` subscription, Fraud sticky and on the desk, typed phones unlinked for
+  an unreachable buyer, orders listed in the viewer's scope; notes, interests with live price,
+  stock and photo and no cost; another brand sees nothing), `inbox.unit.test.ts` 19 (fixtures
+  from Meta's examples, signature with the escaped-unicode form, the Graph adapter against a
+  local HTTP server), domain 20 (fast-check: phones, window, stages, status order, addresses),
+  console logic 6; the route matrix and cost sweep (560 routes); `catalog-deletes` (the inbox
+  answers the catalog's references port). `inbox.stack.ts` 6/6 against the real API, worker and
+  console with axe clean in both themes, screenshots in `docs/review/M42/`. check:routes 560,
+  check:bundle 249,973 of 250,000 bytes (the inbox's height rule moved onto the panes with a class
+  the data table already ships), check:i18n, check:schema (142 migrations), check:white-label,
+  check:api-client: PASS.
+- **Needs a person:** the live brand nginx sites need `webhooks` added to the API location regex by
+  hand (`infra/brand/nginx-brand.conf`); the owner's Meta app, permissions and webhook
+  subscriptions (D-747). The console's first download is 27 bytes under its 250 KB budget: M41's and
+  M43's console changes must be measured together at integration.
+- Follow-ups: bind M41's auto-offer engine to `CONVERSATION_OFFER` and filter the hand-over list
+  by M41's work types (D-737); a retention sweep for webhook bodies whose job dead-lettered and a
+  Valkey rate limit on the webhook (D-744); WhatsApp media download and templates, Meta's human
+  agent tag, merging two contacts, feeding `marketing.leads` from chats (D-734, D-738, D-744).
 - New dependencies: none.

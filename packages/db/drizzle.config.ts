@@ -40,6 +40,8 @@ export default defineConfig({
     'hr',
     'http',
     'iam',
+    // M42. Conversations, contacts, messages, notes and the brand's Meta channels.
+    'inbox',
     'intake',
     'inventory',
     'investors',

@@ -44,5 +44,11 @@ export function settingsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     path: '/settings/security',
     component: lazyRouteComponent(() => import('./security.js'), 'SecurityPage'),
   });
-  return [index, thresholds, zones, couriers, siteKeys, registers, security] as const;
+  // M42: the brand's Meta app and channels for the inbox (org_admin).
+  const inbox = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/settings/inbox',
+    component: lazyRouteComponent(() => import('./inbox.js'), 'InboxSettingsPage'),
+  });
+  return [index, thresholds, zones, couriers, siteKeys, registers, security, inbox] as const;
 }

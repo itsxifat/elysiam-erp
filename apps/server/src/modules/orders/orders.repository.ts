@@ -1786,3 +1786,77 @@ export async function orderIdsInScope(
   `);
   return rows.map((row) => row.id);
 }
+
+// --- M42: what the inbox asks of a buyer and an order (D-740, D-742) -----------------------
+
+export interface RecentOrderRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly order_no: string;
+  readonly status: string;
+  readonly channel: string;
+  readonly cod_amount_poisha: string;
+  readonly created_at: string | Date;
+}
+
+/** A buyer's newest orders within a viewer's order scope (the inbox panel's list, D-740). */
+export async function recentOrdersOfCustomer(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  limit: number,
+  scope: SQL,
+): Promise<RecentOrderRow[]> {
+  const rows = await tx.execute<RecentOrderRow>(sql`
+    select o.id, o.order_no, o.status::text as status, o.channel::text as channel,
+           o.cod_amount_poisha::text as cod_amount_poisha, o.created_at
+    from sales.orders o
+    where o.org_id = ${orgId} and o.customer_id = ${customerId} and ${scope}
+    order by o.created_at desc
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
+/**
+ * A buyer the viewer may open (D-740), by `CustomersService.assertVisible`'s rule: an order of
+ * theirs in the viewer's order scope, or no order at all yet.
+ */
+export async function customerReachableIn(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  scope: SQL,
+): Promise<boolean> {
+  const rows = await tx.execute<{ reachable: boolean }>(sql`
+    select (
+      exists (select 1 from sales.orders o
+              where o.org_id = c.org_id and o.customer_id = c.id and ${scope})
+      or not exists (select 1 from sales.orders o
+                     where o.org_id = c.org_id and o.customer_id = c.id)
+    ) as reachable
+    from sales.customers c
+    where c.org_id = ${orgId} and c.id = ${customerId}
+  `);
+  return rows[0]?.reachable === true;
+}
+
+/** The buyer of an order and the inbox conversation its `source` names, if any (D-742). */
+export async function inboxOriginOf(
+  tx: Tx,
+  orgId: string,
+  orderId: string,
+): Promise<
+  { customer_id: string; phone_e164: string; inbox_conversation_id: string | null } | undefined
+> {
+  const rows = await tx.execute<{
+    customer_id: string;
+    phone_e164: string;
+    inbox_conversation_id: string | null;
+  }>(sql`
+    select o.customer_id, c.phone_e164, o.source ->> 'inboxConversationId' as inbox_conversation_id
+    from sales.orders o
+    join sales.customers c on c.org_id = o.org_id and c.id = o.customer_id
+    where o.org_id = ${orgId} and o.id = ${orderId}
+  `);
+  return rows[0];
+}

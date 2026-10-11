@@ -43,6 +43,11 @@ import { registerFilesJobs } from './modules/files/files.worker.js';
 import { PackingModule } from './modules/packing/packing.module.js';
 import { registerPackingJobs } from './modules/packing/packing.worker.js';
 import { PackingVideoService } from './modules/packing/video.service.js';
+import { InboxModule } from './modules/inbox/inbox.module.js';
+import { registerInboxJobs } from './modules/inbox/inbox.worker.js';
+import { InboxOrderListener } from './modules/inbox/order-listener.service.js';
+import { InboxSendService } from './modules/inbox/send.service.js';
+import { InboxWebhookService } from './modules/inbox/webhook.service.js';
 import type { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import type { JobsRuntime } from './platform/jobs/jobs.runtime.js';
@@ -82,6 +87,8 @@ export const WORKER_MODULES = [
   // M38b: the packing video's retention and the removal of a deleted file's bytes.
   FilesModule,
   PackingModule,
+  // M42: Meta's webhooks threaded, replies sent, and contacts made customers by their orders.
+  InboxModule,
 ] as const;
 
 export interface WorkerJobDependencies {
@@ -154,6 +161,14 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
   // M38b: packing videos seven days after the order ended, and the bytes of deleted files.
   await registerPackingJobs({ jobs, videos: context.get(PackingVideoService), report });
   await registerFilesJobs({ jobs, files: context.get(FilesService), report });
+  await registerInboxJobs({
+    jobs,
+    dispatcher,
+    webhooks: context.get(InboxWebhookService),
+    sender: context.get(InboxSendService),
+    orders: context.get(InboxOrderListener),
+    report,
+  });
 
   // Every registered queue gets its dead-letter watcher, whether or not this
   // release also registered a handler for the queue itself. A queue with a

@@ -25,6 +25,7 @@ import { settingsRoutes } from './settings/routes.js';
 import { supplyRoutes } from './supply/routes.js';
 import { usersRoutes } from './users/routes.js';
 import { websiteRoutes } from './website/routes.js';
+import { inboxRoutes } from './inbox/routes.js';
 import { AppShell } from '../shell/app-shell.js';
 import { useT } from '../i18n/locale.js';
 import { tableSearchSchema } from '../lib/table-search.js';
@@ -150,6 +151,8 @@ const users = usersRoutes(rootRoute);
 const website = websiteRoutes(rootRoute);
 /** M40 owns `/account`: the signed-in person's own name, password, two-step and devices. */
 const account = accountRoutes(rootRoute);
+/** M42 owns `/inbox`: Messenger, Instagram and WhatsApp in one list, with the customer panel. */
+const inbox = inboxRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -177,6 +180,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/settings',
         '/users',
         '/website',
+        '/inbox',
       ].includes(item.to),
   )
   .map((item) =>
@@ -209,6 +213,7 @@ const routeTree = rootRoute.addChildren([
   ...users,
   ...website,
   ...account,
+  ...inbox,
   ...placeholderRoutes,
 ]);
 

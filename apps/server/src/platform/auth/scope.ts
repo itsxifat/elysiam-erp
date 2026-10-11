@@ -97,8 +97,15 @@ export interface ScopeColumns {
 export function scopeWhere(request: object, columns: ScopeColumns): SQL {
   const state = stateOf(request);
   state.applied = true;
+  return filterWhere(state.filter, columns, state.subject);
+}
 
-  const { filter } = state;
+/**
+ * A filter as SQL, for a service that must apply a scope other than its route's own (M42: the
+ * inbox's customer panel lists a buyer's orders within the caller's `read Order`, computed from
+ * the caller's context with `scopeFilterFor`). The same rendering `scopeWhere` uses.
+ */
+export function filterWhere(filter: ScopeFilter, columns: ScopeColumns, subject: Subject): SQL {
   if (filter.kind === 'all') return sql`true`;
   if (filter.kind === 'none') return sql`false`;
 
@@ -106,7 +113,7 @@ export function scopeWhere(request: object, columns: ScopeColumns): SQL {
     const column = columns[condition.field];
     if (column === undefined) {
       throw new InternalServerErrorException(
-        `${state.subject} is scoped by ${condition.field}, but this query maps no column for it.`,
+        `${subject} is scoped by ${condition.field}, but this query maps no column for it.`,
       );
     }
     if (condition.field === 'branchId') {

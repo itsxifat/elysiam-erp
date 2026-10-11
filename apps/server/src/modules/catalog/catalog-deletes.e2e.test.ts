@@ -213,6 +213,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
     const registry = harness.app.get(CatalogReferences, { strict: false });
     expect(registry.modules()).toEqual([
       'courier',
+      // M42: a customer's interest in a product or a size keeps it.
+      'inbox',
       'inventory',
       'marketing',
       // M35b, joined at integration: an ncom.bd hold keeps the SKUs it held.
@@ -253,6 +255,9 @@ describe('every module that points at catalog rows answers (D-621)', () => {
     );
     const counted: Readonly<Record<string, string>> = {
       'courier.return_receipt_lines->catalog.skus': 'courier',
+      // M42: the inbox's product interests (D-741).
+      'inbox.interests->catalog.products': 'inbox',
+      'inbox.interests->catalog.skus': 'inbox',
       'inventory.adjustment_lines->catalog.skus': 'inventory',
       'inventory.count_lines->catalog.skus': 'inventory',
       'inventory.count_scans->catalog.skus': 'inventory',

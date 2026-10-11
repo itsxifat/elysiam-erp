@@ -29,6 +29,7 @@ export function ordersRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
   const desk = createRoute({
     getParentRoute: () => rootRoute,
     path: '/orders/new',
+    // M42: `?conversation=<id>` starts the form from an inbox chat; the desk reads it itself.
     component: lazyRouteComponent(() => import('./order-desk.js'), 'OrderDeskPage'),
   });
 

@@ -149,6 +149,11 @@ async function create(): Promise<void> {
     // M40: a sales person of their own for My account (account.stack.ts): their name,
     // password and two-step sign-in change there, so nobody else may share them.
     { label: 'self', grants: [{ orgId, role: 'sales' }] },
+    // M42: the inbox (inbox.stack.ts): an org admin who connects the channels, and two sales
+    // agents, one who takes a conversation and one who acts in it acknowledging the owner.
+    { label: 'inboxadmin', grants: [{ orgId, role: 'org_admin' }] },
+    { label: 'agent', grants: [{ orgId, role: 'sales' }] },
+    { label: 'agent2', grants: [{ orgId, role: 'sales' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];
@@ -348,7 +353,9 @@ async function create(): Promise<void> {
       users,
       skuCodes: skus.map((sku) => sku.code),
       promoCode,
-      lapsedBuyer: { id: lapsedBuyer, name: 'Lapsed Buyer' },
+      lapsedBuyer: { id: lapsedBuyer, name: 'Lapsed Buyer', phone: lapsedPhone },
+      // M42: what the inbox's customer panel finds in the catalog.
+      productName: `Product e2e${run}`,
       advanceOrder: { id: advanceOrder.id, orderNo: advanceOrder.orderNo },
       lifecycleOrder,
       bulkOrder,

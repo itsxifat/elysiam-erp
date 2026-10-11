@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Tx } from '@elysium/db';
+import type { RequestContext, Tx } from '@elysium/db';
 import { sql, type SQL } from 'drizzle-orm';
 import {
   computePartialDelivery,
@@ -29,6 +29,7 @@ import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
 import * as references from './references.repository.js';
+import { orderReadScopeFor } from './orders.scope.js';
 
 /**
  * Orders' service interface for other modules (invariant 12).
@@ -734,6 +735,75 @@ export interface OrdersApi {
     range: { readonly from: string; readonly to: string },
     limit: number,
   ): Promise<readonly TopSku[]>;
+
+  // --- M42: the inbox's customer panel (D-740 to D-742) --------------------------------------
+
+  /**
+   * A buyer as the inbox's customer panel shows them (D-740), by the buyer profile's rule: the
+   * brand-wide counters (what the buyer is to the brand, naming no agent's order) and the most
+   * recent orders **the viewer may open** (`read Order`, with the sales queue), each as number,
+   * status, channel, COD and date. No address and nothing near a cost. Undefined for a buyer
+   * not of this brand.
+   */
+  customerPanel(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    recentLimit: number,
+    viewer: RequestContext,
+  ): Promise<CustomerPanelFacts | undefined>;
+
+  /**
+   * Whether the viewer may open this buyer at all, by `GET /v1/customers/:id`'s rule: everyone
+   * with an org-wide grant; otherwise a buyer with an order in the viewer's `read Order` scope,
+   * or with no orders yet (D-740). The inbox links a typed phone to a buyer only then.
+   */
+  customerReachable(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    viewer: RequestContext,
+  ): Promise<boolean>;
+
+  /** The buyer an order is for, and the inbox conversation it was taken from (D-742). */
+  inboxOrigin(tx: Tx, orgId: string, orderId: string): Promise<InboxOrderOrigin | undefined>;
+
+  /**
+   * Units available to promise at the order desk's own location (the brand's default
+   * fulfilment location), for the inbox's "sizes in stock" (D-741). Empty for a brand that has
+   * no location yet, rather than a refusal: the panel then shows no sizes in stock.
+   */
+  deskAvailability(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<Map<string, number>>;
+}
+
+/** M42 (D-740): the inbox panel's view of a buyer. */
+export interface CustomerPanelFacts {
+  readonly id: string;
+  readonly name: string;
+  readonly phoneE164: string;
+  readonly orders: number;
+  readonly delivered: number;
+  readonly returned: number;
+  readonly cancelled: number;
+  /** What they have spent on delivered orders (`ltv_poisha`), integer poisha. */
+  readonly spentPoisha: bigint;
+  readonly lastOrderAt: Date | null;
+  readonly recentOrders: readonly {
+    readonly id: string;
+    readonly orderNo: string;
+    readonly status: OrderStatus;
+    readonly channel: string;
+    readonly codAmountPoisha: string;
+    readonly createdAt: Date;
+  }[];
+}
+
+/** M42 (D-742): where an order came from, as far as the inbox cares. */
+export interface InboxOrderOrigin {
+  readonly customerId: string;
+  readonly customerPhoneE164: string;
+  /** `source.inboxConversationId`, when the order was created from a chat. */
+  readonly inboxConversationId: string | null;
 }
 
 /** The Nest injection token for `OrdersApi`. */
@@ -1442,6 +1512,81 @@ export class OrdersApiService implements OrdersApi {
     }
     const order = new Map(ids.map((id, index) => [id, index]));
     return facts.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  }
+
+  async customerPanel(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    recentLimit: number,
+    viewer: RequestContext,
+  ): Promise<CustomerPanelFacts | undefined> {
+    const row = await repo.customerById(tx, orgId, customerId);
+    if (row === undefined) return undefined;
+    const recent =
+      recentLimit === 0
+        ? []
+        : await repo.recentOrdersOfCustomer(
+            tx,
+            orgId,
+            customerId,
+            recentLimit,
+            orderReadScopeFor(viewer),
+          );
+    return {
+      id: row.id,
+      name: row.name,
+      phoneE164: row.phone_e164,
+      orders: row.orders_total,
+      delivered: row.delivered_count,
+      returned: row.returned_count,
+      cancelled: row.cancelled_count,
+      spentPoisha: BigInt(row.ltv_poisha),
+      lastOrderAt: instant(row.last_order_at),
+      recentOrders: recent.map((order) => ({
+        id: order.id,
+        orderNo: order.order_no,
+        status: order.status as OrderStatus,
+        channel: order.channel,
+        codAmountPoisha: String(order.cod_amount_poisha),
+        createdAt: instant(order.created_at) ?? new Date(0),
+      })),
+    };
+  }
+
+  async customerReachable(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    viewer: RequestContext,
+  ): Promise<boolean> {
+    return repo.customerReachableIn(tx, orgId, customerId, orderReadScopeFor(viewer));
+  }
+
+  async inboxOrigin(tx: Tx, orgId: string, orderId: string): Promise<InboxOrderOrigin | undefined> {
+    const row = await repo.inboxOriginOf(tx, orgId, orderId);
+    if (row === undefined) return undefined;
+    const conversation = row.inbox_conversation_id;
+    return {
+      customerId: row.customer_id,
+      customerPhoneE164: row.phone_e164,
+      inboxConversationId:
+        typeof conversation === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversation)
+          ? conversation
+          : null,
+    };
+  }
+
+  async deskAvailability(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<Map<string, number>> {
+    if (skuIds.length === 0) return new Map();
+    const location = await repo.defaultFulfilmentLocation(tx, orgId, null);
+    if (location === undefined) return new Map();
+    return this.inventory.availability(tx, orgId, location.id, skuIds);
   }
 
   async topSkus(

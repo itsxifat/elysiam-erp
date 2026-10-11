@@ -14,6 +14,7 @@ import {
   Landmark,
   LayoutDashboard,
   ListChecks,
+  Inbox,
   Megaphone,
   Package,
   PackageCheck,
@@ -132,6 +133,13 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.customers',
         icon: Users,
         required: { action: 'read', subject: 'Customer' },
+      },
+      // M42 (D-736). The team's inbox: sales and org_admin.
+      {
+        to: '/inbox',
+        labelKey: 'nav.inbox',
+        icon: Inbox,
+        required: { action: 'read', subject: 'Conversation' },
       },
       {
         to: '/courier',

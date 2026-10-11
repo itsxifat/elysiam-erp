@@ -1,0 +1,66 @@
+import { Module, type Provider } from '@nestjs/common';
+
+import { AuditService } from '../../platform/audit/audit.service.js';
+import { CatalogModule } from '../catalog/catalog.module.js';
+import { IamDirectoryModule } from '../iam/iam.api.js';
+import { OrdersModule } from '../orders/orders.module.js';
+import { InboxCatalogReferences } from './catalog-references.binding.js';
+import { InboxChannelsService } from './channels.service.js';
+import { ConversationsService } from './conversations.service.js';
+import {
+  INBOX_CONFIG,
+  inboxConfig,
+  messagingGatewayFor,
+  type InboxConfig,
+} from './inbox.config.js';
+import { InboxController } from './inbox.controller.js';
+import { InboxOrderListener } from './order-listener.service.js';
+import { ContactPanelService } from './panel.service.js';
+import { CONVERSATION_OFFER, NoAutoOffer } from './ports/conversation-offer.port.js';
+import { MESSAGING_GATEWAY } from './providers/meta-messaging.js';
+import { MetaWebhookRawBody } from './raw-body.js';
+import { InboxSendService } from './send.service.js';
+import { MetaWebhookController } from './webhook.controller.js';
+import { InboxWebhookService } from './webhook.service.js';
+
+/**
+ * The unified inbox (M42, D-730 to D-749): Messenger, Instagram and WhatsApp conversations, the
+ * customer panel, replies sent by a job, and Settings → Inbox.
+ *
+ * Buyers and orders through `ORDERS_API`, products through `CATALOG_API`, people through
+ * `IAM_API` (invariant 12). The config and the gateway are factories run at `app.init()`: naming
+ * the unverified Graph adapter without opting in stops the process at boot (D-731). Auto-offer
+ * is a port with a do-nothing default until M41's engine is bound to it (D-737).
+ */
+const configProvider: Provider = {
+  provide: INBOX_CONFIG,
+  useFactory: () => inboxConfig(),
+};
+
+const gatewayProvider: Provider = {
+  provide: MESSAGING_GATEWAY,
+  useFactory: (config: InboxConfig) => messagingGatewayFor(config),
+  inject: [INBOX_CONFIG],
+};
+
+@Module({
+  imports: [OrdersModule, CatalogModule, IamDirectoryModule],
+  controllers: [InboxController, MetaWebhookController],
+  providers: [
+    configProvider,
+    gatewayProvider,
+    AuditService,
+    MetaWebhookRawBody,
+    { provide: CONVERSATION_OFFER, useClass: NoAutoOffer },
+    ConversationsService,
+    ContactPanelService,
+    InboxChannelsService,
+    InboxWebhookService,
+    InboxSendService,
+    InboxOrderListener,
+    // D-621: a customer's interest keeps the product it names.
+    InboxCatalogReferences,
+  ],
+  exports: [InboxWebhookService, InboxSendService, InboxOrderListener, MESSAGING_GATEWAY],
+})
+export class InboxModule {}

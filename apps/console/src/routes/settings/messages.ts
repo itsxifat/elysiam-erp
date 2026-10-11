@@ -20,6 +20,7 @@ const SETTINGS_KEYS = [
   'settings.nav.siteKeys',
   'settings.nav.registers',
   'settings.nav.security',
+  'settings.nav.inbox',
   'settings.loading',
   'settings.errorTitle',
   'settings.errorDetail',

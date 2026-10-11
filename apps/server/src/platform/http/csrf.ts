@@ -144,6 +144,9 @@ const SIGNED_MACHINE_PREFIXES = [
   // over the raw body (D-553); and the packing scanner's device routes, which take their
   // authority from a bearer device token, never from a cookie (D-554).
   '/ncom/',
+  // M42: Meta's webhooks for the inbox, signed with the brand's app secret over the raw body
+  // (D-732). No cookie authority at all.
+  '/webhooks/meta/',
   '/v1/scanner/sign-in',
   '/v1/scanner/sign-out',
   // The scanner app as it ships signs in at the old site's address (D-554).

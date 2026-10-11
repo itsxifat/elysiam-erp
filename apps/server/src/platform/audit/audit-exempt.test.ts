@@ -48,6 +48,9 @@ describe('@AuditExempt', () => {
       // packing module in its own transaction) and sign-out (the device row says when).
       'modules/iam/scanner-sign-in.ts#login',
       'modules/iam/scanner-sign-in.ts#post',
+      // M42: Meta's webhook (D-732). No person acts; the body is stored and threaded by a job,
+      // whose messages and conversations are the record.
+      'modules/inbox/webhook.controller.ts#receive',
       // ncom.bd's connector (M35b, D-553, D-556): no session and no person. A stock read and an
       // unknown address change nothing; holds, handovers and webhooks are recorded in the
       // marketplace's own tables and the orders' audit, as ncom.

@@ -51,14 +51,20 @@ export class NetworkError extends Error {
   }
 }
 
-interface RequestOptions {
+export interface RequestOptions {
   readonly method?: string;
   readonly body?: unknown;
+  /** Extra request headers, e.g. the inbox's `x-acknowledge-owner` (M42, D-737). */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+/**
+ * One request. Exported for a caller that needs a header of its own (the inbox's
+ * acknowledgement of a conversation's owner, M42); everyone else uses `api` below.
+ */
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? 'GET';
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
 
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (!SAFE_METHODS.has(method)) {

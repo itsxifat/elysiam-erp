@@ -202,6 +202,13 @@ export interface CatalogApi {
    */
   webSkuFacts(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<WebSkuFact[]>;
 
+  /**
+   * Products by id with their first photo (M42, D-741), for the inbox's product interests. Any
+   * status, so an interest in a product since archived still shows what it was. Ids not of
+   * this brand are absent.
+   */
+  productSummaries(tx: Tx, orgId: string, productIds: readonly string[]): Promise<ProductSummary[]>;
+
   /** These products' images, in order, each with the colour it shows (M39b, D-643) or null. */
   webImages(
     tx: Tx,
@@ -395,6 +402,15 @@ export interface WebSku {
     readonly label: string;
     readonly position: number;
   }[];
+}
+
+/** A product as the inbox's interests show it (M42, D-741): no price, no cost. */
+export interface ProductSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly status: 'draft' | 'active' | 'archived';
+  /** The first photo's file, read through `GET /v1/files/:id/download`. */
+  readonly imageFileId: string | null;
 }
 
 /** One SKU as the website's cart sees it (M34, D-520). Selling price only, never a cost. */
@@ -783,6 +799,19 @@ export class CatalogApiService implements CatalogApi {
       productSlug: row.product_slug,
       categoryId: row.category_id,
       sellable: row.sellable,
+    }));
+  }
+
+  async productSummaries(
+    tx: Tx,
+    orgId: string,
+    productIds: readonly string[],
+  ): Promise<ProductSummary[]> {
+    return (await repo.productSummariesOf(tx, orgId, [...new Set(productIds)])).map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status as ProductSummary['status'],
+      imageFileId: row.image_file_id,
     }));
   }
 

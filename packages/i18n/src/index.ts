@@ -37,6 +37,7 @@ import { en as websiteEn, type WebsiteKey } from './locales/sections/website.en.
 import { en as manageEn, type ManageKey } from './locales/sections/manage.en.js';
 import { en as trustEn, type TrustKey } from './locales/sections/trust.en.js';
 import { en as accountEn, type AccountKey } from './locales/sections/account.en.js';
+import { en as inboxEn, type InboxKey } from './locales/sections/inbox.en.js';
 
 export { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './locale.js';
 
@@ -73,9 +74,11 @@ export type MessageKey =
   | PackingKey
   | PackStationKey
   | TrustKey
-  | AccountKey;
+  | AccountKey
+  | InboxKey;
 export type {
   AccountKey,
+  InboxKey,
   CatalogPricingKey,
   CoreMessageKey,
   ManageKey,
@@ -108,6 +111,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...packStationEn,
     ...trustEn,
     ...accountEn,
+    ...inboxEn,
   },
 };
 

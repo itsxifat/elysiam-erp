@@ -22,6 +22,8 @@ export * from './files/index.js';
 export * from './hr/index.js';
 export * from './http/index.js';
 export * from './iam/index.js';
+// M42: the unified inbox (Messenger, Instagram, WhatsApp).
+export * from './inbox/index.js';
 export * from './intake/index.js';
 export * from './inventory/index.js';
 export * from './investors/index.js';

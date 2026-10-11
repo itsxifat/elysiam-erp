@@ -28,7 +28,7 @@ When you assume something, add a row to `docs/decisions.md`.
 13. Reseller engine (Beownz)
 14. Branches and showroom POS
 15. Investors and company loans
-16. Message Hub and agent activity
+16. Unified inbox (M42) and agent activity
 17. Landing pages
 18. Analytics and leaderboard
 19. Realtime event catalog
@@ -239,7 +239,7 @@ See D-001 and D-002.
 | pos        | pos        | registers, shifts, POS sync                                                   |
 | investor   | investor   | investors, investments, distributions, withdrawals                            |
 | loans      | loans      | lenders, company loans, instalments, payments, reminders (M26, D-293, D-302)  |
-| messaging  | messaging  | Chatwoot links, conversation stats, activity heartbeats                       |
+| inbox      | inbox      | channels, contacts, conversations, messages, notes, interests (M42, D-730)    |
 | landing    | landing    | pages, versions, domains                                                      |
 | analytics  | analytics  | rollups, leaderboard snapshots, insights                                      |
 | storefront | storefront | website settings, hero slides, menu, size charts, old ids, site keys (§31)    |
@@ -413,35 +413,37 @@ The hostname comes from the **caller**, not from the API's own `Host` header (D-
 
 This summary is authoritative until M02b writes the code matrix. After that, the code is authoritative and any change needs a decision row.
 
-| Capability                         | super_admin | org_admin     | sales                   | accounts                    | marketing    | hr      | branch_manager                 | warehouse           | reseller            | investor |
-| ---------------------------------- | ----------- | ------------- | ----------------------- | --------------------------- | ------------ | ------- | ------------------------------ | ------------------- | ------------------- | -------- |
-| Catalog read (no cost)             | all         | org           | org                     | org                         | org          | —       | org                            | org                 | limited fields      | —        |
-| Catalog write, prices              | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Cost, WAC, stock value, margins    | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Stock availability                 | all         | org           | org                     | org                         | org          | —       | org                            | org                 | Beownz only         | —        |
-| Stock adjust / transfer / count    | all         | org + approve | —                       | read                        | —            | —       | request (branch)               | request             | —                   | —        |
-| Supply entries, suppliers          | all         | org           | —                       | org                         | —            | —       | —                              | qty-only drafts     | —                   | —        |
-| Orders                             | all         | org           | own + unassigned queue  | read                        | read         | —       | branch                         | pack, ship, returns | own (portal)        | —        |
-| Customers, buyer history           | all         | org           | customers of own orders | read                        | org          | —       | branch                         | —                   | own end customers   | —        |
-| Buyer list export                  | all         | org           | —                       | —                           | org          | —       | —                              | —                   | —                   | —        |
-| Fraud trust badge and reasons      | all         | org           | yes                     | read                        | —            | —       | branch                         | —                   | badge on own orders | —        |
-| Fraud block override               | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Wallets, cash entries, petty cash  | all         | org           | —                       | org                         | —            | —       | own branch wallets             | —                   | —                   | —        |
-| Ledger reports, P&L, balance sheet | all         | org           | —                       | org                         | —            | —       | branch P&L without cost detail | —                   | —                   | —        |
-| Period close, reopen request       | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Courier settlements                | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Campaigns, ad spend, leads         | all         | org           | —                       | spend entry                 | org          | —       | —                              | —                   | —                   | —        |
-| Landing pages, promo codes         | all         | org           | apply codes             | —                           | org          | —       | apply at POS                   | —                   | —                   | —        |
-| Employees, attendance, payroll     | all         | org           | own                     | payroll posting and payment | own          | org     | branch staff                   | own                 | —                   | —        |
-| Targets and bonus rules            | all         | org           | own progress            | —                           | own progress | org     | branch progress                | —                   | —                   | —        |
-| Reseller admin, payouts            | all         | Beownz org    | —                       | Beownz org                  | —            | —       | —                              | —                   | own                 | —        |
-| Investors                          | all         | org (read)    | —                       | org                         | —            | —       | —                              | —                   | —                   | own      |
-| Company loans                      | all         | org           | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
-| Approvals (as checker)             | all         | org           | —                       | payments                    | —            | payroll | branch items under threshold   | —                   | —                   | —        |
-| Org dashboard (analytics)          | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Users, roles, settings             | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
-| Website (M33, D-508)               | all         | org           | read                    | —                           | org          | —       | —                              | —                   | —                   | —        |
-| Branch name, switch off (M39a)     | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Capability                         | super_admin | org_admin      | sales                   | accounts                    | marketing    | hr      | branch_manager                 | warehouse           | reseller            | investor |
+| ---------------------------------- | ----------- | -------------- | ----------------------- | --------------------------- | ------------ | ------- | ------------------------------ | ------------------- | ------------------- | -------- |
+| Catalog read (no cost)             | all         | org            | org                     | org                         | org          | —       | org                            | org                 | limited fields      | —        |
+| Catalog write, prices              | all         | org            | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Cost, WAC, stock value, margins    | all         | org            | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Stock availability                 | all         | org            | org                     | org                         | org          | —       | org                            | org                 | Beownz only         | —        |
+| Stock adjust / transfer / count    | all         | org + approve  | —                       | read                        | —            | —       | request (branch)               | request             | —                   | —        |
+| Supply entries, suppliers          | all         | org            | —                       | org                         | —            | —       | —                              | qty-only drafts     | —                   | —        |
+| Orders                             | all         | org            | own + unassigned queue  | read                        | read         | —       | branch                         | pack, ship, returns | own (portal)        | —        |
+| Customers, buyer history           | all         | org            | customers of own orders | read                        | org          | —       | branch                         | —                   | own end customers   | —        |
+| Buyer list export                  | all         | org            | —                       | —                           | org          | —       | —                              | —                   | —                   | —        |
+| Fraud trust badge and reasons      | all         | org            | yes                     | read                        | —            | —       | branch                         | —                   | badge on own orders | —        |
+| Fraud block override               | all         | org            | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Wallets, cash entries, petty cash  | all         | org            | —                       | org                         | —            | —       | own branch wallets             | —                   | —                   | —        |
+| Ledger reports, P&L, balance sheet | all         | org            | —                       | org                         | —            | —       | branch P&L without cost detail | —                   | —                   | —        |
+| Period close, reopen request       | all         | org            | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Courier settlements                | all         | org            | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Campaigns, ad spend, leads         | all         | org            | —                       | spend entry                 | org          | —       | —                              | —                   | —                   | —        |
+| Landing pages, promo codes         | all         | org            | apply codes             | —                           | org          | —       | apply at POS                   | —                   | —                   | —        |
+| Employees, attendance, payroll     | all         | org            | own                     | payroll posting and payment | own          | org     | branch staff                   | own                 | —                   | —        |
+| Targets and bonus rules            | all         | org            | own progress            | —                           | own progress | org     | branch progress                | —                   | —                   | —        |
+| Reseller admin, payouts            | all         | Beownz org     | —                       | Beownz org                  | —            | —       | —                              | —                   | own                 | —        |
+| Investors                          | all         | org (read)     | —                       | org                         | —            | —       | —                              | —                   | —                   | own      |
+| Company loans                      | all         | org            | —                       | org                         | —            | —       | —                              | —                   | —                   | —        |
+| Approvals (as checker)             | all         | org            | —                       | payments                    | —            | payroll | branch items under threshold   | —                   | —                   | —        |
+| Org dashboard (analytics)          | all         | org            | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Users, roles, settings             | all         | org            | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Website (M33, D-508)               | all         | org            | read                    | —                           | org          | —       | —                              | —                   | —                   | —        |
+| Branch name, switch off (M39a)     | all         | org            | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Inbox conversations (M42, D-736)   | all         | org + reassign | org                     | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Inbox channels and Meta secrets    | all         | org            | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 
 M39a (D-621, D-630 to D-633): deleting a row nothing uses is the org admin's alone (`delete
 Catalog`, `Supply`, `LandingPage`, `Campaign`); the website's own rows keep D-508's `delete
@@ -849,7 +851,7 @@ used it), and the answer says what uses it. Branches and ledger accounts are nev
 | -------------------- | ---------------------------------------------------------------------------------------------------- |
 | Identity             | `org_id, branch_id`, `order_no` (per-org sequence, e.g. `OUR-2609-00042`)                            |
 | Channel              | `channel` (`facebook, whatsapp, instagram, tiktok, landing_page, website, phone, walk_in, reseller`) |
-| Source               | `source` jsonb: page id, campaign id, ad id, UTMs, landing page id, Chatwoot conversation id         |
+| Source               | `source` jsonb: page id, campaign id, ad id, UTMs, landing page id, inbox conversation id (M42)      |
 | Customer and address | `customer_id`, shipping address snapshot, `delivery_zone_id`                                         |
 | Amounts              | `delivery_charge_poisha, discount_poisha, promo_code_id, advance_paid_poisha, cod_amount_poisha`     |
 | Status               | `status, hold_reason`                                                                                |
@@ -1130,32 +1132,26 @@ interface CourierAdapter {
 
 ---
 
-## 16. Message Hub and agent activity
+## 16. Unified inbox (M42) and agent activity
 
-> The Message Hub (Chatwoot, M27) and the agent activity extension (M28) are removed from scope (D-290, D-292).
+> The Chatwoot Message Hub (M27) and the agent activity extension (M28) are removed from scope (D-290, D-292). The owner's brief of 2026-10-11 brings the inbox back as the ERP's own module (M42, D-730): no Chatwoot.
 
-### Message Hub
+### Unified inbox (M42, D-730 to D-747)
 
-Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
+Messenger, Instagram and WhatsApp in one list in the brand's ERP (`apps/server/src/modules/inbox`, schema `inbox`, the console's `/inbox`), built on Meta's official APIs and UNVERIFIED until a brand's real app is tested (decisions.md, Unverified integrations).
 
-- **Inboxes per org:** Facebook, Instagram, WhatsApp (Cloud API), Telegram, website chat and TikTok.
-  - TikTok conversations must be started by the customer, replies are allowed only within 48 hours, and only text, images and post shares are supported.
-  - The "Google" channel is pending decision D-021: Google Business Messages was discontinued in 2024.
-- **ERP side panel:** a Chatwoot Dashboard App (an iframe), served by the console at `/embed/chatwoot`.
-  - It shows the customer's profile and history, fraud badge and recent orders.
-  - It includes a create-order form prefilled from the conversation.
-  - Host Chatwoot and the console under the same parent domain so session cookies work.
-- **Webhooks from Chatwoot:**
-  - link conversations to customers by phone
-  - compute response-time stats per agent
-  - store the conversation id on orders created from the panel
-- Check Chatwoot's current API and webhook docs before building.
+- **Channels (D-731, D-733):** the Facebook Page (Messenger Send API), the Instagram professional account linked to it (the Messenger API for Instagram: the Page's edge and token, the IGSID as recipient), and the WhatsApp Business number (Cloud API). Settings → Inbox holds the Meta app secret, the verify token and each channel's id and token, sealed under the platform's sealed box and shown only as "Set" with a fingerprint (`InboxChannel`, org_admin).
+- **One webhook per brand (D-732):** `GET`/`POST /webhooks/meta/<org id>`. The subscription check echoes `hub.challenge` for the brand's verify token. A notification's raw bytes are checked against `X-Hub-Signature-256` (HMAC-SHA256 under the app secret, also over Meta's escaped-unicode form), stored in `inbox.webhook_events` (unique by hash, so a repeat is ignored) and threaded by `inbox.process_webhook`. Messages are unique by Meta's id. nginx forwards `/webhooks/`.
+- **Data:** `contacts` (stage, saved phone, a link to `sales.customers`, captured address, tags), `identities` (PSID, IGSID or wa_id per channel), `conversations` (one per identity: `assigned_to`, open/closed, last message, last inbound for the window, unread), `messages` (direction, text, attachment metadata, Meta's id, delivery status), `notes` (append-only), `interests` (a product, optionally a SKU). Every table `org_id` with RLS ENABLE and FORCE and composite foreign keys.
+- **Replies (D-734, D-746; invariant 6):** written `queued` with the browser's id and sent by `inbox.send_message` after the commit. Free text only within 24 hours of the customer's last message (Messenger's standard window, WhatsApp's customer service window); otherwise 409 `INBOX_WINDOW_CLOSED` with the reason, and the job checks again before it calls Meta. Templates and message tags are out of scope. Receipts and statuses move a reply forward only (D-735).
+- **Ownership (D-736, D-737):** sales and org_admin read and answer the whole inbox (`Conversation` at `org`). Take, release, hand over, close; taking over, releasing or handing over someone else's needs `ConversationAssignment` (org_admin). Any write on someone else's conversation needs `x-acknowledge-owner: 1` (else 409 `INBOX_OWNER_ACK_REQUIRED`); with it, the audit row names the owner and the owner's room hears `inbox.owner_overridden`. Auto-offer is the `CONVERSATION_OFFER` port, a no-op until M41's engine is bound to it.
+- **Customer panel (D-738 to D-742):** phones found in the chat (`extractBdPhones`; a WhatsApp id too), saved in one click and matched to the brand's buyer by phone; the address with district and thana pickers; the buyer's brand-wide counters and spend, and their last ten orders the viewer may open (`OrdersApi.customerPanel`, the buyer profile's rule; a typed phone links only a buyer the viewer may open); dated notes; product interests with live price, sizes in stock and photo (`CatalogApi.productSummaries`, `webSkus`, `OrdersApi.deskAvailability`); tags; the stage (Visitor, Lead, Customer, Not qualified, Fraud), Customer set by `order.created` and Fraud sticky and shown red, with the order desk warned for that phone. Create order opens the desk prefilled from `GET /v1/inbox/conversations/:id/order-draft`; the order's `source.inboxConversationId` links it back.
 
 ### Agent activity
 
 - A Chrome MV3 extension (built with WXT), force-installed by Chrome policy on office PCs. Each device is enrolled to one employee with a one-time code.
 - Heartbeats record the active tab's **domain only**, idle/active state and window focus. They are taken every 30 s and sent in batches every 2 min, with an offline buffer.
-- The server aggregates time on assigned platforms (an allowlist per role: Chatwoot, the ERP console, Meta Business Suite, courier portals, …) against other domains, and reports per agent per day.
+- The server aggregates time on assigned platforms (an allowlist per role: the ERP console, Meta Business Suite, courier portals, …) against other domains, and reports per agent per day.
 - Never capture URL paths, page content, keystrokes or screenshots.
 - A signed staff policy is required before rollout (D-022).
 
@@ -1245,6 +1241,10 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 | `investor.withdrawal.updated`           | `user:{investor user}`                                                                                                                                            | request id, status                         | Investor portal                           |
 | `pos.sale_synced` / `pos.sync_conflict` | `org:branch:{b}`                                                                                                                                                  | sale id / conflict id                      | POS status                                |
 | `loan.instalment_due`                   | `org:role:accounts`, `org:role:org_admin`                                                                                                                         | loan id, instalment id, seq, due, amount   | Loan reminder in the inbox (D-300)        |
+| `inbox.message_received`                | `org:role:sales`, `org:role:org_admin`, `user:{assignee}`                                                                                                         | conversation id, channel, assignee, at     | Live inbox (M42, D-743)                   |
+| `inbox.message_status`                  | `org:role:sales`, `org:role:org_admin`                                                                                                                            | conversation id, message id, status        | Sent, delivered, read, failed             |
+| `inbox.conversation_changed`            | `org:role:sales`, `org:role:org_admin`, `user:{assignee}`, `user:{previous}`                                                                                      | conversation id, assignee, status, at      | Taken, released, handed over, closed      |
+| `inbox.owner_overridden`                | `user:{owner}`                                                                                                                                                    | conversation id, owner, actor, action      | The owner is told (D-737)                 |
 | `notification.created`                  | `user:{id}`                                                                                                                                                       | notification id, title key                 | In-app inbox                              |
 | `job.failed`                            | `org:role:org_admin`, `super`                                                                                                                                     | job type, ref, error code                  | Operations                                |
 
@@ -1295,7 +1295,7 @@ Jobs run on pg-boss, with queues named `module.action`.
 | Meta Marketing API, Conversions API              | 3           | MetaGateway (unverified, D-257) | System-user tokens per org, sealed                         |
 | Biometric attendance                             | 3           | AttendanceImporter              | CSV first                                                  |
 | LLM for insight narratives                       | 4, optional | InsightNarrator                 | Metrics only, feature-flagged                              |
-| Chatwoot                                         | 5           | ChatwootClient                  | Webhooks plus the Dashboard App                            |
+| Meta messaging (Messenger, Instagram, WhatsApp)  | M42         | MessagingGateway                | One signed webhook in, replies by a job (D-731, D-732)     |
 | WhatsApp Cloud API templates                     | 5           | WhatsAppProvider                | For templated notifications if Chatwoot doesn't cover them |
 
 Rules for every integration:

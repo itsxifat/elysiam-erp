@@ -48,6 +48,10 @@
     "./locales/sections/account.en": {
       "types": "./dist/locales/sections/account.en.d.ts",
       "default": "./dist/locales/sections/account.en.js"
+    },
+    "./locales/sections/inbox.en": {
+      "types": "./dist/locales/sections/inbox.en.d.ts",
+      "default": "./dist/locales/sections/inbox.en.js"
     }
   },
   "files": [
