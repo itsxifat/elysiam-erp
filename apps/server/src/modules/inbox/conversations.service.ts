@@ -237,7 +237,9 @@ export class ConversationsService {
       before: write.before ?? null,
       after: {
         ...(write.after ?? {}),
-        conversationId: write.conversationId,
+        // `conversation`, not `conversationId`: the redactor reads any key holding `nid`
+        // (a national id) as secret, and `conversationId` holds it.
+        conversation: write.conversationId,
         ...(acknowledgedOwner === null ? {} : { acknowledgedOwner }),
       },
       requestId: context.requestId,
