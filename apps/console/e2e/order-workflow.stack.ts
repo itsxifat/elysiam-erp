@@ -108,7 +108,7 @@ async function newOrder(page: Page, assignedTo?: string): Promise<{ id: string; 
 
 async function open(page: Page, role: Parameters<typeof user>[0]): Promise<void> {
   await signIn(page, user(role).email);
-  if (role === 'admin') await enrolSecondFactor(page);
+  if (role === 'supervisor') await enrolSecondFactor(page);
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
 }
 
@@ -120,7 +120,7 @@ test.beforeAll(async ({ browser }) => {
   packer = await (await browser.newContext({ viewport })).newPage();
   await open(desk, 'desk');
   await open(queue, 'queue');
-  await open(admin, 'admin');
+  await open(admin, 'supervisor');
   await open(packer, 'packer');
 });
 

@@ -149,6 +149,9 @@ async function create(): Promise<void> {
     // M40: a sales person of their own for My account (account.stack.ts): their name,
     // password and two-step sign-in change there, so nobody else may share them.
     { label: 'self', grants: [{ orgId, role: 'sales' }] },
+    // M41: the order workflow's supervisor (order-workflow.stack.ts), an org admin of their own
+    // so their two-step enrolment never races another suite's.
+    { label: 'supervisor', grants: [{ orgId, role: 'org_admin' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];
