@@ -27,6 +27,7 @@ import {
   seedOrder,
   seedStockLevel,
 } from '../orders/orders.testing.js';
+import { ConversationOffersService } from './conversation-offers.service.js';
 import { registerInboxJobs } from './inbox.worker.js';
 import {
   instagramText,
@@ -242,6 +243,7 @@ beforeAll(async () => {
     webhooks: harness.app.get(InboxWebhookService),
     sender: harness.app.get(InboxSendService),
     orders: harness.app.get(InboxOrderListener),
+    offers: harness.app.get(ConversationOffersService),
     report: () => Promise.resolve(),
   });
 
@@ -1268,4 +1270,173 @@ describe('check 5: tenancy and permissions', () => {
       expect.arrayContaining([salesA.userId, salesB.userId, admin.userId]),
     );
   });
+});
+
+// --- D-748: the conversation auto-offer ---------------------------------------------------------
+
+describe('D-748: a new conversation offered like an order, to people who take messages', () => {
+  interface OfferRow extends Record<string, unknown> {
+    readonly id: string;
+    readonly user_id: string;
+    readonly status: string;
+  }
+
+  async function offersOf(conversationId: string): Promise<OfferRow[]> {
+    return withSystem(
+      async (tx) => [
+        ...(await tx.execute<OfferRow>(sql`
+          select id, user_id, status from inbox.conversation_offers
+          where org_id = ${ORG_A} and conversation_id = ${conversationId}
+          order by offered_at
+        `)),
+      ],
+      { orgId: ORG_A },
+    );
+  }
+
+  /** Like `until`, for as long as an offer's deadline: up to thirty seconds. */
+  async function eventually<T>(read: () => Promise<T | undefined>, label: string): Promise<T> {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const value = await read();
+      if (value !== undefined) return value;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(`timed out waiting for ${label}`);
+  }
+
+  async function liveOfferTo(conversationId: string): Promise<OfferRow> {
+    return eventually(async () => {
+      const rows = await offersOf(conversationId);
+      return rows.find((row) => row.status === 'offered');
+    }, `a live offer of ${conversationId}`);
+  }
+
+  async function assigneeOf(conversationId: string): Promise<string | null> {
+    return withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ assigned_to: string | null }>(sql`
+            select assigned_to from inbox.conversations
+            where org_id = ${ORG_A} and id = ${conversationId}
+          `)
+        )[0]?.assigned_to ?? null,
+      { orgId: ORG_A },
+    );
+  }
+
+  let psidSeed = 6_578_100_000_000_000 + Math.floor(Math.random() * 1_000_000);
+  async function newConversation(text: string): Promise<string> {
+    psidSeed += 1;
+    const psid = String(psidSeed);
+    await deliverAndThread(messengerText({ pageId: PAGE, psid, mid: `m_${randomUUID()}`, text }));
+    return conversationFor(psid);
+  }
+
+  async function setWorkflow(autoAssign: boolean): Promise<void> {
+    const saved = await admin.client.request('PUT', '/v1/orders/workflow-settings', {
+      body: { autoAssign, offerSeconds: 15, maxOpen: 25 },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+  }
+
+  async function deskOf(agent: RoleClient, workTypes: readonly string[]): Promise<void> {
+    const saved = await admin.client.request('PUT', `/v1/team/profiles/${agent.userId}`, {
+      body: { workTypes, hubLocationId: null },
+    });
+    expect(saved.statusCode, saved.body).toBeLessThan(300);
+    const beat = await agent.client.request('POST', '/v1/team/presence', {
+      body: { visible: true, idleSeconds: 0 },
+    });
+    expect(beat.statusCode, beat.body).toBe(201);
+  }
+
+  it('offers nothing while the brand has auto-assign off, which it is by default', async () => {
+    const id = await newConversation('anyone there?');
+    expect(await harness.app.get(ConversationOffersService).dispatch(ORG_A, id)).toBe(0);
+    expect(await offersOf(id)).toEqual([]);
+    expect(await assigneeOf(id)).toBeNull();
+  });
+
+  it('offers only to people taking messages, accepts once against a racing take, and moves on after a decline or a lapse', async () => {
+    const messages1 = await harness.asRole('sales', ORG_A);
+    const messages2 = await harness.asRole('sales', ORG_A);
+    const ordersOnly = await harness.asRole('sales', ORG_A);
+    await deskOf(messages1, ['messages']);
+    await deskOf(messages2, ['messages']);
+    await deskOf(ordersOnly, ['orders']);
+    await setWorkflow(true);
+    try {
+      // A new conversation is offered by the job the webhook queued, never to "orders only".
+      const first = await newConversation('is the black kurti in stock?');
+      const offer = await liveOfferTo(first);
+      expect([messages1.userId, messages2.userId]).toContain(offer.user_id);
+      const offered = offer.user_id === messages1.userId ? messages1 : messages2;
+      const other = offered === messages1 ? messages2 : messages1;
+      const card = json<{ items: { id: string; conversationId: string; channel: string }[] }>(
+        await offered.client.request('GET', '/v1/inbox/offers/mine'),
+      );
+      expect(card.items).toEqual([
+        expect.objectContaining({ id: offer.id, conversationId: first, channel: 'messenger' }),
+      ]);
+      const none = json<{ items: unknown[] }>(
+        await ordersOnly.client.request('GET', '/v1/inbox/offers/mine'),
+      );
+      expect(none.items).toEqual([]);
+      // Nobody else accepts it for them.
+      const stolen = await other.client.request('POST', `/v1/inbox/offers/${offer.id}/accept`);
+      expect(stolen.statusCode).toBe(409);
+
+      // An accept racing a colleague's take: exactly one of them has it.
+      const [accepted, taken] = await Promise.all([
+        offered.client.request('POST', `/v1/inbox/offers/${offer.id}/accept`),
+        salesA.client.request('POST', `/v1/inbox/conversations/${first}/take`),
+      ]);
+      const winners = [accepted.statusCode === 201, taken.statusCode === 200].filter(Boolean);
+      expect(winners, `${accepted.body} / ${taken.body}`).toHaveLength(1);
+      expect(await assigneeOf(first)).toBe(
+        accepted.statusCode === 201 ? offered.userId : salesA.userId,
+      );
+      const settled = (await offersOf(first)).find((row) => row.id === offer.id);
+      expect(settled?.status).toBe(accepted.statusCode === 201 ? 'accepted' : 'withdrawn');
+
+      // A decline moves the next conversation on to the other person who takes messages.
+      const second = await newConversation('can I pay by bKash?');
+      const firstOffer = await liveOfferTo(second);
+      const decliner = firstOffer.user_id === messages1.userId ? messages1 : messages2;
+      const declined = await decliner.client.request(
+        'POST',
+        `/v1/inbox/offers/${firstOffer.id}/decline`,
+      );
+      expect(declined.statusCode, declined.body).toBe(201);
+      const next = await liveOfferTo(second);
+      expect(next.user_id).not.toBe(decliner.userId);
+      expect(next.user_id).not.toBe(ordersOnly.userId);
+
+      // Left to lapse, it is expired by its deadline job; nobody is left to offer it to.
+      await eventually(
+        async () =>
+          (await offersOf(second)).find((row) => row.id === next.id)?.status === 'expired'
+            ? true
+            : undefined,
+        'the offer to lapse',
+      );
+      expect(await assigneeOf(second)).toBeNull();
+
+      // Switched off: the sweep withdraws whatever is still offered, and an accept is refused.
+      const third = await newConversation('hello again');
+      const lastOffer = await liveOfferTo(third);
+      await setWorkflow(false);
+      await harness.app.get(ConversationOffersService).sweep();
+      expect((await offersOf(third)).find((row) => row.id === lastOffer.id)?.status).toBe(
+        'withdrawn',
+      );
+      const holder = lastOffer.user_id === messages1.userId ? messages1 : messages2;
+      const late = await holder.client.request('POST', `/v1/inbox/offers/${lastOffer.id}/accept`);
+      expect(late.statusCode).toBe(409);
+      expect(json<{ code: string }>(late).code).toBe('INBOX_OFFER_GONE');
+      expect(await assigneeOf(third)).toBeNull();
+    } finally {
+      await setWorkflow(false);
+    }
+  }, 120_000);
 });

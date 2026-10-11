@@ -3153,4 +3153,13 @@ dry-run|commit --file <users.json>`.
   D-750); the repository, the SQL fixtures and the tests no longer name it, and a new
   `notify.db.test.ts` case reads the columns back. `check:schema` PASS; `notify`, `crm`,
   `loans-reminders` and `migration` db tests green.
+- **Follow-up b, the conversation auto-offer (D-748):** M42's `CONVERSATION_OFFER` seam is bound to
+  M41's engine (`ConversationOffersService`): conversations go only to people whose desk takes
+  messages, on the brand's auto-assign switch (off by default), countdown and cap; accepting is
+  one conditional statement; a take, hand-over or close withdraws the offer and a release
+  re-offers it. New `inbox.conversation_offers` (migrations `0147_m42_conversation_offers_schema`
+  and `0148_m42_conversation_offers_policies`), three routes, three jobs and two events; the
+  work dock shows the same card for a conversation. `inbox.e2e.test.ts` (21 tests, two new:
+  off by default; messages-only, accept against a racing take, decline, lapse, switched off)
+  green; `check:routes` (578 routes) and `check:schema` PASS; the client regenerated.
 - **New dependencies:** none.

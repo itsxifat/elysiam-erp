@@ -9,6 +9,11 @@ import type { QueueDefinition } from '../../platform/jobs/queues.js';
  *   handler is idempotent anyway (a message is unique by Meta's id).
  * - `inbox.send_message`: send one queued reply. Keyed by the message, so a reply is never in
  *   flight twice; the handler re-reads the message and sends only one still `queued`.
+ * - `inbox.offer_dispatch`, `inbox.offer_expire` and `inbox.offer_sweep` (D-748): the
+ *   conversation auto-offer, the twins of M41's `orders.offer_*` (D-717). Dispatch offers one
+ *   conversation (`conversationId`) or every waiting one (`null`); expire is one offer's
+ *   deadline, starting once it has passed; the sweep runs every minute in every brand, lapsing
+ *   what ran out and offering what waits. Every handler is idempotent. Nothing calls Meta.
  */
 export const INBOX_QUEUES = {
   processWebhook: {
@@ -28,6 +33,27 @@ export const INBOX_QUEUES = {
     retryLimit: 3,
     retryDelaySeconds: 10,
     expireInSeconds: 120,
+  },
+  offerDispatch: {
+    name: 'inbox.offer_dispatch',
+    scope: 'org',
+    retryLimit: 3,
+    retryDelaySeconds: 2,
+    expireInSeconds: 120,
+  },
+  offerExpire: {
+    name: 'inbox.offer_expire',
+    scope: 'org',
+    retryLimit: 3,
+    retryDelaySeconds: 2,
+    expireInSeconds: 120,
+  },
+  offerSweep: {
+    name: 'inbox.offer_sweep',
+    scope: 'global',
+    cron: '* * * * *',
+    retryLimit: 0,
+    expireInSeconds: 50,
   },
 } as const satisfies Record<string, QueueDefinition>;
 

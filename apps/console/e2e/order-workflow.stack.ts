@@ -220,7 +220,9 @@ test('check 3: auto-assign offers to the active agent taking orders, who accepts
   await admin.goto('/settings/order-workflow');
   const form = admin.getByTestId('workflow-settings');
   await expect(form).toBeVisible();
-  const auto = form.getByRole('checkbox', { name: 'Offer new orders automatically' });
+  const auto = form.getByRole('checkbox', {
+    name: 'Offer new orders and conversations automatically',
+  });
   if (!(await auto.isChecked())) await auto.check();
   await form.getByLabel('Seconds to accept an offer').fill('60');
   await form.getByRole('button', { name: 'Save' }).click();

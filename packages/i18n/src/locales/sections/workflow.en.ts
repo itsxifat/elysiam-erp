@@ -43,6 +43,16 @@ const en = {
   'wf.offer.decline': 'Decline',
   'wf.offer.gone': 'This offer has ended.',
   'wf.offer.announce': 'New order offered to you:',
+  // D-748: a conversation offered the same way.
+  'wf.offer.conversationTitle': 'New conversation for you',
+  'wf.offer.conversationDetail':
+    'Accept it to answer the customer. If you do not, it goes to the next person.',
+  'wf.offer.conversationAnnounce': 'New conversation offered to you',
+  'wf.offer.customer': 'A customer',
+  'wf.offer.unread': 'unread',
+  'wf.channel.messenger': 'Messenger',
+  'wf.channel.instagram': 'Instagram',
+  'wf.channel.whatsapp': 'WhatsApp',
 
   // Somebody acted on your order.
   'wf.notice.on': 'on your order',
@@ -192,13 +202,14 @@ const en = {
   'wf.settings.title': 'Order workflow',
   'wf.settings.subtitle':
     'One person handles each order. Auto-assign offers each new order to the active person with the fewest open orders.',
-  'wf.settings.autoAssign': 'Offer new orders automatically',
+  'wf.settings.autoAssign': 'Offer new orders and conversations automatically',
   'wf.settings.autoAssignHint':
-    'Each new order is offered to one active person at a time. They accept or decline before the countdown ends; otherwise it goes to the next person.',
+    'Each new order, and each new inbox conversation, is offered to one active person at a time whose desk takes that work (orders or messages). They accept or decline before the countdown ends; otherwise it goes to the next person.',
   'wf.settings.offerSeconds': 'Seconds to accept an offer',
   'wf.settings.offerSecondsHint': 'Between 15 and 300.',
   'wf.settings.maxOpen': 'Most open orders per person',
-  'wf.settings.maxOpenHint': 'Pending and on-hold orders count. Between 1 and 200.',
+  'wf.settings.maxOpenHint':
+    'Pending and on-hold orders count; open conversations count on their own against the same number. Between 1 and 200.',
   'wf.settings.denied': 'Only an org admin changes the order workflow.',
 
   // Staff → desk profile.

@@ -380,6 +380,30 @@ export const inboxConversationChangedPayload = z
   .strict();
 
 /**
+ * D-748: a conversation nobody has is offered to one person, who has until `expiresAt` to accept
+ * or decline it. To that person alone; the card fetches the contact, the channel and the last
+ * message from `GET /v1/inbox/offers/mine`.
+ */
+export const inboxConversationOfferedPayload = z
+  .object({
+    offerId: uuid,
+    conversationId: uuid,
+    userId: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+
+/** D-748: a conversation offer is over, so the person's card closes. To that person alone. */
+export const inboxConversationOfferClosedPayload = z
+  .object({
+    offerId: uuid,
+    conversationId: uuid,
+    userId: z.string(),
+    outcome: z.enum(['accepted', 'declined', 'expired', 'withdrawn']),
+  })
+  .strict();
+
+/**
  * M41 (D-717): an order is offered to one person, who has `expiresAt` to accept or decline it.
  *
  * To that person alone. Ids, the order number and the deadline: the offer card fetches the
@@ -542,6 +566,17 @@ export const EVENTS = {
   'inbox.owner_overridden': defineEvent('inbox.owner_overridden', inboxOwnerOverriddenPayload, {
     extra: (payload) => [userRoom(payload.ownerUserId)],
   }),
+  // D-748: the inbox's auto-offer, to the person offered alone.
+  'inbox.conversation_offered': defineEvent(
+    'inbox.conversation_offered',
+    inboxConversationOfferedPayload,
+    { extra: (payload) => [userRoom(payload.userId)] },
+  ),
+  'inbox.conversation_offer_closed': defineEvent(
+    'inbox.conversation_offer_closed',
+    inboxConversationOfferClosedPayload,
+    { extra: (payload) => [userRoom(payload.userId)] },
+  ),
   // M41's order workflow (D-710 to D-717).
   'order.offered': defineEvent('order.offered', orderOfferedPayload, {
     extra: (payload) => [userRoom(payload.userId)],

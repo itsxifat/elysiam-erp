@@ -560,6 +560,10 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/inbox/conversations/:id/order-draft',
   'GET /v1/inbox/team',
   'GET /v1/inbox/phone-flags',
+  // D-748: the conversation auto-offer.
+  'GET /v1/inbox/offers/mine',
+  'POST /v1/inbox/offers/:id/accept',
+  'POST /v1/inbox/offers/:id/decline',
   'POST /v1/inbox/conversations/:id/take',
   'POST /v1/inbox/conversations/:id/release',
   'POST /v1/inbox/conversations/:id/hand-over',

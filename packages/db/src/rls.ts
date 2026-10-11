@@ -483,6 +483,8 @@ export const NO_DELETE_TABLES: readonly string[] = [
   'sales.workflow_settings',
   'team.presence',
   'team.desk_profiles',
+  // D-748: the inbox's conversation offers, answered once and kept, as the order offers are.
+  'inbox.conversation_offers',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

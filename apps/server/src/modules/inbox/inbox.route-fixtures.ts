@@ -129,6 +129,22 @@ async function interestOn(conversation: { id: string; contactId: string }): Prom
   );
 }
 
+/** D-748: a live offer of a fresh conversation, to the teammate: every caller is someone else. */
+async function freshOffer(): Promise<string> {
+  const conversation = await freshConversation();
+  return withSystem(
+    async (tx) =>
+      (
+        await tx.execute<{ id: string }>(sql`
+          insert into inbox.conversation_offers (org_id, conversation_id, user_id, expires_at)
+          values (${ORG_A}, ${conversation.id}, ${TEAMMATE}, now() + interval '10 minutes')
+          returning id
+        `)
+      )[0]?.id ?? randomUUID(),
+    { orgId: ORG_A },
+  );
+}
+
 const at = async (suffix: string, body?: unknown): Promise<Call> => {
   const conversation = await freshConversation();
   return {
@@ -144,6 +160,15 @@ export const INBOX_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
   'GET /v1/inbox/conversations/:id/order-draft': () => at('/order-draft'),
   'GET /v1/inbox/team': () => ({ url: '/v1/inbox/team' }),
   'GET /v1/inbox/phone-flags': () => ({ url: '/v1/inbox/phone-flags?phone=01712345678' }),
+  // D-748: the auto-offer's card. Offered to the teammate, so an accept or a decline by anyone
+  // the matrix signs in is a refusal (409), never a 5xx.
+  'GET /v1/inbox/offers/mine': () => ({ url: '/v1/inbox/offers/mine' }),
+  'POST /v1/inbox/offers/:id/accept': async () => ({
+    url: `/v1/inbox/offers/${await freshOffer()}/accept`,
+  }),
+  'POST /v1/inbox/offers/:id/decline': async () => ({
+    url: `/v1/inbox/offers/${await freshOffer()}/decline`,
+  }),
   'POST /v1/inbox/conversations/:id/take': () => at('/take'),
   'POST /v1/inbox/conversations/:id/release': () => at('/release'),
   'POST /v1/inbox/conversations/:id/hand-over': () => at('/hand-over', { userId: TEAMMATE }),

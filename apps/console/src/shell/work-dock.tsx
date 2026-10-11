@@ -1,8 +1,8 @@
 import { Button, Money } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { BellRing, Check, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { BellRing, Check, MessageCircle, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../api.js';
 import { useAbility, useSession } from '../auth/session.js';
@@ -11,11 +11,15 @@ import '../i18n/workflow.js';
 import { useRealtime } from '../realtime/use-realtime.js';
 import { listAgents } from '../routes/orders/api.js';
 import {
+  acceptConversationOffer,
   acceptOffer,
+  declineConversationOffer,
   declineOffer,
+  myConversationOffers,
   myDesk,
   myOffers,
   reportPresence,
+  type ConversationOfferCard,
   type OfferCard,
 } from '../routes/orders/workflow-api.js';
 import { actKey, beatFor, offerShareLeft, secondsLeft } from '../routes/orders/workflow-logic.js';
@@ -29,7 +33,9 @@ import { actKey, beatFor, offerShareLeft, secondsLeft } from '../routes/orders/w
  * 2. shows an order offered to them like a ride offer: number, area, pieces, cash to collect, a
  *    countdown, Accept and Decline. Announced politely and never stealing focus from what the
  *    person is typing; the card sits first in the tab order after the skip link;
- * 3. tells them when somebody else worked on their order.
+ * 3. tells them when somebody else worked on their order;
+ * 4. shows a new inbox conversation offered to them the same way (D-748), when their desk takes
+ *    messages: who wrote, on which channel, the last words, and the same countdown.
  */
 
 const BEAT_MS = 30_000;
@@ -69,6 +75,15 @@ function Dock() {
     queryKey: ['orders', 'offers', 'mine'],
     queryFn: myOffers,
     enabled: takesOrders,
+    refetchInterval: 15_000,
+  });
+  const takesMessages =
+    ability.can('read', 'Conversation') &&
+    (desk.data?.profile.workTypes.includes('messages') ?? false);
+  const conversationOffers = useQuery({
+    queryKey: ['inbox', 'offers', 'mine'],
+    queryFn: myConversationOffers,
+    enabled: takesMessages,
     refetchInterval: 15_000,
   });
   const agents = useQuery({
@@ -120,16 +135,29 @@ function Dock() {
 
   // The countdown's clock, only while an offer is showing.
   const liveOffers = offers.data?.items ?? [];
+  const liveConversationOffers = conversationOffers.data?.items ?? [];
+  const showing = liveOffers.length + liveConversationOffers.length;
   useEffect(() => {
-    if (liveOffers.length === 0) return undefined;
+    if (showing === 0) return undefined;
     const timer = window.setInterval(() => setNow(Date.now()), 500);
     return () => window.clearInterval(timer);
-  }, [liveOffers.length]);
+  }, [showing]);
 
   // --- realtime: offers and news about my orders ---------------------------------------
   useRealtime({
-    events: ['order.offered', 'order.offer_closed', 'order.acted_over_owner'],
+    events: [
+      'order.offered',
+      'order.offer_closed',
+      'order.acted_over_owner',
+      'inbox.conversation_offered',
+      'inbox.conversation_offer_closed',
+    ],
     onEvent: (name, payload) => {
+      if (name === 'inbox.conversation_offered' || name === 'inbox.conversation_offer_closed') {
+        void queryClient.invalidateQueries({ queryKey: ['inbox', 'offers', 'mine'] });
+        if (name === 'inbox.conversation_offered') setSaid(t('wf.offer.conversationAnnounce'));
+        return;
+      }
       if (name === 'order.acted_over_owner') {
         const body = (payload ?? {}) as Record<string, unknown>;
         if (typeof body.id !== 'string' || typeof body.orderNo !== 'string') return;
@@ -214,6 +242,17 @@ function Dock() {
           onAccepted={(orderId) => void navigate({ to: `/orders/${orderId}` as never })}
         />
       ))}
+
+      {liveConversationOffers.map((offer) => (
+        <ConversationOfferCardView
+          key={offer.id}
+          offer={offer}
+          now={now}
+          onAccepted={(conversationId) =>
+            void navigate({ to: '/inbox', search: { c: conversationId } as never })
+          }
+        />
+      ))}
     </div>
   );
 }
@@ -230,76 +269,170 @@ function OfferCardView({
   readonly onAccepted: (orderId: string) => void;
 }) {
   const t = useT();
+  const area = [offer.area.thana, offer.area.district].filter((part) => part !== null).join(', ');
+  return (
+    <OfferShell
+      id={offer.id}
+      testId="offer-card"
+      dataLabel={offer.orderNo}
+      icon={<BellRing aria-hidden="true" className="size-3.5" />}
+      title={t('wf.offer.title')}
+      heading={<span className="tabular-nums">{offer.orderNo}</span>}
+      sub={area === '' ? offer.area.detail : area}
+      aside={
+        <>
+          <p className="text-xs text-muted-foreground">{t('wf.cod')}</p>
+          <p className="text-lg font-semibold">
+            <Money poisha={offer.codAmountPoisha} locale={locale} />
+          </p>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {offer.itemCount} {t('wf.offer.pieces')}
+          </p>
+        </>
+      }
+      detail={t('wf.offer.detail')}
+      offeredAt={offer.offeredAt}
+      expiresAt={offer.expiresAt}
+      now={now}
+      refreshKey={['orders']}
+      accept={async () => onAccepted((await acceptOffer(offer.id)).orderId)}
+      decline={async () => {
+        await declineOffer(offer.id);
+      }}
+    />
+  );
+}
+
+/** D-748: a conversation offered to this person, on the same card as an order. */
+function ConversationOfferCardView({
+  offer,
+  now,
+  onAccepted,
+}: {
+  readonly offer: ConversationOfferCard;
+  readonly now: number;
+  readonly onAccepted: (conversationId: string) => void;
+}) {
+  const t = useT();
+  const name = offer.contactName ?? t('wf.offer.customer');
+  return (
+    <OfferShell
+      id={offer.id}
+      testId="conversation-offer-card"
+      dataLabel={offer.conversationId}
+      icon={<MessageCircle aria-hidden="true" className="size-3.5" />}
+      title={t('wf.offer.conversationTitle')}
+      heading={name}
+      sub={offer.lastPreview}
+      aside={
+        <>
+          <p className="text-xs text-muted-foreground">{t(`wf.channel.${offer.channel}`)}</p>
+          {offer.unreadCount > 0 ? (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {offer.unreadCount} {t('wf.offer.unread')}
+            </p>
+          ) : null}
+        </>
+      }
+      detail={t('wf.offer.conversationDetail')}
+      offeredAt={offer.offeredAt}
+      expiresAt={offer.expiresAt}
+      now={now}
+      refreshKey={['inbox']}
+      accept={async () => onAccepted((await acceptConversationOffer(offer.id)).conversationId)}
+      decline={async () => {
+        await declineConversationOffer(offer.id);
+      }}
+    />
+  );
+}
+
+/**
+ * One offer, whatever it offers: the summary the caller passes, Accept and Decline, and the
+ * countdown on a native <progress>. Announced by the dock; never steals focus.
+ */
+function OfferShell({
+  id,
+  testId,
+  dataLabel,
+  icon,
+  title,
+  heading,
+  sub,
+  aside,
+  detail,
+  offeredAt,
+  expiresAt,
+  now,
+  refreshKey,
+  accept,
+  decline,
+}: {
+  readonly id: string;
+  readonly testId: string;
+  readonly dataLabel: string;
+  readonly icon: ReactNode;
+  readonly title: string;
+  readonly heading: ReactNode;
+  readonly sub: string | null;
+  readonly aside: ReactNode;
+  readonly detail: string;
+  readonly offeredAt: string;
+  readonly expiresAt: string;
+  readonly now: number;
+  readonly refreshKey: readonly string[];
+  readonly accept: () => Promise<void>;
+  readonly decline: () => Promise<void>;
+}) {
+  const t = useT();
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
-  const left = secondsLeft(offer.expiresAt, now);
-  const share = offerShareLeft(offer.offeredAt, offer.expiresAt, now);
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['orders'] });
+  const left = secondsLeft(expiresAt, now);
+  const share = offerShareLeft(offeredAt, expiresAt, now);
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: [...refreshKey] });
 
-  const accept = useMutation({
-    mutationFn: () => acceptOffer(offer.id),
-    onSuccess: (result) => {
-      refresh();
-      onAccepted(result.orderId);
-    },
+  const accepting = useMutation({
+    mutationFn: accept,
+    onSuccess: refresh,
     onError: (error) => {
       setProblem(error instanceof ApiError ? error.message : t('wf.offer.gone'));
       refresh();
     },
   });
-  const decline = useMutation({
-    mutationFn: () => declineOffer(offer.id),
-    onSettled: refresh,
-  });
-
-  const area = [offer.area.thana, offer.area.district].filter((part) => part !== null).join(', ');
+  const declining = useMutation({ mutationFn: decline, onSettled: refresh });
+  const busy = accepting.isPending || declining.isPending || left === 0;
 
   return (
     <section
-      aria-labelledby={`offer-${offer.id}`}
+      aria-labelledby={`offer-${id}`}
       className="pointer-events-auto w-full overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-popover"
-      data-testid="offer-card"
-      data-order-no={offer.orderNo}
+      data-testid={testId}
+      data-order-no={testId === 'offer-card' ? dataLabel : undefined}
+      data-conversation-id={testId === 'offer-card' ? undefined : dataLabel}
     >
       <div className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-xs font-medium text-primary">
-              <BellRing aria-hidden="true" className="size-3.5" />
-              {t('wf.offer.title')}
+              {icon}
+              {title}
             </p>
-            <h2 id={`offer-${offer.id}`} className="text-lg font-semibold tabular-nums">
-              {offer.orderNo}
+            <h2 id={`offer-${id}`} className="truncate text-lg font-semibold">
+              {heading}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              {area === '' ? offer.area.detail : area}
-            </p>
+            {sub === null ? null : (
+              <p className="line-clamp-2 text-sm text-muted-foreground">{sub}</p>
+            )}
           </div>
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">{t('wf.cod')}</p>
-            <p className="text-lg font-semibold">
-              <Money poisha={offer.codAmountPoisha} locale={locale} />
-            </p>
-            <p className="text-xs text-muted-foreground tabular-nums">
-              {offer.itemCount} {t('wf.offer.pieces')}
-            </p>
-          </div>
+          <div className="shrink-0 text-right">{aside}</div>
         </div>
-        <p className="text-xs text-muted-foreground">{t('wf.offer.detail')}</p>
+        <p className="text-xs text-muted-foreground">{detail}</p>
         <div className="flex items-center gap-2">
-          <Button
-            className="flex-1"
-            disabled={accept.isPending || decline.isPending || left === 0}
-            onClick={() => accept.mutate()}
-          >
+          <Button className="flex-1" disabled={busy} onClick={() => accepting.mutate()}>
             <Check aria-hidden="true" />
             {t('wf.offer.accept')}
           </Button>
-          <Button
-            variant="outline"
-            disabled={accept.isPending || decline.isPending || left === 0}
-            onClick={() => decline.mutate()}
-          >
+          <Button variant="outline" disabled={busy} onClick={() => declining.mutate()}>
             {t('wf.offer.decline')}
           </Button>
         </div>

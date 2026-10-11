@@ -19,11 +19,12 @@ import { channelTokenBinding, openSecret } from './inbox-secrets.js';
 import { InboxError, mapInboxErrors } from './inbox.errors.js';
 import { INBOX_QUEUES } from './inbox.queues.js';
 import * as repo from './inbox.repository.js';
+import { INBOX_ROLES } from './inbox-roles.js';
+import { ConversationOffersService } from './conversation-offers.service.js';
 import { ownershipFor, type Ownership } from './ownership.js';
 import { previewOf } from './webhook-payload.js';
 
-/** Who may hold a conversation: the two roles that answer the inbox (D-736). */
-export const INBOX_ROLES = ['sales', 'org_admin'] as const;
+export { INBOX_ROLES } from './inbox-roles.js';
 
 export interface PersonRef {
   readonly userId: string;
@@ -61,6 +62,8 @@ export class ConversationsService {
   constructor(
     private readonly audit: AuditService,
     @Inject(IAM_API) private readonly iam: IamApi,
+    // D-748: a conversation taken, handed over or closed another way ends its live offer.
+    private readonly offers: ConversationOffersService,
   ) {}
 
   private async names(tx: Tx, orgId: string): Promise<Map<string, string>> {
@@ -308,6 +311,7 @@ export class ConversationsService {
             await repo.setAssignee(tx, context.orgId, id, context.userId);
           }
           await this.changed(tx, context.orgId, id, context.userId, row.assigned_to, row.status);
+          await this.offers.withdrawFor(tx, context.orgId, id);
         }
         await this.recordWrite(tx, context, request, {
           action: 'take',
@@ -334,6 +338,8 @@ export class ConversationsService {
         if (row.assigned_to !== null) {
           await repo.setAssignee(tx, context.orgId, id, null);
           await this.changed(tx, context.orgId, id, null, row.assigned_to, row.status);
+          // Back to nobody: offered to the next person while the brand auto-assigns (D-748).
+          if (row.status === 'open') await this.offers.queueDispatch(tx, context.orgId, id);
         }
         await this.recordWrite(tx, context, request, {
           action: 'release',
@@ -373,6 +379,7 @@ export class ConversationsService {
         if (row.assigned_to !== input.userId) {
           await repo.setAssignee(tx, context.orgId, id, input.userId);
           await this.changed(tx, context.orgId, id, input.userId, row.assigned_to, row.status);
+          await this.offers.withdrawFor(tx, context.orgId, id);
         }
         await this.recordWrite(tx, context, request, {
           action: 'hand_over',
@@ -399,6 +406,7 @@ export class ConversationsService {
         if (row.status !== status) {
           await repo.setConversationStatus(tx, context.orgId, id, status);
           await this.changed(tx, context.orgId, id, row.assigned_to, row.assigned_to, status);
+          if (status === 'closed') await this.offers.withdrawFor(tx, context.orgId, id);
         }
         await this.recordWrite(tx, context, request, {
           action: status === 'closed' ? 'close' : 'reopen',

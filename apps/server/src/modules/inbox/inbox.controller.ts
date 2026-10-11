@@ -34,6 +34,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { InboxChannelsService } from './channels.service.js';
+import { ConversationOffersService } from './conversation-offers.service.js';
 import { ConversationsService } from './conversations.service.js';
 import { acknowledgedIn } from './ownership.js';
 import { ContactPanelService } from './panel.service.js';
@@ -75,6 +76,7 @@ export class InboxController {
     private readonly conversations: ConversationsService,
     private readonly panel: ContactPanelService,
     private readonly channels: InboxChannelsService,
+    private readonly offers: ConversationOffersService,
   ) {}
 
   @RequireAbility('read', 'Conversation')
@@ -122,6 +124,27 @@ export class InboxController {
   async phoneFlags(@Req() request: FastifyRequest, @Query() query: unknown) {
     const { phone } = parse(inboxPhoneFlagsQuerySchema, query ?? {});
     return this.panel.phoneFlags(requireContext(request), phone);
+  }
+
+  // --- D-748: auto-offer, the person's card ----------------------------------------------------
+
+  /** The caller's live conversation offers: contact, channel, last message and the countdown. */
+  @RequireAbility('read', 'Conversation')
+  @Get('offers/mine')
+  async myOffers(@Req() request: FastifyRequest) {
+    return this.offers.mine(requireContext(request), request);
+  }
+
+  @RequireAbility('update', 'Conversation')
+  @Post('offers/:id/accept')
+  async acceptOffer(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.offers.accept(requireContext(request), auditable(request), parse(idSchema, id));
+  }
+
+  @RequireAbility('update', 'Conversation')
+  @Post('offers/:id/decline')
+  async declineOffer(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.offers.decline(requireContext(request), auditable(request), parse(idSchema, id));
   }
 
   // --- ownership and status -----------------------------------------------------------------

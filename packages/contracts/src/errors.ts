@@ -667,6 +667,8 @@ export const ERROR_CODES = [
   'INBOX_STAGE_INVALID',
   /** This installation has no credentials key, so a Meta secret cannot be stored. */
   'INBOX_CREDENTIALS_MISSING',
+  /** D-748: the conversation offer was taken, declined, withdrawn or ran out before the answer. */
+  'INBOX_OFFER_GONE',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

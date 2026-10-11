@@ -111,6 +111,25 @@ export const acceptOffer = (id: string) =>
 export const declineOffer = (id: string) =>
   api.post<{ declined: true; orderId: string }>(`/v1/orders/offers/${id}/decline`);
 
+/** D-748: a conversation offered the same way, for a person whose desk takes messages. */
+export interface ConversationOfferCard {
+  readonly id: string;
+  readonly conversationId: string;
+  readonly channel: 'messenger' | 'instagram' | 'whatsapp';
+  readonly contactName: string | null;
+  readonly lastPreview: string | null;
+  readonly unreadCount: number;
+  readonly offeredAt: string;
+  readonly expiresAt: string;
+}
+
+export const myConversationOffers = () =>
+  api.get<{ items: ConversationOfferCard[] }>('/v1/inbox/offers/mine');
+export const acceptConversationOffer = (id: string) =>
+  api.post<{ accepted: true; conversationId: string }>(`/v1/inbox/offers/${id}/accept`);
+export const declineConversationOffer = (id: string) =>
+  api.post<{ declined: true; conversationId: string }>(`/v1/inbox/offers/${id}/decline`);
+
 // --- settings and the team board ----------------------------------------------------
 
 export interface WorkflowSettings {

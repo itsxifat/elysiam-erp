@@ -46,6 +46,7 @@ import { PackingModule } from './modules/packing/packing.module.js';
 import { registerPackingJobs } from './modules/packing/packing.worker.js';
 import { PackingVideoService } from './modules/packing/video.service.js';
 import { InboxModule } from './modules/inbox/inbox.module.js';
+import { ConversationOffersService } from './modules/inbox/conversation-offers.service.js';
 import { registerInboxJobs } from './modules/inbox/inbox.worker.js';
 import { InboxOrderListener } from './modules/inbox/order-listener.service.js';
 import { InboxSendService } from './modules/inbox/send.service.js';
@@ -171,6 +172,8 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     webhooks: context.get(InboxWebhookService),
     sender: context.get(InboxSendService),
     orders: context.get(InboxOrderListener),
+    // D-748: the conversation auto-offer's dispatch, deadlines and minute sweep.
+    offers: context.get(ConversationOffersService),
     report,
   });
 

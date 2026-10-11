@@ -21,6 +21,7 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { AdvancesService } from './advances.service.js';
+import { OffersService, type WorkflowSettings } from './offers.service.js';
 import { OrdersService, type CreateOrderOptions, type CreatedOrder } from './orders.service.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
@@ -775,6 +776,15 @@ export interface OrdersApi {
    * no location yet, rather than a refusal: the panel then shows no sizes in stock.
    */
   deskAvailability(tx: Tx, orgId: string, skuIds: readonly string[]): Promise<Map<string, number>>;
+
+  // --- D-748: the inbox's auto-offer, on the brand's one switch ----------------------------
+
+  /**
+   * The brand's order workflow settings (M41, D-715): whether it auto-assigns, the seconds an
+   * offer stays open and the most open work per person. The inbox offers conversations on the
+   * same switch, with the same countdown and the same cap per kind (D-748).
+   */
+  workflowSettings(tx: Tx, orgId: string): Promise<WorkflowSettings>;
 }
 
 /** M42 (D-740): the inbox panel's view of a buyer. */
@@ -843,7 +853,12 @@ export class OrdersApiService implements OrdersApi {
     private readonly advances: AdvancesService,
     private readonly courier: CourierBookingRegistry,
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
+    private readonly offers: OffersService,
   ) {}
+
+  workflowSettings(tx: Tx, orgId: string): Promise<WorkflowSettings> {
+    return this.offers.settingsIn(tx, orgId);
+  }
 
   ordersAttributedTo(tx: Tx, orgId: string, campaign: CampaignMatch) {
     return references.ordersAttributedTo(tx, orgId, campaign);

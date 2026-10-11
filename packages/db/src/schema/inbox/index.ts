@@ -267,6 +267,59 @@ export const inboxConversations = inbox.table(
 );
 
 /**
+ * A conversation offered to one person (D-748), answered once, like M41's order offers
+ * (`sales.order_offers`, D-717): offered, then accepted, declined, expired or withdrawn. One live
+ * offer per conversation and one per person (two partial unique indexes); the policies
+ * migration refuses any other change to an offer with a trigger and grants no DELETE, so who
+ * declined what stays, which is what keeps a conversation from going round the same person.
+ */
+export const inboxConversationOffers = inbox.table(
+  'conversation_offers',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    conversationId: uuid('conversation_id').notNull(),
+    /** `iam.users.id`, text like `assigned_to`. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    status: text('status').notNull().default('offered'),
+    offeredAt: timestamp('offered_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    respondedAt: timestamp('responded_at', { withTimezone: true, mode: 'date' }),
+    ...timestamps,
+  },
+  (table) => [
+    unique('conversation_offers_org_id_id_key').on(table.orgId, table.id),
+    index('conversation_offers_org_idx').on(table.orgId),
+    index('conversation_offers_org_conversation_idx').on(table.orgId, table.conversationId),
+    index('conversation_offers_org_user_idx').on(table.orgId, table.userId, table.offeredAt),
+    uniqueIndex('conversation_offers_live_conversation_idx')
+      .on(table.orgId, table.conversationId)
+      .where(sql`${table.status} = 'offered'`),
+    uniqueIndex('conversation_offers_live_user_idx')
+      .on(table.orgId, table.userId)
+      .where(sql`${table.status} = 'offered'`),
+    foreignKey({
+      name: 'conversation_offers_org_id_conversation_id_fk',
+      columns: [table.orgId, table.conversationId],
+      foreignColumns: [inboxConversations.orgId, inboxConversations.id],
+    }).onDelete('restrict'),
+    check(
+      'conversation_offers_status',
+      sql`${table.status} in ('offered', 'accepted', 'declined', 'expired', 'withdrawn')`,
+    ),
+    check(
+      'conversation_offers_answered',
+      sql`(${table.status} = 'offered') = (${table.respondedAt} is null)`,
+    ),
+    check('conversation_offers_expiry', sql`${table.expiresAt} > ${table.offeredAt}`),
+  ],
+);
+
+/**
  * What was said (D-735, D-744, D-746). An inbound message is keyed by Meta's id (`mid`,
  * `wamid`), unique per brand, so a retried webhook threads it once. An outbound one is written
  * `queued` with the reply, before the job sends it, and gets Meta's id when Meta accepts it.

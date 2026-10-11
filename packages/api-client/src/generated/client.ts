@@ -619,6 +619,11 @@ export const OPERATIONS = {
   getV1HrProductivity: { method: 'GET', path: '/v1/hr/productivity', ability: 'read:Target' },
   getV1HrTargets: { method: 'GET', path: '/v1/hr/targets', ability: 'read:Target' },
   getV1HrTargetsById: { method: 'GET', path: '/v1/hr/targets/{id}', ability: 'read:Target' },
+  getV1InboxOffersMine: {
+    method: 'GET',
+    path: '/v1/inbox/offers/mine',
+    ability: 'read:Conversation',
+  },
   getV1IntakeSiteKeys: { method: 'GET', path: '/v1/intake/site-keys', ability: 'read:LandingPage' },
   getV1InventoryAdjustments: {
     method: 'GET',
@@ -1500,6 +1505,16 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/hr/targets/refresh',
     ability: 'update:Target',
+  },
+  postV1InboxOffersByIdAccept: {
+    method: 'POST',
+    path: '/v1/inbox/offers/{id}/accept',
+    ability: 'update:Conversation',
+  },
+  postV1InboxOffersByIdDecline: {
+    method: 'POST',
+    path: '/v1/inbox/offers/{id}/decline',
+    ability: 'update:Conversation',
   },
   postV1IntakeSiteKeys: {
     method: 'POST',
@@ -2879,6 +2894,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrTargetsById, input, options),
+    /** GET /v1/inbox/offers/mine */
+    getV1InboxOffersMine: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InboxOffersMine, undefined, options),
     /** GET /v1/intake/site-keys */
     getV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1IntakeSiteKeys, undefined, options),
@@ -3902,6 +3920,17 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/hr/targets/refresh */
     postV1HrTargetsRefresh: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1HrTargetsRefresh, undefined, options),
+    /** POST /v1/inbox/offers/:id/accept */
+    postV1InboxOffersByIdAccept: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1InboxOffersByIdAccept, input, options),
+    /** POST /v1/inbox/offers/:id/decline */
+    postV1InboxOffersByIdDecline: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InboxOffersByIdDecline, input, options),
     /** POST /v1/intake/site-keys */
     postV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1IntakeSiteKeys, undefined, options),
