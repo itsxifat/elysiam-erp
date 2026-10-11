@@ -16,7 +16,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildMotherApp } from './app.js';
 import { createMotherAuth, type MotherAuth } from './auth/auth.js';
 import { BrandPools } from './brands/pools.js';
-import { bootstrapOwner, breakGlassTwoFactorReset, CliRefused } from './cli.js';
+import {
+  bootstrapOwner,
+  breakGlassTwoFactorReset,
+  CliRefused,
+  registerBrandFromServer,
+} from './cli.js';
 import { secretsKeyFrom } from './crypto/secrets.js';
 import { motherSql } from './db/client.js';
 import type { PullBrandJob } from './jobs/jobs.js';
@@ -470,6 +475,29 @@ describe('owners invite owners; a lost factor needs a third owner (D-488, D-489)
     expect((await owners.c.browser.get('/v1/me')).status).toBe(401);
     const back = await signInWithCode(new Browser(app), auth, owners.c);
     expect(back.status).not.toBe(200);
+  });
+
+  it('registers a brand from the server, with its owner-link key, audited (D-690)', async () => {
+    const result = await registerBrandFromServer(secrets, {
+      slug: 'beownz',
+      displayName: 'Server Added',
+      adminUrl: 'https://erp.example.com',
+      readConnection: brand.analyticsUrl,
+    });
+    expect(result.envLine).toMatch(/^OWNER_LINK_PUBLIC_KEY=[A-Za-z0-9+/=]+$/);
+    const [row] = await motherSql()<{ count: number }[]>`
+      select count(*)::int as count from mother.audit_log
+      where entity_id = ${result.id} and action in ('brand.added', 'brand.owner_link_key.created')
+    `;
+    expect(row?.count).toBe(2);
+    await expect(
+      registerBrandFromServer(secrets, {
+        slug: 'oura-lifestyle',
+        displayName: 'Wrong Role',
+        adminUrl: 'https://erp.example.com',
+        readConnection: brand.ownerUrl,
+      }),
+    ).rejects.toThrow(/readConnection/);
   });
 
   it('has a break-glass reset on the server, audited', async () => {

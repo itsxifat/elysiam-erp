@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-import { recordAudit } from './audit/audit.js';
+import { brandCreateSchema } from '@elysium/mother-shared';
+
+import { recordAudit, type Actor } from './audit/audit.js';
+import { createBrand, rotateOwnerLinkKey } from './brands/registry.js';
+import type { SecretsKey } from './crypto/secrets.js';
 import { inMother, motherSql } from './db/client.js';
 import { clearSecondFactor, invitePerson } from './people/people.js';
 
@@ -74,4 +78,42 @@ export async function breakGlassTwoFactorReset(email: string): Promise<void> {
       tx,
     );
   });
+}
+
+/** The operator, as the actor of a registry change made on the server (audited). */
+const OPERATOR_ACTOR: Actor = {
+  userId: OPERATOR,
+  email: OPERATOR,
+  name: 'Operator',
+  ipAddress: null,
+  requestId: null,
+};
+
+/**
+ * Register a brand from the server (D-690): the same checks as Brands → Add, and the brand's
+ * owner-link key made at once. The read connection comes in from the caller's environment,
+ * never the command line, so a brand's database password is never typed into a chat or a
+ * console, nor seen in a process list. Returns the line to paste into the brand's
+ * `.env.brand` (a public key only).
+ */
+export async function registerBrandFromServer(
+  secrets: SecretsKey,
+  raw: { slug: string; displayName: string; adminUrl: string; readConnection: string },
+): Promise<{ id: string; envLine: string }> {
+  const parsed = brandCreateSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new CliRefused(
+      parsed.error.issues
+        .map((issue) =>
+          // Never echo the connection back: it carries the password.
+          issue.path[0] === 'readConnection'
+            ? `readConnection: ${issue.message}`
+            : `${issue.path.join('.')}: ${issue.message}`,
+        )
+        .join('; '),
+    );
+  }
+  const brand = await createBrand(secrets, parsed.data, OPERATOR_ACTOR);
+  const key = await rotateOwnerLinkKey(secrets, brand.id, OPERATOR_ACTOR);
+  return { id: brand.id, envLine: key.envLine };
 }

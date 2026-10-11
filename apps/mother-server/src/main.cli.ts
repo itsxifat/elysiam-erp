@@ -2,8 +2,14 @@ import { parseArgs } from 'node:util';
 
 import postgres from 'postgres';
 
-import { breakGlassTwoFactorReset, bootstrapOwner, CliRefused } from './cli.js';
+import {
+  breakGlassTwoFactorReset,
+  bootstrapOwner,
+  CliRefused,
+  registerBrandFromServer,
+} from './cli.js';
 import { motherEnv } from './config/env.js';
+import { secretsKeyFrom } from './crypto/secrets.js';
 import { closeMotherDatabase, configureMotherDatabase } from './db/client.js';
 import { migrateMother } from './db/migrate.js';
 import { applyMotherBootstrap, passwordOf } from './db/roles.js';
@@ -21,7 +27,8 @@ const USAGE = `usage:
   mother db-bootstrap
   mother migrate
   mother bootstrap --email <address> --name "<name>" [--public-url <url>]
-  mother people reset-two-factor --email <address>`;
+  mother people reset-two-factor --email <address>
+  MOTHER_BRAND_READ_URL=<connection> mother brands add --slug <slug> --name "<name>" --admin-url <url>`;
 
 async function dbBootstrap(): Promise<void> {
   const env = motherEnv();
@@ -99,6 +106,34 @@ async function main(argv: readonly string[]): Promise<void> {
       configureMotherDatabase(env.MOTHER_DATABASE_URL);
       await breakGlassTwoFactorReset(values.email ?? '');
       console.log('Two-step sign-in cleared; they set it up again at their next sign-in.');
+      return;
+    }
+    case 'brands': {
+      if (sub !== 'add') throw new CliRefused(USAGE);
+      const { values } = parseArgs({
+        args: rest,
+        options: {
+          slug: { type: 'string' },
+          name: { type: 'string' },
+          'admin-url': { type: 'string' },
+        },
+      });
+      const readConnection = process.env.MOTHER_BRAND_READ_URL ?? '';
+      if (readConnection === '') {
+        throw new CliRefused('Set MOTHER_BRAND_READ_URL to the brand read connection.');
+      }
+      configureMotherDatabase(env.MOTHER_DATABASE_URL);
+      const result = await registerBrandFromServer(
+        secretsKeyFrom(env.MOTHER_SECRETS_KEY, env.MOTHER_SECRETS_KEY_ID),
+        {
+          slug: values.slug ?? '',
+          displayName: values.name ?? '',
+          adminUrl: values['admin-url'] ?? '',
+          readConnection,
+        },
+      );
+      console.log(`Brand added (${result.id}). Paste this line into the brand's .env.brand:`);
+      console.log(`  ${result.envLine}`);
       return;
     }
     case undefined:
