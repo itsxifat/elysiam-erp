@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Tx } from '@elysium/db';
+import type { RequestContext, Tx } from '@elysium/db';
 import { sql, type SQL } from 'drizzle-orm';
 import {
   computePartialDelivery,
@@ -29,6 +29,7 @@ import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
 import * as references from './references.repository.js';
+import { orderReadScopeFor } from './orders.scope.js';
 
 /**
  * Orders' service interface for other modules (invariant 12).
@@ -738,18 +739,31 @@ export interface OrdersApi {
   // --- M42: the inbox's customer panel (D-740 to D-742) --------------------------------------
 
   /**
-   * A buyer as the inbox's customer panel shows them (D-740): the brand-wide counters (the
-   * buyer profile's own rule: what the buyer is to the brand, naming no agent) and their most
-   * recent orders' number, status, channel, COD and date. No address and nothing near a cost.
-   * Opening one of those orders still applies the order's own scope. Undefined for a buyer not
-   * of this brand.
+   * A buyer as the inbox's customer panel shows them (D-740), by the buyer profile's rule: the
+   * brand-wide counters (what the buyer is to the brand, naming no agent's order) and the most
+   * recent orders **the viewer may open** (`read Order`, with the sales queue), each as number,
+   * status, channel, COD and date. No address and nothing near a cost. Undefined for a buyer
+   * not of this brand.
    */
   customerPanel(
     tx: Tx,
     orgId: string,
     customerId: string,
     recentLimit: number,
+    viewer: RequestContext,
   ): Promise<CustomerPanelFacts | undefined>;
+
+  /**
+   * Whether the viewer may open this buyer at all, by `GET /v1/customers/:id`'s rule: everyone
+   * with an org-wide grant; otherwise a buyer with an order in the viewer's `read Order` scope,
+   * or with no orders yet (D-740). The inbox links a typed phone to a buyer only then.
+   */
+  customerReachable(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    viewer: RequestContext,
+  ): Promise<boolean>;
 
   /** The buyer an order is for, and the inbox conversation it was taken from (D-742). */
   inboxOrigin(tx: Tx, orgId: string, orderId: string): Promise<InboxOrderOrigin | undefined>;
@@ -1505,10 +1519,20 @@ export class OrdersApiService implements OrdersApi {
     orgId: string,
     customerId: string,
     recentLimit: number,
+    viewer: RequestContext,
   ): Promise<CustomerPanelFacts | undefined> {
     const row = await repo.customerById(tx, orgId, customerId);
     if (row === undefined) return undefined;
-    const recent = await repo.recentOrdersOfCustomer(tx, orgId, customerId, recentLimit);
+    const recent =
+      recentLimit === 0
+        ? []
+        : await repo.recentOrdersOfCustomer(
+            tx,
+            orgId,
+            customerId,
+            recentLimit,
+            orderReadScopeFor(viewer),
+          );
     return {
       id: row.id,
       name: row.name,
@@ -1528,6 +1552,15 @@ export class OrdersApiService implements OrdersApi {
         createdAt: instant(order.created_at) ?? new Date(0),
       })),
     };
+  }
+
+  async customerReachable(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    viewer: RequestContext,
+  ): Promise<boolean> {
+    return repo.customerReachableIn(tx, orgId, customerId, orderReadScopeFor(viewer));
   }
 
   async inboxOrigin(tx: Tx, orgId: string, orderId: string): Promise<InboxOrderOrigin | undefined> {

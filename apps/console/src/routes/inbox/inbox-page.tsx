@@ -464,6 +464,7 @@ function Thread({ view, me }: { readonly view: ThreadView; readonly me: string |
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const mayWrite = ability.can('update', 'Conversation');
+  const mayReassign = ability.can('update', 'ConversationAssignment');
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: 'end' });
@@ -553,14 +554,17 @@ function Thread({ view, me }: { readonly view: ThreadView; readonly me: string |
                 >
                   {t('inbox.thread.release')}
                 </Button>
-              ) : (
+              ) : owner === null || mayReassign ? (
+                // Taking over a colleague's conversation is a supervisor's (D-737).
                 <Button size="sm" onClick={() => run((ack) => act(conversation.id, 'take', ack))}>
                   {t('inbox.thread.take')}
                 </Button>
-              )}
-              <HandOverMenu
-                onPick={(userId) => run((ack) => handOver(conversation.id, userId, ack))}
-              />
+              ) : null}
+              {owner === null || owner.userId === me || mayReassign ? (
+                <HandOverMenu
+                  onPick={(userId) => run((ack) => handOver(conversation.id, userId, ack))}
+                />
+              ) : null}
               {conversation.status === 'open' ? (
                 <Button
                   size="sm"

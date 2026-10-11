@@ -101,6 +101,7 @@ export class ContactPanelService {
                 context.orgId,
                 contact.customer_id,
                 RECENT_ORDERS,
+                context,
               );
         // Shown in step with the orders (D-738). The order listener writes it when an order is
         // placed; this only covers an order it has not heard of yet, and writes nothing.
@@ -244,9 +245,23 @@ export class ContactPanelService {
         );
         const contact = await repo.contactById(tx, context.orgId, row.contact_id);
         if (contact === undefined) throw new InboxError('INBOX_NOT_FOUND', 'No such contact.');
-        // The brand's buyer with this number, if there is one (D-739); otherwise the desk
-        // creates them with the first order.
-        const customerId = (await this.orders.buyerIdByPhone(tx, context.orgId, phone)) ?? null;
+        /*
+         * The brand's buyer with this number is linked (D-739, D-740) when the customer gave the
+         * number in this chat (an inbound message, or their WhatsApp id), or when the agent may
+         * open that buyer anyway. A number typed from elsewhere for a buyer outside the agent's
+         * reach is saved without the link: the panel is not a phone-to-buyer lookup. Otherwise
+         * the desk creates the buyer with the first order, and the order links them.
+         */
+        const buyer = (await this.orders.buyerIdByPhone(tx, context.orgId, phone)) ?? null;
+        const fromChat = phonesAcrossMessages(
+          await repo.recentInboundTexts(tx, context.orgId, conversationId, PHONE_SCAN_MESSAGES),
+          row.channel_kind === 'whatsapp' ? [`+${row.external_user_id}`] : [],
+        ).includes(phone);
+        const customerId =
+          buyer !== null &&
+          (fromChat || (await this.orders.customerReachable(tx, context.orgId, buyer, context)))
+            ? buyer
+            : null;
         await repo.setContactPhone(tx, context.orgId, contact.id, phone, customerId);
         await this.conversations.recordWrite(tx, context, request, {
           action: 'contact.phone',
@@ -325,7 +340,7 @@ export class ContactPanelService {
         const customer =
           contact.customer_id === null
             ? undefined
-            : await this.orders.customerPanel(tx, context.orgId, contact.customer_id, 0);
+            : await this.orders.customerPanel(tx, context.orgId, contact.customer_id, 0, context);
         const change = chooseStage(input.stage, {
           hasOrdered: customer !== undefined && customer.orders > 0,
         });

@@ -328,7 +328,11 @@ export async function insertMessage(
             ${JSON.stringify(message.attachments)}::jsonb, ${message.providerMessageId},
             ${message.status}, ${message.sentBy}, ${message.occurredAt.toISOString()}::timestamptz,
             ${message.sentAt === undefined || message.sentAt === null ? null : message.sentAt.toISOString()}::timestamptz)
-    on conflict do nothing
+    ${
+      message.id === undefined
+        ? sql`on conflict (org_id, provider_message_id) where provider_message_id is not null do nothing`
+        : sql`on conflict (id) do nothing`
+    }
     returning id
   `);
   return rows[0]?.id;

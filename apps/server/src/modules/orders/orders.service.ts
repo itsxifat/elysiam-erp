@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { defineAbilityFor } from '@elysium/contracts';
 import { withOrg, type Tx } from '@elysium/db';
 import {
   applicableAdvance,
@@ -729,6 +730,21 @@ export class OrdersService {
         );
       }
       await this.assertShippableLocation(tx, context, holdAt);
+    }
+
+    /*
+     * M42 (D-742): an order names the inbox conversation it came from only when its taker can
+     * read the inbox. The inbox links that conversation's contact to this buyer when it hears
+     * the order, so the field is not for a role that has no inbox (a branch manager, a reseller).
+     */
+    if (
+      input.source?.inboxConversationId !== undefined &&
+      !defineAbilityFor(context).can('read', 'Conversation')
+    ) {
+      throw new OrdersError(
+        'VALIDATION_FAILED',
+        'source.inboxConversationId: only someone who answers the inbox names a conversation.',
+      );
     }
 
     const orderNo = await this.nextOrderNo(tx, context, at);

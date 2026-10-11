@@ -1,6 +1,8 @@
+import { scopeFilterFor } from '@elysium/contracts';
+import type { RequestContext } from '@elysium/db';
 import { sql, type SQL } from 'drizzle-orm';
 
-import { scopeWhere } from '../../platform/auth/scope.js';
+import { filterWhere, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 
 /**
@@ -23,3 +25,20 @@ export function orderScopeSql(context: ActiveContext, request: object): SQL {
   });
   return context.roles.includes('sales') ? sql`(${base} or o.assigned_to is null)` : base;
 }
+
+/**
+ * The same scope for a caller whose route declared another subject (M42, D-740): `read Order`
+ * computed from the caller's own context, with the sales queue added the way `orderScopeSql`
+ * adds it. The inbox's customer panel lists a buyer's orders through this, as the buyer profile
+ * lists them through `orderScopeSql`.
+ */
+export function orderReadScopeFor(context: RequestContext): SQL {
+  const base = filterWhere(scopeFilterFor(context, 'read', 'Order'), COLUMNS, 'Order');
+  return context.roles.includes('sales') ? sql`(${base} or o.assigned_to is null)` : base;
+}
+
+const COLUMNS = {
+  createdBy: sql`o.created_by`,
+  assignedTo: sql`o.assigned_to`,
+  branchId: sql`o.branch_id`,
+};

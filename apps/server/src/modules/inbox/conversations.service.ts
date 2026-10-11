@@ -260,6 +260,20 @@ export class ConversationsService {
     }
   }
 
+  /**
+   * Who a conversation belongs to changes only by its owner, or by a supervisor (D-737): taking
+   * over, releasing or handing over someone else's needs `update ConversationAssignment` as well
+   * as the acknowledgement. Covering a colleague's thread (a reply, a note) needs only the latter.
+   */
+  private assertMayReassign(context: ActiveContext, ownership: Ownership): void {
+    if (ownership.kind !== 'acknowledged') return;
+    if (defineAbilityFor(context).can('update', 'ConversationAssignment')) return;
+    throw new InboxError(
+      'INBOX_HANDOVER_NOT_ALLOWED',
+      'Only whoever has this conversation, or a supervisor, gives it to someone else.',
+    );
+  }
+
   private async changed(
     tx: Tx,
     orgId: string,
@@ -286,6 +300,7 @@ export class ConversationsService {
     return mapInboxErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const { row, ownership } = await this.lockForWrite(tx, context, id, acknowledged);
+        this.assertMayReassign(context, ownership);
         if (ownership.kind !== 'owner') {
           if (ownership.kind === 'unassigned') {
             await repo.takeIfUnassigned(tx, context.orgId, id, context.userId);
@@ -315,6 +330,7 @@ export class ConversationsService {
     return mapInboxErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const { row, ownership } = await this.lockForWrite(tx, context, id, acknowledged);
+        this.assertMayReassign(context, ownership);
         if (row.assigned_to !== null) {
           await repo.setAssignee(tx, context.orgId, id, null);
           await this.changed(tx, context.orgId, id, null, row.assigned_to, row.status);
@@ -345,16 +361,8 @@ export class ConversationsService {
   ) {
     return mapInboxErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const row = await repo.conversationById(tx, context.orgId, id, { lock: true });
-        if (row === undefined) throw notFound();
-        const someoneElses = row.assigned_to !== null && row.assigned_to !== context.userId;
-        if (someoneElses && !defineAbilityFor(context).can('update', 'ConversationAssignment')) {
-          throw new InboxError(
-            'INBOX_HANDOVER_NOT_ALLOWED',
-            'Only whoever has this conversation, or a supervisor, hands it to someone else.',
-          );
-        }
-        const { ownership } = await this.lockForWrite(tx, context, id, acknowledged);
+        const { row, ownership } = await this.lockForWrite(tx, context, id, acknowledged);
+        this.assertMayReassign(context, ownership);
         const team = await this.iam.activeMembers(tx, context.orgId, { roles: INBOX_ROLES });
         if (!team.some((member) => member.userId === input.userId)) {
           throw new InboxError(

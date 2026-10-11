@@ -721,6 +721,17 @@ describe('ownership (D-737): take, hand over, and acknowledging the owner', () =
     ]);
 
     // Handing someone else's conversation over is a supervisor's; org_admin may, acknowledging.
+    // Covering is not taking over: someone else's conversation changes hands only by its owner or
+    // a supervisor (M42 ledger audit W2), acknowledgement or not.
+    for (const action of ['take', 'release'] as const) {
+      const refused = await salesB.client.request(
+        'POST',
+        `/v1/inbox/conversations/${id}/${action}`,
+        { headers: { 'x-acknowledge-owner': '1' } },
+      );
+      expect(refused.statusCode, `${action}: ${refused.body}`).toBe(403);
+      expect(json<{ code: string }>(refused).code).toBe('INBOX_HANDOVER_NOT_ALLOWED');
+    }
     const handOverBySales = await salesB.client.request(
       'POST',
       `/v1/inbox/conversations/${id}/hand-over`,
@@ -912,6 +923,36 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
     };
     await harness.app.get(InboxOrderListener).onOrderCreated(delivered);
     await harness.app.get(InboxOrderListener).onOrderCreated(delivered);
+    const ordered = await withSystem(
+      async (tx) =>
+        tx.execute<{ action: string; actor_user_id: string }>(sql`
+          select action, actor_user_id from audit.audit_log
+          where action = 'inbox.contact.ordered' and after ->> 'orderId' = ${orderId}
+        `),
+      { orgId: ORG_A },
+    );
+    // Audited once, as the inbox's own actor: the redelivery found nothing to change.
+    expect([...ordered]).toEqual([
+      { action: 'inbox.contact.ordered', actor_user_id: 'system:inbox' },
+    ]);
+
+    // Only someone who answers the inbox names a conversation on an order (W3).
+    const manager = await harness.asRole('branch_manager', ORG_A);
+    const foreign = await manager.client.request('POST', '/v1/orders', {
+      body: {
+        channel: 'phone',
+        source: { inboxConversationId: id },
+        customer: { phone: '01999000444', name: 'Someone' },
+        shipTo: {
+          districtId: area?.district_id ?? 1,
+          thanaId: area?.thana_id ?? 1,
+          addressLine: 'House 9, Road 9',
+        },
+        lines: [{ skuId, qty: 1 }],
+      },
+    });
+    expect(foreign.statusCode, foreign.body).toBe(400);
+    expect(foreign.body).toContain('inboxConversationId');
 
     const panel = json<{
       contact: { stage: string };
@@ -946,6 +987,66 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
       await salesB.client.request('GET', '/v1/inbox/phone-flags?phone=01999999999'),
     );
     expect(clean.fraud).toBe(false);
+  });
+
+  it('links a typed number only for a buyer the agent may open; the panel lists only orders they may open (W1)', async () => {
+    const elsewhere = await seedCustomer(ORG_A, { phoneE164: '+8801733333333', name: 'Shirin' });
+    await seedOrder(ORG_A, {
+      status: 'pending',
+      customerId: elsewhere,
+      createdBy: salesB.userId,
+      assignedTo: salesB.userId,
+      lines: [{ skuId, skuCode, productName: 'Kurti', qty: 1, unitPricePoisha: 99_000n }],
+    });
+    await withSystem(
+      (tx) => tx.execute(sql`update sales.customers set orders_total = 1 where id = ${elsewhere}`),
+      { orgId: ORG_A },
+    );
+
+    // Typed from elsewhere: saved, not linked, for an agent who cannot open that buyer.
+    const typed = '6578123456755555';
+    await deliverAndThread(
+      messengerText({ pageId: PAGE, psid: typed, mid: `m_${randomUUID()}`, text: 'hi' }),
+    );
+    const typedId = await conversationFor(typed);
+    const saved = json<{ customerId: string | null }>(
+      await salesA.client.request('PUT', `/v1/inbox/conversations/${typedId}/contact/phone`, {
+        body: { phone: '01733333333' },
+      }),
+    );
+    expect(saved.customerId).toBeNull();
+    expect(
+      json<{ customer: unknown }>(
+        await salesA.client.request('GET', `/v1/inbox/conversations/${typedId}/panel`),
+      ).customer,
+    ).toBeNull();
+
+    // Given in the chat by the customer: linked; the counters are the brand's, the list the agent's.
+    const given = '6578123456766666';
+    await deliverAndThread(
+      messengerText({
+        pageId: PAGE,
+        psid: given,
+        mid: `m_${randomUUID()}`,
+        text: 'number 01733333333',
+      }),
+    );
+    const givenId = await conversationFor(given);
+    const linked = json<{ customerId: string | null }>(
+      await salesA.client.request('PUT', `/v1/inbox/conversations/${givenId}/contact/phone`, {
+        body: { phone: '01733333333' },
+      }),
+    );
+    expect(linked.customerId).toBe(elsewhere);
+    const asSales = json<{ customer: { orders: number; recentOrders: unknown[] } }>(
+      await salesA.client.request('GET', `/v1/inbox/conversations/${givenId}/panel`),
+    );
+    expect(asSales.customer.orders).toBe(1);
+    expect(asSales.customer.recentOrders).toEqual([]);
+    const asAdmin = json<{ customer: { recentOrders: unknown[] } }>(
+      await admin.client.request('GET', `/v1/inbox/conversations/${givenId}/panel`),
+    );
+    expect(asAdmin.customer.recentOrders).toHaveLength(1);
   });
 });
 

@@ -1,11 +1,6 @@
 import type { InboxChannelKind } from '@elysium/domain/inbox';
 
-import {
-  open,
-  seal,
-  SealedBoxUnavailable,
-  type SealBinding,
-} from '../../platform/crypto/sealed-box.js';
+import { open, seal, type SealBinding } from '../../platform/crypto/sealed-box.js';
 import type { SealedValue } from './inbox.repository.js';
 
 /**
@@ -33,13 +28,16 @@ export function sealSecret(plaintext: string, binding: SealBinding): SealedValue
   return { ciphertext: sealed.ciphertext, keyId: sealed.keyId, fingerprint: sealed.fingerprint };
 }
 
-/** The plaintext, or null when it is not stored or this installation cannot open it. */
+/**
+ * The plaintext, or null when it is not stored or cannot be opened (no key, another key, a
+ * tampered row): every caller treats that as "not set", and the public webhook answers it with
+ * its one refusal rather than a 500 (M42 ledger audit).
+ */
 export function openSecret(sealed: Buffer | null, binding: SealBinding): string | null {
   if (sealed === null) return null;
   try {
     return open(sealed, binding);
-  } catch (error) {
-    if (error instanceof SealedBoxUnavailable) return null;
-    throw error;
+  } catch {
+    return null;
   }
 }

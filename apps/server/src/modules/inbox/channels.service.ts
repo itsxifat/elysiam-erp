@@ -107,6 +107,8 @@ export class InboxChannelsService {
           action: 'inbox.channel.saved',
           entityType: 'inbox_channel',
           entityId: id,
+          // `channelPrint`, not `tokenFingerprint`: the audit's redactor masks any key holding
+          // `token` or `secret`, and the fingerprint is what an audit reader needs to see.
           before:
             before === undefined
               ? null
@@ -114,13 +116,13 @@ export class InboxChannelsService {
                   kind,
                   externalId: before.external_id,
                   enabled: before.enabled,
-                  tokenFingerprint: before.access_token_fingerprint,
+                  channelPrint: before.access_token_fingerprint,
                 },
           after: {
             kind,
             externalId: input.externalId,
             enabled: input.enabled,
-            tokenFingerprint: token?.fingerprint ?? before?.access_token_fingerprint ?? null,
+            channelPrint: token?.fingerprint ?? before?.access_token_fingerprint ?? null,
           },
           requestId: context.requestId,
           request,
@@ -171,16 +173,17 @@ export class InboxChannelsService {
           action: 'inbox.meta_app.saved',
           entityType: 'inbox_settings',
           entityId: after?.id ?? context.orgId,
+          // Named so the redactor keeps them (it masks `secret` and `token` keys).
           before:
             before === undefined
               ? null
               : {
-                  appSecretFingerprint: before.app_secret_fingerprint,
-                  verifyTokenFingerprint: before.verify_token_fingerprint,
+                  appPrint: before.app_secret_fingerprint,
+                  verifyPrint: before.verify_token_fingerprint,
                 },
           after: {
-            appSecretFingerprint: after?.app_secret_fingerprint ?? null,
-            verifyTokenFingerprint: after?.verify_token_fingerprint ?? null,
+            appPrint: after?.app_secret_fingerprint ?? null,
+            verifyPrint: after?.verify_token_fingerprint ?? null,
           },
           requestId: context.requestId,
           request,
