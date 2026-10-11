@@ -17,6 +17,7 @@ import {
 import {
   APP_DOMAIN,
   ORG_A,
+  createBranch,
   ORG_B,
   ORIGIN,
   startHttpHarness,
@@ -27,7 +28,13 @@ import {
 import { makeLocation, seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
 import { OFFER_QUEUE_DEFINITIONS } from './offers.queues.js';
 import { OffersService } from './offers.service.js';
-import { applyOrderMigrations, ownRiderCourier, seedStockLevel } from './orders.testing.js';
+import {
+  applyOrderMigrations,
+  ownRiderCourier,
+  seedCustomer,
+  seedOrder,
+  seedStockLevel,
+} from './orders.testing.js';
 
 /**
  * M41's order workflow over HTTP, against real PostgreSQL (acceptance checks 1 to 5).
@@ -68,6 +75,8 @@ let location = '';
 let hub = '';
 let courierId = '';
 let skuId = '';
+let skuCode = '';
+let buyer = '';
 
 const open: ClientSocket[] = [];
 
@@ -88,6 +97,8 @@ beforeAll(async () => {
   hub = await makeLocation(ORG_A, { code: 'HUB2', name: 'Savar hub', kind: 'warehouse' });
   const { skus } = await seedProductWithSkus(ORG_A, 'workflowe2e', 1);
   skuId = skus[0]?.id ?? '';
+  skuCode = skus[0]?.code ?? '';
+  buyer = await seedCustomer(ORG_A, { phoneE164: '+8801711555123', name: 'Seeded Buyer' });
   for (const at of [location, hub]) {
     await seedStockLevel(ORG_A, { skuId, locationId: at, qty: 500, unitCostPoisha: 40_000n });
   }
@@ -200,6 +211,28 @@ interface OrderBody {
   };
   readonly hubStage: string | null;
   readonly itemCount?: number;
+}
+
+/** An order written straight at a status (no transitions), for the gate's later steps. */
+async function seeded(status: string, assignedTo: string, createdBy: string): Promise<string> {
+  const { id } = await seedOrder(ORG_A, {
+    status,
+    customerId: buyer,
+    locationId: location,
+    lines: [
+      {
+        skuId,
+        skuCode,
+        productName: 'Workflow product',
+        qty: 1,
+        unitPricePoisha: 150_000n,
+        ...(status === 'delivered' ? { dispatchUnitCostPoisha: 40_000n, deliveredQty: 1 } : {}),
+      },
+    ],
+    assignedTo,
+    createdBy,
+  });
+  return id;
 }
 
 async function detail(id: string, actor: RoleClient = admin): Promise<OrderBody> {
@@ -349,8 +382,12 @@ describe('check 2: a non-owner must acknowledge the owner, at every desk step', 
   }, 120_000);
 
   it('guards every desk act the same way, and leaves the hub’s moves alone', async () => {
-    // Karim took the order for Rahim, so Karim can see it and is the non-owner here.
-    const order = await take(karim, { assignedTo: rahim.userId });
+    // Karim enters the order and Rahim takes it: Karim still sees it (he created it) and is the
+    // non-owner here.
+    const order = await take(karim);
+    expect((await rahim.client.request('POST', `/v1/orders/${order.id}/claim`)).statusCode).toBe(
+      201,
+    );
     const acts: [string, string, unknown][] = [
       ['PATCH', `/v1/orders/${order.id}`, { notes: 'Call after 6 pm' }],
       ['POST', `/v1/orders/${order.id}/calls`, { outcome: 'no_answer' }],
@@ -368,6 +405,29 @@ describe('check 2: a non-owner must acknowledge the owner, at every desk step', 
     for (const [method, url, payload] of acts) {
       const response = await karim.client.request(method, url, { body: payload });
       expect(response.statusCode, `${method} ${url}: ${response.body}`).toBe(409);
+      expect(codeOf(response)).toBe('ORDER_HANDLED_BY_OTHER');
+    }
+    // Cancel, release from hold and exchange, at the statuses they start from.
+    const held = await seeded('on_hold', rahim.userId, karim.userId);
+    const delivered = await seeded('delivered', rahim.userId, karim.userId);
+    const later: [string, unknown][] = [
+      [`/v1/orders/${order.id}/cancel`, { reason: 'Buyer changed their mind' }],
+      [`/v1/orders/${held}/release-hold`, undefined],
+      [
+        `/v1/orders/${delivered}/exchange`,
+        {
+          reason: 'Wrong size',
+          returnReason: 'customer_refused',
+          returnLines: [{ skuId, qty: 1 }],
+          lines: [{ skuId, qty: 1 }],
+        },
+      ],
+    ];
+    for (const [url, payload] of later) {
+      const response = await karim.client.request('POST', url, {
+        ...(payload === undefined ? {} : { body: payload }),
+      });
+      expect(response.statusCode, `POST ${url}: ${response.body}`).toBe(409);
       expect(codeOf(response)).toBe('ORDER_HANDLED_BY_OTHER');
     }
     // The owner needs no acknowledgement for their own order.
@@ -400,6 +460,50 @@ describe('check 2: a non-owner must acknowledge the owner, at every desk step', 
     // The hub packs Rahim's confirmed order without acknowledging anybody (D-710).
     const packed = await warehouse.client.request('POST', `/v1/orders/${order.id}/pack`);
     expect(packed.statusCode, packed.body).toBe(201);
+  }, 120_000);
+
+  it('keeps creating an order for somebody else to a supervisor, and to people who can hold it', async () => {
+    // A sales agent may not enter an order already owned by a colleague (D-712).
+    const pushed = await karim.client.request('POST', '/v1/orders', {
+      body: {
+        channel: 'facebook',
+        customer: {
+          phone: freshPhone(),
+          name: 'Pushed Buyer',
+          address: { districtId: 47, thanaId: 365, addressLine: 'House 1' },
+        },
+        locationId: location,
+        lines: [{ skuId, qty: 1 }],
+        assignedTo: rahim.userId,
+      },
+    });
+    expect(pushed.statusCode).toBe(403);
+    expect(codeOf(pushed)).toBe('ORDER_ASSIGN_NOT_ALLOWED');
+
+    // Nor may anybody hand a desk order (no branch) to a branch manager kept to one branch,
+    // who could never open it again.
+    const branch = await createBranch(ORG_A, `WF${String(Date.now()).slice(-6)}`);
+    const manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [branch] });
+    const order = await take(admin);
+    const stranded = await admin.client.request('POST', `/v1/orders/${order.id}/assign`, {
+      body: { assignedTo: manager.userId },
+    });
+    expect(stranded.statusCode).toBe(400);
+    expect(codeOf(stranded)).toBe('ORDER_ASSIGNEE_INVALID');
+
+    // A finished order has nothing left to take.
+    const done = await seeded('delivered', admin.userId, admin.userId);
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          update sales.orders set assigned_to = null, assigned_at = null
+          where org_id = ${ORG_A} and id = ${done}
+        `),
+      { orgId: ORG_A },
+    );
+    const late = await rahim.client.request('POST', `/v1/orders/${done}/claim`);
+    expect(late.statusCode).toBe(403);
+    expect(codeOf(late)).toBe('ORDER_ASSIGN_NOT_ALLOWED');
   }, 120_000);
 
   it('lets the owner release or hand over, a supervisor reassign, and nobody else', async () => {
@@ -625,6 +729,64 @@ describe('check 3: auto-assign', () => {
     );
     expect(theirs.people.some((person) => person.userId === busy.userId)).toBe(false);
   }, 60_000);
+
+  it('lapses offers and sweeps at once without the dispatchers waiting on each other', async () => {
+    const on = await admin.client.request('PUT', '/v1/orders/workflow-settings', {
+      body: { autoAssign: true, offerSeconds: 15, maxOpen: 25 },
+    });
+    expect(on.statusCode, on.body).toBe(200);
+    const one = await harness.asRole('sales', ORG_A);
+    const two = await harness.asRole('sales', ORG_A);
+    await beat(one, { visible: true, idleSeconds: 0 });
+    await beat(two, { visible: true, idleSeconds: 0 });
+    const first = await take(admin);
+    const second = await take(admin);
+    // Each walked away from an offer that ran out a moment ago.
+    const lapsed = await withSystem(
+      async (tx) => {
+        const rows = await tx.execute<{ id: string }>(sql`
+          insert into sales.order_offers (org_id, order_id, user_id, offered_at, expires_at)
+          values
+            (${ORG_A}, ${first.id}, ${one.userId}, now() - interval '1 minute',
+             now() - interval '1 second'),
+            (${ORG_A}, ${second.id}, ${two.userId}, now() - interval '1 minute',
+             now() - interval '1 second')
+          returning id
+        `);
+        return [...rows].map((row) => row.id);
+      },
+      { orgId: ORG_A },
+    );
+    const results = await Promise.allSettled([
+      offers.expire(ORG_A, lapsed[0] ?? ''),
+      offers.expire(ORG_A, lapsed[1] ?? ''),
+      offers.sweep(),
+      offers.dispatch(ORG_A, first.id),
+      offers.dispatch(ORG_A, second.id),
+    ]);
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([]);
+    const statuses = await withSystem(
+      async (tx) => {
+        const rows = await tx.execute<{ status: string }>(sql`
+          select status from sales.order_offers
+          where org_id = ${ORG_A} and id in (${lapsed[0] ?? ''}::uuid, ${lapsed[1] ?? ''}::uuid)
+        `);
+        return [...rows].map((row) => row.status);
+      },
+      { orgId: ORG_A },
+    );
+    expect(statuses).toEqual(['expired', 'expired']);
+    // Never two live offers for one person.
+    const doubled = await withSystem(
+      async (tx) =>
+        tx.execute<{ user_id: string }>(sql`
+          select user_id from sales.order_offers
+          where org_id = ${ORG_A} and status = 'offered' group by user_id having count(*) > 1
+        `),
+      { orgId: ORG_A },
+    );
+    expect([...doubled]).toEqual([]);
+  }, 90_000);
 
   it('switching auto-assign off withdraws every live offer', async () => {
     const order = await take(admin);

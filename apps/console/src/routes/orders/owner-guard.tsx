@@ -135,7 +135,9 @@ export function OwnershipBanner({
     },
     onError: (error) => {
       setProblem(error instanceof ApiError ? error.message : t('wf.failed'));
-      refresh();
+      // Somebody took it first (D-711): keep this page and say who, rather than reloading an
+      // order that may now be outside the caller's reach.
+      if (!(error instanceof ApiError && error.code === 'ORDER_ALREADY_CLAIMED')) refresh();
     },
   });
   const release = useMutation({

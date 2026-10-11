@@ -3,7 +3,10 @@ import { deskProfileSchema, presenceBeatSchema, presencePauseSchema } from '@ely
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import { ALREADY_AUDITED, type AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import {
+  auditNothingChanged,
+  type AuditableRequest,
+} from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { TeamService } from './team.service.js';
@@ -52,7 +55,12 @@ export class TeamController {
   async beat(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(presenceBeatSchema, body);
     const outcome = await this.team.beat(requireContext(request), auditable(request), input);
-    if (!outcome.changed) auditable(request)[ALREADY_AUDITED] = true;
+    if (!outcome.changed) {
+      auditNothingChanged(
+        auditable(request),
+        'a presence beat that moved only the last-seen instant',
+      );
+    }
     return outcome.view;
   }
 

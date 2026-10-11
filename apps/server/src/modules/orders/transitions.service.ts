@@ -30,6 +30,7 @@ import { CustomersService } from './customers.service.js';
 import * as repo from './orders.repository.js';
 import { OrdersError } from './orders.errors.js';
 import { AdvancesService } from './advances.service.js';
+import { OffersService } from './offers.service.js';
 import * as advancesRepo from './advances.repository.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { DeliveryObserverRegistry } from './ports/delivery-observer.port.js';
@@ -174,6 +175,7 @@ export class TransitionsService {
     private readonly courier: CourierBookingRegistry,
     private readonly deliveries: DeliveryObserverRegistry,
     private readonly advances: AdvancesService,
+    private readonly offers: OffersService,
   ) {}
 
   /**
@@ -307,6 +309,10 @@ export class TransitionsService {
         at,
       });
     }
+
+    // M41 (D-717): an order that left New is offered to nobody any more, whichever path moved
+    // it (the desk, a website payment, the marketplace, a courier), so no card outlives it.
+    if (order.status === 'pending') await this.offers.withdrawFor(tx, context.orgId, order.id);
 
     const after = await repo.orderById(tx, context.orgId, order.id);
     return { result, order: after ?? order, journalId: posted.journalId };

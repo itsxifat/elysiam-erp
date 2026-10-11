@@ -1,5 +1,6 @@
 import { api } from '../../api.js';
-import { ackHeaders, type OrderRow, type OrderStatus } from './api.js';
+import type { OrderRow, OrderStatus } from './api.js';
+import { ackHeaders } from './owner-ack.js';
 
 /**
  * The order workflow's endpoints (M41, D-710 to D-720), typed to what the server returns.

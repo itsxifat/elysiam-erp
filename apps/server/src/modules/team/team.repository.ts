@@ -143,6 +143,15 @@ export async function saveDeskProfile(
   `);
 }
 
+/** How many people's desk profiles name this stock location as their hub (D-621's checkers). */
+export async function hubProfilesAt(tx: Tx, orgId: string, locationId: string): Promise<number> {
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from team.desk_profiles
+    where org_id = ${orgId} and hub_location_id = ${locationId}::uuid
+  `);
+  return rows[0]?.n ?? 0;
+}
+
 /**
  * Is this an active stock location of the brand that orders can ship from (a warehouse or a
  * showroom)? `org` is global (§5), so this is no other module's table.

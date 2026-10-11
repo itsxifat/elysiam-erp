@@ -5,6 +5,7 @@ import {
   CALL_BACK_MAX_DAYS,
   assignmentDecision,
   callAttemptProblem,
+  canHoldOrder,
   hubStageOf,
   isSupervisor,
   ownershipVerdict,
@@ -136,5 +137,18 @@ describe('hubStageOf', () => {
     expect(hubStageOf({ status: 'packed', slipPrintedAt: null })).toBe('packed');
     expect(hubStageOf({ status: 'shipped', slipPrintedAt: null })).toBe('handed_over');
     expect(hubStageOf({ status: 'cancelled', slipPrintedAt: null })).toBeNull();
+  });
+});
+
+describe('canHoldOrder', () => {
+  it('lets the desk roles hold any order and a branch manager only their branches’', () => {
+    expect(canHoldOrder([{ role: 'sales', branchIds: [] }], null)).toBe(true);
+    expect(canHoldOrder([{ role: 'warehouse', branchIds: ['b1'] }], null)).toBe(true);
+    expect(canHoldOrder([{ role: 'branch_manager', branchIds: ['b1'] }], null)).toBe(false);
+    expect(canHoldOrder([{ role: 'branch_manager', branchIds: ['b1'] }], 'b1')).toBe(true);
+    expect(canHoldOrder([{ role: 'branch_manager', branchIds: ['b1'] }], 'b2')).toBe(false);
+    expect(canHoldOrder([{ role: 'branch_manager', branchIds: [] }], 'b2')).toBe(true);
+    expect(canHoldOrder([{ role: 'accounts', branchIds: [] }], null)).toBe(false);
+    expect(canHoldOrder([], null)).toBe(false);
   });
 });

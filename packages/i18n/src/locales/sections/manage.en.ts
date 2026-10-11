@@ -76,6 +76,7 @@ const en = {
   'mg.reason.campaign_links': 'Website campaign links',
   'mg.reason.marketplace_holds': 'Stock held by ncom.bd',
   'mg.reason.packing_scans': 'Packing scans',
+  'mg.reason.desk_profiles': 'Staff whose hub it is',
   'mg.reason.leads': 'Leads',
   'mg.reason.campaigns': 'Ad campaigns',
   'mg.reason.ad_spend': 'Ad spend entries',

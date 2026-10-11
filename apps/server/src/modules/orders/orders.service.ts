@@ -4,6 +4,8 @@ import { withOrg, type Tx } from '@elysium/db';
 import {
   assignmentDecision,
   CALLABLE_STATUSES,
+  canHoldOrder,
+  TAKEABLE_STATUSES,
   callAttemptProblem,
   hubStageOf,
   isSupervisor,
@@ -631,6 +633,19 @@ export class OrdersService {
          * — the guard only knows they may create *some* order.
          */
         this.assertCreatable(request, context, input.branchId ?? null, input.assignedTo ?? null);
+        /*
+         * M41 (D-712): an order created for somebody else is a supervisor's routing, as on the
+         * assign route, and the person named must be able to hold it.
+         */
+        if (input.assignedTo !== undefined && input.assignedTo !== context.userId) {
+          if (!isSupervisor(context.roles, context.isSuperAdmin)) {
+            throw new OrdersError(
+              'ORDER_ASSIGN_NOT_ALLOWED',
+              'Only a supervisor can take an order for somebody else. Leave it in New, or take it yourself.',
+            );
+          }
+          await this.assertAssignable(tx, context, input.assignedTo, input.branchId ?? null);
+        }
         if (input.customerId !== undefined) {
           /*
            * A named buyer has to be one this caller may already see.
@@ -1220,8 +1235,6 @@ export class OrdersService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const order = await this.lockForAct(tx, context, request, id, 'confirm');
         const moved = await this.transitions.move(tx, context, request, order, 'confirm', {});
-        // It left New: nobody should still be holding a card for it (D-717).
-        await this.offers.withdrawFor(tx, context.orgId, order.id);
         return toOrderView(moved.order);
       }),
     );
@@ -1267,7 +1280,6 @@ export class OrdersService {
           ...options,
           occurredAt,
         });
-        if (trigger === 'cancel') await this.offers.withdrawFor(tx, context.orgId, order.id);
         return toOrderView(moved.order);
       }),
     );
@@ -1327,6 +1339,15 @@ export class OrdersService {
         const order = await repo.lockOrderInScope(tx, context.orgId, id, reach);
         if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
         if (order.assigned_to === context.userId) return toOrderView(order);
+        if (
+          order.assigned_to === null &&
+          !TAKEABLE_STATUSES.includes(order.status as OrderStatus)
+        ) {
+          throw new OrdersError(
+            'ORDER_ASSIGN_NOT_ALLOWED',
+            `Order ${order.order_no} is ${order.status}: there is nothing left to handle at the desk.`,
+          );
+        }
         if (order.assigned_to !== null) {
           const name = await this.gate.nameOf(tx, context.orgId, order.assigned_to);
           throw new OrdersError(
@@ -1395,7 +1416,7 @@ export class OrdersService {
         }
         if (decision.change === 'unchanged') return toOrderView(order);
         if (target !== null && target !== context.userId) {
-          await this.assertAssignable(tx, context, target);
+          await this.assertAssignable(tx, context, target, order.branch_id);
         }
 
         await repo.assignOrder(tx, {
@@ -1445,13 +1466,25 @@ export class OrdersService {
     );
   }
 
-  /** The person named holds a role that works orders in this brand (D-712). */
-  private async assertAssignable(tx: Tx, context: ActiveContext, userId: string): Promise<void> {
+  /**
+   * The person named holds a role that works orders in this brand and would still reach this
+   * order once it is theirs (`canHoldOrder`, D-712): a branch manager limited to other branches
+   * would be an owner nobody can reach.
+   */
+  private async assertAssignable(
+    tx: Tx,
+    context: ActiveContext,
+    userId: string,
+    branchId: string | null,
+  ): Promise<void> {
     const members = await this.iam.activeMembers(tx, context.orgId, { roles: ORDER_HOLDING_ROLES });
-    if (!members.some((member) => member.userId === userId)) {
+    const scopes = members.some((member) => member.userId === userId)
+      ? await this.iam.roleScopes(tx, context.orgId, userId)
+      : [];
+    if (!canHoldOrder(scopes, branchId)) {
       throw new OrdersError(
         'ORDER_ASSIGNEE_INVALID',
-        'That person cannot hold orders in this brand.',
+        'That person cannot hold this order: they do not work orders here, or not this branch’s.',
       );
     }
   }
@@ -1505,12 +1538,6 @@ export class OrdersService {
           },
           request,
         });
-        await emit(
-          tx,
-          'order.edited',
-          { id: order.id, orderNo: order.order_no, at: new Date(row.called_at).toISOString() },
-          { orgId: context.orgId },
-        );
         return toCallView(row);
       }),
     );
@@ -1527,7 +1554,14 @@ export class OrdersService {
         );
         if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
         const rows = await repo.callAttemptsOf(tx, context.orgId, order.id);
-        return { orderId: order.id, items: rows.map(toCallView) };
+        // The desk's notes and names are staff's; a reseller sees that calls were made (D-718).
+        const staff = context.isSuperAdmin || context.roles.some((role) => role !== 'reseller');
+        return {
+          orderId: order.id,
+          items: rows
+            .map(toCallView)
+            .map((call) => (staff ? call : { ...call, note: null, calledBy: '' })),
+        };
       }),
     );
   }
@@ -1558,12 +1592,6 @@ export class OrdersService {
             after: { orderNo: order.order_no },
             request,
           });
-          await emit(
-            tx,
-            'order.edited',
-            { id: order.id, orderNo: order.order_no, at: new Date().toISOString() },
-            { orgId: context.orgId },
-          );
         }
         return { marked: marked.map((order) => order.id) };
       }),

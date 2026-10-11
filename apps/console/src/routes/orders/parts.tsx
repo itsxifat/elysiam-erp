@@ -134,7 +134,7 @@ const ORDER_EVENTS = [
   'order.claimed',
   'order.assigned',
   'order.status_changed',
-  // M41: back in New, a call logged or a slip printed, and an offer that ended.
+  // M41: back in New, an edit, and an offer that ended.
   'order.released',
   'order.edited',
   'order.offer_closed',

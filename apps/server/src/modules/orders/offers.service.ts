@@ -135,7 +135,11 @@ export class OffersService {
         }
         if (!input.autoAssign && before.autoAssign) {
           // Switched off: nobody keeps a card for an order that will no longer be assigned.
-          for (const offer of await offers.liveOffers(tx, context.orgId)) {
+          // In order id order, so two of these never lock the same orders crosswise.
+          const live = [...(await offers.liveOffers(tx, context.orgId))].sort((a, b) =>
+            a.order_id < b.order_id ? -1 : a.order_id > b.order_id ? 1 : 0,
+          );
+          for (const offer of live) {
             await repo.orderForUpdate(tx, context.orgId, offer.order_id);
             await this.closeAndTell(tx, context.orgId, offer.id, 'withdrawn');
           }
@@ -387,11 +391,16 @@ export class OffersService {
     return withOrg({ orgId, userId: OFFER_ACTOR }, async (tx) => {
       const offer = await offers.offerById(tx, orgId, offerId);
       if (offer?.status !== 'offered') return false;
-      // The order first, then the offer, the same order a take locks them in (no deadlock).
+      // The order first, then the offer, the same order a take locks them in.
       await repo.orderForUpdate(tx, orgId, offer.order_id);
       const closed = await this.closeAndTell(tx, orgId, offerId, 'expired', true);
       if (closed === undefined) return false;
-      await this.dispatchIn(tx, orgId, closed.order_id);
+      /*
+       * The next person is offered it by a job after this commits, not here: a dispatch in
+       * this transaction could pick someone whose own lapsed offer another expiry is closing
+       * at this moment, and the two would wait on each other (the ledger audit of M41).
+       */
+      await this.queueDispatch(tx, orgId, closed.order_id);
       return true;
     });
   }
@@ -413,15 +422,15 @@ export class OffersService {
     let brands = 0;
     for (const orgId of orgIds) {
       try {
-        const overdue = await withOrg({ orgId, userId: OFFER_ACTOR }, async (tx) => {
-          const rows = await offers.overdueOffers(tx, orgId, 200);
-          for (const row of rows) {
-            await repo.orderForUpdate(tx, orgId, row.order_id);
-            await this.closeAndTell(tx, orgId, row.id, 'expired', true);
-          }
-          return { rows: rows.length, on: await offers.autoAssignOn(tx, orgId) };
-        });
-        expired += overdue.rows;
+        const overdue = await withOrg({ orgId, userId: OFFER_ACTOR }, async (tx) => ({
+          rows: await offers.overdueOffers(tx, orgId, 200),
+          on: await offers.autoAssignOn(tx, orgId),
+        }));
+        // One lapse per transaction, each locking its own order only: never two orders in
+        // one transaction, so the sweep cannot wait on a dispatcher that waits on it.
+        for (const row of overdue.rows) {
+          if (await this.expire(orgId, row.id)) expired += 1;
+        }
         if (!overdue.on) continue;
         brands += 1;
         offered += await this.dispatch(orgId, null);
@@ -444,8 +453,8 @@ export class OffersService {
     if (order?.status !== 'pending' || order.assigned_to !== null) return false;
     if ((await offers.liveOfferFor(tx, orgId, orderId)) !== undefined) return false;
     // Anything past its deadline for this order is lapsed first, so it counts as declined.
-    for (const row of await offers.overdueOffers(tx, orgId, 200)) {
-      if (row.order_id === orderId) await this.closeAndTell(tx, orgId, row.id, 'expired', true);
+    for (const row of await offers.overdueOffersOf(tx, orgId, orderId)) {
+      await this.closeAndTell(tx, orgId, row.id, 'expired', true);
     }
 
     const now = await transactionNow(tx);
@@ -453,10 +462,12 @@ export class OffersService {
       this.team.members(tx, orgId),
       offers.openLoads(tx, orgId),
       offers.lastOfferedAt(tx, orgId),
-      offers.liveOffers(tx, orgId),
+      // Every unanswered offer counts, lapsed or not: a person whose lapsed offer another
+      // transaction is closing right now is never picked, so no insert waits on that close.
+      offers.offeredUsers(tx, orgId),
       offers.declinedBy(tx, orgId, orderId),
     ]);
-    const busy = new Set(live.map((row) => row.user_id));
+    const busy = live;
     const excluded = new Set(declined);
     const candidates: AssignmentCandidate[] = members
       .filter((member) => member.roles.some((role) => OFFERABLE_ROLES.includes(role)))

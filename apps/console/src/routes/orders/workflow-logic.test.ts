@@ -11,7 +11,7 @@ import {
   offerShareLeft,
   secondsLeft,
 } from './workflow-logic.js';
-import { OWNER_ACK, ackHeaders } from './api.js';
+import { OWNER_ACK, ackHeaders } from './owner-ack.js';
 
 /** M41's console logic: the heartbeat, the offer countdown, call-backs and the hand-over list. */
 

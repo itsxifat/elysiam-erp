@@ -167,3 +167,32 @@ export function hubStageOf(input: {
 
 /** The statuses an order counts towards its owner's open load (D-716). */
 export const OPEN_ORDER_STATUSES: readonly OrderStatus[] = ['pending', 'on_hold'];
+
+/** A role a person holds in the brand, and the branches it is limited to (empty: all). */
+export interface RoleScope {
+  readonly role: string;
+  readonly branchIds: readonly string[];
+}
+
+/**
+ * Can this person hold an order of this branch (null: the desk's, belonging to none)? (D-712)
+ *
+ * Only someone who would still see the order once it is theirs: a sales agent (their own
+ * orders), an org admin or the warehouse (the whole brand), or a branch manager whose branches
+ * include the order's, or who is not limited to branches at all. Anybody else would be an
+ * owner nobody can reach, gating every colleague by a name they cannot hand back.
+ */
+export function canHoldOrder(scopes: readonly RoleScope[], branchId: string | null): boolean {
+  return scopes.some((scope) => {
+    if (scope.role === 'sales' || scope.role === 'org_admin' || scope.role === 'warehouse') {
+      return true;
+    }
+    if (scope.role !== 'branch_manager') return false;
+    return (
+      scope.branchIds.length === 0 || (branchId !== null && scope.branchIds.includes(branchId))
+    );
+  });
+}
+
+/** The statuses in which an order still has desk work, so taking it means something. */
+export const TAKEABLE_STATUSES: readonly OrderStatus[] = ['pending', 'confirmed', 'on_hold'];

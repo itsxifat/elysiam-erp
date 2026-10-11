@@ -193,6 +193,24 @@ export async function overdueOffers(tx: Tx, orgId: string, limit: number): Promi
   return [...rows];
 }
 
+/** An order's unanswered offers whose deadline has passed. */
+export async function overdueOffersOf(tx: Tx, orgId: string, orderId: string): Promise<OfferRow[]> {
+  const rows = await tx.execute<OfferRow>(sql`
+    select ${OFFER_COLUMNS} from sales.order_offers f
+    where f.org_id = ${orgId} and f.order_id = ${orderId} and f.status = 'offered'
+      and f.expires_at <= now()
+  `);
+  return [...rows];
+}
+
+/** Everyone holding an unanswered offer, its deadline passed or not. */
+export async function offeredUsers(tx: Tx, orgId: string): Promise<Set<string>> {
+  const rows = await tx.execute<{ user_id: string }>(sql`
+    select distinct user_id from sales.order_offers where org_id = ${orgId} and status = 'offered'
+  `);
+  return new Set([...rows].map((row) => row.user_id));
+}
+
 /** Every live offer in the brand, unexpired. */
 export async function liveOffers(tx: Tx, orgId: string): Promise<OfferRow[]> {
   const rows = await tx.execute<OfferRow>(sql`

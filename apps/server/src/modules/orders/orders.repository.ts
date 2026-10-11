@@ -1016,6 +1016,17 @@ export async function markSlipsPrinted(
   scope: SQL,
 ): Promise<{ id: string; order_no: string }[]> {
   if (ids.length === 0) return [];
+  // Locked in id order first, so two overlapping batches queue rather than deadlock.
+  await tx.execute(sql`
+    select o.id from sales.orders o
+    where o.org_id = ${orgId}
+      and o.id in (${sql.join(
+        ids.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+    order by o.id
+    for update
+  `);
   const rows = await tx.execute<{ id: string; order_no: string }>(sql`
     update sales.orders o set slip_printed_at = coalesce(o.slip_printed_at, now()), updated_at = now()
     where o.org_id = ${orgId}

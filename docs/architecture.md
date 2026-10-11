@@ -442,6 +442,8 @@ This summary is authoritative until M02b writes the code matrix. After that, the
 | Users, roles, settings             | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
 | Website (M33, D-508)               | all         | org           | read                    | —                           | org          | —       | —                              | —                   | —                   | —        |
 | Branch name, switch off (M39a)     | all         | org           | —                       | —                           | —            | —       | —                              | —                   | —                   | —        |
+| Own presence at the desk (M41)     | all         | own           | own                     | —                           | own          | —       | own                            | own                 | —                   | —        |
+| Order workflow, team board (M41)   | all         | org           | —                       | —                           | —            | —       | read (org)                     | —                   | —                   | —        |
 
 M39a (D-621, D-630 to D-633): deleting a row nothing uses is the org admin's alone (`delete
 Catalog`, `Supply`, `LandingPage`, `Campaign`); the website's own rows keep D-508's `delete
@@ -894,6 +896,16 @@ Notes:
 - `sales.order_advances`: one row per payment a buyer sent ahead. An agent records the claim (method, transaction id, amount); accounts verifies it into a wallet or rejects it; the recorder never verifies. Statuses `pending → verified | rejected`, `verified → applied | refund_due | forfeited | voided`, `refund_due → refunded`, kept by a trigger. Only verification posts and lowers the COD, and only before the parcel moves with no live booking (D-230, D-231, D-236).
 - `sales.order_returns`: one row per returned or exchanged order, with a reason code from a fixed list of eleven and the free-text note; a deferred trigger refuses a status update into `returned` or `exchange` without one. `GET /v1/orders/return-reasons` reports by reason (D-234).
 
+### The order workflow: ownership, presence and auto-assign (M41)
+
+The sales desk (orders, customers, messages) and the fulfilment hub (slips, packing, labels, the courier) work apart; one person handles each order at a time (D-710 to D-724).
+
+- **Ownership.** The owner is `assigned_to` (since `assigned_at`). Every desk write (edit, confirm, hold, release hold, cancel, exchange, an advance claim, a verification call, each order of a bulk confirm) asks one gate, `OwnershipGate.check`: a non-owner is refused `409 ORDER_HANDLED_BY_OTHER` naming the owner unless the request carries `x-acknowledge-owner: 1`; with it the act goes through, `order.acted_over_owner` is audited in the act's transaction and the owner's room is told. The hub's fulfilment moves (pack, ship, deliver, returns, the packing station, the courier) are not gated. GETs have no side effects: "Take this order" is `POST /v1/orders/:id/claim`; the loser of a race is told who won. The owner releases (`POST /v1/orders/:id/release`) or hands over; org_admin and branch_manager reassign (`assignmentDecision`).
+- **Presence** (`team.presence`, module `team`): the console reports its tab's visibility and idle seconds every 30 s (`POST /v1/team/presence`); `presenceState` derives active (input within 2 min), idle, or away (no report for 90 s); "Not taking orders" is the person's switch. Only state changes are audited. **Desk profiles** (`team.desk_profiles`): work types (orders, messages) and the hub's stock location, on the Staff page.
+- **Auto-assign** (`sales.workflow_settings`, off by default; 45-second offers; 25 open orders per person): `pickAssignee` (`@elysium/domain/assignment`, generic for orders and conversations) offers a new order to the least-loaded available person with the orders work type. `sales.order_offers`: one live offer per order and per person; answered once (accepted, declined, expired, withdrawn); accepting is one conditional statement while the order is pending and nobody's. Decline and expiry move it on; with nobody eligible it waits in New. Jobs `orders.offer_dispatch`, `orders.offer_expire`, `orders.offer_sweep` (§20).
+- **Calls** (`sales.call_attempts`, append-only): outcome, call-back time, note; the order carries the queue's summary. Due call-backs come first in the desk's queues.
+- **Queues.** `GET /v1/orders?queue=` new, mine, verifying, callbacks, confirmed_today (the desk) and hub_print, hub_packing, hub_packed, hub_handed (the hub, at the caller's hub location); rows carry the hub stage the desk follows. `POST /v1/orders/mark-printed` moves printed slips to Packing; the courier hand-over is a scan list over `bulk-transition`. The supervisors' team board is `GET /v1/orders/team-board` (`read OrderWorkflow`).
+
 ### Delivery zones and charges
 
 - Each org defines its own zones, each with a charge and a default courier.
@@ -1230,6 +1242,10 @@ Message Hub is a self-hosted **Chatwoot** instance plus an ERP integration.
 | `order.assigned` / `order.claimed`      | `org:role:sales`, `user:{assignee}`                                                                                                                               | id, assignee                               | Queue ownership                           |
 | `order.status_changed`                  | `org:role:sales`, `org:role:warehouse`<br>`org:role:accounts` (delivered and returned only)<br>`reseller:{id}` (reseller orders)<br>`org:branch:{b}` (POS orders) | id, from, to, at                           | Live lists and dashboards                 |
 | `order.edited`                          | `org:role:sales`, `org:role:warehouse`                                                                                                                            | id, order_no, at                           | Live lists; ncom.bd hears its edits       |
+| `order.offered` / `order.offer_closed`  | `user:{offeree}`                                                                                                                                                  | offer id, order id, order no, deadline     | The offer card (M41, D-717)               |
+| `order.acted_over_owner`                | `user:{owner}`                                                                                                                                                    | order id, order no, actor, act             | Somebody worked on your order (D-710)     |
+| `order.released`                        | `org:role:sales`, `org:role:org_admin`, `org:role:branch_manager`                                                                                                 | id, order_no                               | Back in New (D-712)                       |
+| `team.presence_changed`                 | `org:role:org_admin`, `org:role:branch_manager`                                                                                                                   | user id, state, paused                     | The team board; auto-assign (D-713)       |
 | `order.fraud_flagged`                   | `org:role:sales`, `org:role:org_admin`                                                                                                                            | id, trust_score, decision                  | Review queue                              |
 | `delivery.updated`                      | `org:role:sales`, `reseller:{id}`                                                                                                                                 | order id, normalized status, at            | Tracking view                             |
 | `delivery.booking_failed`               | `org:role:sales`, `org:role:org_admin`                                                                                                                            | order id, courier, error code              | Fix and retry                             |
@@ -1279,6 +1295,9 @@ Jobs run on pg-boss, with queues named `module.action`.
 | `packing.purge_videos`            | Daily 04:15                                              | Videos past expiry; uploads unattached for 24 h |
 | `files.remove_object`             | After the deleting commit                                | The stored bytes of a deleted file              |
 | `packing.camera_cut`              | When an IP camera's packing window closes (D-672)        | Worked by the camera process, not the worker    |
+| `orders.offer_dispatch`           | A decline, a release, auto-assign switched on (M41)      | Offers one order, or every waiting one (D-717)  |
+| `orders.offer_expire`             | An offer's deadline (`startAfter`)                       | Lapses it and offers the next person            |
+| `orders.offer_sweep`              | Every minute, every brand                                | Missed deadlines; orders waiting for someone    |
 | `ops.backup_verify`               | Weekly (staging)                                         | Restore to a scratch database and verify        |
 
 ---

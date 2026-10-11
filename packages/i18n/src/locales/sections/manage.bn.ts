@@ -71,6 +71,8 @@ const bn: Record<ManageKey, string> = {
   'mg.reason.web_locations': 'ওয়েবসাইট এখান থেকে বিক্রি করে',
   'mg.reason.campaign_links': 'ওয়েবসাইটের ক্যাম্পেইন লিংক',
   'mg.reason.marketplace_holds': 'ncom.bd-র ধরে রাখা স্টক',
+  // M41: English until M43 removes the Bangla locale.
+  'mg.reason.desk_profiles': 'Staff whose hub it is',
   'mg.reason.packing_scans': 'প্যাকিংয়ের স্ক্যান',
   'mg.reason.leads': 'লিড',
   'mg.reason.campaigns': 'বিজ্ঞাপন ক্যাম্পেইন',

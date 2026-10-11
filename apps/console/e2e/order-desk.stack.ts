@@ -131,7 +131,8 @@ test('check 4: a new order appears in a second agent’s queue without a refresh
 
     await signIn(creator, user('desk').email, '/orders/queue');
     await signIn(watcher, user('queue').email, '/orders/queue');
-    await expect(watcher.getByRole('heading', { name: 'Unassigned queue' })).toBeVisible();
+    // M41: the queue is the sales desk's New tab (D-719).
+    await expect(watcher.getByRole('heading', { name: 'Sales desk' })).toBeVisible();
     // The socket is up before the order is taken, or this would be testing the initial load.
     await expect(watcher.locator('[data-live="connected"]')).toBeVisible({ timeout: 20_000 });
     await watcher.evaluate(() => {
