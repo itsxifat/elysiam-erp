@@ -1228,3 +1228,65 @@ Phase 6 · Effort MAX · Depends on: M38a, M34 · Decisions D-620 to D-649
 6. Duplicate product copies variants and prices, not stock.
 7. The website shows regular-price and flash-sale strike-throughs; "On sale" works.
 8. `pnpm verify` green; ledger-auditor; stack specs with screenshots; acceptance-auditor.
+
+## M41: Order workflow, ownership and auto-assignment
+
+Phase 7 · Effort MAX · Depends on: M16, M38b · Decisions D-710 to D-729
+
+The owner's brief of 2026-10-11. The sales desk (orders, customers, messages) and the fulfilment hub (slips, packing, labels, courier handover) work about 2 km apart, so an order moves from one team to the other once it is confirmed. One person handles each order at a time.
+
+**Build**
+
+- Two desks: the sales desk (each person's work types: orders, messages or both) and the fulfilment hub (at its stock location). Stage queues: New, Verifying, Confirmed, then at the hub To print, Packing, Packed, Handed to courier.
+- Ownership: the first person to open an unassigned order takes it. Everyone else sees who has it. Every action they try asks them to acknowledge the owner first; the server refuses it without that, audits it with it, and tells the owner. The owner can release or hand over the order, and a supervisor can reassign it.
+- Verification calls: each call attempt logged (reached, no answer, busy, wrong number, call back at a time), with the attempt count and the call-back time shown in the queue.
+- Presence: the console reports whether each person is active, idle or away in the ERP (only the ERP tab, never other websites).
+- Auto-assign (a brand setting): a new order is offered to the active person with the fewest open orders. They accept or decline within a countdown; on a decline or a timeout it goes to the next person; with nobody active it waits in the queue.
+- Team board for supervisors: who is active, idle or away, their open orders, today's confirmed orders, outstanding offers, and reassignment.
+- Hub handoff: confirmed orders appear in the hub's queue at its location; bulk slip printing; the packing station; handover to the courier.
+
+**Acceptance checks**
+
+1. Two people taking the same new order at once: exactly one succeeds, and the other sees who has it.
+2. A non-owner's action without the acknowledgement is refused; with it, it succeeds, is audited and the owner is told in real time.
+3. Auto-assign offers to the least-loaded active person and never to an idle or away one; a decline or an expiry moves the offer on; an accept is atomic.
+4. Call attempts are recorded and shown, and call-back times order the queue.
+5. The hub sees confirmed orders at its location, and the sales desk sees the hub's progress.
+6. `pnpm verify` green; ledger-auditor (permissions, tenancy); a stack spec with screenshots; acceptance-auditor.
+
+## M42: Unified inbox and customer panel
+
+Phase 7 · Effort MAX · Depends on: M41 (for auto-offer), M16 · Decisions D-730 to D-749
+
+**Build**
+
+- Facebook Messenger, Instagram and WhatsApp through Meta's official APIs: one signed webhook in, replies sent by a job after commit, and the 24-hour messaging window respected. Channel credentials are entered in Settings and sealed. The adapters stay marked unverified until real credentials are tested.
+- One inbox for every channel, filtered by mine, unassigned, channel, stage and unread. Conversations are assigned like orders: take it, ownership warnings, and (after M41) auto-offer to people whose work types include messages.
+- Contact stages: Visitor, Lead, Customer (automatic once they have ordered), Not qualified, Fraud.
+- Right panel: phones and addresses found in the messages, saved in one click; the matched customer with every order, delivery and return record and spend; dated notes with who wrote them; the products they are interested in (live price, sizes in stock, photo); tags; an order created from the chat, prefilled.
+
+**Acceptance checks**
+
+1. A signed webhook for each channel opens or threads a conversation; a bad signature is refused; a repeated delivery is ignored.
+2. A reply is sent by a job after commit; free text outside the 24-hour window is refused with the reason.
+3. A phone number in a message matches an existing customer and shows their orders; the contact becomes Customer when an order is placed from the chat.
+4. Notes and product interests are saved and shown with live catalog data.
+5. RLS on every new table; `pnpm verify` green; ledger-auditor (tenancy, permissions); a stack spec with screenshots; acceptance-auditor.
+
+## M43: Premium order documents, English only
+
+Phase 7 · Effort HIGH · Depends on: M38b · Decisions D-750 to D-759
+
+The owner's decision of 2026-10-11: the brands never wanted Bangla. Everything, invoices above all, is in formal English with a clean, premium design.
+
+**Build**
+
+- A redesigned order slip, invoice and parcel label: order number, cash to collect, and the customer's name, phone and address large and bold; the order barcode; the courier and consignment; a clean items table and totals; the brand's name.
+- English everywhere: documents, SMS, emails, till receipts, website account messages and district names. The console's language switch and the Bangla locale are removed.
+
+**Acceptance checks**
+
+1. Slip PDFs show the order number, cash to collect, name, phone and address in large bold type; the barcode scans at the packing station; page sizes are exact.
+2. No Bangla characters (U+0980 to U+09FF) in any rendered document, SMS or email.
+3. The console has no language switch, and the i18n check passes with English only.
+4. `pnpm verify` green; screenshots of each document; acceptance-auditor.
