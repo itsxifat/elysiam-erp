@@ -27,6 +27,8 @@ export interface Owner {
   readonly id: string;
   readonly email: string;
   readonly name: string;
+  /** The session this request came from: My account's "this device" (D-704). */
+  readonly sessionId: string;
 }
 
 export type OwnerRequest = FastifyRequest & {
@@ -44,10 +46,28 @@ const ENROLMENT_PATHS = new Set([
   '/api/auth/two-factor/enable',
   '/api/auth/two-factor/verify-totp',
   '/api/auth/two-factor/verify-backup-code',
-  '/api/auth/two-factor/get-totp-uri',
   '/api/auth/get-session',
   '/api/auth/sign-out',
 ]);
+
+/**
+ * The second-factor routes, which only a sign-in challenge (no session yet) or a session
+ * still behind the enrolment wall may use. For an enrolled session they would be a way
+ * round My account (D-705, the M40 audit's C2): `/two-factor/enable` answers a password
+ * guess before it refuses, and a signed-in `/two-factor/verify-totp` answers a code guess
+ * with no lockout. An enrolled owner changes their factor under My account.
+ */
+const FACTOR_PATHS = new Set([
+  '/api/auth/two-factor/enable',
+  '/api/auth/two-factor/verify-totp',
+  '/api/auth/two-factor/verify-backup-code',
+]);
+
+/**
+ * How stale a session's `last_active_at` may get (D-704): one write a minute per session
+ * at most, however many requests it makes.
+ */
+const ACTIVITY_GRANULARITY_SECONDS = 60;
 
 /**
  * Signing in again and the password links prove who the caller is afresh, so a half-enrolled
@@ -243,10 +263,22 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       );
   });
 
-  // The wall inside /api/auth: a session without a factor may only enrol it.
+  // The wall inside /api/auth: a session without a factor may only enrol it, and a session
+  // with one may not use the factor routes at all.
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     const path = requestPath(request.url);
-    if (!path.startsWith('/api/auth/') || ENROLMENT_PATHS.has(path)) return;
+    if (!path.startsWith('/api/auth/')) return;
+    if (FACTOR_PATHS.has(path)) {
+      const session = await options.auth.api.getSession({ headers: headersOf(request) });
+      if (session !== null && !(await mustEnrolTwoFactor(session.user.id))) {
+        return reply
+          .status(404)
+          .header('content-type', PROBLEM_CONTENT_TYPE)
+          .send(problemFor({ status: 404, code: 'NOT_FOUND', instance: instanceOf(request.url) }));
+      }
+      return;
+    }
+    if (ENROLMENT_PATHS.has(path)) return;
     if (CREDENTIAL_PATHS.has(path)) return;
     const session = await options.auth.api.getSession({ headers: headersOf(request) });
     if (session === null) return;
@@ -317,6 +349,12 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
+      sessionId: session.session.id,
     };
+    await motherSql()`
+      update auth.sessions set last_active_at = now()
+      where id = ${session.session.id}
+        and last_active_at < now() - make_interval(secs => ${ACTIVITY_GRANULARITY_SECONDS})
+    `;
   });
 }

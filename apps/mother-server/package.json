@@ -21,9 +21,11 @@
     "mother:db-bootstrap": "node --env-file-if-exists=.env --enable-source-maps dist/main.cli.js db-bootstrap",
     "mother:migrate": "node --env-file-if-exists=.env --enable-source-maps dist/main.cli.js migrate",
     "mother:bootstrap": "node --env-file-if-exists=.env --enable-source-maps dist/main.cli.js bootstrap",
-    "mother:people": "node --env-file-if-exists=.env --enable-source-maps dist/main.cli.js people"
+    "mother:people": "node --env-file-if-exists=.env --enable-source-maps dist/main.cli.js people",
+    "mother:brands": "node --env-file-if-exists=.env --enable-source-maps dist/main.cli.js brands"
   },
   "dependencies": {
+    "@better-auth/utils": "catalog:",
     "@elysium/config": "workspace:*",
     "@elysium/db": "workspace:*",
     "@elysium/domain": "workspace:*",
@@ -43,7 +45,6 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@better-auth/utils": "catalog:",
     "@types/node": "catalog:",
     "concurrently": "catalog:",
     "drizzle-kit": "catalog:",

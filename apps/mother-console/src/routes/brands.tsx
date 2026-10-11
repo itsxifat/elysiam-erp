@@ -1,27 +1,26 @@
 import {
   Button,
-  ConfirmDialog,
+  Checkbox,
   DateTime,
   Dialog,
   EmptyState,
   ErrorState,
+  Label,
   PageHeader,
   Section,
   Skeleton,
   StatusBadge,
 } from '@elysium/ui';
 import {
-  brandCreateSchema,
   brandUpdateSchema,
   type BrandStatusWire,
   type ConnectionTestWire,
-  type OwnerLinkKeyWire,
 } from '@elysium/mother-shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, KeyRound, Plug, Plus, RefreshCw } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { Building2, KeyRound, Plug, RefreshCw, Server } from 'lucide-react';
+import { useId, useState, type FormEvent } from 'react';
 
-import { ApiError, endpoints } from '../api.js';
+import { endpoints } from '../api.js';
 import { useLocale, type MessageKey } from '../i18n/locale.js';
 import { brandsQueryKey } from '../shell/shell.js';
 import { BrandFreshness, brandErrorKey } from '../ui/brand-status.js';
@@ -29,32 +28,28 @@ import { count } from '../ui/format.js';
 import { Alert, Field, Notice } from '../ui/primitives.js';
 
 /**
- * The brand registry (M32 screen 5; D-481, D-490): add a brand, change it, test its read
- * connection, and make or replace the key that signs owner links. A connection string is
- * typed in and never shown again (only its fingerprint); a public key is shown once.
+ * The brand registry (M32 screen 5; D-481, D-490, D-700): the brands this console reads,
+ * how fresh each one's figures are, a test of its connection and a read on demand.
+ *
+ * A brand is added, its read connection changed and its owner sign-in key made or
+ * replaced only on the mother's server, by the operator's `brands` commands, so no
+ * database password is ever typed into a browser. The screen says so in plain words and
+ * offers only what an owner may change here: the name, the staff console's address and
+ * whether the brand is read.
  */
 
-type FieldName = 'slug' | 'displayName' | 'adminUrl' | 'readConnection';
+type FieldName = 'displayName' | 'adminUrl';
 
 const FIELD_ERROR: Readonly<Record<FieldName, MessageKey>> = {
-  slug: 'form.slugInvalid',
   displayName: 'form.required',
   adminUrl: 'form.urlInvalid',
-  readConnection: 'form.connectionInvalid',
 };
 
 function fieldErrors(issues: readonly { readonly path: readonly PropertyKey[] }[]) {
   const found = new Set<FieldName>();
   for (const issue of issues) {
     const name = issue.path[0];
-    if (
-      name === 'slug' ||
-      name === 'displayName' ||
-      name === 'adminUrl' ||
-      name === 'readConnection'
-    ) {
-      found.add(name);
-    }
+    if (name === 'displayName' || name === 'adminUrl') found.add(name);
   }
   return found;
 }
@@ -62,28 +57,17 @@ function fieldErrors(issues: readonly { readonly path: readonly PropertyKey[] }[
 export function BrandsPage() {
   const { t } = useLocale();
   const brands = useQuery({ queryKey: brandsQueryKey(), queryFn: endpoints.brands });
-  const [adding, setAdding] = useState(false);
-  const [created, setCreated] = useState(false);
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={t('brands.title')}
-        description={t('brands.description')}
-        actions={
-          <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus aria-hidden="true" />
-            {t('brands.add')}
-          </Button>
-        }
-      />
-      {created ? <Notice>{t('brands.created')}</Notice> : null}
+      <PageHeader title={t('brands.title')} description={t('brands.description')} />
+      <OnTheServer />
       {brands.isPending ? (
         <Skeleton className="h-40 w-full" />
       ) : brands.isError ? (
         <ErrorState title={t('common.error')} detail={t('common.errorDetail')} />
       ) : brands.data.brands.length === 0 ? (
-        <EmptyState icon={Building2} title={t('brands.empty')} />
+        <EmptyState icon={Building2} title={t('brands.empty')} detail={t('brands.emptyDetail')} />
       ) : (
         <div className="space-y-4">
           {brands.data.brands.map((brand) => (
@@ -91,38 +75,38 @@ export function BrandsPage() {
           ))}
         </div>
       )}
-      <BrandForm
-        open={adding}
-        onOpenChange={setAdding}
-        onSaved={() => {
-          setAdding(false);
-          setCreated(true);
-        }}
-      />
     </div>
+  );
+}
+
+/** Where brands come from, in plain words (D-700). */
+export function OnTheServer() {
+  const { t } = useLocale();
+  return (
+    <section
+      aria-labelledby="brands-on-server"
+      className="flex items-start gap-3 rounded-lg border border-border bg-muted px-4 py-3"
+    >
+      <Server aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <div className="space-y-1 text-sm">
+        <h2 id="brands-on-server" className="font-medium text-foreground">
+          {t('brands.onServer.title')}
+        </h2>
+        <p className="text-muted-foreground">{t('brands.onServer.body')}</p>
+      </div>
+    </section>
   );
 }
 
 function BrandCard({ brand }: { readonly brand: BrandStatusWire }) {
   const { t, locale } = useLocale();
-  const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [confirmKey, setConfirmKey] = useState(false);
-  const [shownKey, setShownKey] = useState<OwnerLinkKeyWire | null>(null);
   const [tested, setTested] = useState<ConnectionTestWire | null>(null);
   const [queued, setQueued] = useState(false);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: brandsQueryKey() });
 
   const test = useMutation({
     mutationFn: () => endpoints.testBrand(brand.id),
     onSuccess: (result) => setTested(result),
-  });
-  const rotate = useMutation({
-    mutationFn: () => endpoints.rotateKey(brand.id),
-    onSuccess: async (result) => {
-      setShownKey(result);
-      await refresh();
-    },
   });
   const pull = useMutation({
     mutationFn: (full: boolean) => endpoints.pull(brand.id, full),
@@ -206,14 +190,7 @@ function BrandCard({ brand }: { readonly brand: BrandStatusWire }) {
             <span className="font-mono text-xs">{brand.ownerLinkKeyFingerprint}</span>
           )}
         </span>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={rotate.isPending}
-          onClick={() => (brand.hasOwnerLinkKey ? setConfirmKey(true) : rotate.mutate())}
-        >
-          {brand.hasOwnerLinkKey ? t('brands.keyRotate') : t('brands.keyMake')}
-        </Button>
+        <span className="text-xs text-muted-foreground">{t('brands.keyOnServer')}</span>
         <div className="flex-1" />
         <Button
           variant="ghost"
@@ -235,21 +212,6 @@ function BrandCard({ brand }: { readonly brand: BrandStatusWire }) {
       </div>
       {queued ? <Notice className="mt-3">{t('brand.pullQueued')}</Notice> : null}
 
-      <ConfirmDialog
-        open={confirmKey}
-        onOpenChange={setConfirmKey}
-        title={t('brands.keyRotate')}
-        description={t('brands.keyConfirmRotate')}
-        confirmLabel={t('brands.keyRotate')}
-        cancelLabel={t('common.cancel')}
-        closeLabel={t('common.close')}
-        destructive
-        onConfirm={async () => {
-          await rotate.mutateAsync();
-          setConfirmKey(false);
-        }}
-      />
-      <KeyDialog shown={shownKey} onClose={() => setShownKey(null)} />
       <BrandForm
         open={editing}
         onOpenChange={setEditing}
@@ -257,53 +219,6 @@ function BrandCard({ brand }: { readonly brand: BrandStatusWire }) {
         onSaved={() => setEditing(false)}
       />
     </Section>
-  );
-}
-
-function KeyDialog({
-  shown,
-  onClose,
-}: {
-  readonly shown: OwnerLinkKeyWire | null;
-  readonly onClose: () => void;
-}) {
-  const { t } = useLocale();
-  const [copied, setCopied] = useState(false);
-  return (
-    <Dialog
-      open={shown !== null}
-      onOpenChange={(open) => {
-        if (!open) {
-          setCopied(false);
-          onClose();
-        }
-      }}
-      title={t('brands.key')}
-      description={t('brands.keyShownOnce')}
-      closeLabel={t('common.close')}
-      footer={
-        <Button
-          onClick={() => {
-            if (shown === null) return;
-            void navigator.clipboard.writeText(shown.envLine).then(() => setCopied(true));
-          }}
-        >
-          {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-          {copied ? t('common.copied') : t('common.copy')}
-        </Button>
-      }
-    >
-      {shown === null ? null : (
-        <div className="space-y-3">
-          <code className="block rounded-md bg-muted p-3 font-mono text-xs break-all text-foreground">
-            {shown.envLine}
-          </code>
-          <p className="text-xs text-muted-foreground">
-            {t('brands.fingerprint')} <span className="font-mono">{shown.fingerprint}</span>
-          </p>
-        </div>
-      )}
-    </Dialog>
   );
 }
 
@@ -315,16 +230,15 @@ function BrandForm({
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  readonly brand?: BrandStatusWire;
+  readonly brand: BrandStatusWire;
   readonly onSaved: () => void;
 }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
-  const [slug, setSlug] = useState(brand?.slug ?? '');
-  const [displayName, setDisplayName] = useState(brand?.displayName ?? '');
-  const [adminUrl, setAdminUrl] = useState(brand?.adminUrl ?? '');
-  const [readConnection, setReadConnection] = useState('');
-  const [isActive, setIsActive] = useState(brand?.isActive ?? true);
+  const activeId = useId();
+  const [displayName, setDisplayName] = useState(brand.displayName);
+  const [adminUrl, setAdminUrl] = useState(brand.adminUrl);
+  const [isActive, setIsActive] = useState(brand.isActive);
   const [invalid, setInvalid] = useState<ReadonlySet<FieldName>>(new Set());
   const [error, setError] = useState<MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
@@ -332,42 +246,20 @@ function BrandForm({
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    const parsed = brandUpdateSchema.safeParse({ displayName, adminUrl, isActive });
+    if (!parsed.success) {
+      setInvalid(fieldErrors(parsed.error.issues));
+      setError('form.invalid');
+      return;
+    }
+    setInvalid(new Set());
+    setBusy(true);
     try {
-      if (brand === undefined) {
-        const parsed = brandCreateSchema.safeParse({ slug, displayName, adminUrl, readConnection });
-        if (!parsed.success) {
-          setInvalid(fieldErrors(parsed.error.issues));
-          setError('form.invalid');
-          return;
-        }
-        setInvalid(new Set());
-        setBusy(true);
-        await endpoints.addBrand(parsed.data);
-      } else {
-        const parsed = brandUpdateSchema.safeParse({
-          displayName,
-          adminUrl,
-          isActive,
-          ...(readConnection.trim() === '' ? {} : { readConnection }),
-        });
-        if (!parsed.success) {
-          setInvalid(fieldErrors(parsed.error.issues));
-          setError('form.invalid');
-          return;
-        }
-        setInvalid(new Set());
-        setBusy(true);
-        await endpoints.updateBrand(brand.id, parsed.data);
-      }
-      setReadConnection('');
+      await endpoints.updateBrand(brand.id, parsed.data);
       await queryClient.invalidateQueries({ queryKey: brandsQueryKey() });
       onSaved();
-    } catch (cause) {
-      setError(
-        cause instanceof ApiError && cause.code === 'BRAND_SLUG_TAKEN'
-          ? 'brands.slugTaken'
-          : 'common.errorDetail',
-      );
+    } catch {
+      setError('common.errorDetail');
     } finally {
       setBusy(false);
     }
@@ -378,22 +270,11 @@ function BrandForm({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={brand === undefined ? t('brands.add') : brand.displayName}
-      description={t('brands.description')}
+      title={brand.displayName}
+      description={t('brands.editDescription')}
       closeLabel={t('common.close')}
     >
       <form onSubmit={(event) => void submit(event)} className="space-y-4" noValidate>
-        {brand === undefined ? (
-          <Field
-            label={t('brands.slug')}
-            hint={t('brands.slugHint')}
-            value={slug}
-            onChange={(event) => setSlug(event.target.value)}
-            error={fieldError('slug')}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        ) : null}
         <Field
           label={t('brands.displayName')}
           value={displayName}
@@ -409,29 +290,14 @@ function BrandForm({
           error={fieldError('adminUrl')}
           spellCheck={false}
         />
-        <Field
-          label={t('brands.readConnection')}
-          hint={
-            brand === undefined ? t('brands.readConnectionHint') : t('brands.readConnectionKeep')
-          }
-          type="password"
-          autoComplete="off"
-          value={readConnection}
-          onChange={(event) => setReadConnection(event.target.value)}
-          error={fieldError('readConnection')}
-          spellCheck={false}
-        />
-        {brand === undefined ? null : (
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(event) => setIsActive(event.target.checked)}
-              className="size-4 rounded-sm border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            />
-            {t('brands.active')}
-          </label>
-        )}
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={activeId}
+            checked={isActive}
+            onCheckedChange={(checked) => setIsActive(checked === true)}
+          />
+          <Label htmlFor={activeId}>{t('brands.active')}</Label>
+        </div>
         {error === null ? null : <Alert>{t(error)}</Alert>}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>

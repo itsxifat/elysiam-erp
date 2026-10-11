@@ -8,6 +8,7 @@ import type {
 } from '@elysium/mother-shared';
 import type { TransactionSql } from 'postgres';
 
+import { forgetNewAppKeys } from '../account/account.js';
 import { recordAudit, type Actor } from '../audit/audit.js';
 import { INVITE_LINK_SECONDS } from '../auth/auth.js';
 import { inMother, motherSql } from '../db/client.js';
@@ -208,6 +209,7 @@ export async function removePerson(userId: string, actor: Actor): Promise<void> 
       );
     }
     await tx`update auth.users set is_active = false, updated_at = now() where id = ${userId}`;
+    await forgetNewAppKeys(tx, userId);
     await tx`delete from auth.sessions where user_id = ${userId}`;
     await tx`delete from auth.verifications where value = ${userId}`;
     await recordAudit(
@@ -316,6 +318,7 @@ export async function requestTwoFactorReset(
 export async function clearSecondFactor(tx: TransactionSql, userId: string): Promise<void> {
   await tx`delete from auth.two_factors where user_id = ${userId}`;
   await tx`update auth.users set two_factor_enabled = false, updated_at = now() where id = ${userId}`;
+  await forgetNewAppKeys(tx, userId);
   await tx`delete from auth.sessions where user_id = ${userId}`;
   await tx`
     delete from auth.verifications

@@ -15,6 +15,13 @@
       "when": 1791192781528,
       "tag": "0001_mother_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791701927806,
+      "tag": "0002_session_last_active",
+      "breakpoints": true
     }
   ]
 }

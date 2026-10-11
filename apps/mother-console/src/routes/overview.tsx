@@ -116,7 +116,7 @@ export function OverviewPage() {
               to="/settings/brands"
               className="text-sm text-primary underline-offset-4 hover:underline"
             >
-              {t('overview.addBrand')}
+              {t('overview.aboutBrands')}
             </Link>
           }
         />

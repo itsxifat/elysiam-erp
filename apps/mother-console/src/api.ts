@@ -1,6 +1,9 @@
 import type {
+  AccountSessionWire,
+  AccountWire,
   ActivityWire,
-  BrandCreateInput,
+  AuthenticatorSetupWire,
+  BackupCodesWire,
   BrandFiguresWire,
   BrandLiveResult,
   BrandStatusWire,
@@ -10,7 +13,6 @@ import type {
   LinkWire,
   MeWire,
   OverviewWire,
-  OwnerLinkKeyWire,
   OwnerLinkWire,
   PersonWire,
   ProfitAndLossWire,
@@ -129,6 +131,29 @@ export const endpoints = {
 
   me: () => get<MeWire>('/v1/me'),
 
+  // My account (M40, D-701 to D-705)
+  account: () => get<AccountWire>('/v1/account'),
+  rename: (name: string) => patch<AccountWire>('/v1/account', { name }),
+  changePassword: (input: {
+    currentPassword: string;
+    code: string;
+    newPassword: string;
+    signOutOtherDevices: boolean;
+  }) => post<{ signedOutOtherDevices: number }>('/v1/account/password', input),
+  startNewApp: (password: string, code: string) =>
+    post<AuthenticatorSetupWire>('/v1/account/two-factor/new-app', { password, code }),
+  confirmNewApp: (code: string, signOutOtherDevices: boolean) =>
+    post<{ signedOutOtherDevices: number }>('/v1/account/two-factor/new-app/confirm', {
+      code,
+      signOutOtherDevices,
+    }),
+  renewBackupCodes: (password: string, code: string) =>
+    post<BackupCodesWire>('/v1/account/two-factor/backup-codes', { password, code }),
+  sessions: () => get<{ sessions: AccountSessionWire[] }>('/v1/account/sessions'),
+  signOutSession: (id: string) =>
+    post<{ ok: true }>(`/v1/account/sessions/${encodeURIComponent(id)}/sign-out`),
+  signOutOtherSessions: () => post<{ signedOut: number }>('/v1/account/sessions/sign-out-others'),
+
   // Figures (D-484 to D-493)
   overview: (from: string, to: string) => get<OverviewWire>(`/v1/overview?${range(from, to)}`),
   leaderboard: (month: string) =>
@@ -137,17 +162,15 @@ export const endpoints = {
   profitAndLoss: (from: string, to: string) =>
     get<ProfitAndLossWire>(`/v1/accounts/profit-and-loss?${range(from, to)}`),
 
-  // Brands (D-481, D-490)
+  // Brands (D-481, D-490). Added, re-pointed and re-keyed only on the server (D-700).
   brands: () => get<{ brands: BrandStatusWire[] }>('/v1/brands'),
   brand: (id: string) => get<BrandStatusWire>(`/v1/brands/${id}`),
   brandFigures: (id: string, from: string, to: string) =>
     get<BrandFiguresWire>(`/v1/brands/${id}/figures?${range(from, to)}`),
   brandLive: (id: string) => get<BrandLiveResult>(`/v1/brands/${id}/live`),
-  addBrand: (input: BrandCreateInput) => post<BrandStatusWire>('/v1/brands', input),
   updateBrand: (id: string, input: BrandUpdateInput) =>
     patch<BrandStatusWire>(`/v1/brands/${id}`, input),
   testBrand: (id: string) => post<ConnectionTestWire>(`/v1/brands/${id}/test`),
-  rotateKey: (id: string) => post<OwnerLinkKeyWire>(`/v1/brands/${id}/owner-link-key`),
   pull: (id: string, full: boolean) => post<{ queued: true }>(`/v1/brands/${id}/pull`, { full }),
   ownerLink: (id: string) => post<OwnerLinkWire>(`/v1/brands/${id}/owner-link`),
 

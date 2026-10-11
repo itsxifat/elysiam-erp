@@ -13,6 +13,7 @@ import {
   Store,
   Sun,
   Trophy,
+  UserRound,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -25,7 +26,7 @@ import { isDark, setTheme } from '../theme.js';
 
 /**
  * The owner console's frame: the figures first, then each brand's page, then the settings
- * (brands, people) and the activity log. Neutral chrome, one accent (§24).
+ * (brands, people, my account) and the activity log. Neutral chrome, one accent (§24).
  */
 
 interface Item {
@@ -43,6 +44,7 @@ const MAIN: readonly Item[] = [
 const SETTINGS: readonly Item[] = [
   { to: '/settings/brands', label: 'nav.brands', icon: Building2 },
   { to: '/settings/people', label: 'nav.people', icon: Users },
+  { to: '/account', label: 'nav.account', icon: UserRound },
   { to: '/activity', label: 'nav.activity', icon: Activity },
 ];
 
@@ -191,13 +193,19 @@ export function Shell() {
               >
                 {dark ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
               </Button>
-              <div className="ml-1 flex items-center gap-2" title={me.email}>
+              <Link
+                to="/account"
+                className="ml-1 flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                title={me.email}
+              >
                 <Monogram name={me.name} size="sm" />
                 <span className="sr-only">
-                  {t('shell.signedInAs')} {me.name}
+                  {t('nav.account')}: {t('shell.signedInAs')} {me.name}
                 </span>
-                <span className="hidden text-sm text-muted-foreground lg:inline">{me.name}</span>
-              </div>
+                <span aria-hidden="true" className="hidden text-sm text-muted-foreground lg:inline">
+                  {me.name}
+                </span>
+              </Link>
               <Button variant="ghost" size="sm" onClick={() => void signOut()}>
                 <LogOut aria-hidden="true" />
                 <span className="hidden sm:inline">{t('auth.signOut')}</span>

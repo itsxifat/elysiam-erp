@@ -44,6 +44,12 @@ export const MOTHER_ERROR_CODES = [
   'EMAIL_TAKEN',
   /** `MOTHER_SECRETS_KEY` is missing or wrong, so a stored secret cannot be opened. */
   'SECRETS_KEY_INVALID',
+  /** The password given to confirm an account change is not this person's (M40). */
+  'INVALID_PASSWORD',
+  /** The two-step code (or recovery code) given is not right (M40). */
+  'INVALID_CODE',
+  /** A new authenticator was not confirmed in time; start again (M40). */
+  'TWO_FACTOR_SETUP_EXPIRED',
 ] as const;
 
 export type MotherErrorCode = (typeof MOTHER_ERROR_CODES)[number];

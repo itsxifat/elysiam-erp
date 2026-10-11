@@ -24,7 +24,10 @@ export class Browser {
   private readonly cookies = new Map<string, string>();
   readonly ip: string;
 
-  constructor(private readonly app: NestFastifyApplication) {
+  constructor(
+    private readonly app: NestFastifyApplication,
+    private readonly userAgent?: string,
+  ) {
     nextIp += 1;
     this.ip = `10.9.${String(Math.floor(nextIp / 256) % 256)}.${String(nextIp % 256)}`;
   }
@@ -55,6 +58,7 @@ export class Browser {
       origin: options.origin ?? PUBLIC_URL,
       'x-forwarded-for': this.ip,
     };
+    if (this.userAgent !== undefined) headers['user-agent'] = this.userAgent;
     if (this.cookies.size > 0) {
       headers.cookie = [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
     }
@@ -105,12 +109,12 @@ export function tokenFromLink(link: string): string {
   return decodeURIComponent(new URL(link).hash.replace(/^#token=/, ''));
 }
 
-/** Redeem an invite, sign in, enrol TOTP and verify it. Returns the TOTP secret. */
+/** Redeem an invite, sign in, enrol TOTP and verify it. Returns the secret and recovery codes. */
 export async function acceptAndEnrol(
   browser: Browser,
   auth: MotherAuth,
   input: { readonly link: string; readonly email: string },
-): Promise<{ secret: string }> {
+): Promise<{ secret: string; backupCodes: string[] }> {
   const reset = await browser.post('/api/auth/reset-password', {
     newPassword: PASSWORD,
     token: tokenFromLink(input.link),
@@ -122,25 +126,28 @@ export async function acceptAndEnrol(
   });
   if (signIn.status !== 200) throw new Error(`sign-in: ${JSON.stringify(signIn.body)}`);
   const enabled = await browser.post('/api/auth/two-factor/enable', { password: PASSWORD });
-  const { totpURI } = enabled.body as { totpURI: string };
-  const secret = new TextDecoder().decode(
-    base32.decode(new URL(totpURI).searchParams.get('secret') ?? ''),
-  );
+  const { totpURI, backupCodes } = enabled.body as { totpURI: string; backupCodes: string[] };
+  const secret = secretOf(totpURI);
   const { code } = await auth.api.generateTOTP({ body: { secret } });
   const verified = await browser.post('/api/auth/two-factor/verify-totp', { code });
   if (verified.status !== 200) throw new Error(`verify-totp: ${JSON.stringify(verified.body)}`);
-  return { secret };
+  return { secret, backupCodes };
+}
+
+/** The raw TOTP secret in an `otpauth://` URI (base32 there). */
+export function secretOf(totpURI: string): string {
+  return new TextDecoder().decode(base32.decode(new URL(totpURI).searchParams.get('secret') ?? ''));
 }
 
 /** A later sign-in for an enrolled owner: password, then the code. */
 export async function signInWithCode(
   browser: Browser,
   auth: MotherAuth,
-  input: { readonly email: string; readonly secret: string },
+  input: { readonly email: string; readonly secret: string; readonly password?: string },
 ): Promise<Answer> {
   const first = await browser.post('/api/auth/sign-in/email', {
     email: input.email,
-    password: PASSWORD,
+    password: input.password ?? PASSWORD,
   });
   if (first.status !== 200) return first;
   const { code } = await auth.api.generateTOTP({ body: { secret: input.secret } });

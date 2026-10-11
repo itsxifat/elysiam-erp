@@ -19,6 +19,12 @@ export const CREDENTIAL_RULES: Readonly<Record<string, RateRule>> = {
   '/api/auth/reset-password': { windowSeconds: 60, perIp: 10 },
   '/api/auth/two-factor/verify-totp': { windowSeconds: 60, perIp: 10 },
   '/api/auth/two-factor/verify-backup-code': { windowSeconds: 60, perIp: 10 },
+  // My account's checks of a password or a code (M40, D-705): per address here, and per
+  // person in the account service, which refuses after five wrong answers in 15 minutes.
+  '/v1/account/password': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/new-app': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/new-app/confirm': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/backup-codes': { windowSeconds: 60, perIp: 10 },
 };
 
 export interface RateDecision {
@@ -66,6 +72,21 @@ export function requestPath(url: string): string {
   }
 }
 
+/**
+ * The path as the router matches it: find-my-way decodes percent-escapes before it routes,
+ * so `/v1/account/%70assword` reaches the password handler and must meet its limit (the M40
+ * audit's W2). Better Auth's router does not decode, so for `/api/auth` this can only add a
+ * limit to a path that then matches nothing.
+ */
+export function routedPath(url: string): string {
+  const path = requestPath(url);
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 export function identifierFrom(body: unknown): string | null {
   if (typeof body !== 'object' || body === null) return null;
   const email = (body as Record<string, unknown>).email;
@@ -79,7 +100,7 @@ export function checkRate(
   input: { readonly url: string; readonly ip: string; readonly body: unknown },
   rules: Readonly<Record<string, RateRule>> = CREDENTIAL_RULES,
 ): RateDecision {
-  const path = requestPath(input.url);
+  const path = routedPath(input.url);
   const rule = rules[path];
   if (rule === undefined) return { allowed: true };
   const ip = limiter.hit(`ip:${path}:${input.ip}`, rule.perIp, rule.windowSeconds);

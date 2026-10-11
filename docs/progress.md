@@ -2780,3 +2780,57 @@ dry-run|commit --file <users.json>`.
   42 GB free; removed all but the last two and old build cache (61 GB free), and
   `infra/brand/server-deploy.sh` now keeps only the last two images and prunes build cache
   older than 72 hours on every deploy.
+
+## 2026-10-11 · M40 (mother) · brands on the server only; My account (not merged or deployed)
+
+- **Asked for** (the owner, 2026-10-11): "for mother erp there might not be the option to add
+  brands, that will be fixed as we do manually" and "we need better account management, two
+  factor management, user friendly and more options". Branch `m40-mother-accounts` from
+  `integration-wave2` (75dbe8e2). Decisions D-700 to D-705. Plan
+  `docs/plans/M40-mother-accounts.md`.
+- **Brands, server only (D-700):** `POST /v1/brands` and `POST /v1/brands/:id/owner-link-key`
+  removed (404), the brand update's body strict (`readConnection` is a 400). CLI `brands list`,
+  `set-connection` (`MOTHER_BRAND_READ_URL`, printed and audited only as its fingerprint,
+  `brand.connection_changed`), `rotate-key` (prints only the `OWNER_LINK_PUBLIC_KEY=` line) and
+  `test`; `add` and `set-connection` test the connection at once; `pnpm mother:brands …`. The
+  Brands screen says in plain words that the operator adds, re-points and re-keys brands on
+  the server, and keeps rename, staff console address, "read this brand", Test connection and
+  the reads.
+- **My account (D-701 to D-705):** `/account` (the header's name, Settings → My account) and
+  `/v1/account`: name; password; two-step sign-in shown as required and never offered off,
+  moved to a new phone in two steps (the new key waits 10 minutes bound to this session; the
+  old phone works until the new one's first code; the other devices can be signed out with
+  it); new recovery codes shown once with copy, download and print, closed only once "saved";
+  devices (browser and system from the user agent, address masked, signed in, last active,
+  this device marked; sign out one or all others). The password change, the new phone and new
+  codes all ask for the password and a code held now (the app's, or a recovery code). Every
+  change audited (`account.*`); each check runs under the person's lock, and five wrong
+  answers in fifteen minutes refuse the checks (429). Better Auth's own account routes closed
+  (`/two-factor/disable`, `/two-factor/get-totp-uri`, `/change-password`, the session routes,
+  …) and its factor routes walled from an enrolled session. Migration
+  `0002_session_last_active` (`auth.sessions.last_active_at`, touched at most once a minute).
+  Pure `describeUserAgent` and `maskAddress` in `packages/mother-shared` (fast-check).
+- **Ledger audit** (2 critical, 4 warnings, 7 notes), all fixed in cdc4be3e but one note: C1,
+  recovery codes renewable with the password alone, which then passed as "a code held now"
+  for a new phone; C2, Better Auth's `/two-factor/enable` and a signed-in `/verify-totp`
+  answered password and code guesses round the lockout; W1, the lockout could be raced; W2,
+  a percent-escaped account path skipped its limit; W3, a password change took the password
+  alone; W4, the tests for those. N3 (audit a wrong code at confirm) left out: the caller
+  already holds the new key.
+- **Docs:** decisions D-700 to D-705, architecture §30, `docs/runbooks/mother-deploy.md` §5
+  (add, re-point, re-key, list and test, with the commands) and §7, CLAUDE.md commands.
+- **Evidence:** mother suites (`apps/mother-server/src`, `packages/mother-shared/src`,
+  `apps/mother-console/src`, `scripts/mother-separation.test.mjs`) 162/162 in 13 files, among
+  them `http.db.test.ts` 36/36 (the removed routes 404, the strict update, the CLI's list,
+  re-point, re-key and test with no connection in any output or audit row, every My account
+  action and refusal, Better Auth's routes 404 and its factor routes 404 for an enrolled
+  session with nothing changed, twenty parallel wrong guesses giving exactly five answers),
+  `rate-limit.test.ts`, and the console's `account.test.tsx` and `brands.test.tsx`. Typecheck
+  and eslint (the three mother workspaces), prettier, check:i18n (both catalogues),
+  check:migrations, check:schema: PASS. Not run: full `pnpm verify`, the mother stack spec (its
+  tour now visits My account), a look at the screens in a browser.
+- **Note:** the PC ran short of commit memory during the session (a browser tab held about
+  11 GB) and Docker Desktop restarted twice; one early `http.db.test.ts` run failed nine tests
+  before either was noticed, and every run since has passed.
+- New dependencies: none (`@better-auth/utils`, already a dev dependency, is now a runtime
+  one: the server checks TOTP codes itself).

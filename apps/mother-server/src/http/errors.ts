@@ -19,6 +19,8 @@ export class MotherError extends Error {
 function statusFor(code: MotherErrorCode): number {
   switch (code) {
     case 'VALIDATION_FAILED':
+    case 'INVALID_PASSWORD':
+    case 'INVALID_CODE':
       return 400;
     case 'UNAUTHENTICATED':
       return 401;
@@ -39,6 +41,7 @@ function statusFor(code: MotherErrorCode): number {
     case 'OWNER_LINK_KEY_MISSING':
     case 'BRAND_INACTIVE':
     case 'BRAND_VERSION_MISMATCH':
+    case 'TWO_FACTOR_SETUP_EXPIRED':
       return 409;
     case 'PAYLOAD_TOO_LARGE':
       return 413;

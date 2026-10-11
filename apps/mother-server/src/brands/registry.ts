@@ -72,6 +72,17 @@ export async function findBrand(
   return row;
 }
 
+/** A brand by its slug: how the operator names one on the server (D-700). */
+export async function findBrandBySlug(
+  slug: string,
+  sql: Sql | TransactionSql = motherSql(),
+): Promise<BrandRow | undefined> {
+  const [row] = await sql<BrandRow[]>`
+    select ${sql.unsafe(COLUMNS)} from mother.brands where slug = ${slug}
+  `;
+  return row;
+}
+
 export async function requireBrand(id: string): Promise<BrandRow> {
   const row = await findBrand(id);
   if (row === undefined) throw new MotherError('NOT_FOUND', 'No such brand.');
@@ -113,7 +124,7 @@ export function ownerLinkKeyOf(secrets: SecretsKey, row: BrandRow): Buffer {
   if (row.owner_link_key_cipher === null) {
     throw new MotherError(
       'OWNER_LINK_KEY_MISSING',
-      'This brand has no owner sign-in key yet. Make one under Brands first.',
+      'This brand has no owner sign-in key yet. The operator makes one on the server.',
     );
   }
   return open(secrets, row.owner_link_key_cipher, { brandId: row.id, field: 'owner_link_key' });
@@ -177,8 +188,12 @@ export async function createBrand(
   }
 }
 
+/**
+ * What an owner may change from the console: the name, the staff console's address and
+ * whether the brand is read. Never the read connection (D-700): that is `setBrandConnection`,
+ * which only the operator's `brands set-connection` on the server calls.
+ */
 export async function updateBrand(
-  secrets: SecretsKey,
   id: string,
   input: BrandUpdateInput,
   actor: Actor,
@@ -188,20 +203,11 @@ export async function updateBrand(
       select ${tx.unsafe(COLUMNS)} from mother.brands where id = ${id} for update
     `;
     if (before === undefined) throw new MotherError('NOT_FOUND', 'No such brand.');
-    const connection =
-      input.readConnection === undefined
-        ? undefined
-        : sealedConnection(secrets, id, input.readConnection);
     await tx`
       update mother.brands set
         display_name = ${input.displayName ?? before.display_name},
         admin_url = ${input.adminUrl ?? before.admin_url},
         is_active = ${input.isActive ?? before.is_active},
-        read_connection_cipher = ${connection?.ciphertext ?? before.read_connection_cipher},
-        read_connection_key_id = ${connection?.keyId ?? before.read_connection_key_id},
-        read_connection_fingerprint = ${connection?.fingerprint ?? before.read_connection_fingerprint},
-        -- A new connection is a new source: what it says about the schema is unknown again.
-        schema_status = ${connection === undefined ? before.schema_status : 'unknown'},
         updated_at = now()
       where id = ${id}
     `;
@@ -215,12 +221,6 @@ export async function updateBrand(
     if (input.isActive !== undefined && input.isActive !== before.is_active) {
       changed.isActive = { from: before.is_active, to: input.isActive };
     }
-    if (connection !== undefined) {
-      changed.connectionFingerprint = {
-        from: before.read_connection_fingerprint,
-        to: connection.fingerprint,
-      };
-    }
     await recordAudit(
       {
         actorUserId: actor.userId,
@@ -228,6 +228,57 @@ export async function updateBrand(
         entityType: 'brand',
         entityId: id,
         detail: { slug: before.slug, changed },
+        ipAddress: actor.ipAddress,
+        requestId: actor.requestId,
+      },
+      tx,
+    );
+    const row = await findBrand(id, tx);
+    if (row === undefined) throw new Error('the brand vanished mid-update');
+    return row;
+  });
+}
+
+/**
+ * A new read connection for a brand (D-481, D-700), from the operator on the server only.
+ * Sealed like the first one; audited with the fingerprints, never the connection. A new
+ * connection is a new source, so what it says about the schema is unknown again until the
+ * next read.
+ */
+export async function setBrandConnection(
+  secrets: SecretsKey,
+  id: string,
+  readConnection: string,
+  actor: Actor,
+): Promise<BrandRow> {
+  const connection = sealedConnection(secrets, id, readConnection);
+  return inMother(async (tx) => {
+    const [before] = await tx<{ slug: string; read_connection_fingerprint: string }[]>`
+      select slug, read_connection_fingerprint from mother.brands where id = ${id} for update
+    `;
+    if (before === undefined) throw new MotherError('NOT_FOUND', 'No such brand.');
+    await tx`
+      update mother.brands set
+        read_connection_cipher = ${connection.ciphertext},
+        read_connection_key_id = ${connection.keyId},
+        read_connection_fingerprint = ${connection.fingerprint},
+        schema_status = 'unknown',
+        updated_at = now()
+      where id = ${id}
+    `;
+    await recordAudit(
+      {
+        actorUserId: actor.userId,
+        action: 'brand.connection_changed',
+        entityType: 'brand',
+        entityId: id,
+        detail: {
+          slug: before.slug,
+          connectionFingerprint: {
+            from: before.read_connection_fingerprint,
+            to: connection.fingerprint,
+          },
+        },
         ipAddress: actor.ipAddress,
         requestId: actor.requestId,
       },
