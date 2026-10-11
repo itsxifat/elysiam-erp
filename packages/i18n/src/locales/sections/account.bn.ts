@@ -85,7 +85,6 @@ const bn: Record<AccountKey, string> = {
   'account.twoFactor.password': 'আপনার পাসওয়ার্ড',
   'account.twoFactor.passwordHint': 'আবার চাওয়া হচ্ছে, কারণ এতে আপনার সাইন-ইনের ধরন বদলায়।',
   'account.twoFactor.currentCode': 'অথেনটিকেটর অ্যাপের কোড, অথবা একটি রিকভারি কোড',
-  'account.twoFactor.code': 'ছয় সংখ্যার কোড',
   'account.twoFactor.codeFormat': 'অ্যাপে দেখানো ছয়টি সংখ্যা লিখুন।',
 
   'account.setup.title': 'টু-স্টেপ সাইন-ইন চালু করুন',
@@ -144,7 +143,6 @@ const bn: Record<AccountKey, string> = {
   'account.devices.colLastActive': 'শেষ সক্রিয়',
   'account.devices.thisDevice': 'এই ডিভাইস',
   'account.devices.ownerLink': 'মালিকের লিংক',
-  'account.devices.unknown': 'অজানা ব্রাউজার',
   'account.devices.browserOn': '{system}-এ {browser}',
   'account.devices.kind.desktop': 'কম্পিউটার',
   'account.devices.kind.phone': 'ফোন',

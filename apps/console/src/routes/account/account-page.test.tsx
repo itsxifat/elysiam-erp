@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LocaleProvider } from '../../i18n/locale.js';
+import type { AccountView, SessionView } from './api.js';
 
 vi.mock('../../env.js', () => ({ env: { VITE_API_URL: 'http://api.test' } }));
 
@@ -11,9 +12,6 @@ const { SessionProvider } = await import('../../auth/session.js');
 const { AccountPage } = await import('./account-page.js');
 const { TotpQr } = await import('../../auth/totp-qr.js');
 const { wouldWall } = await import('../settings/security.js');
-
-type AccountView = import('./api.js').AccountView;
-type SessionView = import('./api.js').SessionView;
 
 /**
  * My account's screen (M40): what it offers a person from what the server says about them, and
@@ -125,7 +123,7 @@ async function settle(): Promise<void> {
 
 async function render(): Promise<void> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  await act(async () => {
+  act(() => {
     root = createRoot(host);
     root.render(
       <LocaleProvider>
@@ -199,7 +197,12 @@ describe('two-step sign-in', () => {
 
   it('lets a person whose role does not require it turn it off', async () => {
     account = baseAccount({
-      twoFactor: { ...baseAccount().twoFactor, enabled: true, backupCodesLeft: 2, canTurnOff: true },
+      twoFactor: {
+        ...baseAccount().twoFactor,
+        enabled: true,
+        backupCodesLeft: 2,
+        canTurnOff: true,
+      },
     });
     await render();
     expect(button('Turn off')?.disabled).toBe(false);
@@ -216,7 +219,7 @@ describe('devices', () => {
     expect(rows[0]?.querySelector('button')).toBeNull();
     const signOut = button('Sign out Chrome on Android');
     expect(signOut).toBeDefined();
-    await act(async () => {
+    act(() => {
       signOut?.click();
     });
     await settle();
@@ -234,16 +237,19 @@ describe('the password form', () => {
     const set = (id: string, value: string) => {
       const input = host.querySelector<HTMLInputElement>(`#${id}`);
       if (input === null) throw new Error(`no ${id}`);
+      // React tracks a controlled input's value through the prototype's setter, so the test
+      // sets it there, as a person typing would.
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- called with `input` below
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
       setter?.call(input, value);
       input.dispatchEvent(new Event('input', { bubbles: true }));
     };
-    await act(async () => {
+    act(() => {
       set('password-current', 'old-password');
       set('password-new', 'a-new-long-passphrase');
       set('password-confirm', 'something-else-here');
     });
-    await act(async () => {
+    act(() => {
       form?.requestSubmit();
     });
     expect(text()).toContain('The two new passwords differ.');
@@ -252,8 +258,8 @@ describe('the password form', () => {
 });
 
 describe('the QR code', () => {
-  it('draws the address as an image with an accessible name, on the scan tokens', async () => {
-    await act(async () => {
+  it('draws the address as an image with an accessible name, on the scan tokens', () => {
+    act(() => {
       root = createRoot(host);
       root.render(<TotpQr uri="otpauth://totp/Brand:a?secret=JBSWY3DPEHPK3PXP" label="QR code" />);
     });
@@ -271,8 +277,20 @@ describe('Settings → Security', () => {
       superAdminsAlways: true as const,
       isDefault: true,
       roles: [
-        { role: 'org_admin' as const, required: true, byDefault: true, members: 2, withoutTwoFactor: 1 },
-        { role: 'sales' as const, required: false, byDefault: false, members: 5, withoutTwoFactor: 3 },
+        {
+          role: 'org_admin' as const,
+          required: true,
+          byDefault: true,
+          members: 2,
+          withoutTwoFactor: 1,
+        },
+        {
+          role: 'sales' as const,
+          required: false,
+          byDefault: false,
+          members: 5,
+          withoutTwoFactor: 3,
+        },
         { role: 'hr' as const, required: false, byDefault: false, members: 1, withoutTwoFactor: 0 },
       ],
     };

@@ -84,7 +84,6 @@ const en = {
   'account.twoFactor.password': 'Your password',
   'account.twoFactor.passwordHint': 'Asked again because this changes how you sign in.',
   'account.twoFactor.currentCode': 'Code from your authenticator app, or a recovery code',
-  'account.twoFactor.code': 'Six-digit code',
   'account.twoFactor.codeFormat': 'Enter the six digits the app shows.',
 
   'account.setup.title': 'Set up two-step sign-in',
@@ -143,7 +142,6 @@ const en = {
   'account.devices.colLastActive': 'Last active',
   'account.devices.thisDevice': 'This device',
   'account.devices.ownerLink': 'Owner link',
-  'account.devices.unknown': 'Unknown browser',
   'account.devices.browserOn': '{browser} on {system}',
   'account.devices.kind.desktop': 'Computer',
   'account.devices.kind.phone': 'Phone',

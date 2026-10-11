@@ -1,6 +1,8 @@
 import { en as accountEn } from '@elysium/i18n/locales/sections/account.en';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AccountView, SessionView } from './api.js';
+
 vi.mock('../../env.js', () => ({ env: { VITE_API_URL: 'http://api.test' } }));
 
 const { ApiError } = await import('../../api.js');
@@ -20,16 +22,18 @@ const {
 } = await import('./logic.js');
 const { fill } = await import('./messages.js');
 
-type AccountView = import('./api.js').AccountView;
-type SessionView = import('./api.js').SessionView;
-
 /** My account's decisions (M40): what the page says, read against the English strings. */
 
 const t = (key: keyof typeof accountEn, values?: Readonly<Record<string, string>>) =>
   fill(accountEn[key], values ?? {});
-const roleName = (role: string) => ({ sales: 'Sales', org_admin: 'Organization admin' })[role] ?? role;
+const roleName = (role: string) =>
+  ({ sales: 'Sales', org_admin: 'Organization admin' })[role] ?? role;
 
-function view(overrides: Partial<AccountView> & { twoFactor?: Partial<AccountView['twoFactor']> } = {}): AccountView {
+function view(
+  overrides: Partial<Omit<AccountView, 'twoFactor'>> & {
+    twoFactor?: Partial<AccountView['twoFactor']>;
+  } = {},
+): AccountView {
   const { twoFactor, ...rest } = overrides;
   return {
     userId: 'usr_1',
@@ -89,7 +93,11 @@ describe('requirementText', () => {
       'Your owner sign-in link checks it',
     );
     expect(
-      requirementText(view({ twoFactor: { required: true, requiredElsewhere: true } }), t, roleName),
+      requirementText(
+        view({ twoFactor: { required: true, requiredElsewhere: true } }),
+        t,
+        roleName,
+      ),
     ).toBe('Yes, for another of your roles');
   });
 });
@@ -145,7 +153,12 @@ describe('refusalText', () => {
 });
 
 describe('passwordProblems', () => {
-  const base = { current: 'old-password', password: 'a-new-long-passphrase', confirm: 'a-new-long-passphrase', signOutOthers: true };
+  const base = {
+    current: 'old-password',
+    password: 'a-new-long-passphrase',
+    confirm: 'a-new-long-passphrase',
+    signOutOthers: true,
+  };
 
   it('passes a good form', () => {
     expect(passwordProblems(base, t)).toEqual({});
@@ -161,15 +174,16 @@ describe('passwordProblems', () => {
     expect(passwordProblems({ ...base, confirm: 'something-else-here' }, t).confirm).toBe(
       'The two new passwords differ.',
     );
-    expect(
-      passwordProblems({ ...base, current: base.password }, t).password,
-    ).toBe('The new password is the same as the current one.');
+    expect(passwordProblems({ ...base, current: base.password }, t).password).toBe(
+      'The new password is the same as the current one.',
+    );
   });
 });
 
 describe('the authenticator key and the recovery codes', () => {
   it('takes the key out of the address and groups it for typing', () => {
-    const uri = 'otpauth://totp/Brand:rahima%40example.invalid?secret=JBSWY3DPEHPK3PXPJBSW&issuer=Brand';
+    const uri =
+      'otpauth://totp/Brand:rahima%40example.invalid?secret=JBSWY3DPEHPK3PXPJBSW&issuer=Brand';
     expect(keyFromUri(uri)).toBe('JBSWY3DPEHPK3PXPJBSW');
     expect(groupKey('JBSWY3DPEHPK3PXP')).toBe('JBSW Y3DP EHPK 3PXP');
     expect(keyFromUri('not a uri')).toBe('');

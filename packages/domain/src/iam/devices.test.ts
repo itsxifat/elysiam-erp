@@ -108,7 +108,7 @@ describe('maskAddress', () => {
       fc.property(fc.ipV6(), (address) => {
         const masked = maskAddress(address);
         if (masked === null) return; // fast-check also writes the IPv4-suffixed forms
-        expect(masked.endsWith('::/48') || /\.x$/.test(masked)).toBe(true);
+        expect(masked.endsWith('::/48') || masked.endsWith('.x')).toBe(true);
       }),
     );
   });

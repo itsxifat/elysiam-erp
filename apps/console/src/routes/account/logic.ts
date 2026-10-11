@@ -30,17 +30,15 @@ export function requirementText(
 }
 
 /** Why "Turn off" is disabled, or null when it is not. */
+const BLOCKED: Readonly<Record<'role' | 'super_admin' | 'owner', AccountKey>> = {
+  role: 'account.twoFactor.blockedRole',
+  super_admin: 'account.twoFactor.blockedSuperAdmin',
+  owner: 'account.twoFactor.blockedOwner',
+};
+
 export function turnOffBlockedText(view: AccountView, t: T): string | null {
-  switch (view.twoFactor.turnOffBlockedBy) {
-    case 'role':
-      return t('account.twoFactor.blockedRole');
-    case 'super_admin':
-      return t('account.twoFactor.blockedSuperAdmin');
-    case 'owner':
-      return t('account.twoFactor.blockedOwner');
-    default:
-      return null;
-  }
+  const blockedBy = view.twoFactor.turnOffBlockedBy;
+  return blockedBy === null ? null : t(BLOCKED[blockedBy]);
 }
 
 /** Three or fewer recovery codes left is worth a nudge. */
@@ -61,8 +59,7 @@ export function deviceName(session: SessionView, t: T): string {
 /** This device first, then the most recently active. */
 export function orderSessions(sessions: readonly SessionView[]): SessionView[] {
   return [...sessions].sort(
-    (a, b) =>
-      Number(b.current) - Number(a.current) || b.lastActiveAt.localeCompare(a.lastActiveAt),
+    (a, b) => Number(b.current) - Number(a.current) || b.lastActiveAt.localeCompare(a.lastActiveAt),
   );
 }
 
@@ -70,25 +67,24 @@ export function orderSessions(sessions: readonly SessionView[]): SessionView[] {
  * The words for a refusal. The server's codes are mapped to this section's own strings, so the
  * Bangla page never shows an English detail; anything unexpected reads as "did not work".
  */
+/** The server's refusal codes (ours and Better Auth's), and this section's words for each. */
+const REFUSALS: Readonly<Record<string, AccountKey>> = {
+  ACCOUNT_PASSWORD_INVALID: 'account.error.password',
+  INVALID_PASSWORD: 'account.error.password',
+  TWO_FACTOR_CODE_INVALID: 'account.error.code',
+  INVALID_CODE: 'account.error.code',
+  INVALID_TWO_FACTOR_CODE: 'account.error.code',
+  TWO_FACTOR_LOCKED: 'account.error.locked',
+  TWO_FACTOR_REPLACEMENT_EXPIRED: 'account.error.expired',
+  TWO_FACTOR_REQUIRED: 'account.error.required',
+};
+
 export function refusalText(cause: unknown, t: T): string {
   if (cause instanceof ApiError) {
-    switch (cause.code) {
-      case 'ACCOUNT_PASSWORD_INVALID':
-      case 'INVALID_PASSWORD':
-        return t('account.error.password');
-      case 'TWO_FACTOR_CODE_INVALID':
-      case 'INVALID_CODE':
-      case 'INVALID_TWO_FACTOR_CODE':
-        return t('account.error.code');
-      case 'TWO_FACTOR_LOCKED':
-        return t('account.error.locked');
-      case 'TWO_FACTOR_REPLACEMENT_EXPIRED':
-        return t('account.error.expired');
-      case 'TWO_FACTOR_REQUIRED':
-        return t('account.error.required');
-      default:
-        if (cause.status === 429) return t('account.error.locked');
-    }
+    const key =
+      cause.code !== null && Object.hasOwn(REFUSALS, cause.code) ? REFUSALS[cause.code] : undefined;
+    if (key !== undefined) return t(key);
+    if (cause.status === 429) return t('account.error.locked');
   }
   return t('account.error.generic');
 }

@@ -7,17 +7,10 @@ import {
   type RecoveryCode,
   type TotpCode,
 } from '@elysium/contracts';
-import { Check, Copy, Download, KeyRound, ShieldCheck } from 'lucide-react';
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import {
-  ApiError,
-  endpoints,
-  NetworkError,
-  type EnrolmentResult,
-  type LoginBranding,
-} from '../api.js';
+import { ApiError, endpoints, NetworkError, type LoginBranding } from '../api.js';
 import { applyBrand } from '../brand.js';
 import { Alert, Button, Field, Skeleton } from '../ui/primitives.js';
 import { useT } from '../i18n/locale.js';
@@ -35,8 +28,16 @@ import { useT } from '../i18n/locale.js';
 
 type Step = 'credentials' | 'totp' | 'recovery' | 'enrol' | 'walled';
 
-/** The QR code's encoder, loaded only when a set-up screen shows one (M40). */
-const TotpQr = lazy(() => import('./totp-qr.js'));
+/**
+ * The set-up screens, in their own chunk (M40): only a person setting up two-step sign-in
+ * opens them, and with the QR code they would not fit the first download's budget.
+ */
+const EnrolStep = lazy(() =>
+  import('./enrol-step.js').then((module) => ({ default: module.EnrolStep })),
+);
+const WalledStep = lazy(() =>
+  import('./enrol-step.js').then((module) => ({ default: module.WalledStep })),
+);
 
 export interface LoginScreenProps {
   readonly branding: LoginBranding | null;
@@ -100,24 +101,26 @@ export function LoginScreen({ branding, onAuthenticated, walled = false }: Login
             />
           ) : null}
 
-          {step === 'walled' ? (
-            <WalledStep
-              onPassword={(value) => {
-                setPassword(value);
-                setError(null);
-                setStep('enrol');
-              }}
-            />
-          ) : null}
-
-          {step === 'enrol' ? (
-            <EnrolStep
-              password={password}
-              brandSlug={branding?.slug ?? null}
-              error={error}
-              onError={setError}
-              onEnrolled={() => finish(onAuthenticated, setStep, setError, t)}
-            />
+          {step === 'walled' || step === 'enrol' ? (
+            <Suspense fallback={<EnrolFallback />}>
+              {step === 'walled' ? (
+                <WalledStep
+                  onPassword={(value) => {
+                    setPassword(value);
+                    setError(null);
+                    setStep('enrol');
+                  }}
+                />
+              ) : (
+                <EnrolStep
+                  password={password}
+                  brandSlug={branding?.slug ?? null}
+                  error={error}
+                  onError={setError}
+                  onEnrolled={() => finish(onAuthenticated, setStep, setError, t)}
+                />
+              )}
+            </Suspense>
           ) : null}
         </div>
 
@@ -166,7 +169,7 @@ async function finish(
  * CSRF-rejected user goes and resets a password that was never wrong. Only 401
  * and 400 are actually about the credentials.
  */
-function messageFor(cause: unknown, fallback: string, t: ReturnType<typeof useT>): string {
+export function messageFor(cause: unknown, fallback: string, t: ReturnType<typeof useT>): string {
   if (cause instanceof NetworkError) return t('auth.unreachable');
 
   if (cause instanceof ApiError) {
@@ -340,270 +343,16 @@ function SecondFactorStep({
   );
 }
 
-/**
- * A walled session's way in (M40): the password again, which Better Auth's enrolment needs,
- * and then the set-up. Signing out instead is offered too — it may not be the person's device.
- */
-function WalledStep({ onPassword }: { readonly onPassword: (password: string) => void }) {
+/** The set-up screen's shape while its chunk arrives. */
+function EnrolFallback() {
   const t = useT();
-  const [value, setValue] = useState('');
   return (
-    <form
-      className="mt-5 space-y-4"
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (value !== '') onPassword(value);
-      }}
-    >
-      <p className="text-sm text-muted-foreground">{t('auth.walled.detail')}</p>
-      <Field
-        label={t('auth.password')}
-        type="password"
-        autoComplete="current-password"
-        autoFocus
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-      />
-      <Button type="submit" disabled={value === ''}>
-        {t('auth.walled.continue')}
-      </Button>
-      <div className="text-center">
-        <Button
-          variant="link"
-          onClick={() => {
-            void endpoints.signOut().finally(() => window.location.reload());
-          }}
-        >
-          {t('auth.signOut')}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-/**
- * First-time enrolment, for a role §6 requires a second factor from.
- *
- * This screen is why the server issues a session before the factor exists: the
- * enrolment endpoints need one. Everything else stays walled until the code
- * below verifies.
- */
-function EnrolStep({
-  password,
-  brandSlug,
-  error,
-  onError,
-  onEnrolled,
-}: {
-  readonly password: string;
-  /** Names the downloaded recovery codes after the brand (D-472). */
-  readonly brandSlug: string | null;
-  readonly error: string | null;
-  readonly onError: (message: string | null) => void;
-  readonly onEnrolled: () => Promise<void>;
-}) {
-  const t = useT();
-  const [enrolment, setEnrolment] = useState<EnrolmentResult | null>(null);
-  const [acknowledged, setAcknowledged] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const form = useForm<TotpCode>({
-    resolver: zodResolver(totpCodeSchema),
-    defaultValues: { code: '' },
-  });
-
-  /*
-   * One enrolment per screen, whatever the effect does.
-   *
-   * Each call to the enable endpoint issues a new secret and replaces the last one.
-   * React runs this effect twice in a development build, so two requests raced:
-   * the screen showed the secret of whichever answer it kept, the server kept the
-   * secret of whichever write landed last, and a correct code from the app was
-   * refused when the two differed. Found by the M05 stack spec on 2026-09-30. The
-   * ref survives the double run, so both runs share the one request.
-   */
-  const request = useRef<{ password: string; result: Promise<EnrolmentResult> } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (request.current?.password !== password) {
-      request.current = { password, result: endpoints.enrol(password) };
-    }
-    request.current.result
-      .then((result) => {
-        if (!cancelled) setEnrolment(result);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) onError(messageFor(cause, t('auth.enrol.failed'), t));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [password, onError, t]);
-
-  const submit = form.handleSubmit(async ({ code }) => {
-    onError(null);
-    try {
-      await endpoints.verifyTotp(code);
-      await onEnrolled();
-    } catch (cause) {
-      onError(messageFor(cause, t('auth.twoFactor.invalid'), t));
-    }
-  });
-
-  if (enrolment === null) {
-    return (
-      <div className="mt-5 space-y-5">
-        <p className="text-sm text-muted-foreground">{t('auth.enrol.subtitle')}</p>
-        {error === null ? (
-          <div className="space-y-4" aria-busy="true" aria-label={t('common.loading')}>
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        ) : (
-          <Alert>{error}</Alert>
-        )}
-      </div>
-    );
-  }
-
-  const secret = secretFrom(enrolment.totpURI);
-
-  return (
-    <div className="mt-5 space-y-5">
-      <p className="text-sm text-muted-foreground">{t('auth.enrol.subtitle')}</p>
-
-      <Step icon={<KeyRound className="size-4" aria-hidden="true" />} label={t('auth.enrol.step1')}>
-        <p className="text-xs text-muted-foreground">{t('auth.enrol.scan')}</p>
-        <div className="flex justify-center">
-          <Suspense fallback={<Skeleton className="size-44" />}>
-            <TotpQr uri={enrolment.totpURI} label={t('auth.enrol.qr')} />
-          </Suspense>
-        </div>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 truncate rounded-md bg-muted px-3 py-2 font-mono text-xs text-foreground">
-            {secret}
-          </code>
-          <Button
-            variant="ghost"
-            aria-label={t('auth.enrol.copy')}
-            onClick={() => {
-              void navigator.clipboard.writeText(secret).then(() => {
-                setCopied(true);
-              });
-            }}
-          >
-            {copied ? (
-              <Check className="size-4" aria-hidden="true" />
-            ) : (
-              <Copy className="size-4" aria-hidden="true" />
-            )}
-            <span className="sr-only">
-              {copied ? t('auth.enrol.copied') : t('auth.enrol.copy')}
-            </span>
-          </Button>
-        </div>
-      </Step>
-
-      <Step
-        icon={<ShieldCheck className="size-4" aria-hidden="true" />}
-        label={t('auth.enrol.step2')}
-      >
-        <ul className="grid grid-cols-2 gap-1.5 rounded-md bg-muted p-3 font-mono text-xs text-foreground">
-          {enrolment.backupCodes.map((code) => (
-            <li key={code} className="tabular-nums">
-              {code}
-            </li>
-          ))}
-        </ul>
-        {/* Stacked, not side by side: at the card's width the two controls
-            collided and the checkbox label wrapped across the button. */}
-        <div className="mt-3 space-y-3">
-          <Button variant="link" onClick={() => downloadCodes(enrolment.backupCodes, brandSlug)}>
-            <Download className="size-4" aria-hidden="true" />
-            {t('auth.enrol.download')}
-          </Button>
-          <label className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={acknowledged}
-              onChange={(event) => setAcknowledged(event.target.checked)}
-              className="mt-px size-4 shrink-0 rounded-sm border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            />
-            <span>{t('auth.enrol.acknowledge')}</span>
-          </label>
-        </div>
-      </Step>
-
-      <form onSubmit={(event) => void submit(event)} className="space-y-3" noValidate>
-        <Field
-          label={t('auth.twoFactor.code')}
-          hint={t('auth.enrol.step3')}
-          error={form.formState.errors.code === undefined ? undefined : t('auth.twoFactor.invalid')}
-          autoComplete="one-time-code"
-          inputMode="numeric"
-          className="text-center font-mono text-base tracking-[0.3em] tabular-nums"
-          {...form.register('code')}
-        />
-
-        {error === null ? null : <Alert>{error}</Alert>}
-
-        <Button type="submit" busy={form.formState.isSubmitting} disabled={!acknowledged}>
-          {t('auth.enrol.confirm')}
-        </Button>
-      </form>
+    <div className="mt-5 space-y-4" aria-busy="true" aria-label={t('common.loading')}>
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-9 w-full" />
     </div>
   );
-}
-
-function Step({
-  icon,
-  label,
-  children,
-}: {
-  readonly icon: ReactNode;
-  readonly label: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <section className="space-y-2">
-      <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <span className="text-muted-foreground">{icon}</span>
-        {label}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-/** The base32 secret an authenticator app expects, out of the otpauth URI. */
-function secretFrom(totpURI: string): string {
-  try {
-    return new URL(totpURI).searchParams.get('secret') ?? '';
-  } catch {
-    return '';
-  }
-}
-
-/**
- * `<brand>-recovery-codes.txt`, after the brand's own slug when the screen knows it, so a
- * person with accounts in several places can tell the files apart (D-472).
- */
-function recoveryCodesFileName(brandSlug: string | null | undefined): string {
-  return typeof brandSlug === 'string' && /^[a-z0-9-]+$/.test(brandSlug)
-    ? `${brandSlug}-recovery-codes.txt`
-    : 'recovery-codes.txt';
-}
-
-function downloadCodes(codes: readonly string[], brandSlug: string | null | undefined): void {
-  const blob = new Blob([`${codes.join('\n')}\n`], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = recoveryCodesFileName(brandSlug);
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 /** Re-applies the brand whenever the resolved org changes. */

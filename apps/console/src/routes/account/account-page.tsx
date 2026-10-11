@@ -49,7 +49,12 @@ import {
   type PasswordForm,
 } from './logic.js';
 import { useAccountT } from './messages.js';
-import { NewCodesDialog, NewPhoneDialog, SetUpDialog, TurnOffDialog } from './two-factor-dialogs.js';
+import {
+  NewCodesDialog,
+  NewPhoneDialog,
+  SetUpDialog,
+  TurnOffDialog,
+} from './two-factor-dialogs.js';
 
 /**
  * My account (M40, D-693 to D-695): the signed-in person's own name, password, two-step sign-in
@@ -377,8 +382,7 @@ function TwoFactorSection({
   const [opened, setOpened] = useState<Opened>(null);
   const factor = view.twoFactor;
   const blocked = turnOffBlockedText(view, t);
-  const brandSlug =
-    session.orgs.find((org) => org.orgId === session.context?.orgId)?.slug ?? null;
+  const brandSlug = session.orgs.find((org) => org.orgId === session.context?.orgId)?.slug ?? null;
 
   const done = async (message: string) => {
     setOpened(null);
@@ -387,16 +391,15 @@ function TwoFactorSection({
   };
 
   return (
-    <Section
-      title={t('account.twoFactor.title')}
-      description={t('account.twoFactor.description')}
-    >
+    <Section title={t('account.twoFactor.title')} description={t('account.twoFactor.description')}>
       <div className="space-y-4">
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
             <dt className="text-xs text-muted-foreground">{t('account.twoFactor.status')}</dt>
             <dd>
-              <StatusBadge tone={factor.enabled ? 'success' : factor.required ? 'warning' : 'neutral'}>
+              <StatusBadge
+                tone={factor.enabled ? 'success' : factor.required ? 'warning' : 'neutral'}
+              >
                 {factor.enabled ? t('account.twoFactor.on') : t('account.twoFactor.off')}
               </StatusBadge>
             </dd>
