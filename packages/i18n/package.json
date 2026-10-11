@@ -80,6 +80,14 @@
     "./locales/sections/trust.bn": {
       "types": "./dist/locales/sections/trust.bn.d.ts",
       "default": "./dist/locales/sections/trust.bn.js"
+    },
+    "./locales/sections/account.en": {
+      "types": "./dist/locales/sections/account.en.d.ts",
+      "default": "./dist/locales/sections/account.en.js"
+    },
+    "./locales/sections/account.bn": {
+      "types": "./dist/locales/sections/account.bn.d.ts",
+      "default": "./dist/locales/sections/account.bn.js"
     }
   },
   "files": [

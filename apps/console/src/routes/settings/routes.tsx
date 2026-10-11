@@ -38,5 +38,11 @@ export function settingsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     path: '/settings/registers',
     component: lazyRouteComponent(() => import('./registers.js'), 'RegistersPage'),
   });
-  return [index, thresholds, zones, couriers, siteKeys, registers] as const;
+  // M40: who must use two-step sign-in (super admins only).
+  const security = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/settings/security',
+    component: lazyRouteComponent(() => import('./security.js'), 'SecurityPage'),
+  });
+  return [index, thresholds, zones, couriers, siteKeys, registers, security] as const;
 }

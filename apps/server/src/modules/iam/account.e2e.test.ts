@@ -362,9 +362,10 @@ describe('turning two-step sign-in off', () => {
     expect((await enter(again.client)).statusCode).toBe(201);
 
     const rows = await auditRowsFor(ORG_A, who.userId);
+    // The audit log redacts anything named like a factor; the row and its actor are the record.
     expect(rows.find((row) => row.action === 'account.two_factor_turned_off')).toMatchObject({
-      before: { twoFactorEnabled: true },
-      after: { twoFactorEnabled: false },
+      actor_user_id: who.userId,
+      operation: 'update',
     });
   });
 

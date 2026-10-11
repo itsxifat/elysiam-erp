@@ -54,6 +54,12 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   { foreground: '--foreground', background: '--background', minimum: 4.5, label: 'body text' },
   { foreground: '--card-foreground', background: '--card', minimum: 4.5, label: 'text on a card' },
   {
+    foreground: '--scan-ink',
+    background: '--scan-surface',
+    minimum: 7,
+    label: 'a QR code a phone camera reads (M40)',
+  },
+  {
     foreground: '--popover-foreground',
     background: '--popover',
     minimum: 4.5,

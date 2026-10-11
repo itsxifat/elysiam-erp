@@ -17,6 +17,8 @@ import type { SettingsMessageKey } from './messages.js';
  * - site keys: `create LandingPage` (org_admin, marketing). Sales and branch managers *read*
  *   landing pages to apply codes; issuing a brand's order key is not that.
  * - registers: `update Wallet` (org_admin, accounts, branch managers for their branches).
+ * - security: `update SecurityPolicy` (M40, D-692), which no membership role holds: super
+ *   admins only.
  */
 export interface SettingsTab {
   readonly path: string;
@@ -49,6 +51,11 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     path: '/settings/registers',
     labelKey: 'settings.nav.registers',
     required: { action: 'update', subject: 'Wallet' },
+  },
+  {
+    path: '/settings/security',
+    labelKey: 'settings.nav.security',
+    required: { action: 'update', subject: 'SecurityPolicy' },
   },
 ];
 

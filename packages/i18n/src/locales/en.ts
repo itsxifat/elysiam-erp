@@ -3600,6 +3600,14 @@ const en = {
   'common.year': 'Year',
   'common.previousYear': 'Previous year',
   'common.nextYear': 'Next year',
+  // M40: My account in the account menu, and a session walled by the brand's two-step setting.
+  'settings.nav.security': 'Security',
+  'shell.myAccount': 'My account',
+  'auth.walled.detail':
+    'Your role now requires two-step sign-in. Enter your password to set it up; it takes about a minute.',
+  'auth.walled.continue': 'Continue',
+  'auth.enrol.qr': 'QR code for your authenticator app',
+  'auth.enrol.scan': 'Scan the QR code with your authenticator app, or add this key by hand.',
 } as const;
 
 /** Every key that exists. A call site passing anything else does not compile. */

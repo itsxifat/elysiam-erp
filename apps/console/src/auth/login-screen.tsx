@@ -8,7 +8,7 @@ import {
   type TotpCode,
 } from '@elysium/contracts';
 import { Check, Copy, Download, KeyRound, ShieldCheck } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 
 import {
@@ -33,22 +33,31 @@ import { useT } from '../i18n/locale.js';
  * which is the one step Better Auth asks for it a second time.
  */
 
-type Step = 'credentials' | 'totp' | 'recovery' | 'enrol';
+type Step = 'credentials' | 'totp' | 'recovery' | 'enrol' | 'walled';
+
+/** The QR code's encoder, loaded only when a set-up screen shows one (M40). */
+const TotpQr = lazy(() => import('./totp-qr.js'));
 
 export interface LoginScreenProps {
   readonly branding: LoginBranding | null;
   /** Called once the user is through every gate and may use the console. */
   readonly onAuthenticated: () => void | Promise<void>;
+  /**
+   * The session exists but is walled (M40, D-699): the brand's security setting now requires
+   * two-step sign-in of this person's role. Opens on the set-up screen, asking only for the
+   * password Better Auth's enrolment needs, rather than on a sign-in form they already passed.
+   */
+  readonly walled?: boolean;
 }
 
-export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
+export function LoginScreen({ branding, onAuthenticated, walled = false }: LoginScreenProps) {
   const t = useT();
-  const [step, setStep] = useState<Step>('credentials');
+  const [step, setStep] = useState<Step>(walled ? 'walled' : 'credentials');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const heading =
-    step === 'enrol'
+    step === 'enrol' || step === 'walled'
       ? t('auth.enrol.title')
       : step === 'credentials'
         ? t('auth.title')
@@ -88,6 +97,16 @@ export function LoginScreen({ branding, onAuthenticated }: LoginScreenProps) {
                 setStep(next);
               }}
               onVerified={() => finish(onAuthenticated, setStep, setError, t)}
+            />
+          ) : null}
+
+          {step === 'walled' ? (
+            <WalledStep
+              onPassword={(value) => {
+                setPassword(value);
+                setError(null);
+                setStep('enrol');
+              }}
             />
           ) : null}
 
@@ -322,6 +341,48 @@ function SecondFactorStep({
 }
 
 /**
+ * A walled session's way in (M40): the password again, which Better Auth's enrolment needs,
+ * and then the set-up. Signing out instead is offered too — it may not be the person's device.
+ */
+function WalledStep({ onPassword }: { readonly onPassword: (password: string) => void }) {
+  const t = useT();
+  const [value, setValue] = useState('');
+  return (
+    <form
+      className="mt-5 space-y-4"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (value !== '') onPassword(value);
+      }}
+    >
+      <p className="text-sm text-muted-foreground">{t('auth.walled.detail')}</p>
+      <Field
+        label={t('auth.password')}
+        type="password"
+        autoComplete="current-password"
+        autoFocus
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      />
+      <Button type="submit" disabled={value === ''}>
+        {t('auth.walled.continue')}
+      </Button>
+      <div className="text-center">
+        <Button
+          variant="link"
+          onClick={() => {
+            void endpoints.signOut().finally(() => window.location.reload());
+          }}
+        >
+          {t('auth.signOut')}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
  * First-time enrolment, for a role §6 requires a second factor from.
  *
  * This screen is why the server issues a session before the factor exists: the
@@ -414,6 +475,12 @@ function EnrolStep({
       <p className="text-sm text-muted-foreground">{t('auth.enrol.subtitle')}</p>
 
       <Step icon={<KeyRound className="size-4" aria-hidden="true" />} label={t('auth.enrol.step1')}>
+        <p className="text-xs text-muted-foreground">{t('auth.enrol.scan')}</p>
+        <div className="flex justify-center">
+          <Suspense fallback={<Skeleton className="size-44" />}>
+            <TotpQr uri={enrolment.totpURI} label={t('auth.enrol.qr')} />
+          </Suspense>
+        </div>
         <div className="flex items-center gap-2">
           <code className="flex-1 truncate rounded-md bg-muted px-3 py-2 font-mono text-xs text-foreground">
             {secret}

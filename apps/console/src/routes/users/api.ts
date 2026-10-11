@@ -186,6 +186,20 @@ export function resetTwoFactor(userId: string, reason: string): Promise<TwoFacto
   });
 }
 
+/** Turn two-step sign-in off where no role requires it (M40, D-697); a reset otherwise. */
+export function turnOffTwoFactor(userId: string, reason: string): Promise<TwoFactorOutcome> {
+  return api.post<TwoFactorOutcome>(`/v1/users/${encodeURIComponent(userId)}/two-factor/turn-off`, {
+    reason,
+  });
+}
+
+/** End a person's sessions (M40, D-696): everywhere, or this brand's only. */
+export function signOutEverywhere(
+  userId: string,
+): Promise<{ userId: string; sessionsEnded: number; scope: 'all' | 'brand' }> {
+  return api.post(`/v1/users/${encodeURIComponent(userId)}/sign-out-everywhere`);
+}
+
 export function voteTrust(userId: string): Promise<{ userId: string; trust: TrustView }> {
   return api.post(`/v1/users/${encodeURIComponent(userId)}/trust`);
 }
