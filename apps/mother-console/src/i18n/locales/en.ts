@@ -380,6 +380,9 @@ const en = {
   'account.passwordSame': 'The new password must differ from the current one.',
   'account.yourPassword': 'Your password',
   'account.done': 'Done',
+  'account.codeNow': 'Code from your authenticator app',
+  'account.codeNowHint':
+    'The 6-digit code your app shows now, or one of your recovery codes (it is then used up).',
   'account.twoFactor': 'Two-step sign-in',
   'account.twoFactorOn': 'On',
   'account.twoFactorRequired':
@@ -394,9 +397,6 @@ const en = {
     'Lost your phone and your recovery codes? Another owner can ask for a reset under People, and a third owner approves it.',
   'account.newPhone.description':
     'Move two-step sign-in to another phone or app. Your current phone keeps working until the new one is confirmed.',
-  'account.newPhone.code': 'Code from your current app',
-  'account.newPhone.codeHint':
-    'The 6-digit code your current app shows now, or one of your recovery codes (it is then used up).',
   'account.newPhone.continue': 'Continue',
   'account.newPhone.step1': 'Add this key to the authenticator app on the new phone',
   'account.newPhone.openApp': 'Open in an authenticator app on this device',
@@ -405,6 +405,9 @@ const en = {
   'account.newPhone.confirm': 'Switch to the new phone',
   'account.newPhone.done':
     'Two-step sign-in now uses the new phone. Codes from the old one no longer work. Your recovery codes stay the same.',
+  'account.newPhone.signOutOthers': 'Also sign out my other devices (for a lost or stolen phone)',
+  'account.newPhone.doneOthers':
+    'Two-step sign-in now uses the new phone, and your other devices are signed out. Codes from the old one no longer work. Your recovery codes stay the same.',
   'account.codes.description':
     'New codes replace the ones you have now. The old codes stop working at once.',
   'account.codes.make': 'Make new codes',

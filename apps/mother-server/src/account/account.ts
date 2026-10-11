@@ -10,11 +10,11 @@ import {
   type AuthenticatorSetupWire,
   type BackupCodesWire,
   type ConfirmAuthenticatorInput,
-  type NewAuthenticatorInput,
+  type FactorProofInput,
   type PasswordChangeInput,
-  type PasswordConfirmInput,
 } from '@elysium/mother-shared';
 import { generateRandomString, symmetricDecrypt, symmetricEncrypt } from 'better-auth/crypto';
+import type { TransactionSql } from 'postgres';
 
 import { recordAudit, type Actor } from '../audit/audit.js';
 import {
@@ -32,21 +32,26 @@ import { MotherError } from '../http/errors.js';
  * My account (M40, D-701 to D-705): what a signed-in owner may change about themselves.
  *
  * - **Name**, at once.
- * - **Password**: the current one first; other devices signed out if they ask (the default).
+ * - **Password**: the current one and a code held now; other devices signed out unless the
+ *   owner unticks it.
  * - **Two-step sign-in**, which is required for everyone and cannot be turned off (D-487):
  *   moved to a new phone (the password and a code held now, then the new phone's first
- *   code), and new recovery codes (the password; shown once).
+ *   code), and new recovery codes (the password and a code held now; shown once).
  * - **Devices**: every session, with this one marked; sign one out, or all the others.
  *
- * The mother does this itself rather than through Better Auth's own routes (closed in
- * `DISABLED_AUTH_PATHS`), so that each change is checked the way it should be and audited
- * in the same transaction. It writes Better Auth's rows the way the library does: the
- * password hashed by its hasher, the TOTP secret and the recovery codes sealed with its
- * secret, so sign-in reads them unchanged.
+ * Anything that changes how this person signs in asks for both factors: a stolen session
+ * that has learnt the password still cannot take the account (the M40 audit's C1, W3).
  *
- * A wrong password or code is audited (`account.check_failed`) and five of them in fifteen
- * minutes stop every check for this person until the window passes (D-705): a stolen
- * session cannot guess its way to a new phone.
+ * The mother does this itself rather than through Better Auth's own routes (closed in
+ * `DISABLED_AUTH_PATHS`, or walled for an enrolled session), so that each change is checked
+ * the way it should be and audited in the same transaction. It writes Better Auth's rows the
+ * way the library does: the password hashed by its hasher, the TOTP secret and the recovery
+ * codes sealed with its secret, so sign-in reads them unchanged.
+ *
+ * Every check runs in one transaction under the person's lock (D-705): the lockout count,
+ * the password, the code (a recovery code used up there) and the change itself, so parallel
+ * guesses queue behind each other and five wrong answers in fifteen minutes are exactly
+ * five. A wrong answer is audited (`account.check_failed`) and committed; the change is not.
  */
 
 /** The library's hasher and sealer, as this auth instance is configured. */
@@ -74,76 +79,32 @@ export const LOCKOUT_MINUTES = 15;
 export const NEW_APP_SECONDS = 10 * 60;
 
 type Step = 'password' | 'new_app' | 'backup_codes';
+type CodeMethod = 'totp' | 'backup_code';
 
-const newAppIdentifier = (sessionId: string): string => `mother-new-app:${sessionId}`;
+const NEW_APP_PREFIX = 'mother-new-app:';
+const newAppIdentifier = (sessionId: string): string => `${NEW_APP_PREFIX}${sessionId}`;
 
 function totp(secret: string) {
   return createOTP(secret, { digits: TOTP_DIGITS, period: TOTP_PERIOD_SECONDS });
 }
 
-/** Five wrong answers in fifteen minutes, counted from the audit log, so a restart forgets nothing. */
-async function assertNotLockedOut(userId: string): Promise<void> {
-  const [row] = await motherSql()<{ count: number }[]>`
-    select count(*)::int as count from mother.audit_log
-    where actor_user_id = ${userId} and action = ${CHECK_FAILED}
-      and occurred_at > now() - make_interval(mins => ${LOCKOUT_MINUTES})
-  `;
-  if ((row?.count ?? 0) >= LOCKOUT_FAILURES) {
-    throw new MotherError(
-      'RATE_LIMITED',
-      `Too many wrong answers. Wait ${String(LOCKOUT_MINUTES)} minutes and try again.`,
-    );
-  }
-}
-
-/** Audit a wrong answer, outside any transaction (it must outlive the refusal), and refuse. */
-async function refuse(actor: Actor, step: Step, failed: 'password' | 'code'): Promise<never> {
-  await recordAudit({
-    actorUserId: actor.userId,
-    action: CHECK_FAILED,
-    entityType: 'person',
-    entityId: actor.userId,
-    detail: { step, failed },
-    ipAddress: actor.ipAddress,
-    requestId: actor.requestId,
-  });
-  throw failed === 'password'
-    ? new MotherError('INVALID_PASSWORD', 'That password is not right.')
-    : new MotherError('INVALID_CODE', 'That code did not work.');
-}
-
-async function checkPassword(
-  crypto: AccountCrypto,
-  actor: Actor,
-  password: string,
-  step: Step,
+/**
+ * Forget the new-phone keys waiting on this person's sessions (all of them, or all but
+ * one): called before those sessions end, so no key outlives the session it is bound to.
+ */
+export async function forgetNewAppKeys(
+  tx: TransactionSql,
+  userId: string,
+  keepSessionId?: string,
 ): Promise<void> {
-  const [row] = await motherSql()<{ password: string | null }[]>`
-    select password from auth.accounts
-    where user_id = ${actor.userId} and provider_id = 'credential'
+  await tx`
+    delete from auth.verifications
+    where identifier in (
+      select ${NEW_APP_PREFIX}::text || s.id from auth.sessions s
+      where s.user_id = ${userId}
+        ${keepSessionId === undefined ? tx`` : tx`and s.id <> ${keepSessionId}`}
+    )
   `;
-  const stored = row?.password ?? null;
-  if (stored === null || !(await crypto.verifyPassword(stored, password))) {
-    await refuse(actor, step, 'password');
-  }
-}
-
-interface FactorRow {
-  readonly id: string;
-  readonly secret: string;
-  readonly backup_codes: string;
-}
-
-async function factorOf(userId: string): Promise<FactorRow> {
-  const [row] = await motherSql()<FactorRow[]>`
-    select id, secret, backup_codes from auth.two_factors
-    where user_id = ${userId} and verified
-    order by id limit 1
-  `;
-  if (row === undefined) {
-    throw new MotherError('CONFLICT', 'Two-step sign-in is not set up for this account.');
-  }
-  return row;
 }
 
 async function readBackupCodes(crypto: AccountCrypto, sealed: string): Promise<string[] | null> {
@@ -158,31 +119,104 @@ async function readBackupCodes(crypto: AccountCrypto, sealed: string): Promise<s
 }
 
 /**
- * Proof of the factor held now: the app's code, or a recovery code, which is used up as
- * signing in with it would (the same compare-and-set on the stored list).
+ * Is this the factor held now? The app's code, or a recovery code, which is used up inside
+ * the caller's transaction (the factor row is locked, so a sign-in using the same code at
+ * once waits and then fails its own compare-and-set).
  */
-async function checkCurrentCode(
+async function matchCurrentCode(
+  tx: TransactionSql,
   crypto: AccountCrypto,
-  actor: Actor,
+  userId: string,
   code: string,
-  step: Step,
-): Promise<'totp' | 'backup_code'> {
-  const factor = await factorOf(actor.userId);
+): Promise<CodeMethod | null> {
+  const [factor] = await tx<{ id: string; secret: string; backup_codes: string }[]>`
+    select id, secret, backup_codes from auth.two_factors
+    where user_id = ${userId} and verified
+    order by id limit 1
+    for update
+  `;
+  if (factor === undefined) {
+    throw new MotherError('CONFLICT', 'Two-step sign-in is not set up for this account.');
+  }
   if (/^\d{6}$/.test(code)) {
-    if (await totp(await crypto.open(factor.secret)).verify(code)) return 'totp';
-    return refuse(actor, step, 'code');
+    return (await totp(await crypto.open(factor.secret)).verify(code)) ? 'totp' : null;
   }
   const codes = await readBackupCodes(crypto, factor.backup_codes);
-  if (codes?.includes(code) === true) {
-    const left = await crypto.seal(JSON.stringify(codes.filter((entry) => entry !== code)));
-    const used = await motherSql()`
-      update auth.two_factors set backup_codes = ${left}
-      where id = ${factor.id} and backup_codes = ${factor.backup_codes}
-      returning id
+  if (codes?.includes(code) !== true) return null;
+  const left = await crypto.seal(JSON.stringify(codes.filter((entry) => entry !== code)));
+  await tx`update auth.two_factors set backup_codes = ${left} where id = ${factor.id}`;
+  return 'backup_code';
+}
+
+type Outcome<T> =
+  | { readonly kind: 'ok'; readonly value: T }
+  | { readonly kind: 'locked' }
+  | { readonly kind: 'refused'; readonly failed: 'password' | 'code' };
+
+/**
+ * Check the password (and, when given, a code held now) and make the change, all in one
+ * transaction under this person's lock. A wrong answer commits only its audit row.
+ */
+async function withProof<T>(
+  crypto: AccountCrypto,
+  actor: Actor,
+  step: Step,
+  proof: { readonly password: string; readonly code?: string },
+  change: (tx: TransactionSql, checkedWith: CodeMethod | null) => Promise<T>,
+): Promise<T> {
+  const outcome = await inMother(async (tx): Promise<Outcome<T>> => {
+    await tx`
+      select pg_advisory_xact_lock(hashtextextended(${`mother.account-check:${actor.userId}`}, 0))
     `;
-    if (used.length === 1) return 'backup_code';
+    const [failures] = await tx<{ count: number }[]>`
+      select count(*)::int as count from mother.audit_log
+      where actor_user_id = ${actor.userId} and action = ${CHECK_FAILED}
+        and occurred_at > now() - make_interval(mins => ${LOCKOUT_MINUTES})
+    `;
+    if ((failures?.count ?? 0) >= LOCKOUT_FAILURES) return { kind: 'locked' };
+    const refused = async (failed: 'password' | 'code'): Promise<Outcome<T>> => {
+      await recordAudit(
+        {
+          actorUserId: actor.userId,
+          action: CHECK_FAILED,
+          entityType: 'person',
+          entityId: actor.userId,
+          detail: { step, failed },
+          ipAddress: actor.ipAddress,
+          requestId: actor.requestId,
+        },
+        tx,
+      );
+      return { kind: 'refused', failed };
+    };
+    const [account] = await tx<{ password: string | null }[]>`
+      select password from auth.accounts
+      where user_id = ${actor.userId} and provider_id = 'credential'
+    `;
+    const stored = account?.password ?? null;
+    if (stored === null || !(await crypto.verifyPassword(stored, proof.password))) {
+      return refused('password');
+    }
+    let checkedWith: CodeMethod | null = null;
+    if (proof.code !== undefined) {
+      checkedWith = await matchCurrentCode(tx, crypto, actor.userId, proof.code);
+      if (checkedWith === null) return refused('code');
+    }
+    return { kind: 'ok', value: await change(tx, checkedWith) };
+  });
+  switch (outcome.kind) {
+    case 'ok':
+      return outcome.value;
+    case 'locked':
+      throw new MotherError(
+        'RATE_LIMITED',
+        `Too many wrong answers. Wait ${String(LOCKOUT_MINUTES)} minutes and try again.`,
+      );
+    case 'refused':
+      throw outcome.failed === 'password'
+        ? new MotherError('INVALID_PASSWORD', 'That password is not right.')
+        : new MotherError('INVALID_CODE', 'That code did not work.');
   }
-  return refuse(actor, step, 'code');
 }
 
 // --- who I am -----------------------------------------------------------------------------
@@ -248,6 +282,20 @@ export async function renameSelf(actor: Actor, input: AccountNameInput): Promise
   });
 }
 
+/** End every other session of this person (and the new-phone keys waiting on them). */
+async function endOtherSessions(
+  tx: TransactionSql,
+  userId: string,
+  keepSessionId: string,
+): Promise<number> {
+  await forgetNewAppKeys(tx, userId, keepSessionId);
+  const ended = await tx`
+    delete from auth.sessions where user_id = ${userId} and id <> ${keepSessionId}
+    returning id
+  `;
+  return ended.length;
+}
+
 // --- password -----------------------------------------------------------------------------
 
 export async function changePassword(
@@ -256,43 +304,46 @@ export async function changePassword(
   sessionId: string,
   input: PasswordChangeInput,
 ): Promise<{ readonly signedOutOtherDevices: number }> {
-  await assertNotLockedOut(actor.userId);
-  await checkPassword(crypto, actor, input.currentPassword, 'password');
   const hash = await crypto.hashPassword(input.newPassword);
-  return inMother(async (tx) => {
-    const updated = await tx`
-      update auth.accounts set password = ${hash}, updated_at = now()
-      where user_id = ${actor.userId} and provider_id = 'credential'
-      returning id
-    `;
-    if (updated.length === 0) {
-      throw new MotherError('CONFLICT', 'This account has no password to change.');
-    }
-    // A password link still open for this person (an invite, the operator's) is void now.
-    await tx`
-      delete from auth.verifications
-      where value = ${actor.userId} and identifier like 'reset-password:%'
-    `;
-    const ended = input.signOutOtherDevices
-      ? await tx`
-          delete from auth.sessions where user_id = ${actor.userId} and id <> ${sessionId}
-          returning id
-        `
-      : [];
-    await recordAudit(
-      {
-        actorUserId: actor.userId,
-        action: 'account.password_changed',
-        entityType: 'person',
-        entityId: actor.userId,
-        detail: { otherDevicesSignedOut: ended.length },
-        ipAddress: actor.ipAddress,
-        requestId: actor.requestId,
-      },
-      tx,
-    );
-    return { signedOutOtherDevices: ended.length };
-  });
+  return withProof(
+    crypto,
+    actor,
+    'password',
+    { password: input.currentPassword, code: input.code },
+    async (tx, checkedWith) => {
+      const updated = await tx`
+        update auth.accounts set password = ${hash}, updated_at = now()
+        where user_id = ${actor.userId} and provider_id = 'credential'
+        returning id
+      `;
+      if (updated.length === 0) {
+        throw new MotherError('CONFLICT', 'This account has no password to change.');
+      }
+      // A password link still open for this person (an invite, the operator's) is void now,
+      // and so is a sign-in that passed the old password and waits for its code.
+      await tx`
+        delete from auth.verifications
+        where value = ${actor.userId}
+          and (identifier like 'reset-password:%' or identifier like '2fa-%')
+      `;
+      const ended = input.signOutOtherDevices
+        ? await endOtherSessions(tx, actor.userId, sessionId)
+        : 0;
+      await recordAudit(
+        {
+          actorUserId: actor.userId,
+          action: 'account.password_changed',
+          entityType: 'person',
+          entityId: actor.userId,
+          detail: { checkedWith, otherDevicesSignedOut: ended },
+          ipAddress: actor.ipAddress,
+          requestId: actor.requestId,
+        },
+        tx,
+      );
+      return { signedOutOtherDevices: ended };
+    },
+  );
 }
 
 // --- two-step sign-in ---------------------------------------------------------------------
@@ -306,16 +357,13 @@ export async function startNewAuthenticator(
   crypto: AccountCrypto,
   actor: Actor,
   sessionId: string,
-  input: NewAuthenticatorInput,
+  input: FactorProofInput,
 ): Promise<AuthenticatorSetupWire> {
-  await assertNotLockedOut(actor.userId);
-  await checkPassword(crypto, actor, input.password, 'new_app');
-  const method = await checkCurrentCode(crypto, actor, input.code, 'new_app');
   // The library's own recipe for a TOTP secret (`/two-factor/enable`).
   const secret = generateRandomString(32);
   const sealed = await crypto.seal(secret);
   const identifier = newAppIdentifier(sessionId);
-  return inMother(async (tx) => {
+  return withProof(crypto, actor, 'new_app', input, async (tx, checkedWith) => {
     await tx`delete from auth.verifications where identifier = ${identifier}`;
     const [row] = await tx<{ expires_at: Date }[]>`
       insert into auth.verifications (id, identifier, value, expires_at)
@@ -330,7 +378,7 @@ export async function startNewAuthenticator(
         action: 'account.two_factor.new_app_started',
         entityType: 'person',
         entityId: actor.userId,
-        detail: { checkedWith: method },
+        detail: { checkedWith },
         ipAddress: actor.ipAddress,
         requestId: actor.requestId,
       },
@@ -343,13 +391,16 @@ export async function startNewAuthenticator(
   });
 }
 
-/** Step 2: the new phone's first code. Only then does the new key replace the old one. */
+/**
+ * Step 2: the new phone's first code. Only then does the new key replace the old one, and,
+ * if the owner asks (a lost or stolen phone), every other session ends with it.
+ */
 export async function confirmNewAuthenticator(
   crypto: AccountCrypto,
   actor: Actor,
   sessionId: string,
   input: ConfirmAuthenticatorInput,
-): Promise<void> {
+): Promise<{ readonly signedOutOtherDevices: number }> {
   const identifier = newAppIdentifier(sessionId);
   const [pending] = await motherSql()<{ value: string }[]>`
     select value from auth.verifications where identifier = ${identifier} and expires_at > now()
@@ -363,7 +414,7 @@ export async function confirmNewAuthenticator(
   if (!(await totp(await crypto.open(pending.value)).verify(input.code))) {
     throw new MotherError('INVALID_CODE', 'That code did not work. Try the newest one.');
   }
-  await inMother(async (tx) => {
+  return inMother(async (tx) => {
     const taken = await tx`
       delete from auth.verifications where identifier = ${identifier} and value = ${pending.value}
       returning id
@@ -381,36 +432,41 @@ export async function confirmNewAuthenticator(
     if (moved.length === 0) {
       throw new MotherError('CONFLICT', 'Two-step sign-in is not set up for this account.');
     }
+    const ended = input.signOutOtherDevices
+      ? await endOtherSessions(tx, actor.userId, sessionId)
+      : 0;
     await recordAudit(
       {
         actorUserId: actor.userId,
         action: 'account.two_factor.new_app_confirmed',
         entityType: 'person',
         entityId: actor.userId,
-        detail: {},
+        detail: { otherDevicesSignedOut: ended },
         ipAddress: actor.ipAddress,
         requestId: actor.requestId,
       },
       tx,
     );
+    return { signedOutOtherDevices: ended };
   });
 }
 
-/** New recovery codes (D-703): the old ones stop working; these are shown once. */
+/**
+ * New recovery codes (D-703): the password and a code held now, because the codes are
+ * themselves a second factor. The old ones stop working; these are shown once.
+ */
 export async function renewBackupCodes(
   crypto: AccountCrypto,
   actor: Actor,
-  input: PasswordConfirmInput,
+  input: FactorProofInput,
 ): Promise<BackupCodesWire> {
-  await assertNotLockedOut(actor.userId);
-  await checkPassword(crypto, actor, input.password, 'backup_codes');
   // The library's own recipe (`generateBackupCodes`): letters and digits, `xxxxx-xxxxx`.
   const codes = Array.from({ length: BACKUP_CODE_COUNT }, () => {
     const raw = generateRandomString(BACKUP_CODE_LENGTH, 'a-z', '0-9', 'A-Z');
     return `${raw.slice(0, 5)}-${raw.slice(5)}`;
   });
   const sealed = await crypto.seal(JSON.stringify(codes));
-  await inMother(async (tx) => {
+  await withProof(crypto, actor, 'backup_codes', input, async (tx, checkedWith) => {
     const updated = await tx`
       update auth.two_factors set backup_codes = ${sealed}
       where user_id = ${actor.userId} and verified
@@ -425,7 +481,7 @@ export async function renewBackupCodes(
         action: 'account.backup_codes.renewed',
         entityType: 'person',
         entityId: actor.userId,
-        detail: { count: codes.length },
+        detail: { count: codes.length, checkedWith },
         ipAddress: actor.ipAddress,
         requestId: actor.requestId,
       },
@@ -480,6 +536,12 @@ export async function signOutSession(
     throw new MotherError('CONFLICT', 'This is the device you are using: sign out instead.');
   }
   await inMother(async (tx) => {
+    await tx`
+      delete from auth.verifications
+      where identifier = ${newAppIdentifier(sessionId)}
+        and exists (select 1 from auth.sessions
+                    where id = ${sessionId} and user_id = ${actor.userId})
+    `;
     const [ended] = await tx<{ user_agent: string | null }[]>`
       delete from auth.sessions where id = ${sessionId} and user_id = ${actor.userId}
       returning user_agent
@@ -505,22 +567,19 @@ export async function signOutOtherSessions(
   currentSessionId: string,
 ): Promise<{ readonly signedOut: number }> {
   return inMother(async (tx) => {
-    const ended = await tx`
-      delete from auth.sessions where user_id = ${actor.userId} and id <> ${currentSessionId}
-      returning id
-    `;
+    const signedOut = await endOtherSessions(tx, actor.userId, currentSessionId);
     await recordAudit(
       {
         actorUserId: actor.userId,
         action: 'account.sessions.signed_out_others',
         entityType: 'person',
         entityId: actor.userId,
-        detail: { count: ended.length },
+        detail: { count: signedOut },
         ipAddress: actor.ipAddress,
         requestId: actor.requestId,
       },
       tx,
     );
-    return { signedOut: ended.length };
+    return { signedOut };
   });
 }

@@ -14,13 +14,13 @@ import { businessDate } from '@elysium/domain';
 import {
   accountNameSchema,
   activityQuerySchema,
+  backupCodesRenewSchema,
   brandUpdateSchema,
   confirmAuthenticatorSchema,
   inviteOwnerSchema,
   monthQuerySchema,
   newAuthenticatorSchema,
   passwordChangeSchema,
-  passwordConfirmSchema,
   pullRequestSchema,
   rangeQuerySchema,
   sessionIdParamSchema,
@@ -373,10 +373,9 @@ export class AccountController {
   async confirmNewApp(
     @Req() request: FastifyRequest,
     @Body() body: unknown,
-  ): Promise<{ ok: true }> {
+  ): Promise<{ signedOutOtherDevices: number }> {
     const input = parseWith(confirmAuthenticatorSchema, body);
-    await confirmNewAuthenticator(this.crypto, actorOf(request), sessionOf(request), input);
-    return { ok: true };
+    return confirmNewAuthenticator(this.crypto, actorOf(request), sessionOf(request), input);
   }
 
   @Post('two-factor/backup-codes')
@@ -385,7 +384,7 @@ export class AccountController {
     @Req() request: FastifyRequest,
     @Body() body: unknown,
   ): Promise<BackupCodesWire> {
-    return renewBackupCodes(this.crypto, actorOf(request), parseWith(passwordConfirmSchema, body));
+    return renewBackupCodes(this.crypto, actorOf(request), parseWith(backupCodesRenewSchema, body));
   }
 
   @Get('sessions')

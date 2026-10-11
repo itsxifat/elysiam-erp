@@ -136,15 +136,19 @@ export const endpoints = {
   rename: (name: string) => patch<AccountWire>('/v1/account', { name }),
   changePassword: (input: {
     currentPassword: string;
+    code: string;
     newPassword: string;
     signOutOtherDevices: boolean;
   }) => post<{ signedOutOtherDevices: number }>('/v1/account/password', input),
   startNewApp: (password: string, code: string) =>
     post<AuthenticatorSetupWire>('/v1/account/two-factor/new-app', { password, code }),
-  confirmNewApp: (code: string) =>
-    post<{ ok: true }>('/v1/account/two-factor/new-app/confirm', { code }),
-  renewBackupCodes: (password: string) =>
-    post<BackupCodesWire>('/v1/account/two-factor/backup-codes', { password }),
+  confirmNewApp: (code: string, signOutOtherDevices: boolean) =>
+    post<{ signedOutOtherDevices: number }>('/v1/account/two-factor/new-app/confirm', {
+      code,
+      signOutOtherDevices,
+    }),
+  renewBackupCodes: (password: string, code: string) =>
+    post<BackupCodesWire>('/v1/account/two-factor/backup-codes', { password, code }),
   sessions: () => get<{ sessions: AccountSessionWire[] }>('/v1/account/sessions'),
   signOutSession: (id: string) =>
     post<{ ok: true }>(`/v1/account/sessions/${encodeURIComponent(id)}/sign-out`),

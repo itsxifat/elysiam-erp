@@ -72,6 +72,21 @@ export function requestPath(url: string): string {
   }
 }
 
+/**
+ * The path as the router matches it: find-my-way decodes percent-escapes before it routes,
+ * so `/v1/account/%70assword` reaches the password handler and must meet its limit (the M40
+ * audit's W2). Better Auth's router does not decode, so for `/api/auth` this can only add a
+ * limit to a path that then matches nothing.
+ */
+export function routedPath(url: string): string {
+  const path = requestPath(url);
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 export function identifierFrom(body: unknown): string | null {
   if (typeof body !== 'object' || body === null) return null;
   const email = (body as Record<string, unknown>).email;
@@ -85,7 +100,7 @@ export function checkRate(
   input: { readonly url: string; readonly ip: string; readonly body: unknown },
   rules: Readonly<Record<string, RateRule>> = CREDENTIAL_RULES,
 ): RateDecision {
-  const path = requestPath(input.url);
+  const path = routedPath(input.url);
   const rule = rules[path];
   if (rule === undefined) return { allowed: true };
   const ip = limiter.hit(`ip:${path}:${input.ip}`, rule.perIp, rule.windowSeconds);

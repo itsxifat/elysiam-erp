@@ -148,9 +148,27 @@ export const pullRequestSchema = z.object({
   full: z.boolean().default(false),
 });
 
+/**
+ * Control, zero-width, line-separator and direction-override characters: never in a
+ * person's name, which is shown on every screen and signed into owner links that write it
+ * into a brand (the M40 audit's N7). The zero-width joiner and non-joiner stay: Bangla
+ * spelling uses them.
+ */
+const UNPRINTABLE = /[\p{Cc}\u200b\u200e\u200f\u2028-\u202e\u2060-\u2069\ufeff]/u;
+
+/** A person's name, as an owner types it for themselves or for someone they invite. */
+export const personNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((value) => !UNPRINTABLE.test(value), {
+    message: 'Letters, digits, spaces and punctuation only.',
+  });
+
 export const inviteOwnerSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
-  name: z.string().trim().min(1).max(200),
+  name: personNameSchema,
 });
 export type InviteOwnerInput = z.infer<typeof inviteOwnerSchema>;
 
@@ -175,24 +193,8 @@ export const PASSWORD_MAX_LENGTH = 128;
 /** A password typed to confirm a change: checked against the stored one, never parsed. */
 const typedPassword = z.string().min(1).max(PASSWORD_MAX_LENGTH);
 
-export const accountNameSchema = z.object({ name: z.string().trim().min(1).max(200) });
+export const accountNameSchema = z.object({ name: personNameSchema });
 export type AccountNameInput = z.infer<typeof accountNameSchema>;
-
-export const passwordChangeSchema = z
-  .object({
-    currentPassword: typedPassword,
-    newPassword: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH),
-    /** End every other session of this person; this one stays signed in. */
-    signOutOtherDevices: z.boolean().default(true),
-  })
-  .refine((value) => value.newPassword !== value.currentPassword, {
-    message: 'The new password must differ from the current one.',
-    path: ['newPassword'],
-  });
-export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;
-
-export const passwordConfirmSchema = z.object({ password: typedPassword });
-export type PasswordConfirmInput = z.infer<typeof passwordConfirmSchema>;
 
 /** A 6-digit code from an authenticator app, spaces allowed while typing. */
 export const totpCodeSchema = z
@@ -211,15 +213,41 @@ export const currentCodeSchema = z
   .max(32)
   .transform((value) => (/^[\d\s]+$/.test(value) ? value.replace(/\s/g, '') : value));
 
-/** Setting two-step sign-in up on a new phone, step 1: the password and the code held now. */
-export const newAuthenticatorSchema = z.object({
+/**
+ * Both factors (D-702, D-703, D-705): what every change to how a person signs in asks for,
+ * so a stolen session that has learnt the password still cannot take the account.
+ */
+export const factorProofSchema = z.object({
   password: typedPassword,
   code: currentCodeSchema,
 });
-export type NewAuthenticatorInput = z.infer<typeof newAuthenticatorSchema>;
+export type FactorProofInput = z.infer<typeof factorProofSchema>;
 
-/** Step 2: the first code the new phone shows. */
-export const confirmAuthenticatorSchema = z.object({ code: totpCodeSchema });
+/** Setting two-step sign-in up on a new phone, step 1: the password and the code held now. */
+export const newAuthenticatorSchema = factorProofSchema;
+/** New recovery codes: the password and the code held now. */
+export const backupCodesRenewSchema = factorProofSchema;
+
+export const passwordChangeSchema = z
+  .object({
+    currentPassword: typedPassword,
+    /** The code held now: the app's, or a recovery code. */
+    code: currentCodeSchema,
+    newPassword: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH),
+    /** End every other session of this person; this one stays signed in. */
+    signOutOtherDevices: z.boolean().default(true),
+  })
+  .refine((value) => value.newPassword !== value.currentPassword, {
+    message: 'The new password must differ from the current one.',
+    path: ['newPassword'],
+  });
+export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;
+
+/** Step 2: the first code the new phone shows, and whether to end the other sessions. */
+export const confirmAuthenticatorSchema = z.object({
+  code: totpCodeSchema,
+  signOutOtherDevices: z.boolean().default(false),
+});
 export type ConfirmAuthenticatorInput = z.infer<typeof confirmAuthenticatorSchema>;
 
 /** A Better Auth session id, as the devices list hands it out. Never a session token. */

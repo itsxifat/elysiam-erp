@@ -386,6 +386,9 @@ const bn: Record<MessageKey, string> = {
   'account.passwordSame': 'নতুন পাসওয়ার্ড বর্তমানটি থেকে আলাদা হতে হবে।',
   'account.yourPassword': 'আপনার পাসওয়ার্ড',
   'account.done': 'শেষ',
+  'account.codeNow': 'অথেনটিকেটর অ্যাপের কোড',
+  'account.codeNowHint':
+    'অ্যাপে এখন যে ৬ অঙ্কের কোড দেখাচ্ছে, অথবা আপনার একটি রিকভারি কোড (সেটি তখন ব্যবহৃত হয়ে যাবে)।',
   'account.twoFactor': 'দুই ধাপের সাইন ইন',
   'account.twoFactorOn': 'চালু',
   'account.twoFactorRequired':
@@ -400,9 +403,6 @@ const bn: Record<MessageKey, string> = {
     'ফোন আর রিকভারি কোড দুটোই হারিয়েছেন? মানুষ পাতায় অন্য একজন মালিক রিসেটের অনুরোধ করতে পারেন, আর তৃতীয় একজন মালিক তা অনুমোদন করেন।',
   'account.newPhone.description':
     'দুই ধাপের সাইন ইন অন্য ফোন বা অ্যাপে সরান। নতুনটি নিশ্চিত না হওয়া পর্যন্ত বর্তমান ফোনটি কাজ করবে।',
-  'account.newPhone.code': 'বর্তমান অ্যাপের কোড',
-  'account.newPhone.codeHint':
-    'বর্তমান অ্যাপে এখন যে ৬ অঙ্কের কোড দেখাচ্ছে, অথবা আপনার একটি রিকভারি কোড (সেটি তখন ব্যবহৃত হয়ে যাবে)।',
   'account.newPhone.continue': 'এগিয়ে যান',
   'account.newPhone.step1': 'নতুন ফোনের অথেনটিকেটর অ্যাপে এই কী যোগ করুন',
   'account.newPhone.openApp': 'এই ডিভাইসের অথেনটিকেটর অ্যাপে খুলুন',
@@ -411,6 +411,9 @@ const bn: Record<MessageKey, string> = {
   'account.newPhone.confirm': 'নতুন ফোনে বদলান',
   'account.newPhone.done':
     'দুই ধাপের সাইন ইন এখন নতুন ফোন ব্যবহার করছে। পুরোনো ফোনের কোড আর কাজ করবে না। রিকভারি কোডগুলো আগের মতোই থাকছে।',
+  'account.newPhone.signOutOthers': 'আমার অন্য ডিভাইসগুলোও সাইন আউট করুন (ফোন হারালে বা চুরি হলে)',
+  'account.newPhone.doneOthers':
+    'দুই ধাপের সাইন ইন এখন নতুন ফোন ব্যবহার করছে, আর আপনার অন্য ডিভাইসগুলো সাইন আউট হয়েছে। পুরোনো ফোনের কোড আর কাজ করবে না। রিকভারি কোডগুলো আগের মতোই থাকছে।',
   'account.codes.description':
     'নতুন কোড আপনার বর্তমান কোডগুলোর জায়গা নেবে। পুরোনো কোডগুলো সঙ্গে সঙ্গে কাজ করা বন্ধ করবে।',
   'account.codes.make': 'নতুন কোড তৈরি করুন',

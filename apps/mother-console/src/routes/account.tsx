@@ -42,8 +42,9 @@ import { copyCodes, downloadCodes, printCodes } from '../ui/recovery-codes.js';
 /**
  * My account (M40, D-701 to D-705): the signed-in owner's name, password, two-step sign-in
  * and devices. Two-step sign-in is required for every owner and cannot be turned off
- * (D-487); here it can be moved to a new phone and its recovery codes renewed. Every
- * change is checked and audited by the server; the screen only asks for what each needs.
+ * (D-487); here it can be moved to a new phone and its recovery codes renewed. Whatever
+ * changes how the owner signs in asks for the password and a code held now. Every change is
+ * checked and audited by the server; the screen only asks for what each needs.
  */
 
 export const ACCOUNT_KEY = ['account'] as const;
@@ -187,6 +188,7 @@ function Password({ account }: { readonly account: AccountWire }) {
   const queryClient = useQueryClient();
   const othersId = useId();
   const [current, setCurrent] = useState('');
+  const [code, setCode] = useState('');
   const [next, setNext] = useState('');
   const [repeat, setRepeat] = useState('');
   const [signOutOthers, setSignOutOthers] = useState(true);
@@ -208,17 +210,21 @@ function Password({ account }: { readonly account: AccountWire }) {
     }
     const parsed = passwordChangeSchema.safeParse({
       currentPassword: current,
+      code,
       newPassword: next,
       signOutOtherDevices: signOutOthers,
     });
     if (!parsed.success) {
-      setProblem(current === '' ? 'form.invalid' : 'account.passwordSame');
+      setProblem(
+        current === '' || code.trim().length < 6 ? 'form.invalid' : 'account.passwordSame',
+      );
       return;
     }
     setBusy(true);
     try {
       await endpoints.changePassword(parsed.data);
       setCurrent('');
+      setCode('');
       setNext('');
       setRepeat('');
       setDone(signOutOthers ? 'account.passwordChangedOthers' : 'account.passwordChanged');
@@ -243,7 +249,7 @@ function Password({ account }: { readonly account: AccountWire }) {
       }
     >
       <form onSubmit={(event) => void submit(event)} className="space-y-4" noValidate>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label={t('account.currentPassword')}
             type="password"
@@ -251,6 +257,15 @@ function Password({ account }: { readonly account: AccountWire }) {
             value={current}
             onChange={(event) => setCurrent(event.target.value)}
           />
+          <Field
+            label={t('account.codeNow')}
+            hint={t('account.codeNowHint')}
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+          />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label={t('account.newPassword')}
             hint={t('account.passwordHint')}
@@ -278,7 +293,11 @@ function Password({ account }: { readonly account: AccountWire }) {
         {problem === null ? null : <Alert>{t(problem)}</Alert>}
         {done === null ? null : <Notice>{t(done)}</Notice>}
         <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={busy || current === '' || next === ''}>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || current === '' || code.trim() === '' || next === ''}
+          >
             {busy ? t('account.changing') : t('account.changePassword')}
           </Button>
         </div>
@@ -338,8 +357,9 @@ function TwoStep({ account }: { readonly account: AccountWire }) {
 
 /**
  * Two steps (D-702): prove the factor held now (the password and a code from the current
- * app, or a recovery code), then add the new key and enter its first code. The old phone
- * keeps working until that code is right.
+ * app, or a recovery code), then add the new key and enter its first code, optionally
+ * signing out every other device (a lost or stolen phone). The old phone keeps working
+ * until that code is right.
  */
 export function NewPhoneDialog({ onClose }: { readonly onClose: () => void }) {
   const { t } = useLocale();
@@ -348,7 +368,9 @@ export function NewPhoneDialog({ onClose }: { readonly onClose: () => void }) {
   const [current, setCurrent] = useState('');
   const [setup, setSetup] = useState<AuthenticatorSetupWire | null>(null);
   const [code, setCode] = useState('');
-  const [done, setDone] = useState(false);
+  const othersId = useId();
+  const [signOutOthers, setSignOutOthers] = useState(false);
+  const [done, setDone] = useState<MessageKey | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
@@ -375,8 +397,9 @@ export function NewPhoneDialog({ onClose }: { readonly onClose: () => void }) {
     setError(null);
     setBusy(true);
     try {
-      await endpoints.confirmNewApp(code.replace(/\s/g, ''));
-      setDone(true);
+      await endpoints.confirmNewApp(code.replace(/\s/g, ''), signOutOthers);
+      setDone(signOutOthers ? 'account.newPhone.doneOthers' : 'account.newPhone.done');
+      await queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
     } catch (cause) {
       const key = accountErrorKey(cause);
       setError(key);
@@ -400,9 +423,9 @@ export function NewPhoneDialog({ onClose }: { readonly onClose: () => void }) {
       description={t('account.newPhone.description')}
       closeLabel={t('common.close')}
     >
-      {done ? (
+      {done !== null ? (
         <div className="space-y-4">
-          <Notice>{t('account.newPhone.done')}</Notice>
+          <Notice>{t(done)}</Notice>
           <div className="flex justify-end">
             <Button onClick={onClose}>{t('account.done')}</Button>
           </div>
@@ -418,8 +441,8 @@ export function NewPhoneDialog({ onClose }: { readonly onClose: () => void }) {
             onChange={(event) => setPassword(event.target.value)}
           />
           <Field
-            label={t('account.newPhone.code')}
-            hint={t('account.newPhone.codeHint')}
+            label={t('account.codeNow')}
+            hint={t('account.codeNowHint')}
             autoComplete="one-time-code"
             value={current}
             onChange={(event) => setCurrent(event.target.value)}
@@ -474,6 +497,14 @@ export function NewPhoneDialog({ onClose }: { readonly onClose: () => void }) {
             onChange={(event) => setCode(event.target.value)}
             className="text-center font-mono text-base tracking-[0.3em] tabular-nums"
           />
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={othersId}
+              checked={signOutOthers}
+              onCheckedChange={(checked) => setSignOutOthers(checked === true)}
+            />
+            <Label htmlFor={othersId}>{t('account.newPhone.signOutOthers')}</Label>
+          </div>
           {error === null ? null : <Alert>{t(error)}</Alert>}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>
@@ -489,12 +520,13 @@ export function NewPhoneDialog({ onClose }: { readonly onClose: () => void }) {
   );
 }
 
-/** New recovery codes (D-703): the password, then the codes, shown once. */
+/** New recovery codes (D-703): the password and a code held now, then the codes, shown once. */
 export function RecoveryCodesDialog({ onClose }: { readonly onClose: () => void }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const savedId = useId();
   const [password, setPassword] = useState('');
+  const [current, setCurrent] = useState('');
   const [codes, setCodes] = useState<readonly string[] | null>(null);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -506,8 +538,9 @@ export function RecoveryCodesDialog({ onClose }: { readonly onClose: () => void 
     setError(null);
     setBusy(true);
     try {
-      const result = await endpoints.renewBackupCodes(password);
+      const result = await endpoints.renewBackupCodes(password, current.trim());
       setPassword('');
+      setCurrent('');
       setCodes(result.backupCodes);
       await queryClient.invalidateQueries({ queryKey: ACCOUNT_KEY });
     } catch (cause) {
@@ -537,12 +570,19 @@ export function RecoveryCodesDialog({ onClose }: { readonly onClose: () => void 
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
+          <Field
+            label={t('account.codeNow')}
+            hint={t('account.codeNowHint')}
+            autoComplete="one-time-code"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+          />
           {error === null ? null : <Alert>{t(error)}</Alert>}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={busy || password === ''}>
+            <Button type="submit" disabled={busy || password === '' || current.trim().length < 6}>
               {t('account.codes.make')}
             </Button>
           </div>

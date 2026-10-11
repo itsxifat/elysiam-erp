@@ -114,12 +114,22 @@ describe('My account', () => {
     expect(await screen.findByText('Your other devices are signed out.')).toBeTruthy();
   });
 
-  it('checks the new password before sending it, and signs other devices out by default', async () => {
+  it('asks for the password and a code, checks the new password, and signs other devices out by default', async () => {
     const change = vi
       .spyOn(endpoints, 'changePassword')
       .mockResolvedValue({ signedOutOtherDevices: 1 });
     wrap(<AccountPage />);
     const current = await screen.findByLabelText('Current password');
+    const submit0 = screen.getByRole('button', { name: 'Change password' });
+    fireEvent.change(current, { target: { value: 'old-password-1234' } });
+    fireEvent.change(screen.getByLabelText('New password'), {
+      target: { value: 'a-new-password-1234' },
+    });
+    // No code yet: the button waits for one.
+    expect((submit0 as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Code from your authenticator app'), {
+      target: { value: '123 456' },
+    });
     const next = screen.getByLabelText('New password');
     const repeat = screen.getByLabelText('Repeat the new password');
     const submit = screen.getByRole('button', { name: 'Change password' });
@@ -140,6 +150,7 @@ describe('My account', () => {
     await waitFor(() =>
       expect(change).toHaveBeenCalledWith({
         currentPassword: 'old-password-1234',
+        code: '123456',
         newPassword: 'a-new-password-1234',
         signOutOtherDevices: true,
       }),
@@ -156,6 +167,9 @@ describe('My account', () => {
     wrap(<AccountPage />);
     fireEvent.change(await screen.findByLabelText('Current password'), {
       target: { value: 'wrong-password-123' },
+    });
+    fireEvent.change(screen.getByLabelText('Code from your authenticator app'), {
+      target: { value: '123456' },
     });
     fireEvent.change(screen.getByLabelText('New password'), {
       target: { value: 'a-new-password-1234' },
@@ -188,12 +202,14 @@ describe('new phone and recovery codes', () => {
         'otpauth://totp/Owner%20console:owner.a%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Owner+console',
       expiresAt: '2026-10-11T05:10:00.000Z',
     });
-    const confirm = vi.spyOn(endpoints, 'confirmNewApp').mockResolvedValue({ ok: true });
+    const confirm = vi
+      .spyOn(endpoints, 'confirmNewApp')
+      .mockResolvedValue({ signedOutOtherDevices: 0 });
     wrap(<NewPhoneDialog onClose={() => undefined} />);
     fireEvent.change(screen.getByLabelText('Your password'), {
       target: { value: 'my-password-1234' },
     });
-    fireEvent.change(screen.getByLabelText('Code from your current app'), {
+    fireEvent.change(screen.getByLabelText('Code from your authenticator app'), {
       target: { value: '123 456' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -206,8 +222,31 @@ describe('new phone and recovery codes', () => {
       target: { value: '654 321' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Switch to the new phone' }));
-    await waitFor(() => expect(confirm).toHaveBeenCalledWith('654321'));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('654321', false));
     expect(await screen.findByText(/now uses the new phone/)).toBeTruthy();
+  });
+
+  it('signs the other devices out with the move when asked (a lost phone)', async () => {
+    vi.spyOn(endpoints, 'startNewApp').mockResolvedValue({
+      totpURI: 'otpauth://totp/x:y?secret=JBSWY3DPEHPK3PXP',
+      expiresAt: '2026-10-11T05:10:00.000Z',
+    });
+    const confirm = vi
+      .spyOn(endpoints, 'confirmNewApp')
+      .mockResolvedValue({ signedOutOtherDevices: 2 });
+    wrap(<NewPhoneDialog onClose={() => undefined} />);
+    fireEvent.change(screen.getByLabelText('Your password'), { target: { value: 'p' } });
+    fireEvent.change(screen.getByLabelText('Code from your authenticator app'), {
+      target: { value: 'AbC12-dE345' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.change(await screen.findByLabelText('Code the new phone shows'), {
+      target: { value: '654321' },
+    });
+    fireEvent.click(screen.getByLabelText(/Also sign out my other devices/));
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to the new phone' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('654321', true));
+    expect(await screen.findByText(/your other devices are signed out/)).toBeTruthy();
   });
 
   it('goes back to the start when the new key has expired', async () => {
@@ -220,7 +259,7 @@ describe('new phone and recovery codes', () => {
     );
     wrap(<NewPhoneDialog onClose={() => undefined} />);
     fireEvent.change(screen.getByLabelText('Your password'), { target: { value: 'p' } });
-    fireEvent.change(screen.getByLabelText('Code from your current app'), {
+    fireEvent.change(screen.getByLabelText('Code from your authenticator app'), {
       target: { value: '123456' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -232,15 +271,21 @@ describe('new phone and recovery codes', () => {
     expect(screen.getByLabelText('Your password')).toBeTruthy();
   });
 
-  it('shows new codes once, and closes only once they are saved', async () => {
+  it('asks for the password and a code, shows new codes once, and closes only once saved', async () => {
     const codes = Array.from({ length: 10 }, (_, index) => `abcde-${String(10000 + index)}`);
-    vi.spyOn(endpoints, 'renewBackupCodes').mockResolvedValue({ backupCodes: codes });
+    const renew = vi.spyOn(endpoints, 'renewBackupCodes').mockResolvedValue({ backupCodes: codes });
     const closed = vi.fn();
     wrap(<RecoveryCodesDialog onClose={closed} />);
     fireEvent.change(screen.getByLabelText('Your password'), {
       target: { value: 'my-password-1234' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Make new codes' }));
+    const make = screen.getByRole('button', { name: 'Make new codes' });
+    expect((make as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Code from your authenticator app'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(make);
+    await waitFor(() => expect(renew).toHaveBeenCalledWith('my-password-1234', '123456'));
     const list = await screen.findByRole('list', { name: 'Your new recovery codes' });
     expect(within(list).getAllByRole('listitem').length).toBe(10);
     expect(screen.getByRole('button', { name: 'Print' })).toBeTruthy();

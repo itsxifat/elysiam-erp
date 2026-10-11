@@ -13,6 +13,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { accountCryptoFrom, renewBackupCodes } from './account/account.js';
 import { buildMotherApp } from './app.js';
 import type { Actor } from './audit/audit.js';
 import { createMotherAuth, type MotherAuth } from './auth/auth.js';
@@ -543,6 +544,9 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
     `;
     return row?.count ?? 0;
   };
+  const totpNow = async (key: string) =>
+    (await auth.api.generateTOTP({ body: { secret: key } })).code;
+  const codeNow = () => totpNow(secret);
 
   beforeAll(async () => {
     const invite = await owners.a.browser.post('/v1/people', { email, name: 'Owner D' });
@@ -596,6 +600,35 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
       select two_factor_enabled from auth.users where email = ${email}
     `;
     expect(row?.two_factor_enabled).toBe(true);
+  });
+
+  it('walls the factor routes from an enrolled session: no guessing round the lockout (C2)', async () => {
+    const before = await motherSql()<{ secret: string; failed: number; seen: Date | null }[]>`
+      select t.secret, t.failed_verification_count as failed, u.last_sign_in_at as seen
+      from auth.two_factors t join auth.users u on u.id = t.user_id where u.email = ${email}
+    `;
+    const signIns = await audited('auth.sign_in.succeeded');
+    // A wrong and a right password to enable, a right code to verify: all walled alike.
+    for (const [path, body] of [
+      ['/api/auth/two-factor/enable', { password: 'not-my-password-at-all' }],
+      ['/api/auth/two-factor/enable', { password }],
+      ['/api/auth/two-factor/verify-totp', { code: await codeNow() }],
+      ['/api/auth/two-factor/verify-backup-code', { code: backupCodes[9] ?? '' }],
+    ] as const) {
+      const answer = await desk.post(path, body);
+      expect(answer.status, path).toBe(404);
+    }
+    const after = await motherSql()<{ secret: string; failed: number; seen: Date | null }[]>`
+      select t.secret, t.failed_verification_count as failed, u.last_sign_in_at as seen
+      from auth.two_factors t join auth.users u on u.id = t.user_id where u.email = ${email}
+    `;
+    expect(after).toEqual(before);
+    expect(await audited('auth.sign_in.succeeded')).toBe(signIns);
+    // The recovery code was not spent by the walled call.
+    expect(
+      ((await desk.get('/v1/account')).body as { twoFactor: { backupCodesLeft: number } }).twoFactor
+        .backupCodesLeft,
+    ).toBe(10);
   });
 
   it('lists my devices, masked, with this one marked, and signs one or all others out', async () => {
@@ -660,10 +693,11 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
     expect(Date.now() - new Date(session?.lastActiveAt ?? 0).getTime()).toBeLessThan(60_000);
   });
 
-  it('changes my password with the current one, signing my other devices out', async () => {
+  it('changes my password with the current one and a code held now, signing my other devices out', async () => {
     const other = await signIn();
     const wrong = await desk.post('/v1/account/password', {
       currentPassword: 'not-my-password-at-all',
+      code: await codeNow(),
       newPassword: 'a-brand-new-password-1',
     });
     expect(wrong.status).toBe(400);
@@ -671,12 +705,20 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
     expect(await audited('account.check_failed')).toBe(1);
     const short = await desk.post('/v1/account/password', {
       currentPassword: password,
+      code: await codeNow(),
       newPassword: 'short',
     });
     expect((short.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    // The password alone is not enough (the M40 audit's W3).
+    const noCode = await desk.post('/v1/account/password', {
+      currentPassword: password,
+      newPassword: 'a-brand-new-password-1',
+    });
+    expect((noCode.body as { code: string }).code).toBe('VALIDATION_FAILED');
 
     const changed = await desk.post('/v1/account/password', {
       currentPassword: password,
+      code: await codeNow(),
       newPassword: 'a-brand-new-password-1',
       signOutOtherDevices: true,
     });
@@ -696,6 +738,7 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
     const kept = await signIn();
     const again = await desk.post('/v1/account/password', {
       currentPassword: password,
+      code: await codeNow(),
       newPassword: 'another-new-password-2',
       signOutOtherDevices: false,
     });
@@ -705,8 +748,6 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
   });
 
   it('moves two-step sign-in to a new phone only with the password and a code held now', async () => {
-    const totpNow = async (key: string) =>
-      (await auth.api.generateTOTP({ body: { secret: key } })).code;
     const wrongPassword = await desk.post('/v1/account/two-factor/new-app', {
       password: 'not-my-password-at-all',
       code: await totpNow(secret),
@@ -742,8 +783,20 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
     expect((badConfirm.body as { code: string }).code).toBe('INVALID_CODE');
     const confirmed = await desk.post('/v1/account/two-factor/new-app/confirm', {
       code: await totpNow(fresh),
+      signOutOtherDevices: true,
     });
     expect(confirmed.status).toBe(200);
+    // A lost phone: every other device of mine is signed out with it, this one stays.
+    expect(
+      (confirmed.body as { signedOutOtherDevices: number }).signedOutOtherDevices,
+    ).toBeGreaterThanOrEqual(2);
+    expect((await elsewhere.get('/v1/me')).status).toBe(401);
+    expect((await desk.get('/v1/me')).status).toBe(200);
+    const [left] = await motherSql()<{ count: number }[]>`
+      select count(*)::int as count from auth.sessions s join auth.users u on u.id = s.user_id
+      where u.email = ${email}
+    `;
+    expect(left?.count).toBe(1);
 
     // The old phone no longer signs in; the new one does.
     limiterSkewMs += 61_000;
@@ -772,8 +825,14 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
     expect((reused.body as { code: string }).code).toBe('INVALID_CODE');
   });
 
-  it('makes new recovery codes with the password, shown once; the old ones stop working', async () => {
-    const renewed = await desk.post('/v1/account/two-factor/backup-codes', { password });
+  it('makes new recovery codes with the password and a code held now, shown once', async () => {
+    // The password alone is not enough: else it would mint the "code held now" (C1).
+    const noCode = await desk.post('/v1/account/two-factor/backup-codes', { password });
+    expect((noCode.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    const renewed = await desk.post('/v1/account/two-factor/backup-codes', {
+      password,
+      code: await codeNow(),
+    });
     expect(renewed.status).toBe(200);
     const codes = (renewed.body as { backupCodes: string[] }).backupCodes;
     expect(codes.length).toBe(10);
@@ -797,37 +856,59 @@ describe('my account: name, password, two-step sign-in and devices (M40, D-701 t
     expect(await audited('account.backup_codes.renewed')).toBe(1);
   });
 
-  it('stops every check after five wrong answers in fifteen minutes (D-705)', async () => {
+  it('stops every check after five wrong answers in fifteen minutes, raced or not (D-705)', async () => {
     // Its own owner, so the wrong answers above do not count here.
-    const invite = await owners.a.browser.post('/v1/people', {
-      email: 'owner.e@example.com',
-      name: 'Owner E',
-    });
+    const address = 'owner.e@example.com';
+    const invite = await owners.a.browser.post('/v1/people', { email: address, name: 'Owner E' });
     const browser = new Browser(app);
-    await acceptAndEnrol(browser, auth, {
+    const enrolled = await acceptAndEnrol(browser, auth, {
       link: (invite.body as { link: string }).link,
-      email: 'owner.e@example.com',
+      email: address,
     });
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const answer = await browser.post('/v1/account/two-factor/backup-codes', {
-        password: `wrong-password-${String(attempt)}`,
-      });
-      expect((answer.body as { code: string }).code).toBe('INVALID_PASSWORD');
-    }
+    const [person] = await motherSql()<{ id: string }[]>`
+      select id from auth.users where email = ${address}
+    `;
+    const actor = {
+      userId: person?.id ?? '',
+      email: address,
+      name: 'Owner E',
+      ipAddress: null,
+      requestId: null,
+    };
+    // Twenty wrong guesses at once: the person's lock queues them, so exactly five are
+    // answered and fifteen refused (the M40 audit's W1).
+    const crypto = await accountCryptoFrom(auth);
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, (_, attempt) =>
+        renewBackupCodes(crypto, actor, {
+          password: `wrong-password-${String(attempt)}`,
+          code: '123456',
+        }),
+      ),
+    );
+    const codes = results.map((result) =>
+      result.status === 'rejected' ? (result.reason as { code?: string }).code : 'ok',
+    );
+    expect(codes.filter((code) => code === 'INVALID_PASSWORD').length).toBe(5);
+    expect(codes.filter((code) => code === 'RATE_LIMITED').length).toBe(15);
+
+    const { code } = await auth.api.generateTOTP({ body: { secret: enrolled.secret } });
     const locked = await browser.post('/v1/account/two-factor/backup-codes', {
       password: PASSWORD,
+      code,
     });
     expect(locked.status).toBe(429);
     expect((locked.body as { code: string }).code).toBe('RATE_LIMITED');
     const lockedPassword = await browser.post('/v1/account/password', {
       currentPassword: PASSWORD,
+      code,
       newPassword: 'yet-another-password-3',
     });
     expect(lockedPassword.status).toBe(429);
     const [failures] = await motherSql()<{ count: number }[]>`
       select count(*)::int as count from mother.audit_log a
       join auth.users u on u.id = a.actor_user_id
-      where u.email = 'owner.e@example.com' and a.action = 'account.check_failed'
+      where u.email = ${address} and a.action = 'account.check_failed'
     `;
     expect(failures?.count).toBe(5);
   });

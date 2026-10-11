@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import { describeUserAgent, maskAddress } from './devices.js';
 import {
+  accountNameSchema,
   brandUpdateSchema,
   currentCodeSchema,
+  inviteOwnerSchema,
   newAuthenticatorSchema,
   passwordChangeSchema,
   totpCodeSchema,
@@ -97,12 +99,19 @@ describe('account and brand schemas', () => {
   });
 
   it('asks for a new password of 12 or more that differs from the current one', () => {
-    const base = { currentPassword: 'old-password-1234', newPassword: 'new-password-1234' };
+    const base = {
+      currentPassword: 'old-password-1234',
+      code: '123456',
+      newPassword: 'new-password-1234',
+    };
     expect(passwordChangeSchema.parse(base)).toEqual({ ...base, signOutOtherDevices: true });
     expect(passwordChangeSchema.safeParse({ ...base, newPassword: 'short' }).success).toBe(false);
     expect(
       passwordChangeSchema.safeParse({ ...base, newPassword: base.currentPassword }).success,
     ).toBe(false);
+    // The password alone is not enough: a code held now goes with it (D-705).
+    const { code: _code, ...withoutCode } = base;
+    expect(passwordChangeSchema.safeParse(withoutCode).success).toBe(false);
   });
 
   it('reads an app code with spaces, and a recovery code as typed', () => {
@@ -111,5 +120,12 @@ describe('account and brand schemas', () => {
     expect(currentCodeSchema.parse('123 456')).toBe('123456');
     expect(currentCodeSchema.parse(' AbC12-dE345 ')).toBe('AbC12-dE345');
     expect(newAuthenticatorSchema.safeParse({ password: 'x', code: '12' }).success).toBe(false);
+  });
+
+  it('keeps control and direction-override characters out of a name, not Bangla joiners', () => {
+    expect(accountNameSchema.safeParse({ name: 'Owner‮A' }).success).toBe(false);
+    expect(accountNameSchema.safeParse({ name: 'OwnerA' }).success).toBe(false);
+    expect(inviteOwnerSchema.safeParse({ email: 'a@b.co', name: 'A​B' }).success).toBe(false);
+    expect(accountNameSchema.parse({ name: ' রাজ‌শাহী ' })).toEqual({ name: 'রাজ‌শাহী' });
   });
 });
