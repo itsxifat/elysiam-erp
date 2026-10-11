@@ -2910,3 +2910,81 @@ dry-run|commit --file <users.json>`.
 - New dependencies: none new to the repo. `@elysium/db` gains `@elysium/domain` and runtime
   `@better-auth/utils` (D-706); the console gains `uqr` (catalog, zero dependencies) for the QR
   code.
+
+## 2026-10-12 · M43 · premium order documents, English only (not merged or deployed)
+
+- **Asked for:** the owner, 2026-10-11: "our order slip is not good design it must be advanced
+  premium clean and effective like important details clear and bold and little big, like how
+  standard company do. also we never wanted bangla language support, specially in invoices
+  definitely not. everything will be handled in formal english language and clean premium design
+  like modern big giant companies." Branch `m43-english-documents` from `integration-wave2`
+  (02b3571a), worktree `D:/Projects/elysium-erp-m43`. Plan `docs/plans/M43.md`. Decisions D-750
+  (RESOLVED, the owner's; supersedes D-036) to D-756. No migration (D-755: dropping
+  `notify.templates.body_bn` and flipping the `locale` defaults waits until M41 and M42 have
+  merged, so three branches do not each claim the next migration number).
+- **Built:** `orders/order-documents.ts` (pure) redraws the invoice (A4), packing slip (A4, or A5
+  with `?paper=a5`, refused for the other kinds) and parcel label (4 × 6 in): the order number
+  large with a Code 128 barcode of exactly that number (what the packing station looks a code up
+  by first), the cash to collect in a black-banded box, the recipient's name, full phone and
+  address large and bold with thana and district from `name_en`, the courier with consignment and
+  tracking (booked parcel, else the chosen courier), order date, channel, notes, the items with
+  SKU, size and colour (new `CatalogApi.variantParts`) and on the invoice unit price, amount and
+  subtotal, discount, delivery, total, paid, to collect; the brand's name, legal block and logo
+  (the brand block's `logoFileId`, else the website's via a registry the storefront fills, bytes
+  through new `FilesApi.publicImage` after the transaction; none prints the name alone). Inter
+  only (`fonts.ts`; no Hind Siliguri uploaded), tabular figures on amounts, 1 px rules, black ink.
+  Paper exact to Chromium's 1/75-inch print grid (A4 595.92 × 841.92 pt, A5 420 × 595.92, label
+  288 × 432; the old A4 was 842.88 pt tall). Courier labels, the QR label sheet, stickers
+  (`Tk 1,490`), payslips (now exact A4) and the till receipt in the same English style; money on
+  paper and in messages is `Tk 1,250.00` through `takaText` (D-751; `formatMoneyText` in i18n
+  for the till). The console prints packing slips (A4 and A5) from the order list and detail.
+  M04's Bangla sample invoice is retired. English everywhere: `LOCALES = ['en']`, `bn.ts` and
+  every `sections/*.bn.ts` deleted (and the owner console's `bn.ts`), `CUSTOMER_LOCALE`,
+  `fontClassFor` and `localiseDigits` gone; no language switch in the console, palette, till,
+  investor portal, tracking page or owner console; SMS renders `body_en` only, stores `en`,
+  refuses a Bangla template; the template editor has one English body; emails have one English
+  copy; storefront defaults `en`; `statusLabel` keeps `{ en, bn }` with English in both for the
+  website; zones and areas shown in English, a zone's Bangla name optional; the training org's
+  demo names and the preview's SMS templates English. `check-i18n.mjs` fails on any catalogue but
+  `en` and on Bangla text in a value (the taka sign allowed on staff screens, D-751).
+- **Evidence:** `order-documents.test.ts` (20: large and bold by the page's own type scale and
+  weights, every field present, no Bengali-block character in any kind, the barcode decoded from
+  the printed bars equals the order number and survives `normaliseScannedCode`, whole-module
+  widths, totals add up, escaping, a buyer's own Bangla printed as typed); `documents-review.test.ts`
+  against Gotenberg 8.37 (nine documents: page count and every `/MediaBox` within a point of the
+  paper, Inter embedded, no Bangla, PNGs written); `pack-station.e2e.test.ts` opens the order at
+  the real station with the code decoded from the slip (A4, A5) and the label; `notify.db.test.ts`
+  (English body sent and stored as `en` though the template holds a Bangla `body_bn`; a Bangla
+  template refused; no `bodyBn` in the list); domain email, money (`takaText` never writes the
+  Bengali block and round-trips through `parseTaka`, fast-check) and text tests; the till's
+  Playwright receipt spec (English, `Tk 1,500.00`, no Bengali-block character, one page);
+  `check-i18n.test.mjs` (11). Server suites on Testcontainers: notify, orders e2e, pack-station,
+  storefront buying, crm, loan reminders, hr e2e, deletes, migration, catalog, stickers, courier
+  M15, desk, packing, openapi, module boundaries, route matrix: 19 files, 354 tests. Front-end,
+  package and script units: 146 files, 2,156 tests. `pnpm verify` (under the heavy lock, `VITEST_MAX_WORKERS=2`): exit 0 — format, lint,
+  typecheck (28 tasks), 274 test files / 4,094 tests passed (3 skipped, as before), build,
+  check:bundle 249.0 KB of 250, check:white-label, check:migrations (no new migration),
+  check:schema (140), check:routes (535), check:i18n (English only, 4,483 and 438 keys),
+  check:api-client. Also: the till's Playwright spec 5/5, the console's stubbed specs 13/13,
+  `shell-quality.stack.ts` 7/7 (no language button, `lang=en`, no Bangla on the page, axe
+  clean both themes) and `crm.stack.ts` 4/4 (one English template body).
+- **Audit:** the acceptance-auditor passed checks 1 to 3 and named three gaps, all closed: the
+  progress entry, the verify result, and a document rendered from a real order (now
+  `orders.e2e.test.ts` gathers one through the service with the seeded geography, Bangla
+  names beside English, and finds no Bangla in any kind). Its other notes: a template stored
+  in Bangla is now refused at send as well as at save; `check-white-label.mjs` still expected
+  `bn.ts` (fixed); `shell-quality.stack.ts` check 1 had matched three cells since M39b's
+  product list (now exact). The ledger-auditor was not run: the diff moves no money, stock,
+  tenancy or permission (documents read inside the same scope as before; the logo read is
+  one brand's public website image).
+- **Screenshots** (`docs/review/M43/`): `invoice-a4.png`, `packing-slip-a4.png`,
+  `packing-slip-a5.png`, `packing-slips-batch-a5.png`, `parcel-label-4x6.png`,
+  `courier-label-4x6.png`, `qr-label-sheet-4x6.png`, `payslip-a4.png`, `sticker-38x25.png`,
+  `till-receipt-80mm.png`; the console without its language button in `docs/review/M05/`
+  (`*-en.png` retaken, the `*-bn.png` removed).
+- **For the coordinator:** M41 and M42 add `bn` strings; on merge, delete the `bn` side (the
+  i18n check refuses any `bn` file or Bangla value) and drop `locale` from new `notify.queue`
+  calls. A follow-up migration drops `notify.templates.body_bn` and sets the four `locale`
+  defaults to `en` (D-755). Staff screens still show `৳` through `<Money>` (D-751): switching
+  them to `Tk` is the owner's call.
+- New dependencies: none.
