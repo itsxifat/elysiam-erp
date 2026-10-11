@@ -11,6 +11,16 @@ import {
   dayBookQuerySchema,
   deactivateUserSchema,
   ERROR_CODES,
+  inboxAddressSchema,
+  inboxChannelUpdateSchema,
+  inboxHandOverSchema,
+  inboxInterestSchema,
+  inboxMetaAppSchema,
+  inboxNoteSchema,
+  inboxPhoneSchema,
+  inboxReplySchema,
+  inboxStageSchema,
+  inboxTagsSchema,
   packingCameraCreateSchema,
   packingCameraUpdateSchema,
   partyBalanceQuerySchema,
@@ -344,6 +354,113 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     operationId: 'updatePackingCamera',
     summary: 'Change a packing camera, switch it off, or replace or remove its password.',
     body: named('PackingCameraUpdate', packingCameraUpdateSchema, 'PackingCameraUpdateInput'),
+  },
+
+  // M42: the unified inbox (D-730 to D-749).
+  'GET /v1/inbox/conversations': {
+    operationId: 'listInboxConversations',
+    summary: 'Every channel in one list: mine, unassigned or all, by channel, stage and unread.',
+  },
+  'GET /v1/inbox/conversations/:id': {
+    operationId: 'getInboxConversation',
+    summary: 'A conversation, its reply window, and its messages (older pages by `before`).',
+  },
+  'GET /v1/inbox/conversations/:id/panel': {
+    operationId: 'getInboxPanel',
+    summary:
+      'The customer panel: phones found in the chat, the address, the matched customer and their orders, notes, interests, tags and stage.',
+  },
+  'GET /v1/inbox/conversations/:id/order-draft': {
+    operationId: 'getInboxOrderDraft',
+    summary: "The order desk's new-order form, prefilled from the chat.",
+  },
+  'GET /v1/inbox/team': {
+    operationId: 'listInboxTeam',
+    summary: 'Who can be handed a conversation: active sales and org admins.',
+  },
+  'GET /v1/inbox/phone-flags': {
+    operationId: 'getInboxPhoneFlags',
+    summary: 'Whether a phone belongs to a contact marked fraud, for the order desk.',
+  },
+  'POST /v1/inbox/conversations/:id/take': {
+    operationId: 'takeInboxConversation',
+    summary: "Take a conversation; someone else's needs x-acknowledge-owner: 1.",
+  },
+  'POST /v1/inbox/conversations/:id/release': {
+    operationId: 'releaseInboxConversation',
+    summary: 'Release a conversation back to Unassigned.',
+  },
+  'POST /v1/inbox/conversations/:id/hand-over': {
+    operationId: 'handOverInboxConversation',
+    summary: "Hand a conversation to a colleague; someone else's is a supervisor's.",
+    body: named('InboxHandOver', inboxHandOverSchema, 'InboxHandOverInput'),
+  },
+  'POST /v1/inbox/conversations/:id/close': {
+    operationId: 'closeInboxConversation',
+    summary: 'Close a conversation; a new message reopens it.',
+  },
+  'POST /v1/inbox/conversations/:id/reopen': {
+    operationId: 'reopenInboxConversation',
+    summary: 'Reopen a closed conversation.',
+  },
+  'POST /v1/inbox/conversations/:id/read': {
+    operationId: 'readInboxConversation',
+    summary: 'The owner has read it: the unread count goes to zero.',
+  },
+  'POST /v1/inbox/conversations/:id/messages': {
+    operationId: 'replyInInboxConversation',
+    summary:
+      'Reply. Refused outside the 24-hour window (INBOX_WINDOW_CLOSED); sent by a job after the commit.',
+    body: named('InboxReply', inboxReplySchema, 'InboxReplyInput'),
+  },
+  'PUT /v1/inbox/conversations/:id/contact/phone': {
+    operationId: 'saveInboxContactPhone',
+    summary: "Save the contact's phone; links the brand's buyer with that number.",
+    body: named('InboxPhone', inboxPhoneSchema, 'InboxPhoneInput'),
+  },
+  'PUT /v1/inbox/conversations/:id/contact/address': {
+    operationId: 'saveInboxContactAddress',
+    summary: "Save the contact's address: district, thana, area and line.",
+    body: named('InboxAddress', inboxAddressSchema, 'InboxAddressInput'),
+  },
+  'PUT /v1/inbox/conversations/:id/contact/stage': {
+    operationId: 'setInboxContactStage',
+    summary:
+      'Mark the contact a lead, not qualified or fraud, or hand the stage back to the rules.',
+    body: named('InboxStage', inboxStageSchema, 'InboxStageInput'),
+  },
+  'PUT /v1/inbox/conversations/:id/contact/tags': {
+    operationId: 'setInboxContactTags',
+    summary: "Replace the contact's tags.",
+    body: named('InboxTags', inboxTagsSchema, 'InboxTagsInput'),
+  },
+  'POST /v1/inbox/conversations/:id/notes': {
+    operationId: 'addInboxNote',
+    summary: 'A dated note on the contact, signed by its author.',
+    body: named('InboxNote', inboxNoteSchema, 'InboxNoteInput'),
+  },
+  'POST /v1/inbox/conversations/:id/interests': {
+    operationId: 'addInboxInterest',
+    summary: 'A product (and optionally a size) the contact asked about.',
+    body: named('InboxInterest', inboxInterestSchema, 'InboxInterestInput'),
+  },
+  'DELETE /v1/inbox/conversations/:id/interests/:interestId': {
+    operationId: 'removeInboxInterest',
+    summary: 'Remove a product interest.',
+  },
+  'GET /v1/inbox/channels': {
+    operationId: 'listInboxChannels',
+    summary: "Settings → Inbox: each channel's id and whether its token is set (never the token).",
+  },
+  'PUT /v1/inbox/channels/:kind': {
+    operationId: 'saveInboxChannel',
+    summary: 'Save a channel: its Meta id, on or off, and (write-only) its token.',
+    body: named('InboxChannelUpdate', inboxChannelUpdateSchema, 'InboxChannelUpdateInput'),
+  },
+  'PUT /v1/inbox/meta-app': {
+    operationId: 'saveInboxMetaApp',
+    summary: "Save the Meta app's secret and the webhook's verify token (write-only).",
+    body: named('InboxMetaApp', inboxMetaAppSchema, 'InboxMetaAppInput'),
   },
 
   'GET /v1/demo/costed-items': {

@@ -16,6 +16,16 @@ import type {
   CreateUser,
   CredentialResetInput,
   DeactivateUser,
+  InboxAddressInput,
+  InboxChannelUpdateInput,
+  InboxHandOverInput,
+  InboxInterestInput,
+  InboxMetaAppInput,
+  InboxNoteInput,
+  InboxPhoneInput,
+  InboxReplyInput,
+  InboxStageInput,
+  InboxTagsInput,
   PackingCameraCreateInput,
   PackingCameraUpdateInput,
   ReopenPeriodInput,
@@ -36,9 +46,24 @@ export const OPERATIONS = {
     path: '/v1/ledger/accounts/{id}/ledger',
     ability: 'read:LedgerReport',
   },
+  addInboxInterest: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/interests',
+    ability: 'update:Conversation',
+  },
+  addInboxNote: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/notes',
+    ability: 'update:Conversation',
+  },
   addPackingCamera: { method: 'POST', path: '/v1/packing/cameras', ability: 'update:PackingVideo' },
   cashBook: { method: 'GET', path: '/v1/ledger/wallets/{id}/cash-book', ability: 'read:Wallet' },
   cashIn: { method: 'POST', path: '/v1/ledger/cash-in', ability: 'update:Wallet' },
+  closeInboxConversation: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/close',
+    ability: 'update:Conversation',
+  },
   closePeriod: { method: 'POST', path: '/v1/ledger/periods/close', ability: 'update:LedgerPeriod' },
   confirmTwoFactorReplacement: {
     method: 'POST',
@@ -181,6 +206,26 @@ export const OPERATIONS = {
     ability: 'public',
   },
   getApproval: { method: 'GET', path: '/v1/approvals/{id}', ability: 'read:ApprovalRequest' },
+  getInboxConversation: {
+    method: 'GET',
+    path: '/v1/inbox/conversations/{id}',
+    ability: 'read:Conversation',
+  },
+  getInboxOrderDraft: {
+    method: 'GET',
+    path: '/v1/inbox/conversations/{id}/order-draft',
+    ability: 'read:Conversation',
+  },
+  getInboxPanel: {
+    method: 'GET',
+    path: '/v1/inbox/conversations/{id}/panel',
+    ability: 'read:Conversation',
+  },
+  getInboxPhoneFlags: {
+    method: 'GET',
+    path: '/v1/inbox/phone-flags',
+    ability: 'read:Conversation',
+  },
   getMediaByOrgIdByFileIdByVariant: {
     method: 'GET',
     path: '/media/{orgId}/{fileId}/{variant}',
@@ -951,10 +996,23 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}/usage',
     ability: 'update:Supply',
   },
+  getWebhooksMetaByOrgId: { method: 'GET', path: '/webhooks/meta/{orgId}', ability: 'public' },
+  handOverInboxConversation: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/hand-over',
+    ability: 'update:Conversation',
+  },
   healthLive: { method: 'GET', path: '/health/live', ability: 'public' },
   healthReady: { method: 'GET', path: '/health/ready', ability: 'public' },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
+  listInboxChannels: { method: 'GET', path: '/v1/inbox/channels', ability: 'read:InboxChannel' },
+  listInboxConversations: {
+    method: 'GET',
+    path: '/v1/inbox/conversations',
+    ability: 'read:Conversation',
+  },
+  listInboxTeam: { method: 'GET', path: '/v1/inbox/team', ability: 'read:Conversation' },
   listLedgerAccounts: { method: 'GET', path: '/v1/ledger/accounts', ability: 'read:LedgerReport' },
   listMyOrgs: { method: 'GET', path: '/v1/me/orgs', ability: 'authenticated' },
   listMySessions: { method: 'GET', path: '/v1/account/sessions', ability: 'authenticated' },
@@ -1833,6 +1891,7 @@ export const OPERATIONS = {
     ability: 'update:Supply',
   },
   postV1Track: { method: 'POST', path: '/v1/track', ability: 'public' },
+  postWebhooksMetaByOrgId: { method: 'POST', path: '/webhooks/meta/{orgId}', ability: 'public' },
   putV1CatalogAttributesByIdValuesOrder: {
     method: 'PUT',
     path: '/v1/catalog/attributes/{id}/values/order',
@@ -1964,20 +2023,71 @@ export const OPERATIONS = {
     ability: 'update:Storefront',
   },
   putV1SupplySkuCosts: { method: 'PUT', path: '/v1/supply/sku-costs', ability: 'read:Cost' },
+  readInboxConversation: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/read',
+    ability: 'update:Conversation',
+  },
+  releaseInboxConversation: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/release',
+    ability: 'update:Conversation',
+  },
+  removeInboxInterest: {
+    method: 'DELETE',
+    path: '/v1/inbox/conversations/{id}/interests/{interestId}',
+    ability: 'update:Conversation',
+  },
+  reopenInboxConversation: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/reopen',
+    ability: 'update:Conversation',
+  },
   reopenPeriod: {
     method: 'POST',
     path: '/v1/ledger/periods/reopen',
     ability: 'update:LedgerPeriod',
+  },
+  replyInInboxConversation: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/messages',
+    ability: 'update:Conversation',
   },
   resetUserTwoFactor: {
     method: 'POST',
     path: '/v1/users/{id}/two-factor/reset',
     ability: 'update:User',
   },
+  saveInboxChannel: {
+    method: 'PUT',
+    path: '/v1/inbox/channels/{kind}',
+    ability: 'update:InboxChannel',
+  },
+  saveInboxContactAddress: {
+    method: 'PUT',
+    path: '/v1/inbox/conversations/{id}/contact/address',
+    ability: 'update:Conversation',
+  },
+  saveInboxContactPhone: {
+    method: 'PUT',
+    path: '/v1/inbox/conversations/{id}/contact/phone',
+    ability: 'update:Conversation',
+  },
+  saveInboxMetaApp: { method: 'PUT', path: '/v1/inbox/meta-app', ability: 'update:InboxChannel' },
   setApprovalThresholds: {
     method: 'PUT',
     path: '/v1/approvals/thresholds',
     ability: 'update:ApprovalThreshold',
+  },
+  setInboxContactStage: {
+    method: 'PUT',
+    path: '/v1/inbox/conversations/{id}/contact/stage',
+    ability: 'update:Conversation',
+  },
+  setInboxContactTags: {
+    method: 'PUT',
+    path: '/v1/inbox/conversations/{id}/contact/tags',
+    ability: 'update:Conversation',
   },
   setTwoFactorPolicy: {
     method: 'PUT',
@@ -1997,6 +2107,11 @@ export const OPERATIONS = {
   },
   stepDownSuperAdmin: { method: 'POST', path: '/v1/users/me/step-down', ability: 'update:User' },
   switchOrg: { method: 'POST', path: '/v1/me/active-org', ability: 'authenticated' },
+  takeInboxConversation: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/take',
+    ability: 'update:Conversation',
+  },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
   turnOffMyTwoFactor: {
     method: 'POST',
@@ -2059,6 +2174,16 @@ export function createApiClient(runtime: ApiRuntime) {
       },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.accountLedger, input, options),
+    /** A product (and optionally a size) the contact asked about. */
+    addInboxInterest: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxInterestInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.addInboxInterest, input, options),
+    /** A dated note on the contact, signed by its author. */
+    addInboxNote: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxNoteInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.addInboxNote, input, options),
     /** Add an IP camera over a packing table. Its password is sealed and never returned. */
     addPackingCamera: (
       input: { readonly body: PackingCameraCreateInput },
@@ -2075,6 +2200,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Record money received into a wallet. */
     cashIn: (input: { readonly body: CashInInput }, options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.cashIn, input, options),
+    /** Close a conversation; a new message reopens it. */
+    closeInboxConversation: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.closeInboxConversation, input, options),
     /** Close a month, locking every date up to its end. */
     closePeriod: (
       input: { readonly body: ClosePeriodInput },
@@ -2253,6 +2383,24 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getApproval, input, options),
+    /** A conversation, its reply window, and its messages (older pages by `before`). */
+    getInboxConversation: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getInboxConversation, input, options),
+    /** The order desk's new-order form, prefilled from the chat. */
+    getInboxOrderDraft: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getInboxOrderDraft, input, options),
+    /** The customer panel: phones found in the chat, the address, the matched customer and their orders, notes, interests, tags and stage. */
+    getInboxPanel: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getInboxPanel, input, options),
+    /** Whether a phone belongs to a contact marked fraud, for the order desk. */
+    getInboxPhoneFlags: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getInboxPhoneFlags, undefined, options),
     /** GET /media/:orgId/:fileId/:variant */
     getMediaByOrgIdByFileIdByVariant: (
       input: {
@@ -3096,6 +3244,16 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplySuppliersByIdUsage, input, options),
+    /** GET /webhooks/meta/:orgId */
+    getWebhooksMetaByOrgId: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getWebhooksMetaByOrgId, input, options),
+    /** Hand a conversation to a colleague; someone else's is a supervisor's. */
+    handOverInboxConversation: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxHandOverInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.handOverInboxConversation, input, options),
     /** Liveness probe. */
     healthLive: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.healthLive, undefined, options),
@@ -3117,6 +3275,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Test fixture for the permission matrix. Not deployed to production. */
     listDemoCostedItems: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listDemoCostedItems, undefined, options),
+    /** Settings → Inbox: each channel's id and whether its token is set (never the token). */
+    listInboxChannels: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listInboxChannels, undefined, options),
+    /** Every channel in one list: mine, unassigned or all, by channel, stage and unread. */
+    listInboxConversations: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listInboxConversations, undefined, options),
+    /** Who can be handed a conversation: active sales and org admins. */
+    listInboxTeam: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listInboxTeam, undefined, options),
     /** The chart of accounts visible to this caller. */
     listLedgerAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listLedgerAccounts, undefined, options),
@@ -4116,6 +4283,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/track */
     postV1Track: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Track, undefined, options),
+    /** POST /webhooks/meta/:orgId */
+    postWebhooksMetaByOrgId: (
+      input: { readonly path: { readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postWebhooksMetaByOrgId, input, options),
     /** PUT /v1/catalog/attributes/:id/values/order */
     putV1CatalogAttributesByIdValuesOrder: (
       input: { readonly path: { readonly id: string } },
@@ -4243,21 +4415,76 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/supply/sku-costs */
     putV1SupplySkuCosts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1SupplySkuCosts, undefined, options),
+    /** The owner has read it: the unread count goes to zero. */
+    readInboxConversation: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.readInboxConversation, input, options),
+    /** Release a conversation back to Unassigned. */
+    releaseInboxConversation: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.releaseInboxConversation, input, options),
+    /** Remove a product interest. */
+    removeInboxInterest: (
+      input: { readonly path: { readonly id: string; readonly interestId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.removeInboxInterest, input, options),
+    /** Reopen a closed conversation. */
+    reopenInboxConversation: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.reopenInboxConversation, input, options),
     /** Ask to reopen a closed month. Needs an approval. */
     reopenPeriod: (
       input: { readonly body: ReopenPeriodInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.reopenPeriod, input, options),
+    /** Reply. Refused outside the 24-hour window (INBOX_WINDOW_CLOSED); sent by a job after the commit. */
+    replyInInboxConversation: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxReplyInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.replyInInboxConversation, input, options),
     /** Remove a person's second factor, so they enrol again at next sign-in. */
     resetUserTwoFactor: (
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.resetUserTwoFactor, input, options),
+    /** Save a channel: its Meta id, on or off, and (write-only) its token. */
+    saveInboxChannel: (
+      input: { readonly path: { readonly kind: string }; readonly body: InboxChannelUpdateInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.saveInboxChannel, input, options),
+    /** Save the contact's address: district, thana, area and line. */
+    saveInboxContactAddress: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxAddressInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.saveInboxContactAddress, input, options),
+    /** Save the contact's phone; links the brand's buyer with that number. */
+    saveInboxContactPhone: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxPhoneInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.saveInboxContactPhone, input, options),
+    /** Save the Meta app's secret and the webhook's verify token (write-only). */
+    saveInboxMetaApp: (
+      input: { readonly body: InboxMetaAppInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.saveInboxMetaApp, input, options),
     /** Set this organization's maker-checker thresholds. */
     setApprovalThresholds: (
       input: { readonly body: ThresholdInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.setApprovalThresholds, input, options),
+    /** Mark the contact a lead, not qualified or fraud, or hand the stage back to the rules. */
+    setInboxContactStage: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxStageInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.setInboxContactStage, input, options),
+    /** Replace the contact's tags. */
+    setInboxContactTags: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxTagsInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.setInboxContactTags, input, options),
     /** Choose which roles must use two-step sign-in in this brand (super admins only). */
     setTwoFactorPolicy: (
       input: { readonly body: TwoFactorPolicyInput },
@@ -4284,6 +4511,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Enter an organization for the rest of this session. */
     switchOrg: (input: { readonly body: SwitchOrg }, options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.switchOrg, input, options),
+    /** Take a conversation; someone else's needs x-acknowledge-owner: 1. */
+    takeInboxConversation: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.takeInboxConversation, input, options),
     /** Debit and credit totals per account as of a business date. */
     trialBalance: (
       input: { readonly query: { readonly asOf: string } },

@@ -52,6 +52,10 @@ import {
   preparePackingFixtures,
 } from '../../modules/packing/packing.route-fixtures.js';
 import {
+  INBOX_ROUTE_FIXTURES,
+  prepareInboxFixtures,
+} from '../../modules/inbox/inbox.route-fixtures.js';
+import {
   MARKETING_ROUTE_FIXTURES,
   prepareMarketingFixtures,
 } from '../../modules/marketing/marketing.route-fixtures.js';
@@ -120,6 +124,7 @@ beforeAll(async () => {
   await prepareDeleteFixtures();
   await prepareMarketplaceFixtures();
   await preparePackingFixtures();
+  await prepareInboxFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -300,6 +305,8 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...DELETE_ROUTE_FIXTURES,
   ...MARKETPLACE_ROUTE_FIXTURES,
   ...PACKING_ROUTE_FIXTURES,
+  // M42: the unified inbox.
+  ...INBOX_ROUTE_FIXTURES,
 };
 
 function testedRoutes(): RouteDeclaration[] {
