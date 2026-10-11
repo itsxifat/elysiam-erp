@@ -145,8 +145,7 @@ export class UsersController {
   }
 
   /**
-   * End a person's sessions (M40, D-696): everywhere, or only in this brand when an org admin
-   * acts on someone who also works in another. Not on yourself: My account does that.
+   * End every session a person has (M40, D-696). Not on yourself: My account does that.
    */
   @RequireAbility('update', 'User')
   @Post(':id/sign-out-everywhere')

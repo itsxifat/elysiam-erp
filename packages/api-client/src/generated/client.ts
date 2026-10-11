@@ -964,6 +964,11 @@ export const OPERATIONS = {
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
+  newMyRecoveryCodes: {
+    method: 'POST',
+    path: '/v1/account/two-factor/recovery-codes',
+    ability: 'authenticated',
+  },
   packingCameraPreview: {
     method: 'GET',
     path: '/v1/packing/cameras/{id}/preview',
@@ -3139,6 +3144,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The signed-in user, their roles and active org. */
     me: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.me, undefined, options),
+    /** With your password and a current authenticator code, make ten new recovery codes; the old ones stop working. */
+    newMyRecoveryCodes: (
+      input: { readonly body: ConfirmWithCode },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.newMyRecoveryCodes, input, options),
     /** The newest JPEG frame of a packing camera's live preview; 204 when none is live. */
     packingCameraPreview: (
       input: { readonly path: { readonly id: string } },

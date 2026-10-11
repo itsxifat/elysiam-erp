@@ -83,7 +83,7 @@ const en = {
   'account.twoFactor.blockedOwner': 'Your owner sign-in link needs it.',
   'account.twoFactor.password': 'Your password',
   'account.twoFactor.passwordHint': 'Asked again because this changes how you sign in.',
-  'account.twoFactor.currentCode': 'Code from your authenticator app, or a recovery code',
+  'account.twoFactor.currentCode': 'Code your authenticator app shows now',
   'account.twoFactor.codeFormat': 'Enter the six digits the app shows.',
 
   'account.setup.title': 'Set up two-step sign-in',
@@ -109,7 +109,7 @@ const en = {
 
   'account.newPhone.title': 'Set up on a new phone',
   'account.newPhone.detail':
-    'Your old phone keeps working until the new one is set up. Enter your password and a code from the old phone, or a recovery code.',
+    'Your old phone keeps working until the new one is set up. Enter your password and the code the old phone shows now. If the old phone is lost, ask an admin to reset two-step sign-in.',
   'account.newPhone.step2':
     'Scan this with the authenticator app on the new phone, then enter the code it shows. You have ten minutes.',
   'account.newPhone.done':
@@ -117,7 +117,7 @@ const en = {
 
   'account.newCodes.title': 'New recovery codes',
   'account.newCodes.detail':
-    'Your old recovery codes stop working at once. Enter your password to make ten new ones.',
+    'Your old recovery codes stop working at once. Enter your password and the code your authenticator app shows now to make ten new ones.',
   'account.newCodes.done': 'New recovery codes are made. The old ones no longer work.',
 
   'account.turnOff.title': 'Turn off two-step sign-in?',

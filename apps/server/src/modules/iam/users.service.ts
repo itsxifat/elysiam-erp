@@ -1213,15 +1213,6 @@ export class UsersService {
     userId: string,
     reason: string,
   ): Promise<TwoFactorOutcome> {
-    const standing = await twoFactorStanding(userId);
-    if (standing.requirement.required) {
-      throw usersHttpError(
-        'TWO_FACTOR_REQUIRED',
-        standing.requirement.isSuperAdmin
-          ? 'Super admins always use two-step sign-in. Reset it instead if their phone is lost.'
-          : 'A role this person holds requires two-step sign-in. Reset it instead if their phone is lost.',
-      );
-    }
     return this.removeFactorFor(context, request, userId, reason, 'turn_off');
   }
 
@@ -1244,6 +1235,19 @@ export class UsersService {
       }
 
       const plan = this.plan(context, target, 'two_factor');
+      // Asked only once the person is known to work here and the actor may act on them
+      // (the ledger audit's W2): before that, the answer would say what another brand requires.
+      if (mode === 'turn_off') {
+        const standing = await twoFactorStanding(userId);
+        if (standing.requirement.required) {
+          throw usersHttpError(
+            'TWO_FACTOR_REQUIRED',
+            standing.requirement.isSuperAdmin
+              ? 'Super admins always use two-step sign-in. Reset it instead if their phone is lost.'
+              : 'A role this person holds requires two-step sign-in. Reset it instead if their phone is lost.',
+          );
+        }
+      }
       await this.checkLimits(tx, context, userId);
       if (plan.decision === 'approval') {
         return this.askSecondAdmin(tx, context, request, target, 'two_factor', reason);
@@ -1281,18 +1285,18 @@ export class UsersService {
   // --- signing a person out ---------------------------------------------------------------
 
   /**
-   * End a person's sessions (M40, D-696): every one when a super admin asks or the person
-   * works only here; otherwise only the ones acting in this brand, as deactivation does
-   * (D-405's reasoning: one brand's admin does not reach another brand's sign-ins). Not
-   * yourself (My account signs out your devices); a super admin only by a super admin; an
-   * owner never, from here (they hold no role, so they are not found). Their password and
-   * second factor are untouched: they simply sign in again.
+   * End a person's sessions (M40, D-696): every one of them. Ending only those acting in this
+   * brand would last one click for someone who also works elsewhere — any other session of
+   * theirs can switch straight back (the ledger audit's W5) — and ending a session takes
+   * nothing from them: their password and second factor are untouched, and they simply sign in
+   * again. Not yourself (My account signs out your devices); a super admin only by a super
+   * admin; an owner never, from here (they hold no role, so they are not found).
    */
   async signOutEverywhere(
     context: ActiveContext,
     request: AuditableRequest,
     userId: string,
-  ): Promise<{ userId: string; sessionsEnded: number; scope: 'all' | 'brand' }> {
+  ): Promise<{ userId: string; sessionsEnded: number; scope: 'all' }> {
     if (userId === context.userId) {
       throw usersHttpError(
         'USER_SELF_MANAGEMENT',
@@ -1302,11 +1306,8 @@ export class UsersService {
     return this.inOrg(context, async (tx) => {
       const target = await this.target(tx, context.orgId, userId);
       this.guardManage(context, target);
-      const scope: 'all' | 'brand' = context.isSuperAdmin || !target.inOtherBrand ? 'all' : 'brand';
-      const sessionsEnded =
-        scope === 'all'
-          ? await repo.endSessions(tx, userId, 'all')
-          : await repo.endSessions(tx, userId, { orgId: context.orgId });
+      const scope = 'all' as const;
+      const sessionsEnded = await repo.endSessions(tx, userId, 'all');
       await this.audit.record(tx, {
         orgId: context.orgId,
         actorUserId: context.userId,

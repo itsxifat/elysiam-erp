@@ -61,10 +61,9 @@ function cookieOf(request: FastifyRequest): string {
  *
  * Every route is `@AuthenticatedOnly`: there is no subject to check an ability against,
  * because each one acts on the caller and only the caller — the service names the caller's
- * own id in every statement. Password changes and new backup codes go to Better Auth's own
- * `/api/auth/change-password` and `/api/auth/two-factor/generate-backup-codes`, audited by
- * the auth bridge; these are the parts Better Auth has no endpoint for, or none that asks
- * enough.
+ * own id in every statement. Password changes go to Better Auth's own
+ * `/api/auth/change-password`, audited by the auth bridge; these are the parts Better Auth has
+ * no endpoint for, or none that asks enough (its password-only two-factor paths are closed).
  */
 @Controller('v1/account')
 export class AccountController {
@@ -131,9 +130,26 @@ export class AccountController {
   @AuthenticatedOnly('Finishes moving your own two-step sign-in to a new phone.')
   @Post('two-factor/replace/confirm')
   @HttpCode(200)
+  @NoIdempotencyReplay()
   async confirmReplacement(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(replacementCodeSchema, body);
     return this.account.confirmReplacement(requireContext(request), auditable(request), input.code);
+  }
+
+  /** Ten new recovery codes, shown once: never cached, never stored for replay. */
+  @AuthenticatedOnly('Makes new recovery codes for your own two-step sign-in.')
+  @Post('two-factor/recovery-codes')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @NoIdempotencyReplay()
+  async recoveryCodes(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(confirmWithCodeSchema, body);
+    return this.account.recoveryCodes(
+      requireContext(request),
+      auditable(request),
+      cookieOf(request),
+      input,
+    );
   }
 
   @AuthenticatedOnly(
@@ -141,6 +157,7 @@ export class AccountController {
   )
   @Post('two-factor/turn-off')
   @HttpCode(200)
+  @NoIdempotencyReplay()
   async turnOff(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(confirmWithCodeSchema, body);
     return this.account.turnOff(

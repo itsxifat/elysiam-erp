@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { base32 } from '@better-auth/utils/base32';
+import { DEFAULT_TWO_FACTOR_POLICY } from '@elysium/domain/iam';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -403,13 +404,13 @@ describe('check 3: branded login resolves an org from the host', () => {
 
 describe('check 1: 2FA is required for privileged roles', () => {
   it('names the roles §6 requires it for', () => {
-    expect(requiresTwoFactor(['sales'], false)).toBe(false);
-    expect(requiresTwoFactor(['warehouse'], false)).toBe(false);
-    expect(requiresTwoFactor(['accounts'], false)).toBe(true);
-    expect(requiresTwoFactor(['org_admin'], false)).toBe(true);
-    expect(requiresTwoFactor(['investor'], false)).toBe(true);
+    expect(requiresTwoFactor(['sales'], false, DEFAULT_TWO_FACTOR_POLICY)).toBe(false);
+    expect(requiresTwoFactor(['warehouse'], false, DEFAULT_TWO_FACTOR_POLICY)).toBe(false);
+    expect(requiresTwoFactor(['accounts'], false, DEFAULT_TWO_FACTOR_POLICY)).toBe(true);
+    expect(requiresTwoFactor(['org_admin'], false, DEFAULT_TWO_FACTOR_POLICY)).toBe(true);
+    expect(requiresTwoFactor(['investor'], false, DEFAULT_TWO_FACTOR_POLICY)).toBe(true);
     // A super admin is privileged by definition, with or without a membership.
-    expect(requiresTwoFactor([], true)).toBe(true);
+    expect(requiresTwoFactor([], true, DEFAULT_TWO_FACTOR_POLICY)).toBe(true);
   });
 
   it('issues a session to an unprivileged user without a second factor', async () => {

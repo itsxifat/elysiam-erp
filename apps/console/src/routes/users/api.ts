@@ -193,10 +193,10 @@ export function turnOffTwoFactor(userId: string, reason: string): Promise<TwoFac
   });
 }
 
-/** End a person's sessions (M40, D-696): everywhere, or this brand's only. */
+/** End every session a person has (M40, D-696). */
 export function signOutEverywhere(
   userId: string,
-): Promise<{ userId: string; sessionsEnded: number; scope: 'all' | 'brand' }> {
+): Promise<{ userId: string; sessionsEnded: number; scope: 'all' }> {
   return api.post(`/v1/users/${encodeURIComponent(userId)}/sign-out-everywhere`);
 }
 

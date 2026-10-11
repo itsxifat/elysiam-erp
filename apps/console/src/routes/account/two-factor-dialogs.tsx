@@ -19,9 +19,10 @@ import { RecoveryCodes } from './recovery-codes.js';
 
 /**
  * My account's four changes to two-step sign-in (M40, D-694): set it up, move it to a new
- * phone, make new recovery codes, turn it off. Each asks for the password again; moving it and
- * turning it off ask for a current code as well. The server decides whether the change is
- * allowed — these only collect what it asks for.
+ * phone, make new recovery codes, turn it off. Each asks for the password again; the last three
+ * ask for the code the authenticator shows now as well (never a recovery code, which the
+ * password alone could mint). The server decides whether the change is allowed — these only
+ * collect what it asks for.
  */
 
 const TotpQr = lazy(() => import('../../auth/totp-qr.js'));
@@ -251,7 +252,7 @@ export function NewPhoneDialog({ onClose, onDone }: DialogProps) {
   const [problem, setProblem] = useState<string | null>(null);
 
   const start = useMutation({
-    mutationFn: () => startNewPhone(password, current.trim()),
+    mutationFn: () => startNewPhone(password, current),
     onSuccess: (result) => {
       setProblem(null);
       setPassword('');
@@ -279,7 +280,7 @@ export function NewPhoneDialog({ onClose, onDone }: DialogProps) {
           </Button>
           {totpURI === null ? (
             <Button
-              disabled={busy || password === '' || current.trim().length < 6}
+              disabled={busy || password === '' || current.length !== 6}
               onClick={() => start.mutate()}
             >
               {t('account.continue')}
@@ -295,15 +296,11 @@ export function NewPhoneDialog({ onClose, onDone }: DialogProps) {
       {totpURI === null ? (
         <>
           <PasswordInput id="phone-password" value={password} onChange={setPassword} autoFocus />
-          <Field
+          <SixDigits
             id="phone-current"
-            name="current-code"
             label={t('account.twoFactor.currentCode')}
-            autoComplete="one-time-code"
             value={current}
-            maxLength={32}
-            onChange={(event) => setCurrent(event.target.value)}
-            className="font-mono"
+            onChange={setCurrent}
           />
         </>
       ) : (
@@ -331,14 +328,16 @@ export function NewCodesDialog({
 }: DialogProps & { readonly brandSlug: string | null }) {
   const t = useAccountT();
   const [password, setPassword] = useState('');
+  const [current, setCurrent] = useState('');
   const [codes, setCodes] = useState<readonly string[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
   const make = useMutation({
-    mutationFn: () => newRecoveryCodes(password),
+    mutationFn: () => newRecoveryCodes(password, current),
     onSuccess: (result) => {
       setProblem(null);
       setPassword('');
+      setCurrent('');
       setCodes(result.backupCodes);
     },
     onError: (cause) => setProblem(refusalText(cause, t)),
@@ -356,7 +355,10 @@ export function NewCodesDialog({
             <Button variant="outline" disabled={make.isPending} onClick={onClose}>
               {t('account.cancel')}
             </Button>
-            <Button disabled={make.isPending || password === ''} onClick={() => make.mutate()}>
+            <Button
+              disabled={make.isPending || password === '' || current.length !== 6}
+              onClick={() => make.mutate()}
+            >
               {t('account.continue')}
             </Button>
           </>
@@ -368,7 +370,15 @@ export function NewCodesDialog({
       }
     >
       {codes === null ? (
-        <PasswordInput id="codes-password" value={password} onChange={setPassword} autoFocus />
+        <>
+          <PasswordInput id="codes-password" value={password} onChange={setPassword} autoFocus />
+          <SixDigits
+            id="codes-current"
+            label={t('account.twoFactor.currentCode')}
+            value={current}
+            onChange={setCurrent}
+          />
+        </>
       ) : (
         <RecoveryCodes codes={codes} brandSlug={brandSlug} />
       )}
@@ -386,7 +396,7 @@ export function TurnOffDialog({ onClose, onDone }: DialogProps) {
   const [problem, setProblem] = useState<string | null>(null);
 
   const off = useMutation({
-    mutationFn: () => turnOffTwoFactor(password, code.trim()),
+    mutationFn: () => turnOffTwoFactor(password, code),
     onSuccess: () => onDone(t('account.turnOff.done')),
     onError: (cause) => setProblem(refusalText(cause, t)),
   });
@@ -404,7 +414,7 @@ export function TurnOffDialog({ onClose, onDone }: DialogProps) {
           </Button>
           <Button
             variant="destructive"
-            disabled={off.isPending || password === '' || code.trim().length < 6}
+            disabled={off.isPending || password === '' || code.length !== 6}
             onClick={() => off.mutate()}
           >
             {t('account.twoFactor.turnOff')}
@@ -413,15 +423,11 @@ export function TurnOffDialog({ onClose, onDone }: DialogProps) {
       }
     >
       <PasswordInput id="off-password" value={password} onChange={setPassword} autoFocus />
-      <Field
+      <SixDigits
         id="off-code"
-        name="current-code"
         label={t('account.twoFactor.currentCode')}
-        autoComplete="one-time-code"
         value={code}
-        maxLength={32}
-        onChange={(event) => setCode(event.target.value)}
-        className="font-mono"
+        onChange={setCode}
       />
       {problem === null ? null : <Alert>{problem}</Alert>}
     </Frame>

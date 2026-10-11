@@ -44,15 +44,27 @@ describe('readTwoFactorPolicy', () => {
     }
   });
 
-  it('keeps known roles once each, in the setting order, and drops anything else', () => {
-    expect(
-      readTwoFactorPolicy({ requiredRoles: ['sales', 'super_admin', 'org_admin', 'sales', 7] }),
-    ).toEqual({ requiredRoles: ['org_admin', 'sales'], isDefault: false });
+  it('keeps the roles once each, in the setting order', () => {
+    expect(readTwoFactorPolicy({ requiredRoles: ['sales', 'org_admin', 'sales'] })).toEqual({
+      requiredRoles: ['org_admin', 'sales'],
+      isDefault: false,
+    });
     // Nothing required is a real choice, not the default.
     expect(readTwoFactorPolicy({ requiredRoles: [] })).toEqual({
       requiredRoles: [],
       isDefault: false,
     });
+  });
+
+  it('reads a row naming any role it does not know as the default, never as "not required"', () => {
+    for (const stored of [
+      { requiredRoles: ['org-admin'] },
+      { requiredRoles: ['sales', 'super_admin'] },
+      { requiredRoles: ['sales', 7] },
+      { requiredRoles: [null] },
+    ]) {
+      expect(readTwoFactorPolicy(stored), JSON.stringify(stored)).toBe(DEFAULT_TWO_FACTOR_POLICY);
+    }
   });
 
   it('reads back exactly what the setting stores', () => {

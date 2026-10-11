@@ -349,11 +349,14 @@ export async function voidLinks(
 ): Promise<number> {
   const rows = await tx.execute<{ id: string }>(sql`
     delete from iam.verifications
-    where value = ${userId}
-      and (
-        identifier like 'reset-password:%'
-        ${options.devices ? sql`or identifier like 'trust-device-%' or identifier like '2fa-%'` : sql``}
+    where (
+        value = ${userId}
+        and (
+          identifier like 'reset-password:%'
+          ${options.devices ? sql`or identifier like 'trust-device-%' or identifier like '2fa-%'` : sql``}
+        )
       )
+      ${options.devices ? sql`or identifier = ${`two-factor-replace:${userId}`}` : sql``}
     returning id
   `);
   return rows.length;
@@ -370,6 +373,11 @@ export async function voidPassword(tx: Tx, userId: string): Promise<void> {
 /** Remove an enrolled second factor; the next sign-in meets the enrolment wall (§6). */
 export async function removeSecondFactor(tx: Tx, userId: string): Promise<void> {
   await tx.execute(sql`delete from iam.two_factors where user_id = ${userId}`);
+  // A new phone's secret still waiting (M40, D-694) goes with the factor it was to replace, so
+  // it can never be swapped into one set up again after the reset (the ledger audit's W7).
+  await tx.execute(
+    sql`delete from iam.verifications where identifier = ${`two-factor-replace:${userId}`}`,
+  );
   await tx.execute(sql`
     update iam.users set two_factor_enabled = false, updated_at = now() where id = ${userId}
   `);

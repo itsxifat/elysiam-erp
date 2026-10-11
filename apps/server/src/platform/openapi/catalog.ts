@@ -222,6 +222,12 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
       "Finish moving two-step sign-in with the new phone's code; the old phone stops working.",
     body: named('ReplacementCode', replacementCodeSchema, 'ReplacementCode'),
   },
+  'POST /v1/account/two-factor/recovery-codes': {
+    operationId: 'newMyRecoveryCodes',
+    summary:
+      'With your password and a current authenticator code, make ten new recovery codes; the old ones stop working.',
+    body: named('ConfirmWithCode', confirmWithCodeSchema, 'ConfirmWithCode'),
+  },
   'POST /v1/account/two-factor/turn-off': {
     operationId: 'turnOffMyTwoFactor',
     summary:

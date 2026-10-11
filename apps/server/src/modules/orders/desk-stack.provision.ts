@@ -146,6 +146,9 @@ async function create(): Promise<void> {
     // M38b: a warehouse packer for the packing station (packing.stack.ts). The warehouse has
     // no two-step wall, which is how the packing desk signs in.
     { label: 'packer', grants: [{ orgId, role: 'warehouse' }] },
+    // M40: a sales person of their own for My account (account.stack.ts): their name,
+    // password and two-step sign-in change there, so nobody else may share them.
+    { label: 'self', grants: [{ orgId, role: 'sales' }] },
   ];
 
   const users: { role: string; email: string; userId: string }[] = [];

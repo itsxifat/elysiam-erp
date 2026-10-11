@@ -1,9 +1,8 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { phoneNumber, twoFactor } from 'better-auth/plugins';
 import {
-  DEFAULT_TWO_FACTOR_POLICY,
   DEFAULT_TWO_FACTOR_REQUIRED_ROLES,
   requiresTwoFactorUnder,
   type TwoFactorPolicy,
@@ -236,15 +235,20 @@ export function createAuth(options: AuthOptions) {
     // The phone-number plugin's own reset pair is closed for the same reason (the ledger
     // audit's W2): an OTP reset with no audit, no limits and no second admin, and the day
     // SMS is wired it would let anyone with a phone take over the account behind it.
-    // `/two-factor/disable` too (M40, D-694): it switched the factor off on the password
-    // alone, whatever the brand's policy said. Turning it off is `POST
-    // /v1/account/two-factor/turn-off` now, which asks for a current code as well and refuses
-    // while any role requires it.
+    // M40 (D-694, the ledger audit's C1): three two-factor paths that act on the password
+    // alone, whatever the brand's policy says, so a stolen session and a password were enough.
+    // `/two-factor/disable` switched the factor off; `/two-factor/get-totp-uri` handed back the
+    // verified secret; `/two-factor/generate-backup-codes` made codes that could then stand in
+    // for the phone. My account replaces each with a route that asks for a current code from
+    // the authenticator as well (`/v1/account/two-factor/turn-off`, `/recovery-codes`), and
+    // nothing needs the secret again once it is set up. Server calls (`auth.api.*`) still work.
     disabledPaths: [
       '/request-password-reset',
       '/phone-number/request-password-reset',
       '/phone-number/reset-password',
       '/two-factor/disable',
+      '/two-factor/get-totp-uri',
+      '/two-factor/generate-backup-codes',
     ],
 
     /**
@@ -260,16 +264,40 @@ export function createAuth(options: AuthOptions) {
      * sign-in stays, behind the two-factor hook.
      */
     hooks: {
-      before: createAuthMiddleware((ctx) => {
-        if (ctx.path !== '/phone-number/verify') return Promise.resolve();
-        const body = ctx.body as { updatePhoneNumber?: unknown } | undefined;
-        if (body?.updatePhoneNumber === true) return Promise.resolve();
-        return Promise.reject(
-          new APIError('FORBIDDEN', {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === '/phone-number/verify') {
+          const body = ctx.body as { updatePhoneNumber?: unknown } | undefined;
+          if (body?.updatePhoneNumber === true) return;
+          throw new APIError('FORBIDDEN', {
             code: 'PHONE_CODE_SIGN_IN_DISABLED',
             message: 'A text-message code does not sign you in. Use your email and password.',
-          }),
-        );
+          });
+        }
+
+        /*
+         * A code is checked at sign-in, and once while setting the factor up — never again
+         * by a session that already has one (M40, the ledger audit's C1, D-694).
+         *
+         * With a session, Better Auth's verify endpoints count no failures (its lockout only
+         * counts at sign-in), so a stolen session could use them to guess codes without
+         * limit. At sign-in there is no session yet (a pending second-factor cookie instead),
+         * and while enrolling the person's factor is not on yet; both still pass. My
+         * account's own checks count every wrong code toward the same lockout.
+         */
+        if (
+          ctx.path === '/two-factor/verify-totp' ||
+          ctx.path === '/two-factor/verify-backup-code'
+        ) {
+          const session = await getSessionFromCtx(ctx);
+          if (
+            (session?.user as { twoFactorEnabled?: unknown } | undefined)?.twoFactorEnabled === true
+          ) {
+            throw new APIError('FORBIDDEN', {
+              code: 'TWO_FACTOR_ALREADY_VERIFIED',
+              message: 'You are signed in already. Manage two-step sign-in from My account.',
+            });
+          }
+        }
       }),
     },
 
@@ -453,12 +481,13 @@ export async function mayHoldSession(userId: string): Promise<boolean> {
 
 /**
  * Whether a set of roles held in one brand requires a second factor there (§6), under that
- * brand's policy (`loadTwoFactorPolicy`); the default policy when none is given.
+ * brand's policy (`loadTwoFactorPolicy`). The policy is required: a caller that forgot the
+ * brand's would silently get the default.
  */
 export function requiresTwoFactor(
   roles: readonly string[],
   isSuperAdmin: boolean,
-  policy: TwoFactorPolicy = DEFAULT_TWO_FACTOR_POLICY,
+  policy: TwoFactorPolicy,
 ): boolean {
   return requiresTwoFactorUnder(policy, roles, isSuperAdmin);
 }

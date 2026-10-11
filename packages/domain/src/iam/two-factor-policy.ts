@@ -65,17 +65,21 @@ export function normaliseRequiredRoles(roles: readonly unknown[]): TwoFactorPoli
 /**
  * A brand's stored choice, read safely.
  *
- * No row is the default. A row that is not `{ requiredRoles: string[] }` is also the default,
- * rather than "nothing required": only the security setting writes this row, through a
- * validated route, so a malformed one was edited by hand, and the safe reading of a value
- * nobody can vouch for is the one the product shipped with. Unknown role names are dropped.
+ * No row is the default. A row that is not `{ requiredRoles: [...] }` naming only known roles
+ * is also the default, rather than "nothing required" (the ledger audit's W4): only the
+ * security setting writes this row, through a validated route, so anything else was edited by
+ * hand — `"org-admin"` for `"org_admin"`, or a role renamed since — and dropping the names it
+ * did not know would have read as "not required" for exactly the roles someone meant to
+ * require. The safe reading of a value nobody can vouch for is the one the product shipped with.
  */
 export function readTwoFactorPolicy(stored: unknown): TwoFactorPolicy {
   if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) {
     return DEFAULT_TWO_FACTOR_POLICY;
   }
   const roles = (stored as { requiredRoles?: unknown }).requiredRoles;
-  if (!Array.isArray(roles)) return DEFAULT_TWO_FACTOR_POLICY;
+  if (!Array.isArray(roles) || !roles.every(isTwoFactorPolicyRole)) {
+    return DEFAULT_TWO_FACTOR_POLICY;
+  }
   return { requiredRoles: normaliseRequiredRoles(roles), isDefault: false };
 }
 

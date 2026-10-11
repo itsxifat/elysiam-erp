@@ -99,8 +99,6 @@ function isClientRefusal(error: unknown): boolean {
   return typeof status === 'number' && status >= 400 && status < 500;
 }
 
-const BACKUP_CODE = /^[A-Za-z0-9]{5}-[A-Za-z0-9]{5}$/;
-
 @Injectable()
 export class AccountService {
   constructor(
@@ -283,9 +281,11 @@ export class AccountService {
   // --- the second factor ----------------------------------------------------------------
 
   /**
-   * Set up on a new phone, step one (D-694): with the password and a current code, a new
-   * secret is made and waits ten minutes for a code from the new phone. Nothing changes yet:
-   * the old phone keeps working until `confirmReplacement`.
+   * Set up on a new phone, step one (D-694): with the password and a current code from the
+   * authenticator, a new secret is made and waits ten minutes for a code from the new phone.
+   * Nothing changes yet: the old phone keeps working until `confirmReplacement`. A lost phone
+   * is an admin's reset (D-403), not this: a recovery code is not accepted here, because new
+   * ones can be made with the password (the ledger audit's C1).
    */
   async startReplacement(
     context: ActiveContext,
@@ -294,7 +294,7 @@ export class AccountService {
     input: { password: string; code: string },
   ): Promise<{ totpURI: string; expiresInMinutes: number }> {
     await this.confirmPassword(cookie, input.password);
-    await this.confirmCode(context.userId, cookie, input.code);
+    await this.confirmCode(context.userId, input.code);
 
     return this.inOrg(context, async (tx) => {
       await repo.lockSelf(tx, context.userId);
@@ -379,7 +379,7 @@ export class AccountService {
   ): Promise<{ twoFactorEnabled: false }> {
     await this.requireMayTurnOff(context.userId);
     await this.confirmPassword(cookie, input.password);
-    await this.confirmCode(context.userId, cookie, input.code);
+    await this.confirmCode(context.userId, input.code);
 
     return this.inOrg(context, async (tx) => {
       await repo.lockSelf(tx, context.userId);
@@ -403,6 +403,41 @@ export class AccountService {
     });
   }
 
+  /**
+   * Ten new recovery codes (D-694): with the password and a current code from the
+   * authenticator, so a stolen session and a password cannot mint codes that stand in for the
+   * phone. Better Auth makes and stores them (its own HTTP path is closed); the old ones stop
+   * working. Shown once, never stored here, never audited.
+   */
+  async recoveryCodes(
+    context: ActiveContext,
+    request: AuditableRequest,
+    cookie: string,
+    input: { password: string; code: string },
+  ): Promise<{ backupCodes: string[] }> {
+    await this.confirmPassword(cookie, input.password);
+    await this.confirmCode(context.userId, input.code);
+    const made = await this.auth.api.generateBackupCodes({
+      body: { password: input.password },
+      headers: new Headers({ cookie }),
+    });
+    await this.inOrg(context, async (tx) => {
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: 'account.recovery_codes_regenerated',
+        entityType: 'User',
+        entityId: context.userId,
+        before: null,
+        after: { codes: made.backupCodes.length },
+        requestId: context.requestId,
+        request,
+      });
+    });
+    return { backupCodes: made.backupCodes };
+  }
+
   private async requireMayTurnOff(userId: string): Promise<void> {
     const standing = await twoFactorStanding(userId);
     const plan = planTurnOffTwoFactor({
@@ -412,13 +447,12 @@ export class AccountService {
     });
     if (plan.allowed) return;
     if (plan.because === 'not_enabled') throw this.notEnabled();
-    throw refusal(
-      HttpStatus.CONFLICT,
-      'TWO_FACTOR_REQUIRED',
-      plan.because === 'role'
-        ? 'Your role requires two-step sign-in, so it stays on. If you lost your phone, ask an admin to reset it.'
-        : 'Super admins always use two-step sign-in, so it stays on.',
-    );
+    const why: Record<'role' | 'super_admin' | 'owner', string> = {
+      role: 'Your role requires two-step sign-in, so it stays on. If you lost your phone, ask an admin to reset it.',
+      super_admin: 'Super admins always use two-step sign-in, so it stays on.',
+      owner: 'Your owner sign-in link needs two-step sign-in, so it stays on.',
+    };
+    throw refusal(HttpStatus.CONFLICT, 'TWO_FACTOR_REQUIRED', why[plan.because]);
   }
 
   private notEnabled(): HttpException {
@@ -443,54 +477,40 @@ export class AccountService {
   }
 
   /**
-   * A current code: six digits from the authenticator, checked against the stored secret, or
-   * a backup code, which Better Auth checks and uses up. A wrong one counts toward Better
-   * Auth's own lockout, the one sign-in uses (`CODE_LOCKOUT`).
+   * A current code from the authenticator, checked against the stored secret inside one
+   * transaction that holds the factor's row: the lock, the check and the count cannot be
+   * raced past (the ledger audit's nits). A wrong one counts toward Better Auth's own lockout,
+   * the one sign-in uses (`CODE_LOCKOUT`); a lock that has run out starts the count again, as
+   * Better Auth does. Recovery codes are not accepted (D-694).
    */
-  private async confirmCode(userId: string, cookie: string, raw: string): Promise<void> {
+  private async confirmCode(userId: string, raw: string): Promise<void> {
     const code = raw.trim();
-    const factor = await withGlobal((tx) => repo.verifiedFactor(tx, userId));
-    if (factor === undefined) throw this.notEnabled();
-    if (factor.locked_until !== null && new Date(factor.locked_until).getTime() > Date.now()) {
+    const outcome = await withGlobal(async (tx) => {
+      const factor = await repo.verifiedFactor(tx, userId);
+      if (factor === undefined) return 'not_enabled' as const;
+      const lockedUntil = factor.locked_until === null ? null : new Date(factor.locked_until);
+      if (lockedUntil !== null && lockedUntil.getTime() > Date.now()) return 'locked' as const;
+      if (lockedUntil !== null) await repo.clearCodeFailures(tx, factor.id);
+      const accepted =
+        /^\d{6}$/.test(code) && (await totpMatchesEncrypted(this.auth, factor.secret, code));
+      if (accepted) await repo.clearCodeFailures(tx, factor.id);
+      else await repo.recordCodeFailure(tx, factor.id);
+      return accepted ? ('accepted' as const) : ('wrong' as const);
+    });
+
+    if (outcome === 'accepted') return;
+    if (outcome === 'not_enabled') throw this.notEnabled();
+    if (outcome === 'locked') {
       throw refusal(
         HttpStatus.TOO_MANY_REQUESTS,
         'TWO_FACTOR_LOCKED',
         'Too many wrong codes. Wait a quarter of an hour, then try again.',
       );
     }
-
-    let accepted: boolean;
-    if (/^\d{6}$/.test(code)) {
-      accepted = await totpMatchesEncrypted(this.auth, factor.secret, code);
-    } else if (BACKUP_CODE.test(code)) {
-      accepted = await this.backupCodeAccepted(cookie, code);
-    } else {
-      accepted = false;
-    }
-
-    await withGlobal(async (tx) => {
-      if (accepted) await repo.clearCodeFailures(tx, factor.id);
-      else await repo.recordCodeFailure(tx, factor.id);
-    });
-    if (!accepted) {
-      throw refusal(
-        HttpStatus.BAD_REQUEST,
-        'TWO_FACTOR_CODE_INVALID',
-        'That code was not accepted. Enter the code your authenticator shows now, or a backup code.',
-      );
-    }
-  }
-
-  private async backupCodeAccepted(cookie: string, code: string): Promise<boolean> {
-    try {
-      await this.auth.api.verifyBackupCode({
-        body: { code, disableSession: true },
-        headers: new Headers({ cookie }),
-      });
-      return true;
-    } catch (error) {
-      if (isClientRefusal(error)) return false;
-      throw error;
-    }
+    throw refusal(
+      HttpStatus.BAD_REQUEST,
+      'TWO_FACTOR_CODE_INVALID',
+      'That code was not accepted. Enter the code your authenticator app shows now.',
+    );
   }
 }

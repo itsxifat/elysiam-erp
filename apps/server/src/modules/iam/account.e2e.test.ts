@@ -262,17 +262,45 @@ describe('moving two-step sign-in to a new phone', () => {
     expect(JSON.stringify(await auditRowsFor(ORG_A, who.userId))).not.toContain(newSecret);
   });
 
-  it('takes a backup code instead of the authenticator, and uses it up', async () => {
+  it('takes only the code the authenticator shows, never a recovery code (C1)', async () => {
     const who = await volunteer();
-    const code = who.backupCodes[1] ?? '';
-    const started = await who.client.request('POST', '/v1/account/two-factor/replace', {
-      body: { password: PASSWORD, code },
+    const refused = await who.client.request('POST', '/v1/account/two-factor/replace', {
+      body: { password: PASSWORD, code: who.backupCodes[1] },
     });
-    expect(started.statusCode, started.body).toBe(200);
-    const reused = await who.client.request('POST', '/v1/account/two-factor/replace', {
-      body: { password: PASSWORD, code },
+    expect(refused.statusCode).toBe(400);
+    expect(json<{ code: string }>(refused).code).toBe('TWO_FACTOR_CODE_INVALID');
+    // The recovery code was not used up by the refusal: it still signs in.
+    const atSignIn = await signIn(harness, who.email);
+    const used = await atSignIn.client.request('POST', '/api/auth/two-factor/verify-backup-code', {
+      body: { code: who.backupCodes[1] },
     });
-    expect(json<{ code: string }>(reused).code).toBe('TWO_FACTOR_CODE_INVALID');
+    expect(used.statusCode, used.body).toBe(200);
+  });
+
+  it('keeps the password-only paths closed, and a signed-in session from checking codes', async () => {
+    const who = await volunteer();
+    for (const path of [
+      '/api/auth/two-factor/get-totp-uri',
+      '/api/auth/two-factor/generate-backup-codes',
+      '/api/auth/two-factor/disable',
+    ]) {
+      const closed = await who.client.request('POST', path, { body: { password: PASSWORD } });
+      expect(closed.statusCode, path).toBe(404);
+    }
+    for (const [path, code] of [
+      ['/api/auth/two-factor/verify-totp', await codeFor(harness, who.secret)],
+      ['/api/auth/two-factor/verify-backup-code', who.backupCodes[2] ?? ''],
+    ] as const) {
+      const oracle = await who.client.request('POST', path, { body: { code } });
+      expect(oracle.statusCode, path).toBe(403);
+      expect(json<{ code: string }>(oracle).code).toBe('TWO_FACTOR_ALREADY_VERIFIED');
+    }
+    // The recovery code tried above is still there for the day the phone is lost.
+    const atSignIn = await signIn(harness, who.email);
+    const used = await atSignIn.client.request('POST', '/api/auth/two-factor/verify-backup-code', {
+      body: { code: who.backupCodes[2] },
+    });
+    expect(used.statusCode, used.body).toBe(200);
   });
 
   it('locks two-step sign-in after ten wrong codes, here and at sign-in alike', async () => {
@@ -297,26 +325,23 @@ describe('moving two-step sign-in to a new phone', () => {
   });
 });
 
-describe('new backup codes', () => {
-  it('needs the password, and the old codes stop working', async () => {
+describe('new recovery codes', () => {
+  it('needs the password and a current code, and the old codes stop working', async () => {
     const who = await volunteer();
-    const noPassword = await who.client.request(
-      'POST',
-      '/api/auth/two-factor/generate-backup-codes',
-      {
-        body: {},
-      },
-    );
-    expect(noPassword.statusCode).toBe(400);
-    const wrong = await who.client.request('POST', '/api/auth/two-factor/generate-backup-codes', {
-      body: { password: 'not-my-password' },
-    });
-    expect(wrong.statusCode).toBeGreaterThanOrEqual(400);
-
-    const fresh = await who.client.request('POST', '/api/auth/two-factor/generate-backup-codes', {
+    const noCode = await who.client.request('POST', '/v1/account/two-factor/recovery-codes', {
       body: { password: PASSWORD },
     });
+    expect(noCode.statusCode).toBe(400);
+    const wrong = await who.client.request('POST', '/v1/account/two-factor/recovery-codes', {
+      body: { password: 'not-my-password', code: await codeFor(harness, who.secret) },
+    });
+    expect(json<{ code: string }>(wrong).code).toBe('ACCOUNT_PASSWORD_INVALID');
+
+    const fresh = await who.client.request('POST', '/v1/account/two-factor/recovery-codes', {
+      body: { password: PASSWORD, code: await codeFor(harness, who.secret) },
+    });
     expect(fresh.statusCode, fresh.body).toBe(200);
+    expect(fresh.headers['cache-control']).toBe('no-store');
     const codes = json<{ backupCodes: string[] }>(fresh).backupCodes;
     expect(codes).toHaveLength(10);
 
@@ -332,8 +357,9 @@ describe('new backup codes', () => {
     expect(newCode.statusCode, newCode.body).toBe(200);
 
     expect((await account(who.client)).twoFactor.backupCodesLeft).toBe(9);
-    const actions = (await auditRowsFor(ORG_A, who.userId)).map((row) => row.action);
-    expect(actions).toContain('auth.backup_codes_regenerated');
+    const rows = await auditRowsFor(ORG_A, who.userId);
+    expect(rows.map((row) => row.action)).toContain('account.recovery_codes_regenerated');
+    for (const code of codes) expect(JSON.stringify(rows)).not.toContain(code);
   });
 });
 

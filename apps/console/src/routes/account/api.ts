@@ -3,8 +3,8 @@ import type { MembershipRole } from '@elysium/contracts';
 import { api } from '../../api.js';
 
 /**
- * My account's endpoints (M40), typed to what the server returns. The password and new recovery
- * codes go to Better Auth's own endpoints, as sign-in does; the rest are `/v1/account`. A code
+ * My account's endpoints (M40), typed to what the server returns. The password and the first
+ * set-up go to Better Auth's own endpoints, as sign-in does; the rest are `/v1/account`. A code
  * or a secret is never logged, stored or put in a URL here.
  */
 
@@ -79,9 +79,11 @@ export const startSetUp = (password: string) =>
 export const confirmSetUp = (code: string) =>
   api.post<unknown>('/api/auth/two-factor/verify-totp', { code });
 
-export const newRecoveryCodes = (password: string) =>
-  api.post<{ backupCodes: string[] }>('/api/auth/two-factor/generate-backup-codes', {
+/** Ten new recovery codes, with the password and a code from the authenticator (D-694). */
+export const newRecoveryCodes = (password: string, code: string) =>
+  api.post<{ backupCodes: string[] }>('/v1/account/two-factor/recovery-codes', {
     password,
+    code,
   });
 
 export const startNewPhone = (password: string, code: string) =>

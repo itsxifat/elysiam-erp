@@ -308,7 +308,7 @@ describe('Staff: sign out everywhere', () => {
     expect(bySales.statusCode).toBe(403);
   });
 
-  it('ends only this brand’s sessions of someone who also works elsewhere, unless a super admin asks', async () => {
+  it('ends every session of someone who also works elsewhere, which would otherwise return in one click', async () => {
     const both = await person(harness, ['sales']);
     const { grantMembership } = await import('@elysium/db/testing');
     await grantMembership({ userId: both.userId, orgId: ORG_B, role: 'sales' });
@@ -317,11 +317,11 @@ describe('Staff: sign out everywhere', () => {
 
     const done = await admin.client.request('POST', `/v1/users/${both.userId}/sign-out-everywhere`);
     expect(json<{ scope: string; sessionsEnded: number }>(done)).toMatchObject({
-      scope: 'brand',
-      sessionsEnded: 1,
+      scope: 'all',
+      sessionsEnded: 2,
     });
     expect((await here.request('GET', '/v1/me')).statusCode).toBe(401);
-    expect((await there.request('GET', '/v1/me')).statusCode).toBe(200);
+    expect((await there.request('GET', '/v1/me')).statusCode).toBe(401);
   });
 });
 
@@ -377,8 +377,21 @@ describe('Staff: turn off two-step', () => {
     }
   });
 
+  it('answers 404 for someone with no role here, saying nothing of another brand (W2)', async () => {
+    const elsewhere = await person(harness, ['accounts'], { orgId: ORG_B });
+    const answer = await admin.client.request(
+      'POST',
+      `/v1/users/${elsewhere.userId}/two-factor/turn-off`,
+      { body: { reason: 'Probing another brand' } },
+    );
+    expect(answer.statusCode).toBe(404);
+    expect(json<{ code: string }>(answer).code).toBe('USER_NOT_FOUND');
+  });
+
   it('is refused for a super admin, and for yourself', async () => {
     const superAdmin = await person(harness, ['org_admin'], { isSuperAdmin: true });
+    const superAdminIn = await signIn(harness, superAdmin.email);
+    await enrol(harness, superAdminIn.client);
     const byRoot = await root.client.request(
       'POST',
       `/v1/users/${superAdmin.userId}/two-factor/turn-off`,
@@ -393,10 +406,77 @@ describe('Staff: turn off two-step', () => {
         body: { reason: 'Not allowed' },
       },
     );
-    expect(self.statusCode).toBe(409);
-    // The admin's own role requires it; and were it not, nobody turns off their own here.
-    expect(['TWO_FACTOR_REQUIRED', 'USER_SELF_MANAGEMENT']).toContain(
-      json<{ code: string }>(self).code,
+    // Nobody turns off their own here: My account does that, with a current code.
+    expect(self.statusCode).toBe(403);
+    expect(json<{ code: string }>(self).code).toBe('USER_SELF_MANAGEMENT');
+  });
+});
+
+describe('the policy reader and the set-up stamp (W6)', () => {
+  it('refuses to read a policy outside that brand, rather than read it as the default', async () => {
+    const { loadTwoFactorPolicy, withOrg: inOrg, withUser } = await import('@elysium/db');
+    await expect(
+      withUser({ userId: admin.userId }, (tx) => loadTwoFactorPolicy(tx, ORG_A)),
+    ).rejects.toThrow(/withOrg/);
+    await expect(inOrg({ orgId: ORG_B }, (tx) => loadTwoFactorPolicy(tx, ORG_A))).rejects.toThrow(
+      /withOrg/,
     );
+    const policy = await inOrg({ orgId: ORG_A }, (tx) => loadTwoFactorPolicy(tx, ORG_A));
+    expect(policy.requiredRoles).toEqual(DEFAULT_ROLES);
+  });
+
+  it('reads a hand-edited row naming an unknown role as the default at the wall', async () => {
+    const { withSystem } = await import('@elysium/db');
+    const accountant = await person(harness, ['accounts']);
+    const seller = await person(harness, ['sales']);
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into org.settings (org_id, key, value)
+          values (${ORG_A}, 'security.two_factor', '{"requiredRoles":["sales","org-admin"]}'::jsonb)
+          on conflict (org_id, key) do update set value = excluded.value
+        `),
+      { orgId: ORG_A },
+    );
+    try {
+      // Read naively it would require sales only; read as the default, accounts is walled
+      // and sales is not.
+      const accountantIn = await signIn(harness, accountant.email);
+      expect((await enter(accountantIn.client)).statusCode).toBe(403);
+      const sellerIn = await signIn(harness, seller.email);
+      expect((await enter(sellerIn.client)).statusCode).toBe(201);
+    } finally {
+      await setPolicy(DEFAULT_ROLES);
+    }
+  });
+
+  it('stamps the set-up time once, keeps it through codes used and counted, and clears it on a pending row', async () => {
+    const packer = await person(harness, ['warehouse']);
+    const packerIn = await signIn(harness, packer.email);
+    await enrol(harness, packerIn.client);
+    const stamp = async () => {
+      const [row] = await withGlobal((tx) =>
+        tx.execute<{ enabled_at: Date | null }>(
+          sql`select enabled_at from iam.two_factors where user_id = ${packer.userId}`,
+        ),
+      );
+      return row?.enabled_at === null || row?.enabled_at === undefined
+        ? null
+        : new Date(row.enabled_at).toISOString();
+    };
+    const first = await stamp();
+    expect(first).not.toBeNull();
+    await withGlobal((tx) =>
+      tx.execute(sql`
+        update iam.two_factors
+        set failed_verification_count = failed_verification_count + 1, backup_codes = backup_codes
+        where user_id = ${packer.userId}
+      `),
+    );
+    expect(await stamp()).toBe(first);
+    await withGlobal((tx) =>
+      tx.execute(sql`update iam.two_factors set verified = false where user_id = ${packer.userId}`),
+    );
+    expect(await stamp()).toBeNull();
   });
 });

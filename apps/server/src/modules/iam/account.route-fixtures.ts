@@ -58,6 +58,10 @@ export const ACCOUNT_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
     url: '/v1/account/two-factor/turn-off',
     body: WRONG,
   }),
+  'POST /v1/account/two-factor/recovery-codes': () => ({
+    url: '/v1/account/two-factor/recovery-codes',
+    body: WRONG,
+  }),
   'GET /v1/security/two-factor-policy': () => ({ url: '/v1/security/two-factor-policy' }),
   'PUT /v1/security/two-factor-policy': () => ({
     url: '/v1/security/two-factor-policy',

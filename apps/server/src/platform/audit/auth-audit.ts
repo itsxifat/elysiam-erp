@@ -46,10 +46,6 @@ export const AUDITED_AUTH_PATHS: Readonly<Record<string, AuthEvent>> = {
     operation: 'login',
   },
   '/api/auth/two-factor/enable': { action: 'auth.two_factor_enabled', operation: 'update' },
-  '/api/auth/two-factor/generate-backup-codes': {
-    action: 'auth.backup_codes_regenerated',
-    operation: 'update',
-  },
   '/api/auth/reset-password': { action: 'auth.password_set', operation: 'update' },
   '/api/auth/change-password': { action: 'auth.password_changed', operation: 'update' },
   '/api/auth/update-user': { action: 'auth.profile_updated', operation: 'update' },

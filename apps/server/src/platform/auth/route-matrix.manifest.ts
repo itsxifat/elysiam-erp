@@ -73,6 +73,7 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/account/two-factor/replace',
   'POST /v1/account/two-factor/replace/confirm',
   'POST /v1/account/two-factor/turn-off',
+  'POST /v1/account/two-factor/recovery-codes',
   'GET /v1/security/two-factor-policy',
   'PUT /v1/security/two-factor-policy',
   'GET /v1/catalog/categories',

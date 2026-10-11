@@ -8,6 +8,7 @@ import {
   identifierFrom,
   MemoryRateLimiter,
   requestPath,
+  sessionKeyFrom,
   type RateLimitRule,
 } from './rate-limit.js';
 
@@ -351,5 +352,52 @@ describe('peek (D-416)', () => {
 
     now += 61_000;
     expect(store.peek('k')).toEqual({ count: 0, retryAfterSeconds: 0 });
+  });
+});
+
+/**
+ * M40 (the ledger audit's W3): My account checks a password or a code for whoever holds the
+ * session, so the session is a bucket of its own, whatever address each try comes from.
+ */
+describe('the session bucket', () => {
+  const ACCOUNT: Readonly<Record<string, RateLimitRule>> = {
+    '/v1/account/two-factor/turn-off': { windowSeconds: 900, perIp: 30, perSession: 3 },
+  };
+
+  function withSession(ip: string, token: string): FastifyRequest {
+    return {
+      ip,
+      url: '/v1/account/two-factor/turn-off',
+      body: {},
+      headers: { cookie: `erp_csrf=x; __Secure-better-auth.session_token=${token}` },
+    } as unknown as FastifyRequest;
+  }
+
+  it('stops one session guessing from many addresses, and leaves another session alone', async () => {
+    const limiter = new MemoryRateLimiter(fakeClock().now);
+    const decisions = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      decisions.push(
+        await checkRateLimit(withSession(`198.51.100.${String(attempt)}`, 'stolen.sig'), {
+          limiter,
+          rules: ACCOUNT,
+        }),
+      );
+    }
+    expect(decisions.map((decision) => decision.allowed)).toEqual([true, true, true, false, false]);
+
+    const other = await checkRateLimit(withSession('198.51.100.1', 'someone-else.sig'), {
+      limiter,
+      rules: ACCOUNT,
+    });
+    expect(other.allowed).toBe(true);
+  });
+
+  it('keys the bucket by a hash, never the cookie itself', () => {
+    const key = sessionKeyFrom('a=1; better-auth.session_token=secret-value.sig');
+    expect(key).toMatch(/^[0-9a-f]{32}$/);
+    expect(key).not.toContain('secret');
+    expect(sessionKeyFrom('a=1')).toBeNull();
+    expect(sessionKeyFrom(undefined)).toBeNull();
   });
 });

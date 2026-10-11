@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { instanceOf, problemFor, PROBLEM_CONTENT_TYPE } from './problem.js';
@@ -35,6 +37,11 @@ export interface RateLimitRule {
   readonly perIp: number;
   /** Attempts allowed per window, per identifier. Omitted where there is none. */
   readonly perIdentifier?: number;
+  /**
+   * Attempts allowed per window, per session cookie (M40): for an endpoint that needs a session
+   * and checks a password or a code, so the session holder is the one counted.
+   */
+  readonly perSession?: number;
 }
 
 /**
@@ -64,13 +71,15 @@ export const CREDENTIAL_RULES: Readonly<Record<string, RateLimitRule>> = {
   // per address and per email.
   '/v1/scanner/sign-in': { windowSeconds: 600, perIp: 8, perIdentifier: 8 },
   '/api/admin/scanner/login': { windowSeconds: 600, perIp: 8, perIdentifier: 8 },
-  // M40 (D-693, D-694): My account's checks of a password or a code. A session is needed for
-  // each, so these are per address; a wrong code also counts toward the person's own lockout.
-  '/api/auth/change-password': { windowSeconds: 60, perIp: 10 },
-  '/api/auth/two-factor/generate-backup-codes': { windowSeconds: 60, perIp: 10 },
-  '/v1/account/two-factor/replace': { windowSeconds: 60, perIp: 10 },
-  '/v1/account/two-factor/replace/confirm': { windowSeconds: 60, perIp: 10 },
-  '/v1/account/two-factor/turn-off': { windowSeconds: 60, perIp: 10 },
+  // M40 (D-693, D-694): My account's checks of a password or a code. Each needs a session, so
+  // besides the address the session itself is a bucket (the ledger audit's W3): someone holding
+  // a stolen session gets ten tries a quarter of an hour at its password, however many
+  // addresses they use. A wrong code also counts toward the person's own lockout.
+  '/api/auth/change-password': { windowSeconds: 900, perIp: 30, perSession: 10 },
+  '/v1/account/two-factor/replace': { windowSeconds: 900, perIp: 30, perSession: 10 },
+  '/v1/account/two-factor/replace/confirm': { windowSeconds: 900, perIp: 30, perSession: 10 },
+  '/v1/account/two-factor/recovery-codes': { windowSeconds: 900, perIp: 30, perSession: 10 },
+  '/v1/account/two-factor/turn-off': { windowSeconds: 900, perIp: 30, perSession: 10 },
 };
 
 /**
@@ -242,6 +251,24 @@ export function identifierFrom(body: unknown): string | null {
   return null;
 }
 
+/**
+ * The session a request carries, as a bucket key (M40): a hash of the session cookie's value,
+ * never the value itself, so the counters hold nothing that signs anyone in. Null without one.
+ */
+export function sessionKeyFrom(cookie: string | undefined): string | null {
+  if (typeof cookie !== 'string') return null;
+  for (const part of cookie.split(';')) {
+    const index = part.indexOf('=');
+    if (index <= 0) continue;
+    const name = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+    if (name.endsWith('session_token') && value !== '') {
+      return createHash('sha256').update(value).digest('hex').slice(0, 32);
+    }
+  }
+  return null;
+}
+
 export interface RateLimitOptions {
   readonly limiter: RateLimitStore;
   readonly rules?: Readonly<Record<string, RateLimitRule>>;
@@ -271,20 +298,25 @@ export async function checkRateLimit(
   if (rule === undefined) return { allowed: true };
 
   const identifier = rule.perIdentifier === undefined ? null : identifierFrom(request.body);
+  const session = rule.perSession === undefined ? null : sessionKeyFrom(request.headers.cookie);
 
   // Concurrently, so a Valkey-backed store costs one round trip's latency rather
-  // than two on the login path — and so both buckets are still counted whatever
-  // either answers, which is the rule this function exists to enforce.
-  const [ipDecision, identifierDecision] = await Promise.all([
+  // than two on the login path — and so every bucket is still counted whatever
+  // the others answer, which is the rule this function exists to enforce.
+  const [ipDecision, identifierDecision, sessionDecision] = await Promise.all([
     options.limiter.hit(`ip:${path}:${request.ip}`, rule.perIp, rule.windowSeconds),
     identifier === null || rule.perIdentifier === undefined
       ? Promise.resolve<RateLimitDecision>({ allowed: true })
       : options.limiter.hit(`id:${path}:${identifier}`, rule.perIdentifier, rule.windowSeconds),
+    session === null || rule.perSession === undefined
+      ? Promise.resolve<RateLimitDecision>({ allowed: true })
+      : options.limiter.hit(`session:${path}:${session}`, rule.perSession, rule.windowSeconds),
   ]);
 
   if (!identifierDecision.allowed) {
     return { ...identifierDecision, bucket: 'identifier' };
   }
+  if (!sessionDecision.allowed) return { ...sessionDecision, bucket: 'identifier' };
   if (!ipDecision.allowed) return { ...ipDecision, bucket: 'ip' };
 
   return { allowed: true };
