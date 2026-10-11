@@ -49,7 +49,8 @@ function credentialedOptions(policy: OriginPolicy) {
     // request is sent. Every browser client would have been silently unable to
     // send one, while the server-side tests — which use `inject` and never
     // preflight — passed.
-    allowedHeaders: ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER],
+    // M42 (D-737): the inbox's acknowledgement that a conversation is someone else's.
+    allowedHeaders: ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER, 'x-acknowledge-owner'],
     maxAge: 600,
   };
 }

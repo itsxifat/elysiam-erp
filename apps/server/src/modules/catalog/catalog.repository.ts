@@ -1178,3 +1178,30 @@ export async function categoryLineage(
   }
   return lineage;
 }
+
+/**
+ * Products by id with their first photo (M42, D-741): the inbox's product interests. Name,
+ * status and the first image's file id; nothing about price here (the SKUs carry it) and
+ * nothing near a cost.
+ */
+export async function productSummariesOf(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<{ id: string; name: string; status: string; image_file_id: string | null }[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<{
+    id: string;
+    name: string;
+    status: string;
+    image_file_id: string | null;
+  }>(sql`
+    select p.id, p.name, p.status::text as status,
+           (select i.file_id from catalog.product_images i
+             where i.org_id = p.org_id and i.product_id = p.id
+             order by i.position, i.created_at limit 1) as image_file_id
+    from catalog.products p
+    where p.org_id = ${orgId} and p.id = any (${sql.param([...ids])}::uuid[])
+  `);
+  return [...rows];
+}

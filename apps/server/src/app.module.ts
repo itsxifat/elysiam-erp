@@ -9,6 +9,7 @@ import { DemoModule } from './modules/demo/demo.module.js';
 import { FilesModule } from './modules/files/files.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { HrModule } from './modules/hr/hr.module.js';
+import { InboxModule } from './modules/inbox/inbox.module.js';
 import { IntakeModule } from './modules/intake/intake.module.js';
 import { IamModule } from './modules/iam/iam.module.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
@@ -110,6 +111,8 @@ export class AppModule {
         MarketplaceModule,
         // M35b: the packing scanner and the order labels.
         PackingModule,
+        // M42: the unified inbox; after orders and the catalog, whose APIs it reads.
+        InboxModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

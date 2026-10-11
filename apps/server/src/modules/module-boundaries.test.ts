@@ -46,6 +46,8 @@ const OWNER: Readonly<Record<string, string>> = {
   files: 'files',
   hr: 'hr',
   iam: 'iam',
+  // M42: the unified inbox. Buyers, orders, products and people through their APIs, so no debt.
+  inbox: 'inbox',
   intake: 'intake',
   inventory: 'inventory',
   investors: 'investors',
