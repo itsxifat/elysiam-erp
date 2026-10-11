@@ -15,6 +15,9 @@ To practise on the preview, see the testing guide,
   **Accounts** (your branch's wallets), **Branches**, **Approvals**, **People** (your branch's
   staff), **Performance** and **Settings** → **Till registers**.
 
+Your own name, password, two-step sign-in and signed-in devices are in **My account**, from
+the round button with your initials (see [Your account](README.md#your-account)).
+
 ## Start of the day at the till
 
 Signing in and opening a shift need an internet connection.

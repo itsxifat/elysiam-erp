@@ -41,13 +41,16 @@ If the page says the link has expired or was already used, ask the admin for a n
 
 ## Two-step sign-in
 
-Org admins, accounts, investors and super admins must use two-step sign-in. The first time
-you sign in, **Set up two-step verification** appears. It takes about a minute.
+Org admins, accounts, investors and super admins must use two-step sign-in, unless the brand's
+super admin changes the list (**Settings** → **Security**): they can require it for other roles
+too, such as sales. Super admins always use it. The first time you sign in, or at your next
+click after your role is added to the list, **Set up two-step verification** appears. It takes
+about a minute.
 
 1. Install an authenticator app on your phone, such as Google Authenticator or Microsoft
    Authenticator.
-2. The screen shows a **Setup key** in a grey box. Press **Copy**, or read it out. In the app
-   choose to add an account with a setup key, and enter it.
+2. In the app choose to add an account and scan the QR code on the screen. If the camera will
+   not read it, use the **Setup key** in the grey box instead: press **Copy**, or read it out.
 3. The screen shows your **Recovery codes**. Press **Download codes** and keep the file
    somewhere safe that is not your phone. They are shown once only. Tick
    **I have saved my recovery codes**.
@@ -55,7 +58,35 @@ you sign in, **Set up two-step verification** appears. It takes about a minute.
 
 From then on every sign-in asks for the current 6-digit code. Codes change every 30 seconds.
 If your phone is not with you, press **Use a recovery code instead**. Each recovery code works
-once. If the screen says "Too many attempts", wait a minute and try again.
+once. If the screen says "Too many attempts", wait a minute and try again. After ten wrong codes
+in a row two-step sign-in locks for a quarter of an hour.
+
+Anyone else may switch it on for themselves too, from **My account** (below).
+
+## Your account
+
+The round button with your initials at the top right opens your account menu. **My account**
+there holds everything about your own sign-in:
+
+- **Profile**: change the **Name** colleagues see and press **Save name**. Your email is how
+  you sign in and is not changed here.
+- **Password**: type your **Current password**, the **New password** (at least 12 characters)
+  and the same again, and press **Change password**. Leave **Sign out my other devices** ticked
+  if anyone else might be signed in as you.
+- **Two-step sign-in**: whether it is on, whether your role requires it, when you set it up and
+  how many recovery codes are left.
+  - **Set up two-step sign-in** if it is off.
+  - **Set up on a new phone** when you change phones: enter your password and a code from the
+    old phone (or a recovery code), scan the new QR code with the new phone and type its code.
+    The old phone keeps working until you finish, and stops after.
+  - **New recovery codes** makes ten new ones; the old ones stop working. Copy, download or
+    print them, and keep them away from your phone.
+  - **Turn off** needs your password and a current code. It is greyed out, with the reason
+    beside it, when your role requires two-step sign-in or you are a super admin.
+- **Devices**: every phone and computer signed in as you, with the browser, the address (its
+  last part hidden), when it signed in and when it was last used. **Sign out** ends one; **Sign
+  out all other devices** ends every one but this. If you see one you do not know, sign it out
+  and change your password.
 
 ## Switch brand
 
@@ -72,7 +103,8 @@ The controls at the top right of the console:
 - the bell shows what is waiting for you;
 - the moon or sun button switches between the dark and light themes;
 - the **বাংলা** / **English** button switches the language (the console starts in English);
-- the round button with your initials opens your account menu, with **Sign out**.
+- the round button with your initials opens your account menu, with **My account** and
+  **Sign out**.
 
 The menu on the left groups the screens (Sell, Products and stock, Money, People, Admin). Click
 a group's name to fold it away; the button at the bottom left folds the whole menu to icons.
@@ -87,9 +119,12 @@ There is no "forgot password" link. Only an org admin can reset a sign-in.
 
 - **Forgotten password.** Ask an org admin. They give you a new link that works once, for one
   hour. Your old password stops working and you are signed out everywhere.
-- **Lost or replaced phone.** Tell an org admin at once. If you still have a recovery code, it
-  gets you in today. The admin resets your two-step sign-in, and at your next sign-in you set
-  it up again on the new phone.
+- **New phone, old one still with you.** Move it yourself: **My account** →
+  **Set up on a new phone**.
+- **Lost phone.** If you still have a recovery code, sign in with it and use **Set up on a new
+  phone** with the same recovery code; then tell an org admin. Without one, tell an org admin
+  at once: they reset your two-step sign-in, and at your next sign-in you set it up again on
+  the new phone.
 - **A second admin.** For org admins, accounts, HR, branch managers, warehouse staff and
   investors, a second org admin must approve the reset before it takes effect. This can take
   some time, so ask early. Sales and marketing staff are reset by one admin.

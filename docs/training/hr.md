@@ -13,6 +13,9 @@ To practise on the preview, see the testing guide,
 **People** (with **Attendance**), **Payroll** (with **Staff loans**), **Performance** and
 **Approvals**.
 
+Your own name, password, two-step sign-in and signed-in devices are in **My account**, from
+the round button with your initials (see [Your account](README.md#your-account)).
+
 ## Add an employee
 
 1. **People** → **Add an employee**. Fill in the **Employee code**, **Full name**,

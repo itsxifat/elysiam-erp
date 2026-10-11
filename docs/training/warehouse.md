@@ -13,6 +13,9 @@ To practise on the preview, see the testing guide, sections
 **Orders**, **Couriers** (**Parcels**, **Stuck parcels**, **Returns**), **Stock**, **Catalog**
 and **People** (your own record).
 
+Your own name, password, two-step sign-in and signed-in devices are in **My account**, from
+the round button with your initials (see [Your account](README.md#your-account)).
+
 ## Pack
 
 1. Open **Orders** → **All orders** and set the status filter to **Confirmed**.

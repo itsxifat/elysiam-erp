@@ -18,6 +18,9 @@ To practise on the preview, see the testing guide, sections
 **Payroll**, **People** (read only), **Branches**, **Marketing** (ad spend only) and
 **Settings** (courier accounts and till registers). You also read orders, buyers and stock.
 
+Your own name, password, two-step sign-in and signed-in devices are in **My account**, from
+the round button with your initials (see [Your account](README.md#your-account)).
+
 ## Cash, every day
 
 1. **Accounts** → **Wallets and cash** → **Record cash**. Choose **Cash in**, **Cash out** or

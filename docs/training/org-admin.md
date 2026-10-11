@@ -3,7 +3,8 @@
 For each brand's administrator. You decide who can sign in and what they may do, keep the
 brand's settings, approve what others raise, and look after the catalogue and the dashboards.
 Your role must use two-step sign-in (see the [README](README.md)). The super admin works the
-same way in every brand.
+same way in every brand. Your own name, password, two-step sign-in and devices are in
+**My account** ([Your account](README.md#your-account)).
 
 To practise on the preview, see the testing guide, sections
 [3](../testing-guide.md#3-products-and-stock),
@@ -51,6 +52,38 @@ press **Send a new invite link**.
 
 Nobody decides a reset they asked for or a reset of themselves. Someone who also works in
 another brand can only be reset by a super admin.
+
+The **Two-step** column on **Staff** says **On**, **Off** or **Required, not set up**, and under
+it whether the brand requires it for their role (**Required**) or not (**Optional**). **Last
+sign-in** says when they last finished signing in.
+
+## Sign someone out, or turn their two-step off
+
+- **Manage** → **Sign out everywhere** ends every session the person has, for example when a
+  phone was lost or a shared computer was left signed in. Their password and two-step sign-in
+  stay; they simply sign in again. For someone who also works in another brand it ends only
+  their sessions in this brand, unless a super admin does it. You cannot do it to yourself:
+  use **My account** → **Devices**.
+- **Manage** → **Turn off two-step**, with a reason, appears only for someone whose roles do
+  not require it (sales or marketing, unless the super admin requires it for them). For
+  warehouse, HR and branch managers it waits for a second org admin, like a reset. For anyone
+  whose role requires it, use **Reset two-step verification** instead: they set it up again at
+  the next sign-in.
+
+## Two-step sign-in for each role (super admins)
+
+**Settings** → **Security** is shown to super admins only. Each role has a box for **Two-step
+sign-in required**; org admins, accounts and investors are ticked by default, and super admins
+are always required. The table shows how many people hold each role and how many have not set
+it up.
+
+1. Tick or untick the roles and press **Save**.
+2. If ticking a role would stop people who have not set it up, the screen asks first and says
+   how many. At their next click they see the set-up screen and cannot work until they finish.
+3. Unticking a role never turns anyone's two-step off; it only lets those without it work
+   without setting it up. **Undo changes** puts the boxes back before you save.
+
+Every change is recorded with what it was before and after.
 
 ## Settings
 
