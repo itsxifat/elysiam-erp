@@ -413,11 +413,17 @@ export class OrdersService {
           (query.queue?.startsWith('hub_') === true
             ? ((await this.team.hubLocationOf(tx, context.orgId, context.userId)) ?? undefined)
             : undefined);
+        // A desk order that named no location ships from the brand's default warehouse.
+        const fallback =
+          locationId === undefined
+            ? undefined
+            : await repo.defaultFulfilmentLocation(tx, context.orgId, null);
         const rows = await repo.listOrders(tx, context.orgId, {
           scope,
           queue: queue.where,
           orderBy: queue.orderBy,
           locationId,
+          locationIncludesUnset: fallback !== undefined && fallback.id === locationId,
           status: query.status,
           customerId: query.customerId,
           q: query.q,

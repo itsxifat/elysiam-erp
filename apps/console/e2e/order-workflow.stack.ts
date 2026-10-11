@@ -283,13 +283,19 @@ test('check 5: the hub prints, packs and hands over at its location; the desk se
   // The hub's location on the packer's desk profile, from the Staff screen.
   await admin.goto('/users');
   // The order's own stock location is the packer's hub.
-  const placed = await api<{ locationId: string }>(admin, 'GET', `/v1/orders/${order.id}`);
+  const placed = await api<{ locationId: string | null }>(admin, 'GET', `/v1/orders/${order.id}`);
+  const fallback = await api<{ locationId: string }>(
+    admin,
+    'GET',
+    `/v1/orders/availability?skuIds=${skuId}`,
+  );
+  const hubId = placed.locationId ?? fallback.locationId;
   const places = await api<{ items: { id: string; name: string }[] }>(
     admin,
     'GET',
     '/v1/inventory/locations',
   );
-  const hubName = places.items.find((place) => place.id === placed.locationId)?.name ?? '';
+  const hubName = places.items.find((place) => place.id === hubId)?.name ?? '';
   expect(hubName).not.toBe('');
   await admin.getByRole('button', { name: 'Manage: E2E packer agent' }).click();
   const section = admin.getByTestId('desk-profile');

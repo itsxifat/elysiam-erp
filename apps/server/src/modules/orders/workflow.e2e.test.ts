@@ -178,7 +178,10 @@ interface Created {
 
 async function take(
   actor: RoleClient,
-  options: { readonly assignedTo?: string; readonly locationId?: string } = {},
+  options: {
+    readonly assignedTo?: string;
+    readonly locationId?: string | null;
+  } = {},
 ): Promise<Created> {
   const response = await actor.client.request('POST', '/v1/orders', {
     body: {
@@ -188,7 +191,7 @@ async function take(
         name: 'Workflow Buyer',
         address: { districtId: 47, thanaId: 365, addressLine: 'House 9, Road 4, Savar' },
       },
-      locationId: options.locationId ?? location,
+      ...(options.locationId === null ? {} : { locationId: options.locationId ?? location }),
       lines: [{ skuId, qty: 2 }],
       ...(options.assignedTo === undefined ? {} : { assignedTo: options.assignedTo }),
     },
@@ -895,6 +898,24 @@ describe('check 5: the hub and the desk', () => {
     const toPrint = (await queue(warehouse, 'queue=hub_print')).map((row) => row.id);
     expect(toPrint).toContain(atHub.id);
     expect(toPrint).not.toContain(elsewhere.id);
+    // An order that named no location ships from the default warehouse, so that hub has it.
+    const unset = await take(admin, { assignedTo: rahim.userId, locationId: null });
+    expect((await rahim.client.request('POST', `/v1/orders/${unset.id}/confirm`)).statusCode).toBe(
+      201,
+    );
+    // The brand's default warehouse, as the order desk's availability reads it.
+    const fallback = body<{ locationId: string }>(
+      await admin.client.request('GET', `/v1/orders/availability?skuIds=${skuId}`),
+    ).locationId;
+    const defaultHub = (await queue(admin, `queue=hub_print&locationId=${fallback}`)).map(
+      (row) => row.id,
+    );
+    expect(defaultHub).toContain(unset.id);
+    // Any other location's hub does not.
+    const other = fallback === hub ? location : hub;
+    expect(
+      (await queue(admin, `queue=hub_print&locationId=${other}`)).map((row) => row.id),
+    ).not.toContain(unset.id);
     // A supervisor with no hub sees every location's.
     expect((await queue(admin, 'queue=hub_print')).map((row) => row.id)).toEqual(
       expect.arrayContaining([atHub.id, elsewhere.id]),

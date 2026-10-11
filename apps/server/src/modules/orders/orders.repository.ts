@@ -819,6 +819,11 @@ export async function listOrders(
     readonly zoneId?: string | undefined;
     /** M41 (D-719): the hub's stock location. */
     readonly locationId?: string | undefined;
+    /**
+     * The location is the brand's default warehouse, so a desk order that named none (it
+     * reserves and ships from that default, `locationFor`) is at this hub too.
+     */
+    readonly locationIncludesUnset?: boolean | undefined;
     /** M41 (D-719): a desk or hub queue's own condition, already narrowed by `scope`. */
     readonly queue?: SQL | undefined;
     /** M41: the queue's order; newest first when absent. */
@@ -839,7 +844,14 @@ export async function listOrders(
       and ${filters.channel === undefined ? sql`true` : sql`o.channel = ${filters.channel}::sales.order_channel`}
       and ${filters.assignedTo === undefined ? sql`true` : sql`o.assigned_to = ${filters.assignedTo}`}
       and ${filters.zoneId === undefined ? sql`true` : sql`o.delivery_zone_id = ${filters.zoneId}::uuid`}
-      and ${filters.locationId === undefined ? sql`true` : sql`o.location_id = ${filters.locationId}::uuid`}
+      and ${
+        filters.locationId === undefined
+          ? sql`true`
+          : filters.locationIncludesUnset === true
+            ? sql`(o.location_id = ${filters.locationId}::uuid
+                or (o.location_id is null and o.branch_id is null))`
+            : sql`o.location_id = ${filters.locationId}::uuid`
+      }
       and ${filters.queue ?? sql`true`}
       and ${
         pattern === undefined
