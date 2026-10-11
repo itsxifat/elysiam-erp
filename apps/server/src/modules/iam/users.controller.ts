@@ -123,6 +123,38 @@ export class UsersController {
   }
 
   /**
+   * Turn a person's two-step sign-in off (M40, D-697): refused (409 `TWO_FACTOR_REQUIRED`)
+   * when a role they hold requires it, or they are a super admin. Otherwise a reset by another
+   * name: the same rules, limits and second admin as `two-factor/reset`.
+   */
+  @RequireAbility('update', 'User')
+  @Post(':id/two-factor/turn-off')
+  async turnOffTwoFactor(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const userId = parse(userIdParamSchema, id);
+    const input = parse(credentialResetSchema, body);
+    return this.users.turnOffTwoFactor(
+      requireContext(request),
+      auditable(request),
+      userId,
+      input.reason,
+    );
+  }
+
+  /**
+   * End every session a person has (M40, D-696). Not on yourself: My account does that.
+   */
+  @RequireAbility('update', 'User')
+  @Post(':id/sign-out-everywhere')
+  async signOutEverywhere(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const userId = parse(userIdParamSchema, id);
+    return this.users.signOutEverywhere(requireContext(request), auditable(request), userId);
+  }
+
+  /**
    * Vouch for an admin (D-654 to D-656). Refused, not stored, when the vote would not count:
    * the reason names the invitation chain, the shared inviter or the missing second factor.
    */

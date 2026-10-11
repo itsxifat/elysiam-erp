@@ -19,6 +19,7 @@ const SETTINGS_KEYS = [
   'settings.nav.couriers',
   'settings.nav.siteKeys',
   'settings.nav.registers',
+  'settings.nav.security',
   'settings.loading',
   'settings.errorTitle',
   'settings.errorDetail',

@@ -5,6 +5,8 @@ import { sectionCatalogue } from '../../i18n/messages.js';
 // Before the catalogue below is first read: the trust votes' and super admins' section
 // (D-654, D-659).
 import '../../i18n/trust.js';
+// And My account's, which carries the sign-out and turn-off strings (M40).
+import '../../i18n/account.js';
 
 /**
  * The keys the staff screen renders (gaps-users-auth). The strings live in
@@ -159,6 +161,17 @@ const USERS_KEYS = [
   'users.removalWithdrawn',
   'users.inviteSuperAdmin',
   'users.inviteSuperAdminDetail',
+  'users.twoFactorRequiredNote',
+  'users.twoFactorOptionalNote',
+  'users.signOutEverywhere',
+  'users.signOutEverywhereTitle',
+  'users.signOutEverywhereDetail',
+  'users.signedOutEverywhere',
+  'users.turnOffTwoFactor',
+  'users.turnOffTitle',
+  'users.turnOffDetail',
+  'users.turnedOff',
+  'users.twoFactorRequiredReset',
 ] as const satisfies readonly MessageKey[];
 
 export type UsersMessageKey = (typeof USERS_KEYS)[number];

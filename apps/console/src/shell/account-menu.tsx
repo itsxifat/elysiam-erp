@@ -7,7 +7,8 @@ import {
   MenuTrigger,
   Monogram,
 } from '@elysium/ui';
-import { LogOut } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { LogOut, UserRound } from 'lucide-react';
 
 import { endpoints } from '../api.js';
 import { clearBrand } from '../brand.js';
@@ -16,7 +17,7 @@ import { useT } from '../i18n/locale.js';
 import { useProfile } from './profile.js';
 
 /**
- * The account menu (D-449): who you are, in which roles, and Sign out.
+ * The account menu (D-449): who you are, in which roles, My account (M40) and Sign out.
  *
  * Its own chunk, like the inbox: the menu's positioning is the cost, and the shell's
  * first paint does not need it. Until it lands the topbar shows the same monogram,
@@ -26,6 +27,7 @@ export function AccountMenu() {
   const t = useT();
   const session = useSession();
   const profile = useProfile();
+  const navigate = useNavigate();
   const label = profile.name ?? profile.email ?? t('shell.userMenu');
 
   return (
@@ -58,6 +60,11 @@ export function AccountMenu() {
             </span>
           )}
         </MenuLabel>
+        <MenuSeparator />
+        <MenuItem onSelect={() => void navigate({ to: '/account' })}>
+          <UserRound aria-hidden="true" />
+          {t('shell.myAccount')}
+        </MenuItem>
         <MenuSeparator />
         <MenuItem
           onSelect={() => {

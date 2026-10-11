@@ -3,11 +3,14 @@ import type { Auth } from '@elysium/db';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { ApprovalsModule } from '../approvals/approvals.module.js';
+import { AccountController } from './account.controller.js';
+import { AccountService } from './account.service.js';
 import { IamController } from './iam.controller.js';
 import { AUTH, IamService, PASSWORD_TOKENS, PasswordTokenStore } from './iam.service.js';
 import { OWNER_LINK_CONFIG, ownerLinkConfig } from './owner-link.config.js';
 import { OwnerLinkController } from './owner-link.controller.js';
 import { OwnerLinkService } from './owner-link.service.js';
+import { SecurityPolicyController, SecurityPolicyService } from './security-policy.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 import { PackingModule } from '../packing/packing.module.js';
@@ -31,6 +34,9 @@ import {
  * The owner sign-in link (M31, D-473) lives here too: it ends in a Better Auth session, and
  * this is the module holding the auth instance. Its config is read at `app.init()`, so a
  * public key that cannot be read stops the process at boot.
+ *
+ * M40: My account (`AccountController`) and the brand's two-step policy
+ * (`SecurityPolicyController`, Settings → Security).
  */
 @Module({})
 export class IamModule {
@@ -48,10 +54,14 @@ export class IamModule {
         OwnerLinkController,
         ScannerSignInController,
         ScannerAppSignInController,
+        AccountController,
+        SecurityPolicyController,
       ],
       providers: [
         IamService,
         UsersService,
+        AccountService,
+        SecurityPolicyService,
         AuditService,
         OwnerLinkService,
         ScannerSignInService,

@@ -11,6 +11,7 @@ import { catalogRoutes } from './catalog/routes.js';
 import { courierRoutes } from './courier/routes.js';
 import { hrRoutes } from './hr/routes.js';
 import { accountsRoutes } from './accounts/routes.js';
+import { accountRoutes } from './account/routes.js';
 import { analyticsRoutes } from './analytics/routes.js';
 import { branchesRoutes } from './branches/routes.js';
 import { investorsRoutes } from './investors/routes.js';
@@ -147,6 +148,8 @@ const settings = settingsRoutes(rootRoute);
 const users = usersRoutes(rootRoute);
 /** M33 owns `/website`: settings, hero slides, menu, size charts and the website's keys. */
 const website = websiteRoutes(rootRoute);
+/** M40 owns `/account`: the signed-in person's own name, password, two-step and devices. */
+const account = accountRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -205,6 +208,7 @@ const routeTree = rootRoute.addChildren([
   ...settings,
   ...users,
   ...website,
+  ...account,
   ...placeholderRoutes,
 ]);
 

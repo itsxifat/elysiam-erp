@@ -67,6 +67,7 @@ import {
   WALLETS_ROUTE_FIXTURES,
 } from '../../modules/wallets/wallets.route-fixtures.js';
 import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
+import { ACCOUNT_ROUTE_FIXTURES } from '../../modules/iam/account.route-fixtures.js';
 import {
   prepareStorefrontFixtures,
   STOREFRONT_PUBLIC_FIXTURES,
@@ -186,6 +187,8 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
+  // M40: My account and Settings → Security.
+  ...ACCOUNT_ROUTE_FIXTURES,
   ...STOREFRONT_ROUTE_FIXTURES,
   // M39a: the usage reads (what uses a row), swept like every other read (D-621).
   ...DELETE_ROUTE_FIXTURES,

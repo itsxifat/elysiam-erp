@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { lazy, Suspense, useEffect, useState } from 'react';
 
-import { endpoints, type LoginBranding } from './api.js';
+import { ApiError, endpoints, type LoginBranding } from './api.js';
 import { applyBrand, clearBrand } from './brand.js';
 import { LoginScreen } from './auth/login-screen.js';
 import { isOwnerLinkPage } from './auth/password-link.js';
@@ -122,9 +122,14 @@ function Boot() {
   // network error. Showing the shell with an error banner would leave an
   // unauthenticated user looking at a navigation computed from no roles at all.
   if (session.isError || session.data === undefined) {
+    // A session the brand's security setting now walls (M40): straight to setting it up.
+    const walled =
+      session.error instanceof ApiError && session.error.code === 'TWO_FACTOR_ENROLMENT_REQUIRED';
     return (
       <LoginScreen
+        key={walled ? 'walled' : 'signed-out'}
         branding={branding}
+        walled={walled}
         onAuthenticated={async () => {
           await session.refetch();
         }}

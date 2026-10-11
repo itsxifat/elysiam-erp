@@ -2834,3 +2834,79 @@ dry-run|commit --file <users.json>`.
   before either was noticed, and every run since has passed.
 - New dependencies: none (`@better-auth/utils`, already a dev dependency, is now a runtime
   one: the server checks TOTP codes itself).
+
+## 2026-10-11 · M40 · account and two-step sign-in management, brand side (not merged or deployed)
+
+- **Asked for:** the owner, 2026-10-11: "we need better account management, two factor
+  management, user friendly and more options fully. also turn on and off two factors, reset
+  and other stuffs." Branch `m40-accounts` from `integration-wave2` (75dbe8e2), worktree
+  `D:/Projects/elysium-erp-acct`. Plan `docs/plans/M40.md`. Decisions D-691 to D-699, D-706 and
+  D-707 (D-700 to D-705 went to the mother ERP's builder): D-691, D-692, D-694, D-696 and D-697
+  ASSUMED for the owner to change; D-707 OPEN, the audit's leftovers. Migrations
+  `0140_m40_two_factor_enabled_at` (a nullable column) and
+  `0141_m40_two_factor_enabled_at_stamp` (its BEFORE trigger); the policy itself needs no
+  migration (`org.settings`).
+- **Built:** each brand's two-step policy (`security.two_factor` in `org.settings`; default
+  org_admin, accounts, investor; super admins always) decided by `twoFactorRequirementFor` in
+  `@elysium/domain/iam` and read by one function, `twoFactorStanding` in `packages/db/src/auth`,
+  which the enrolment wall, the scanner sign-in and device check, the Staff list and My account
+  use. Better Auth's password-only `/two-factor/disable`, `/get-totp-uri` and
+  `/generate-backup-codes` HTTP paths closed, and its verify endpoints refused to a session whose
+  factor is already on. Routes: `GET /v1/account`, `PATCH /v1/account/profile`,
+  `GET /v1/account/sessions`, `DELETE /v1/account/sessions/:id`,
+  `POST /v1/account/sessions/sign-out-others`, `POST /v1/account/two-factor/replace` and
+  `/replace/confirm`, `POST /v1/account/two-factor/recovery-codes`,
+  `POST /v1/account/two-factor/turn-off`, `GET` and `PUT /v1/security/two-factor-policy` (new
+  subject `SecurityPolicy`, super admins only), `POST /v1/users/:id/sign-out-everywhere`,
+  `POST /v1/users/:id/two-factor/turn-off`; route-matrix and cost-sweep fixtures, OpenAPI
+  catalog, API client regenerated, per-address and per-session rate limits, eight error codes.
+  Console: My account (`/account`, lazy, from the account menu: profile, password with "sign out
+  my other devices", two-step set up / new phone / new recovery codes / turn off with the reason
+  when it is disabled, devices), Settings → Security, the Staff screen's Required/Optional note,
+  Sign out everywhere and Turn off two-step, a walled session opening on the set-up screen, the
+  QR code drawn locally (`uqr`) on new `--scan-surface` / `--scan-ink` tokens; bn + en in a new
+  `account` section. Architecture §6, the org admin guide, the README's "Your account" and a
+  pointer from each staff guide, CLAUDE.md's stack line.
+- **Audit:** the ledger-auditor found one blocker (C1: Better Auth's password-only paths let a
+  stolen session and a password mint recovery codes or read the secret, then move or turn off
+  the factor; and session-mode verify endpoints counted no failures) and six should-fixes (W2 an
+  other-brand oracle in Staff turn-off, W3 no per-person bucket on password checks, W4 a
+  malformed policy row failing open, W5 the brand-only sign-out returning in one click, W6
+  missing tests, W7 a waiting new-phone secret surviving a reset): all fixed and tested. Its
+  nits: the code check is now one transaction that restarts the count after a lock ends, the
+  factor routes never replay, the owner has their own refusal, `requiresTwoFactor` needs the
+  policy; the rest are D-707 (OPEN).
+- **Evidence:** on Testcontainers Postgres, 40 files and 598 tests: `account.e2e.test.ts` 14 and
+  `security-policy.e2e.test.ts` 15 (old password refused after a change, other sessions ended
+  or kept; a new phone needs the password and the authenticator's code, the old phone works
+  until the new code confirms, then only the new one; a recovery code refused there and not used
+  up; the closed paths 404 and the session-mode verify 403; new recovery codes need a code and
+  void the old; turn off allowed for warehouse, refused for org_admin and a super admin; ten
+  wrong codes lock sign-in too; devices listed masked, one and all others ended, another
+  person's session unreachable; the setting is a super admin's alone, walls a sales person at
+  their next request and lets them in when switched off with nobody's factor removed, never
+  reaches another brand's role, reads a hand-edited unknown role as the default; the reader
+  refuses the wrong context; the `enabled_at` stamp; the scanner sign-in and a paired phone
+  follow the setting; Staff sign-out everywhere and turn off with their refusals, 404 for
+  another brand's person and D-404's second admin), every iam suite, `identity`, the platform
+  auth/http/openapi/audit suites (route matrix, cost sweep, the new session-bucket units),
+  `packing.e2e`, contracts and domain iam (`two-factor-policy`, `devices`, fast-check). Console
+  units: the account logic (11) and page (8) tests with users, settings and i18n, 74/74; the
+  stubbed Playwright login and smoke specs 13/13. `account.stack.ts` (new): the account page,
+  renaming and setting up two-step sign-in passed in a real browser with axe clean in both themes
+  (`docs/review/M40/`); turning it off and changing the password there were not run (below).
+  Typecheck (28 tasks), eslint and prettier on the touched files, check:routes (535),
+  check:i18n, check:api-client, check:migrations, check:schema (140), check:bundle (249.7 KB of
+  250 after the set-up screens moved to their own chunk), check:white-label: PASS. Not run: the
+  full `pnpm verify`.
+- **Found and not fixed (needs the owner or the coordinator):** this worktree had no
+  `packages/db/.env` until mid-session, so the test harness's runs against the shared dev
+  Postgres (`TEST_DATABASE_URL`) set the cluster's `erp_app`, `erp_owner` and `erp_analytics`
+  passwords to the harness fallbacks (`harness_*_password`); the dev stack's own `.env` passwords
+  no longer match until they are set back (`ALTER ROLE … PASSWORD` with the values in
+  `packages/db/.env`). Changing them was not permitted from here, which also stopped the rest of
+  `account.stack.ts`; later runs used Testcontainers. Docker Desktop's port forwarding also
+  wedged mid-session and was restarted.
+- New dependencies: none new to the repo. `@elysium/db` gains `@elysium/domain` and runtime
+  `@better-auth/utils` (D-706); the console gains `uqr` (catalog, zero dependencies) for the QR
+  code.

@@ -58,6 +58,8 @@ export * from './usage.js';
 export * from './storefront-marketing.js';
 // M38b: the packing station and the packing video.
 export * from './packing.js';
+// M40: My account and the brand's two-step policy.
+export * from './account.js';
 // M38a: stickers of a custom size, and the extra line (D-650, D-651).
 export * from './stickers.js';
 // Duplicating products, several copies each (D-662, D-663).

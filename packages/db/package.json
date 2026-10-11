@@ -29,7 +29,6 @@
     "db:dev-users": "tsx src/cli/dev-users.ts"
   },
   "devDependencies": {
-    "@better-auth/utils": "catalog:",
     "@elysium/config": "workspace:*",
     "@testcontainers/postgresql": "catalog:",
     "@types/node": "catalog:",
@@ -41,6 +40,8 @@
     "vitest": "catalog:"
   },
   "dependencies": {
+    "@better-auth/utils": "catalog:",
+    "@elysium/domain": "workspace:*",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:",

@@ -20,6 +20,7 @@ import {
   Copy,
   Crown,
   KeyRound,
+  LogOut,
   ShieldCheck,
   ShieldMinus,
   ShieldOff,
@@ -44,7 +45,9 @@ import {
   passwordLink,
   resetTwoFactor,
   setRoles,
+  signOutEverywhere,
   stepDown,
+  turnOffTwoFactor,
   voteSuperAdmin,
   voteSuperAdminRemoval,
   voteTrust,
@@ -143,8 +146,10 @@ function messageOf(error: unknown, fallback: string): string {
   return fallback;
 }
 
+type Action = 'deactivate' | 'password' | 'invite' | 'twoFactor' | 'turnOff';
+
 type Pending = {
-  readonly action: 'deactivate' | 'password' | 'invite' | 'twoFactor';
+  readonly action: Action;
   readonly row: StaffRow;
 } | null;
 
@@ -181,6 +186,7 @@ export function UsersPage() {
   const [link, setLink] = useState<IssuedLink | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Removing>(null);
+  const [signingOut, setSigningOut] = useState<StaffRow | null>(null);
 
   const staffQuery = useQuery({ queryKey: ['users'], queryFn: listStaff, enabled: mayRead });
   const branchesQuery = useQuery({
@@ -294,13 +300,26 @@ export function UsersPage() {
         header: u('users.colTwoFactor'),
         cell: (cell) => {
           const row = cell.row.original;
-          if (row.twoFactorEnabled) {
-            return <StatusBadge tone="success">{u('users.twoFactorOn')}</StatusBadge>;
-          }
-          if (row.twoFactorRequired && row.status === 'active') {
-            return <StatusBadge tone="warning">{u('users.twoFactorMissing')}</StatusBadge>;
-          }
-          return <StatusBadge tone="neutral">{u('users.twoFactorOff')}</StatusBadge>;
+          // The state, and under it whether the brand's setting requires it (M40, D-691).
+          const badge = row.twoFactorEnabled ? (
+            <StatusBadge tone="success">{u('users.twoFactorOn')}</StatusBadge>
+          ) : row.twoFactorRequired && row.status === 'active' ? (
+            <StatusBadge tone="warning">{u('users.twoFactorMissing')}</StatusBadge>
+          ) : (
+            <StatusBadge tone="neutral">{u('users.twoFactorOff')}</StatusBadge>
+          );
+          const note =
+            row.twoFactorRequired && (row.twoFactorEnabled || row.status !== 'active')
+              ? u('users.twoFactorRequiredNote')
+              : !row.twoFactorRequired
+                ? u('users.twoFactorOptionalNote')
+                : null;
+          return (
+            <div className="space-y-0.5">
+              {badge}
+              {note === null ? null : <p className="text-xs text-muted-foreground">{note}</p>}
+            </div>
+          );
         },
       }),
       column.accessor('lastSignInAt', {
@@ -446,6 +465,10 @@ export function UsersPage() {
             setManageId(null);
             setPending({ action, row: managed });
           }}
+          onSignOut={() => {
+            setManageId(null);
+            setSigningOut(managed);
+          }}
           onSaved={async () => {
             setNotice(u('users.rolesSaved'));
             await refresh();
@@ -495,6 +518,33 @@ export function UsersPage() {
       {link === null ? null : (
         <LinkDialog key={link.token} link={link} onClose={() => setLink(null)} />
       )}
+
+      {/* Sign a person out everywhere (M40, D-696): no reason asked, nothing else changes. */}
+      <ConfirmDialog
+        open={signingOut !== null}
+        onOpenChange={(open) => {
+          if (!open) setSigningOut(null);
+        }}
+        title={u('users.signOutEverywhereTitle').replace(
+          '{name}',
+          signingOut === null ? '' : displayName(signingOut, u),
+        )}
+        description={u('users.signOutEverywhereDetail')}
+        confirmLabel={u('users.signOutEverywhere')}
+        cancelLabel={t('common.cancel')}
+        closeLabel={t('common.close')}
+        destructive
+        onConfirm={async () => {
+          if (signingOut === null) return;
+          try {
+            await signOutEverywhere(signingOut.userId);
+            setNotice(u('users.signedOutEverywhere').replace('{name}', displayName(signingOut, u)));
+          } catch (cause) {
+            setNotice(messageOf(cause, t('error.unreachable')));
+          }
+          await refresh();
+        }}
+      />
 
       <RemovalConfirm
         removing={removing}
@@ -815,6 +865,7 @@ function ManageDialog({
   actorIsSuperAdmin,
   onClose,
   onAction,
+  onSignOut,
   onSaved,
   onNotice,
 }: {
@@ -822,7 +873,9 @@ function ManageDialog({
   readonly branches: readonly BranchRow[];
   readonly actorIsSuperAdmin: boolean;
   readonly onClose: () => void;
-  readonly onAction: (action: 'deactivate' | 'password' | 'invite' | 'twoFactor') => void;
+  readonly onAction: (action: Action) => void;
+  /** Sign this person out everywhere (M40): the page asks for confirmation. */
+  readonly onSignOut: () => void;
   readonly onSaved: () => Promise<void>;
   readonly onNotice: (message: string) => Promise<void>;
 }) {
@@ -1008,7 +1061,26 @@ function ManageDialog({
                 {u('users.resetTwoFactor')}
               </Button>
             ) : null}
+            {/* Off for good only where nothing requires it (M40, D-697). */}
+            {row.twoFactorEnabled && !row.twoFactorRequired ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={resetLocked}
+                onClick={() => onAction('turnOff')}
+              >
+                <ShieldX aria-hidden="true" />
+                {u('users.turnOffTwoFactor')}
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" disabled={locked} onClick={onSignOut}>
+              <LogOut aria-hidden="true" />
+              {u('users.signOutEverywhere')}
+            </Button>
           </div>
+          {row.twoFactorEnabled && row.twoFactorRequired && !resetLocked ? (
+            <p className="text-xs text-muted-foreground">{u('users.twoFactorRequiredReset')}</p>
+          ) : null}
         </section>
 
         {row.trust === null ? null : <TrustSection row={row} trust={row.trust} onSaved={onSaved} />}
@@ -1219,9 +1291,14 @@ function SuperAdminSection({
 // --- the reason, then the action ---------------------------------------------------------
 
 const ACTION_TEXT: Record<
-  'deactivate' | 'password' | 'invite' | 'twoFactor',
+  Action,
   { title: UsersMessageKey; detail: UsersMessageKey; confirm: UsersMessageKey }
 > = {
+  turnOff: {
+    title: 'users.turnOffTitle',
+    detail: 'users.turnOffDetail',
+    confirm: 'users.turnOffTwoFactor',
+  },
   deactivate: {
     title: 'users.deactivateTitle',
     detail: 'users.deactivateDetail',
@@ -1279,6 +1356,11 @@ function ReasonDialog({
         await onDone({
           message:
             result.outcome === 'completed' ? u('users.twoFactorDone') : u('users.pendingNotice'),
+        });
+      } else if (pending.action === 'turnOff') {
+        const result = await turnOffTwoFactor(row.userId, reason.trim());
+        await onDone({
+          message: result.outcome === 'completed' ? u('users.turnedOff') : u('users.pendingNotice'),
         });
       } else {
         const result = await passwordLink(row.userId, reason.trim());

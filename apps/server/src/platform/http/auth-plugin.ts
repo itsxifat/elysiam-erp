@@ -318,12 +318,12 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
    * the prefix is re-walled here with an allow-list of the endpoints the
    * enrolment journey genuinely uses.
    */
+  // M40: `get-totp-uri` and `generate-backup-codes` left this list when their HTTP paths were
+  // closed (D-694); enrolment uses neither.
   const ENROLMENT_PATHS = new Set([
     '/api/auth/two-factor/enable',
     '/api/auth/two-factor/verify-totp',
     '/api/auth/two-factor/verify-backup-code',
-    '/api/auth/two-factor/get-totp-uri',
-    '/api/auth/two-factor/generate-backup-codes',
     '/api/auth/get-session',
     '/api/auth/sign-out',
   ]);

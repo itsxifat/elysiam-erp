@@ -15,6 +15,9 @@ To practise on the preview, see the testing guide,
 - **Catalog** and **Stock**: look up a product and what is in stock.
 - **Performance**: your own targets.
 
+Your own name, password, two-step sign-in and signed-in devices are in **My account**, from
+the round button with your initials (see [Your account](README.md#your-account)).
+
 ## Take an order
 
 1. Open **Orders** and press **New order**, or open the **Order desk** tab.

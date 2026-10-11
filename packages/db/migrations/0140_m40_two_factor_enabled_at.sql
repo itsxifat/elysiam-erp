@@ -1,0 +1,1 @@
+ALTER TABLE "iam"."two_factors" ADD COLUMN "enabled_at" timestamp with time zone;

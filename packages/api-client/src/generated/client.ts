@@ -12,15 +12,19 @@ import type {
   ApprovalRequestInput,
   CashInInput,
   ClosePeriodInput,
+  ConfirmWithCode,
   CreateUser,
   CredentialResetInput,
   DeactivateUser,
   PackingCameraCreateInput,
   PackingCameraUpdateInput,
   ReopenPeriodInput,
+  ReplacementCode,
   SetRoles,
   SwitchOrg,
   ThresholdInput,
+  TwoFactorPolicyInput,
+  UpdateProfile,
 } from '@elysium/contracts';
 
 import { request, type ApiRuntime, type RequestOptions } from '../runtime.js';
@@ -36,6 +40,11 @@ export const OPERATIONS = {
   cashBook: { method: 'GET', path: '/v1/ledger/wallets/{id}/cash-book', ability: 'read:Wallet' },
   cashIn: { method: 'POST', path: '/v1/ledger/cash-in', ability: 'update:Wallet' },
   closePeriod: { method: 'POST', path: '/v1/ledger/periods/close', ability: 'update:LedgerPeriod' },
+  confirmTwoFactorReplacement: {
+    method: 'POST',
+    path: '/v1/account/two-factor/replace/confirm',
+    ability: 'authenticated',
+  },
   createApproval: { method: 'POST', path: '/v1/approvals', ability: 'request:ApprovalRequest' },
   createDemoCostedItem: {
     method: 'POST',
@@ -160,6 +169,12 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}',
     ability: 'delete:Supply',
   },
+  endMyOtherSessions: {
+    method: 'POST',
+    path: '/v1/account/sessions/sign-out-others',
+    ability: 'authenticated',
+  },
+  endMySession: { method: 'DELETE', path: '/v1/account/sessions/{id}', ability: 'authenticated' },
   getApiAdminScannerShipment: {
     method: 'GET',
     path: '/api/admin/scanner/shipment',
@@ -171,6 +186,7 @@ export const OPERATIONS = {
     path: '/media/{orgId}/{fileId}/{variant}',
     ability: 'public',
   },
+  getMyAccount: { method: 'GET', path: '/v1/account', ability: 'authenticated' },
   getNcomByOrgIdV1: { method: 'GET', path: '/ncom/{orgId}/v1', ability: 'public' },
   getNcomByOrgIdV1Categories: {
     method: 'GET',
@@ -255,6 +271,11 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/storefront/v1/tracking/config',
     ability: 'public',
+  },
+  getTwoFactorPolicy: {
+    method: 'GET',
+    path: '/v1/security/two-factor-policy',
+    ability: 'read:SecurityPolicy',
   },
   getV1AccountsCashEntries: {
     method: 'GET',
@@ -936,12 +957,18 @@ export const OPERATIONS = {
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
   listLedgerAccounts: { method: 'GET', path: '/v1/ledger/accounts', ability: 'read:LedgerReport' },
   listMyOrgs: { method: 'GET', path: '/v1/me/orgs', ability: 'authenticated' },
+  listMySessions: { method: 'GET', path: '/v1/account/sessions', ability: 'authenticated' },
   listPackingCameras: { method: 'GET', path: '/v1/packing/cameras', ability: 'update:Order' },
   listPeriods: { method: 'GET', path: '/v1/ledger/periods', ability: 'read:LedgerPeriod' },
   listUsers: { method: 'GET', path: '/v1/users', ability: 'read:User' },
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
+  newMyRecoveryCodes: {
+    method: 'POST',
+    path: '/v1/account/two-factor/recovery-codes',
+    ability: 'authenticated',
+  },
   packingCameraPreview: {
     method: 'GET',
     path: '/v1/packing/cameras/{id}/preview',
@@ -1952,10 +1979,36 @@ export const OPERATIONS = {
     path: '/v1/approvals/thresholds',
     ability: 'update:ApprovalThreshold',
   },
+  setTwoFactorPolicy: {
+    method: 'PUT',
+    path: '/v1/security/two-factor-policy',
+    ability: 'update:SecurityPolicy',
+  },
   setUserRoles: { method: 'PUT', path: '/v1/users/{id}/roles', ability: 'update:User' },
+  signOutUserEverywhere: {
+    method: 'POST',
+    path: '/v1/users/{id}/sign-out-everywhere',
+    ability: 'update:User',
+  },
+  startTwoFactorReplacement: {
+    method: 'POST',
+    path: '/v1/account/two-factor/replace',
+    ability: 'authenticated',
+  },
   stepDownSuperAdmin: { method: 'POST', path: '/v1/users/me/step-down', ability: 'update:User' },
   switchOrg: { method: 'POST', path: '/v1/me/active-org', ability: 'authenticated' },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
+  turnOffMyTwoFactor: {
+    method: 'POST',
+    path: '/v1/account/two-factor/turn-off',
+    ability: 'authenticated',
+  },
+  turnOffUserTwoFactor: {
+    method: 'POST',
+    path: '/v1/users/{id}/two-factor/turn-off',
+    ability: 'update:User',
+  },
+  updateMyProfile: { method: 'PATCH', path: '/v1/account/profile', ability: 'authenticated' },
   updatePackingCamera: {
     method: 'PUT',
     path: '/v1/packing/cameras/{id}',
@@ -2027,6 +2080,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: ClosePeriodInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.closePeriod, input, options),
+    /** Finish moving two-step sign-in with the new phone's code; the old phone stops working. */
+    confirmTwoFactorReplacement: (
+      input: { readonly body: ReplacementCode },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.confirmTwoFactorReplacement, input, options),
     /** Raise an approval request for a money-moving action. */
     createApproval: (
       input: { readonly body: ApprovalRequestInput },
@@ -2179,6 +2237,14 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1SupplySuppliersById, input, options),
+    /** Sign out every device but this one. */
+    endMyOtherSessions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.endMyOtherSessions, undefined, options),
+    /** Sign one of your other devices out. */
+    endMySession: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.endMySession, input, options),
     /** GET /api/admin/scanner/shipment */
     getApiAdminScannerShipment: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getApiAdminScannerShipment, undefined, options),
@@ -2199,6 +2265,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getMediaByOrgIdByFileIdByVariant, input, options),
+    /** Your name, roles here, and two-step sign-in: on or off, and whether it is required. */
+    getMyAccount: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getMyAccount, undefined, options),
     /** GET /ncom/:orgId/v1 */
     getNcomByOrgIdV1: (
       input: { readonly path: { readonly orgId: string } },
@@ -2296,6 +2365,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /storefront/v1/tracking/config */
     getStorefrontV1TrackingConfig: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getStorefrontV1TrackingConfig, undefined, options),
+    /** Which roles must use two-step sign-in in this brand (super admins only). */
+    getTwoFactorPolicy: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getTwoFactorPolicy, undefined, options),
     /** GET /v1/accounts/cash-entries */
     getV1AccountsCashEntries: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1AccountsCashEntries, undefined, options),
@@ -3051,6 +3123,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The organizations this user may enter. */
     listMyOrgs: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listMyOrgs, undefined, options),
+    /** The devices you are signed in on, with the address partly hidden. */
+    listMySessions: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listMySessions, undefined, options),
     /** The packing tables' IP cameras and whether each is filming now. */
     listPackingCameras: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listPackingCameras, undefined, options),
@@ -3069,6 +3144,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The signed-in user, their roles and active org. */
     me: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.me, undefined, options),
+    /** With your password and a current authenticator code, make ten new recovery codes; the old ones stop working. */
+    newMyRecoveryCodes: (
+      input: { readonly body: ConfirmWithCode },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.newMyRecoveryCodes, input, options),
     /** The newest JPEG frame of a packing camera's live preview; 204 when none is live. */
     packingCameraPreview: (
       input: { readonly path: { readonly id: string } },
@@ -4178,11 +4258,26 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: ThresholdInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.setApprovalThresholds, input, options),
+    /** Choose which roles must use two-step sign-in in this brand (super admins only). */
+    setTwoFactorPolicy: (
+      input: { readonly body: TwoFactorPolicyInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.setTwoFactorPolicy, input, options),
     /** Replace a person's roles and branch scope in this organization. */
     setUserRoles: (
       input: { readonly path: { readonly id: string }; readonly body: SetRoles },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.setUserRoles, input, options),
+    /** End a person's sessions: everywhere, or in this brand for someone in another. */
+    signOutUserEverywhere: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.signOutUserEverywhere, input, options),
+    /** With your password and a current code, start moving two-step sign-in to a new phone. */
+    startTwoFactorReplacement: (
+      input: { readonly body: ConfirmWithCode },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.startTwoFactorReplacement, input, options),
     /** Give up your own super admin power at once; never the last super admin. */
     stepDownSuperAdmin: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.stepDownSuperAdmin, undefined, options),
@@ -4194,6 +4289,21 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly query: { readonly asOf: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.trialBalance, input, options),
+    /** With your password and a current code, turn two-step sign-in off where nothing requires it. */
+    turnOffMyTwoFactor: (
+      input: { readonly body: ConfirmWithCode },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.turnOffMyTwoFactor, input, options),
+    /** Turn a person's two-step sign-in off, where no role of theirs requires it. */
+    turnOffUserTwoFactor: (
+      input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.turnOffUserTwoFactor, input, options),
+    /** Change the name you go by. */
+    updateMyProfile: (
+      input: { readonly body: UpdateProfile },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updateMyProfile, input, options),
     /** Change a packing camera, switch it off, or replace or remove its password. */
     updatePackingCamera: (
       input: { readonly path: { readonly id: string }; readonly body: PackingCameraUpdateInput },

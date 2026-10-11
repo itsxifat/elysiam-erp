@@ -98,6 +98,11 @@
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.2 0.006 70);
 
+  /* A code a camera reads (M40: the authenticator QR code). Dark on light in both themes:
+     phone scanners expect it, and an inverted code is missed by some. */
+  --scan-surface: oklch(1 0 0);
+  --scan-ink: oklch(0.15 0 0);
+
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.006 70);
 
@@ -195,6 +200,10 @@
 
   --card: oklch(0.23 0.003 75);
   --card-foreground: oklch(0.95 0.003 75);
+
+  /* Unchanged in the dark: a scanner needs dark modules on a light ground. */
+  --scan-surface: oklch(1 0 0);
+  --scan-ink: oklch(0.15 0 0);
 
   --popover: oklch(0.24 0.004 75);
   --popover-foreground: oklch(0.95 0.003 75);

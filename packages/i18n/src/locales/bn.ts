@@ -3534,6 +3534,14 @@ const bn: Record<MessageKey, string> = {
   'common.year': 'বছর',
   'common.previousYear': 'আগের বছর',
   'common.nextYear': 'পরের বছর',
+  // M40: My account in the account menu, and a session walled by the brand's two-step setting.
+  'settings.nav.security': 'নিরাপত্তা',
+  'shell.myAccount': 'আমার অ্যাকাউন্ট',
+  'auth.walled.detail':
+    'আপনার ভূমিকার জন্য এখন টু-স্টেপ সাইন-ইন বাধ্যতামূলক। চালু করতে পাসওয়ার্ড দিন; প্রায় এক মিনিট লাগবে।',
+  'auth.walled.continue': 'এগিয়ে যান',
+  'auth.enrol.qr': 'আপনার অথেনটিকেটর অ্যাপের কিউআর কোড',
+  'auth.enrol.scan': 'অথেনটিকেটর অ্যাপ দিয়ে কিউআর কোড স্ক্যান করুন, অথবা এই কী হাতে যোগ করুন।',
 };
 
 export { bn };
