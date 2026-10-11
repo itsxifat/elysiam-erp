@@ -64,3 +64,5 @@ export * from './account.js';
 export * from './stickers.js';
 // Duplicating products, several copies each (D-662, D-663).
 export * from './duplicates.js';
+// M41: the order workflow: ownership, presence, desk profiles, calls and auto-assign.
+export * from './workflow.js';

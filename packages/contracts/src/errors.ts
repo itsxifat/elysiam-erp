@@ -178,6 +178,19 @@ export const ERROR_CODES = [
   /** Somebody else took this order out of the unassigned queue first (§6). */
   'ORDER_ALREADY_CLAIMED',
   /**
+   * M41 (D-710): somebody else is handling this order. Sent again with
+   * `x-acknowledge-owner: 1`, the act goes through, is audited and the owner is told.
+   */
+  'ORDER_HANDLED_BY_OTHER',
+  /** M41 (D-712): only the owner or a supervisor may release or hand on this order. */
+  'ORDER_ASSIGN_NOT_ALLOWED',
+  /** M41 (D-712): the person named cannot hold orders in this brand. */
+  'ORDER_ASSIGNEE_INVALID',
+  /** M41 (D-717): the offer was taken, declined, withdrawn or ran out before the answer. */
+  'ORDER_OFFER_GONE',
+  /** M41 (D-718): a call attempt that cannot be recorded as given. */
+  'ORDER_CALL_INVALID',
+  /**
    * A receipt changed the weighted average between pricing the dispatch and recording
    * it, so the cost written on the lines would not be the cost on the movements.
    * Retryable: the second attempt reads the new average.

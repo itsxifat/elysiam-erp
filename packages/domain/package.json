@@ -83,6 +83,10 @@
     "./pricing": {
       "types": "./dist/pricing/index.d.ts",
       "default": "./dist/pricing/index.js"
+    },
+    "./assignment": {
+      "types": "./dist/assignment/index.d.ts",
+      "default": "./dist/assignment/index.js"
     }
   },
   "files": [

@@ -20,3 +20,5 @@ export * from './advances.js';
 export * from './returns.js';
 // M30: how far below the catalogue an agent may price an order (D-364).
 export * from './discount-ceiling.js';
+// M41: who handles an order, its verification calls and its stage at the hub (D-710 to D-719).
+export * from './ownership.js';

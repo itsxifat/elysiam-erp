@@ -345,6 +345,63 @@ export const loanInstalmentDuePayload = z
   })
   .strict();
 
+/**
+ * M41 (D-717): an order is offered to one person, who has `expiresAt` to accept or decline it.
+ *
+ * To that person alone. Ids, the order number and the deadline: the offer card fetches the
+ * area, the item count and the cash to collect from `GET /v1/orders/offers/mine`, where the
+ * serializer applies.
+ */
+export const orderOfferedPayload = z
+  .object({
+    offerId: uuid,
+    orderId: uuid,
+    orderNo: z.string(),
+    userId: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+
+/** M41 (D-717): an offer is over, so the person's card closes. To that person alone. */
+export const orderOfferClosedPayload = z
+  .object({
+    offerId: uuid,
+    orderId: uuid,
+    userId: z.string(),
+    outcome: z.enum(['accepted', 'declined', 'expired', 'withdrawn']),
+  })
+  .strict();
+
+/**
+ * M41 (D-710): somebody acknowledged that an order is the owner's and acted on it anyway, or a
+ * supervisor moved it. To the owner alone, who already sees the order; `actorUserId` is a login
+ * id the console names from its list of colleagues.
+ */
+export const orderActedOverOwnerPayload = z
+  .object({
+    id: uuid,
+    orderNo: z.string(),
+    ownerId: z.string(),
+    actorUserId: z.string(),
+    act: z.string().regex(/^[a-z_]{1,32}$/),
+  })
+  .strict();
+
+/** M41 (D-712): an order is back in the unassigned queue. Id and number, for the queues. */
+export const orderReleasedPayload = z.object({ id: uuid, orderNo: z.string() }).strict();
+
+/**
+ * M41 (D-713): a person became active, idle or away in the ERP, or switched "Not taking orders".
+ * To the supervisors' team board. A login id and the state: nothing about what they were doing.
+ */
+export const teamPresenceChangedPayload = z
+  .object({
+    userId: z.string(),
+    state: z.enum(['active', 'idle', 'away']),
+    paused: z.boolean(),
+  })
+  .strict();
+
 export const EVENTS = {
   'approval.requested': defineEvent('approval.requested', approvalRequestedPayload, {
     // §19: to every eligible checker. The dispatcher narrows that from
@@ -415,6 +472,22 @@ export const EVENTS = {
   // M26's loan reminder (§15): the two roles that hold `CompanyLoan`.
   'loan.instalment_due': defineEvent('loan.instalment_due', loanInstalmentDuePayload, {
     roles: ['accounts', 'org_admin'],
+  }),
+  // M41's order workflow (D-710 to D-717).
+  'order.offered': defineEvent('order.offered', orderOfferedPayload, {
+    extra: (payload) => [userRoom(payload.userId)],
+  }),
+  'order.offer_closed': defineEvent('order.offer_closed', orderOfferClosedPayload, {
+    extra: (payload) => [userRoom(payload.userId)],
+  }),
+  'order.acted_over_owner': defineEvent('order.acted_over_owner', orderActedOverOwnerPayload, {
+    extra: (payload) => [userRoom(payload.ownerId)],
+  }),
+  'order.released': defineEvent('order.released', orderReleasedPayload, {
+    roles: ['sales', 'org_admin', 'branch_manager'],
+  }),
+  'team.presence_changed': defineEvent('team.presence_changed', teamPresenceChangedPayload, {
+    roles: ['org_admin', 'branch_manager'],
   }),
 } as const;
 
