@@ -337,6 +337,10 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Branch', scope: 'org' },
     // M38b (D-614): the packing videos, and the brand's packing settings.
     { action: ['read', 'update'], subject: 'PackingVideo', scope: 'org' },
+    // M42 (D-736): the inbox, handing over anyone's conversation, and the Meta channels.
+    { action: ['read', 'update'], subject: 'Conversation', scope: 'org' },
+    { action: 'update', subject: 'ConversationAssignment', scope: 'org' },
+    { action: ['read', 'update'], subject: 'InboxChannel', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *
@@ -406,6 +410,12 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Target', scope: 'own' },
     // M38b (D-614): a parcel's packing video, for a complaint about an order of their own.
     { action: 'read', subject: 'PackingVideo', scope: 'own' },
+    /*
+     * M42 (D-736): the team's inbox, across the brand. Not `own`: a conversation nobody has
+     * taken must be visible to be taken, and a colleague covering a thread has to see whose it
+     * is; the owner is protected by the acknowledgement every other writer must give (D-737).
+     */
+    { action: ['read', 'update'], subject: 'Conversation', scope: 'org' },
     // No `request ApprovalRequest`: §6 gives sales no action that goes through
     // maker-checker, and REQUESTER_TYPES lists none (D-072).
     /*

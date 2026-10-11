@@ -345,6 +345,53 @@ export const loanInstalmentDuePayload = z
   })
   .strict();
 
+/**
+ * M42 (D-743): a message arrived in an inbox conversation. Ids, the channel and when, and who
+ * has the conversation so the assignee's own room hears it; never the words or the sender's
+ * name, which the inbox fetches where `serializeFor` applies.
+ */
+export const inboxMessageReceivedPayload = z
+  .object({
+    conversationId: uuid,
+    channel: z.enum(['messenger', 'instagram', 'whatsapp']),
+    assignedTo: z.string().nullable(),
+    at: z.string(),
+  })
+  .strict();
+
+/** M42 (D-735): one of our replies moved (sent, delivered, read, failed). */
+export const inboxMessageStatusPayload = z
+  .object({
+    conversationId: uuid,
+    messageId: uuid,
+    status: z.enum(['queued', 'sent', 'delivered', 'read', 'failed']),
+  })
+  .strict();
+
+/** M42 (D-737): a conversation was taken, released, handed over, closed or reopened. */
+export const inboxConversationChangedPayload = z
+  .object({
+    conversationId: uuid,
+    assignedTo: z.string().nullable(),
+    previousAssignee: z.string().nullable(),
+    status: z.enum(['open', 'closed']),
+    at: z.string(),
+  })
+  .strict();
+
+/**
+ * M42 (D-737): someone acknowledged that a conversation is yours and acted in it anyway. To the
+ * owner's own room only: what was done (`reply`, `take`, `note`, …) and by whom.
+ */
+export const inboxOwnerOverriddenPayload = z
+  .object({
+    conversationId: uuid,
+    ownerUserId: z.string(),
+    actorUserId: z.string(),
+    action: z.string().max(40),
+  })
+  .strict();
+
 export const EVENTS = {
   'approval.requested': defineEvent('approval.requested', approvalRequestedPayload, {
     // §19: to every eligible checker. The dispatcher narrows that from
@@ -415,6 +462,28 @@ export const EVENTS = {
   // M26's loan reminder (§15): the two roles that hold `CompanyLoan`.
   'loan.instalment_due': defineEvent('loan.instalment_due', loanInstalmentDuePayload, {
     roles: ['accounts', 'org_admin'],
+  }),
+  // M42's inbox (D-743): the two roles that hold `read Conversation`, plus the people concerned.
+  'inbox.message_received': defineEvent('inbox.message_received', inboxMessageReceivedPayload, {
+    roles: ['sales', 'org_admin'],
+    extra: (payload) => (payload.assignedTo === null ? [] : [userRoom(payload.assignedTo)]),
+  }),
+  'inbox.message_status': defineEvent('inbox.message_status', inboxMessageStatusPayload, {
+    roles: ['sales', 'org_admin'],
+  }),
+  'inbox.conversation_changed': defineEvent(
+    'inbox.conversation_changed',
+    inboxConversationChangedPayload,
+    {
+      roles: ['sales', 'org_admin'],
+      extra: (payload) =>
+        [payload.assignedTo, payload.previousAssignee]
+          .filter((id): id is string => id !== null)
+          .map(userRoom),
+    },
+  ),
+  'inbox.owner_overridden': defineEvent('inbox.owner_overridden', inboxOwnerOverriddenPayload, {
+    extra: (payload) => [userRoom(payload.ownerUserId)],
   }),
 } as const;
 

@@ -629,6 +629,31 @@ export const ERROR_CODES = [
   'SESSION_NOT_FOUND',
   /** This device's own session is ended with Sign out, not from the devices list. */
   'SESSION_CURRENT',
+  // M42: the unified inbox (D-730 to D-749)
+  /** No conversation, contact, note or interest of this brand has that id. */
+  'INBOX_NOT_FOUND',
+  /** The request is not valid for the inbox (a field, a tag, a product of another brand). */
+  'INBOX_INVALID',
+  /**
+   * Someone else has this conversation. Repeat the request with `x-acknowledge-owner: 1` to act
+   * anyway; the owner is told (D-737). The problem carries `ownerUserId` and `ownerName`.
+   */
+  'INBOX_OWNER_ACK_REQUIRED',
+  /** Only the owner or a supervisor hands a conversation to someone else. */
+  'INBOX_HANDOVER_NOT_ALLOWED',
+  /** That person cannot take conversations in this brand (no inbox role, or switched off). */
+  'INBOX_ASSIGNEE_INVALID',
+  /**
+   * Outside the 24-hour window a free-text reply is refused: Messenger's standard messaging
+   * window or WhatsApp's customer service window closed (D-734). The problem says when.
+   */
+  'INBOX_WINDOW_CLOSED',
+  /** The channel is switched off, or its id or token is not set, so nothing can be sent. */
+  'INBOX_CHANNEL_NOT_READY',
+  /** Someone who has ordered is a customer; they cannot be marked a lead (D-738). */
+  'INBOX_STAGE_INVALID',
+  /** This installation has no credentials key, so a Meta secret cannot be stored. */
+  'INBOX_CREDENTIALS_MISSING',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

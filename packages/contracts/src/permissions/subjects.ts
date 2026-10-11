@@ -143,6 +143,25 @@ export const SUBJECTS = [
    * grid; §6's 2FA list is this setting's default.
    */
   'SecurityPolicy',
+  /**
+   * A conversation in the brand's inbox (M42, D-736): Messenger, Instagram and WhatsApp threads,
+   * the contact's panel, notes, interests, tags and stage, and replying. Sales and org_admin read
+   * and update it across the brand: the inbox is the team's, everyone sees who has a thread, and
+   * a write on someone else's needs the owner acknowledged (D-737). Not a row in §6's grid, which
+   * predates the inbox (D-290, D-730).
+   */
+  'Conversation',
+  /**
+   * Handing someone else's conversation to a third person (M42, D-737): the supervisor's move.
+   * org_admin only. The owner hands over their own with `update Conversation`.
+   */
+  'ConversationAssignment',
+  /**
+   * The brand's Meta channels and app secret (M42, D-733): the Page, Instagram and WhatsApp
+   * credentials the inbox sends and verifies with. org_admin only, as the website's credentials
+   * are; the secrets are never shown to anyone, only that they are set.
+   */
+  'InboxChannel',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];

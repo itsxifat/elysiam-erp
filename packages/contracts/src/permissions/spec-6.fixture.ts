@@ -397,4 +397,16 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'org_admin|update|PackingVideo|org',
   'sales|read|PackingVideo|own',
   'warehouse|read|PackingVideo|org',
+
+  // | (not a row in the grid) | the unified inbox (M42, D-736) |
+  // The team's inbox: sales and org_admin read and answer every conversation (a non-owner
+  // acknowledges the owner first, D-737); handing over someone else's thread and the brand's
+  // Meta channels are org_admin's.
+  'org_admin|read|Conversation|org',
+  'org_admin|update|Conversation|org',
+  'org_admin|update|ConversationAssignment|org',
+  'org_admin|read|InboxChannel|org',
+  'org_admin|update|InboxChannel|org',
+  'sales|read|Conversation|org',
+  'sales|update|Conversation|org',
 ];
