@@ -148,7 +148,8 @@ test('check 1: the navigation follows the matrix, per role and per organisation'
   expect(slug).not.toBe('');
   await switcher.goto('/catalog');
   await expect(switcher.getByRole('heading', { name: 'Catalog', level: 1 })).toBeVisible();
-  await expect(switcher.getByRole('cell', { name: product })).toBeVisible();
+  // Exact: the row's select and actions cells name the product too (M39b's product list).
+  await expect(switcher.getByRole('cell', { name: product, exact: true })).toBeVisible();
 
   await switchTo('Oura');
   await switcher.goto('/');
