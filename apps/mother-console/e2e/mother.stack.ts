@@ -138,6 +138,7 @@ test('the overview adds both brands together, in light and dark', async ({ page 
     ['Accounts', 'Accounts across brands', 'accounts'],
     ['Brands', 'Brands', 'brands'],
     ['People', 'People', 'people'],
+    ['My account', 'My account', 'account'],
     ['Activity', 'Activity', 'activity'],
   ] as const) {
     await page

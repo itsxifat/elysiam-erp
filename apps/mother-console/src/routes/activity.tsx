@@ -31,6 +31,7 @@ const ACTIONS: Readonly<Record<string, MessageKey>> = {
   'auth.signed_out': 'action.auth.signed_out',
   'brand.added': 'action.brand.added',
   'brand.changed': 'action.brand.changed',
+  'brand.connection_changed': 'action.brand.connection_changed',
   'brand.connection_tested': 'action.brand.connection_tested',
   'brand.owner_link_key.created': 'action.brand.owner_link_key.created',
   'brand.owner_link_key.rotated': 'action.brand.owner_link_key.rotated',
@@ -44,12 +45,33 @@ const ACTIONS: Readonly<Record<string, MessageKey>> = {
   'person.two_factor_reset.approved': 'action.person.two_factor_reset.approved',
   'person.two_factor_reset.rejected': 'action.person.two_factor_reset.rejected',
   'person.two_factor_reset.break_glass': 'action.person.two_factor_reset.break_glass',
+  'account.name_changed': 'action.account.name_changed',
+  'account.password_changed': 'action.account.password_changed',
+  'account.check_failed': 'action.account.check_failed',
+  'account.two_factor.new_app_started': 'action.account.two_factor.new_app_started',
+  'account.two_factor.new_app_confirmed': 'action.account.two_factor.new_app_confirmed',
+  'account.backup_codes.renewed': 'action.account.backup_codes.renewed',
+  'account.session.signed_out': 'action.account.session.signed_out',
+  'account.sessions.signed_out_others': 'action.account.sessions.signed_out_others',
 };
 
 /** The few detail fields worth a glance; the rest stays in the log. */
 function summary(detail: Readonly<Record<string, unknown>>): string {
   const parts: string[] = [];
-  for (const key of ['slug', 'email', 'name', 'jti', 'result', 'reason', 'method', 'full']) {
+  for (const key of [
+    'slug',
+    'email',
+    'name',
+    'jti',
+    'result',
+    'reason',
+    'method',
+    'full',
+    'step',
+    'browser',
+    'os',
+    'count',
+  ]) {
     const value = detail[key];
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
       parts.push(`${key}: ${String(value)}`);

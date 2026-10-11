@@ -69,6 +69,12 @@ const brandsSettings = createRoute({
   component: lazyRouteComponent(() => import('./routes/brands.js'), 'BrandsPage'),
 });
 
+const account = createRoute({
+  getParentRoute: () => root,
+  path: '/account',
+  component: lazyRouteComponent(() => import('./routes/account.js'), 'AccountPage'),
+});
+
 const people = createRoute({
   getParentRoute: () => root,
   path: '/settings/people',
@@ -89,6 +95,7 @@ export const router = createRouter({
     brandPage,
     brandsSettings,
     people,
+    account,
     activity,
   ]),
   defaultPreload: 'intent',

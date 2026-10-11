@@ -5,6 +5,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, endpoints, NetworkError, type EnrolmentResult } from '../api.js';
 import { useT, type MessageKey } from '../i18n/locale.js';
 import { Alert, Field } from '../ui/primitives.js';
+import { downloadCodes } from '../ui/recovery-codes.js';
 
 /**
  * Signing in to the owner console (D-487): the password, then the code from the
@@ -226,7 +227,8 @@ function SecondFactor({
   );
 }
 
-function secretFrom(totpURI: string): string {
+/** The key to type into an authenticator app: the `secret` of an `otpauth://` URI. */
+export function secretFrom(totpURI: string): string {
   try {
     return new URL(totpURI).searchParams.get('secret') ?? '';
   } catch {
@@ -391,14 +393,4 @@ function Step({
       {children}
     </section>
   );
-}
-
-function downloadCodes(codes: readonly string[]): void {
-  const blob = new Blob([`${codes.join('\n')}\n`], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'recovery-codes.txt';
-  link.click();
-  URL.revokeObjectURL(url);
 }
