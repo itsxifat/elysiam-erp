@@ -29,7 +29,7 @@ import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
 import * as references from './references.repository.js';
-import { orderReadScopeFor } from './orders.scope.js';
+import { buyerReachScopeFor, orderReadScopeFor } from './orders.scope.js';
 
 /**
  * Orders' service interface for other modules (invariant 12).
@@ -755,8 +755,9 @@ export interface OrdersApi {
 
   /**
    * Whether the viewer may open this buyer at all, by `GET /v1/customers/:id`'s rule: everyone
-   * with an org-wide grant; otherwise a buyer with an order in the viewer's `read Order` scope,
-   * or with no orders yet (D-740). The inbox links a typed phone to a buyer only then.
+   * with an org-wide grant; otherwise a buyer with an order in the viewer's `read Customer` scope
+   * ("customers of own orders") or in the sales queue, or with no orders yet (D-740, D-725). The
+   * inbox links a typed phone to a buyer only then.
    */
   customerReachable(
     tx: Tx,
@@ -1560,7 +1561,8 @@ export class OrdersApiService implements OrdersApi {
     customerId: string,
     viewer: RequestContext,
   ): Promise<boolean> {
-    return repo.customerReachableIn(tx, orgId, customerId, orderReadScopeFor(viewer));
+    // A buyer the agent may open (D-740), not every buyer of an order they may read (D-725).
+    return repo.customerReachableIn(tx, orgId, customerId, buyerReachScopeFor(viewer));
   }
 
   async inboxOrigin(tx: Tx, orgId: string, orderId: string): Promise<InboxOrderOrigin | undefined> {

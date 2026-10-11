@@ -25,8 +25,8 @@ import '../../i18n/website.js';
  * fingerprint that says which one is set, never the password.
  */
 export function WebsitePaymentsPage() {
-  // The list of every online payment is for those who see every order (ledger audit W6).
-  const seesPayments = useOrgWide()('read', 'Order');
+  // The list of every online payment is for those who see every buyer (ledger audit W6, D-725).
+  const seesPayments = useOrgWide()('read', 'Customer');
   const settings = useQuery({ queryKey: ['website', 'payments'], queryFn: getPaymentSettings });
   const sessions = useQuery({
     queryKey: ['website', 'payments', 'sessions'],

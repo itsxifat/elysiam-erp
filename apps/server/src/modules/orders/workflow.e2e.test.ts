@@ -1,4 +1,4 @@
-import { OWNER_ACK_HEADER } from '@elysium/contracts';
+import { OWNER_ACK_HEADER, findCostFields } from '@elysium/contracts';
 import { withGlobal, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import pino from 'pino';
@@ -526,9 +526,10 @@ describe('check 2: a non-owner must acknowledge the owner, at every desk step', 
   it('lets the owner release or hand over, a supervisor reassign, and nobody else', async () => {
     const order = await take(admin, { assignedTo: rahim.userId });
 
-    // Karim cannot see Rahim's order at all (own scope), so it is a 404 rather than a refusal.
+    // Karim opens Rahim's order (D-725) and may not move it: a refusal, not a 404.
     const notTheirs = await karim.client.request('POST', `/v1/orders/${order.id}/release`);
-    expect(notTheirs.statusCode).toBe(404);
+    expect(notTheirs.statusCode).toBe(403);
+    expect(codeOf(notTheirs)).toBe('ORDER_ASSIGN_NOT_ALLOWED');
     // The warehouse sees it, and may not move it.
     const warehouseTries = await warehouse.client.request('POST', `/v1/orders/${order.id}/assign`, {
       body: { assignedTo: karim.userId },
@@ -1031,4 +1032,81 @@ describe('presence and desk profiles', () => {
     );
     expect(me.profile).toMatchObject({ workTypes: ['orders', 'messages'], defaultProfile: true });
   }, 60_000);
+});
+
+// --- D-725: colleagues' orders ----------------------------------------------------------
+
+describe('D-725: a colleague’s order, read by any agent and worked only through its owner', () => {
+  it('opens it naming the owner and without cost, keeps it out of the queues, and gates every act', async () => {
+    const owner = await connect(rahim, ['order.acted_over_owner']);
+    // The admin enters it for Rahim: Karim neither entered nor holds it.
+    const order = await take(admin, { assignedTo: rahim.userId });
+
+    const opened = await karim.client.request('GET', `/v1/orders/${order.id}`);
+    expect(opened.statusCode, opened.body).toBe(200);
+    const view = body<OrderBody & { transitions: { trigger: string }[] }>(opened);
+    expect(view.assignedTo).toBe(rahim.userId);
+    // Invariant 5: reading a colleague's order widens nothing about cost.
+    expect(findCostFields(body<unknown>(opened))).toEqual([]);
+    // Only the desk's moves are offered to him, each of which asks "go ahead?" first.
+    expect(view.transitions.map((row) => row.trigger).sort()).toEqual(['cancel', 'confirm']);
+    expect((await karim.client.request('GET', `/v1/orders/${order.id}/calls`)).statusCode).toBe(
+      200,
+    );
+
+    // In "all orders" on the list, never in his desk's tabs.
+    expect(
+      (await queue(karim, `assignedTo=${rahim.userId}`)).some((row) => row.id === order.id),
+    ).toBe(true);
+    for (const tab of ['new', 'mine', 'unassigned', 'verifying', 'callbacks', 'confirmed_today']) {
+      expect(
+        (await queue(karim, `queue=${tab}`)).some((row) => row.id === order.id),
+        tab,
+      ).toBe(false);
+    }
+
+    // Every desk act is the owner's gate: refused naming Rahim, then through with the
+    // acknowledgement, and Rahim told of each.
+    const refused = await karim.client.request('POST', `/v1/orders/${order.id}/calls`, {
+      body: { outcome: 'no_answer' },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(codeOf(refused)).toBe('ORDER_HANDLED_BY_OTHER');
+    expect(body<{ detail: string }>(refused).detail).toContain('Rahim Uddin');
+    const called = await karim.client.request('POST', `/v1/orders/${order.id}/calls`, {
+      body: { outcome: 'no_answer' },
+      headers: ACK,
+    });
+    expect(called.statusCode, called.body).toBe(201);
+    const confirmed = await karim.client.request('POST', `/v1/orders/${order.id}/confirm`, {
+      headers: ACK,
+    });
+    expect(confirmed.statusCode, confirmed.body).toBe(201);
+    await deliver();
+    const told = owner.received.filter((event) => event.payload.id === order.id);
+    expect(told.map((event) => event.payload.act).sort()).toEqual(['call', 'confirm']);
+    expect(told.every((event) => event.payload.actorUserId === karim.userId)).toBe(true);
+
+    // The hub's moves are not his: not offered, and not reached, acknowledged or not.
+    const afterConfirm = body<{ transitions: { trigger: string }[] }>(
+      await karim.client.request('GET', `/v1/orders/${order.id}`),
+    );
+    expect(afterConfirm.transitions.map((row) => row.trigger)).not.toContain('pack');
+    const pack = await karim.client.request('POST', `/v1/orders/${order.id}/pack`, {
+      headers: ACK,
+    });
+    expect(pack.statusCode).toBe(404);
+    // Nor may he take it over.
+    const takeOver = await karim.client.request('POST', `/v1/orders/${order.id}/assign`, {
+      body: { assignedTo: karim.userId },
+    });
+    expect(takeOver.statusCode).toBe(403);
+    expect(codeOf(takeOver)).toBe('ORDER_ASSIGN_NOT_ALLOWED');
+
+    // Rahim, the owner, keeps every move of his own.
+    const own = body<{ transitions: { trigger: string }[] }>(
+      await rahim.client.request('GET', `/v1/orders/${order.id}`),
+    );
+    expect(own.transitions.map((row) => row.trigger)).toContain('pack');
+  }, 120_000);
 });

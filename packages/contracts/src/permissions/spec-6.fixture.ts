@@ -107,7 +107,7 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'warehouse|create|Supply|org',
   'warehouse|update|Supply|org',
 
-  // | Orders | org_admin org | sales own + unassigned queue | accounts read | marketing read | branch_manager branch | warehouse pack, ship, returns | reseller own (portal) |
+  // | Orders | org_admin org | sales read org (D-725); own + unassigned queue to act | accounts read | marketing read | branch_manager branch | warehouse pack, ship, returns | reseller own (portal) |
   'accounts|read|Order|org',
   'branch_manager|create|Order|branch',
   'branch_manager|read|Order|branch',
@@ -120,7 +120,9 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'reseller|create|Order|own',
   'reseller|read|Order|own',
   'sales|create|Order|own',
-  'sales|read|Order|own',
+  // D-725: sales reads every order of the brand (a colleague's under "Handled by …") and acts on
+  // its own and the unassigned queue; a colleague's order only through the owner's acknowledgement.
+  'sales|read|Order|org',
   'sales|update|Order|own',
   'warehouse|read|Order|org',
   'warehouse|update|Order|org',

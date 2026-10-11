@@ -1079,7 +1079,7 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
     expect(unread.items.every((item) => item.unreadCount > 0)).toBe(true);
   });
 
-  it('links a typed number only for a buyer the agent may open; the panel lists only orders they may open (W1)', async () => {
+  it('links a typed number only for a buyer the agent may open; the panel lists the orders they may open (W1, D-725)', async () => {
     const elsewhere = await seedCustomer(ORG_A, { phoneE164: '+8801733333333', name: 'Shirin' });
     await seedOrder(ORG_A, {
       status: 'pending',
@@ -1111,7 +1111,8 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
       ).customer,
     ).toBeNull();
 
-    // Given in the chat by the customer: linked; the counters are the brand's, the list the agent's.
+    // Given in the chat by the customer: linked; the counters are the brand's, the list the orders
+    // the agent may open, which since D-725 is a colleague's too.
     const given = '6578123456766666';
     await deliverAndThread(
       messengerText({
@@ -1132,7 +1133,7 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
       await salesA.client.request('GET', `/v1/inbox/conversations/${givenId}/panel`),
     );
     expect(asSales.customer.orders).toBe(1);
-    expect(asSales.customer.recentOrders).toEqual([]);
+    expect(asSales.customer.recentOrders).toHaveLength(1);
     const asAdmin = json<{ customer: { recentOrders: unknown[] } }>(
       await admin.client.request('GET', `/v1/inbox/conversations/${givenId}/panel`),
     );

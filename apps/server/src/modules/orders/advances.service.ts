@@ -34,7 +34,7 @@ import * as advances from './advances.repository.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import * as repo from './orders.repository.js';
 import type { RecordAdvanceInput, RefundAdvanceInput } from './orders.schemas.js';
-import { orderScopeSql } from './orders.scope.js';
+import { deskActScopeSql, orderScopeSql } from './orders.scope.js';
 import { OwnershipGate } from './ownership.gate.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 
@@ -95,11 +95,12 @@ export class AdvancesService {
   ) {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        // D-725: in every order the caller may read; on a colleague's, the owner's gate answers.
         const order = await repo.lockOrderInScope(
           tx,
           context.orgId,
           orderId,
-          orderScopeSql(context, request),
+          deskActScopeSql(context, request),
         );
         if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
         // M41 (D-710): recording the buyer's advance is the owner's work.

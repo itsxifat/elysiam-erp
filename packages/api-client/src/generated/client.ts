@@ -946,7 +946,7 @@ export const OPERATIONS = {
   getV1StorefrontPaymentsSessions: {
     method: 'GET',
     path: '/v1/storefront/payments/sessions',
-    ability: 'read:Order',
+    ability: 'read:Customer',
   },
   getV1StorefrontSettings: {
     method: 'GET',

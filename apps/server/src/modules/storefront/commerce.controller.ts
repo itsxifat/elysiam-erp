@@ -53,10 +53,13 @@ const accountQuerySchema = z
 const limitSchema = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) });
 
 /**
- * A list of every shopper or every online payment is for a caller who reaches every row of the
- * route's subject (M34 ledger audit W6): `read Customer` or `read Order` at org scope (org_admin,
- * accounts, marketing). A sales agent's `own` reach cannot be applied to a list of website
- * accounts or gateway sessions, so it is refused rather than widened.
+ * A list of every shopper or every online payment is for a caller who reaches every buyer (M34
+ * ledger audit W6): `read Customer` at org scope (org_admin, accounts, marketing). A sales
+ * agent's `own` reach cannot be applied to a list of website accounts or gateway sessions, so
+ * it is refused rather than widened. The payments list asked `read Order` until D-725 gave sales
+ * that at org scope for opening a colleague's order; reading orders one by one is not a ledger of
+ * every shopper's online payments, so it asks the buyer's grant now, which leaves its audience
+ * as it was.
  */
 function requireOrgWide(request: FastifyRequest, message: string): void {
   if (scopeOf(request).kind !== 'all') {
@@ -69,8 +72,8 @@ function requireOrgWide(request: FastifyRequest, message: string): void {
  * (M34, D-528, D-529, D-533).
  *
  * Reading the settings is `read Storefront` (org_admin, marketing, sales); the lists of shoppers,
- * emails and payments need org-wide `read Customer` or `read Order`, and the order card the
- * order's own scope (ledger audit W6). Changing where shoppers' money
+ * emails and payments need org-wide `read Customer` (D-725), and the order card the order's own
+ * scope (ledger audit W6). Changing where shoppers' money
  * goes or where their reset links are sent from is `update WebsiteCredentials`, org_admin only
  * (D-528): a marketing user who could repoint SSLCommerz or the email server could take the
  * money or the accounts. No answer carries a password, ever; a fingerprint says which one is set.
@@ -97,10 +100,10 @@ export class CommerceController {
     );
   }
 
-  @RequireAbility('read', 'Order')
+  @RequireAbility('read', 'Customer')
   @Get('payments/sessions')
   async paymentSessions(@Req() request: FastifyRequest, @Query() query: unknown) {
-    requireOrgWide(request, 'The online payments are listed for those who see every order.');
+    requireOrgWide(request, 'The online payments are listed for those who see every buyer.');
     const { limit } = parse(limitSchema, query);
     return mapStorefrontErrors(() => this.payments.recent(requireContext(request), limit));
   }

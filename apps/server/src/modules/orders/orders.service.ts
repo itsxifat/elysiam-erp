@@ -59,7 +59,12 @@ import { OwnershipGate } from './ownership.gate.js';
 import { orderQueueSql } from './queues.js';
 import * as desk from './desk.repository.js';
 import * as repo from './orders.repository.js';
-import { orderScopeSql } from './orders.scope.js';
+import {
+  deskActScopeSql,
+  orderActScopeFor,
+  orderInActScope,
+  orderScopeSql,
+} from './orders.scope.js';
 import { orderTimeline } from './timeline.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import type {
@@ -399,6 +404,13 @@ export class OrdersService {
      * order desk's "my orders" tab means.
      */
     const queue = orderQueueSql(query.queue, context.userId);
+    /*
+     * D-725: a queue lists the orders the caller may work on, the plain list every order they
+     * may read. For a sales agent the two differ: the desk's and the hub's tabs stay their own
+     * and the unassigned, and "every agent" on the order list is the whole brand.
+     */
+    const reach =
+      query.queue === undefined ? scope : sql`(${scope} and ${orderActScopeFor(context)})`;
 
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -424,7 +436,7 @@ export class OrdersService {
             ? undefined
             : await repo.defaultFulfilmentLocation(tx, context.orgId, null);
         const rows = await repo.listOrders(tx, context.orgId, {
-          scope,
+          scope: reach,
           queue: queue.where,
           orderBy: queue.orderBy,
           locationId,
@@ -490,7 +502,7 @@ export class OrdersService {
           history,
           timeline,
           owners,
-          transitions: transitionsFrom(order.status as OrderStatus),
+          transitions: transitionsFor(context, order),
         };
       }),
     );
@@ -1422,7 +1434,8 @@ export class OrdersService {
   ) {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const order = await this.readInScope(tx, context, request, id);
+        // D-725: a sales agent reaches a colleague's order here too, so a refusal names the owner.
+        const order = await this.lockReadable(tx, context, request, id);
         const previous = order.assigned_to;
         const decision = assignmentDecision({
           ownerId: previous,
@@ -1838,8 +1851,30 @@ export class OrdersService {
     id: string,
     act: OwnerGatedAct,
   ): Promise<repo.OrderRow> {
-    const order = await this.readInScope(tx, context, request, id);
+    const order = await this.lockReadable(tx, context, request, id);
     await this.gate.check(tx, context, request, order, act);
+    return order;
+  }
+
+  /**
+   * The order, locked in every order the caller may read (D-725): a sales agent reaches a
+   * colleague's order for a desk act or a hand-over, and the owner's gate or the assignment rule,
+   * not a 404, is what answers them. Only those two callers use it; everything else locks in the
+   * route's own scope.
+   */
+  private async lockReadable(
+    tx: Tx,
+    context: ActiveContext,
+    request: object,
+    id: string,
+  ): Promise<repo.OrderRow> {
+    const order = await repo.lockOrderInScope(
+      tx,
+      context.orgId,
+      id,
+      deskActScopeSql(context, request),
+    );
+    if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
     return order;
   }
 
@@ -2228,6 +2263,33 @@ const DESK_TRIGGERS: Partial<Record<OrderTrigger, OwnerGatedAct>> = {
   release_hold: 'release_hold',
   cancel: 'cancel',
 };
+
+/** Every move a desk act makes, each through `lockForAct`: confirm, the three above, exchange. */
+const DESK_ACT_TRIGGERS: ReadonlySet<OrderTrigger> = new Set<OrderTrigger>([
+  'confirm',
+  'exchange',
+  ...(Object.keys(DESK_TRIGGERS) as OrderTrigger[]),
+]);
+
+/**
+ * The moves this caller may make on this order (D-392, D-725). §9's rows from its status, less
+ * the hub's for a sales agent on a colleague's order: they may act on it only through the
+ * desk's acts and the owner's acknowledgement, so the console offers only those.
+ */
+function transitionsFor(context: ActiveContext, order: repo.OrderRow) {
+  const all = transitionsFrom(order.status as OrderStatus);
+  if (
+    !context.roles.includes('sales') ||
+    orderInActScope(context, {
+      createdBy: order.created_by,
+      assignedTo: order.assigned_to,
+      branchId: order.branch_id,
+    })
+  ) {
+    return all;
+  }
+  return all.filter((row) => DESK_ACT_TRIGGERS.has(row.trigger));
+}
 
 /** Roles that hold `update Order`, read off the matrix: who may be handed an order (D-712). */
 const ORDER_HOLDING_ROLES = MEMBERSHIP_ROLES.filter((role) =>

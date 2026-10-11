@@ -51,11 +51,11 @@ import {
  * against real PostgreSQL. The money and the stock are proved in `orders.db.test.ts`; what
  * this suite is for is the three things only the pipeline can answer:
  *
- * 1. **Who may see which order.** §6's sales cell is "own orders **plus** the unassigned
- *    queue", and the interesting assertion is the pair: a second agent can see an
- *    unassigned order and cannot see the same order once it is assigned. A suite that only
- *    checked the second half would pass against a scope that hid the queue, which is the
- *    version that makes the order desk useless.
+ * 1. **Who may see which order.** §6's sales cell was "own orders **plus** the unassigned
+ *    queue"; since D-725 a sales agent reads every order of the brand and acts on their own
+ *    and the queue. The interesting assertion is the pair: a second agent can work an
+ *    unassigned order, and once it is assigned can still open it but no longer finds it in
+ *    their queues, and can act on it only by acknowledging its owner.
  * 2. **That no cost field ever leaves.** `findCostFields` over every order response.
  *    `dispatch_unit_cost_poisha` is on the row from the moment the parcel ships, so this is
  *    not a hypothetical (invariant 5).
@@ -172,7 +172,7 @@ function errorCode(response: InjectedResponse): string {
 // --- §6: who may see which order ----------------------------------------------
 
 describe('§6’s Orders row, through the guard and the scope interceptor', () => {
-  it('shows an unassigned order to any agent and hides it once it is assigned', async () => {
+  it('shows an unassigned order to any agent, and a colleague’s outside their queues (D-725)', async () => {
     const order = await takeOrder(sales);
 
     /*
@@ -188,16 +188,43 @@ describe('§6’s Orders row, through the guard and the scope interceptor', () =
     });
     expect(assigned.statusCode).toBe(201);
 
-    // Now it belongs to somebody, and the other agent is out of scope. 404, not 403: a row
-    // you may not see must be indistinguishable from one that does not exist.
+    // Now it belongs to somebody. The other agent still opens it (D-725), naming its owner,
+    // with no cost field (invariant 5) and only the desk's moves on offer.
     const afterAssignment = await otherSales.client.request('GET', `/v1/orders/${order.id}`);
-    expect(afterAssignment.statusCode).toBe(404);
+    expect(afterAssignment.statusCode).toBe(200);
+    const seen = body<{ assignedTo: string | null; transitions: { trigger: string }[] }>(
+      afterAssignment,
+    );
+    expect(seen.assignedTo).toBe(sales.userId);
+    expect(findCostFields(body<unknown>(afterAssignment))).toEqual([]);
+    expect(seen.transitions.map((row) => row.trigger).sort()).toEqual(['cancel', 'confirm']);
 
-    // The list obeys the same rule, which is a separate query and therefore a separate bug.
-    const theirs = body<{ items: { id: string }[] }>(
+    // The plain list is every order they may read; the queues are the orders they may work on.
+    const listed = body<{ items: { id: string }[] }>(
       await otherSales.client.request('GET', '/v1/orders'),
     );
-    expect(theirs.items.some((item) => item.id === order.id)).toBe(false);
+    expect(listed.items.some((item) => item.id === order.id)).toBe(true);
+    for (const queue of ['unassigned', 'mine', 'verifying', 'new']) {
+      const queued = body<{ items: { id: string }[] }>(
+        await otherSales.client.request('GET', `/v1/orders?queue=${queue}`),
+      );
+      expect(
+        queued.items.some((item) => item.id === order.id),
+        queue,
+      ).toBe(false);
+    }
+
+    // Acting on it is the owner's gate: refused naming them, then through with "go ahead".
+    const refused = await otherSales.client.request('POST', `/v1/orders/${order.id}/calls`, {
+      body: { outcome: 'no_answer' },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(errorCode(refused)).toBe('ORDER_HANDLED_BY_OTHER');
+    const called = await otherSales.client.request('POST', `/v1/orders/${order.id}/calls`, {
+      body: { outcome: 'no_answer' },
+      headers: { 'x-acknowledge-owner': '1' },
+    });
+    expect(called.statusCode, called.body).toBe(201);
 
     const mine = body<{ items: { id: string }[] }>(
       await sales.client.request('GET', '/v1/orders?queue=mine'),
@@ -209,7 +236,8 @@ describe('§6’s Orders row, through the guard and the scope interceptor', () =
     const order = await takeOrder(sales);
 
     /*
-     * `reseller` and `sales` both hold `read Order|own`, and only one of them has the queue.
+     * `reseller` and `sales` both hold `create Order|own`, and only one of them has the queue;
+     * since D-725 sales also reads every order, which a reseller never does.
      * Widening the scope for everyone with `own` would have looked like a tidy
      * simplification and handed a reseller every staff order nobody had claimed yet.
      */

@@ -19,12 +19,15 @@ import { applyOrderMigrations, seedStockLevel } from './orders.testing.js';
 /**
  * The order desk over HTTP (M11 acceptance check 5, and the Build list's desk endpoints).
  *
- * Check 5 is "sales sees only their own orders plus the unassigned queue", asserted as a
- * **matrix**: five orders whose ownership differs in exactly one way each, five callers,
- * and every endpoint that can reveal an order — the list, the queue, the detail, the
- * documents, bulk confirm and the duplicate warning — asked the same question. A scope
- * that is right on the list and wrong on the detail is the commonest shape of this bug, so
- * no endpoint is taken on trust because another one passed.
+ * Check 5 was "sales sees only their own orders plus the unassigned queue". Since D-725 (the
+ * owner, 2026-10-12) a sales agent **reads** every order of the brand, a colleague's under
+ * "Handled by …", and **works** on their own and the unassigned queue: the desk's queues, bulk
+ * confirm without acknowledging the owner, and the hub's moves stay there. Asserted as a
+ * **matrix**: five orders whose ownership differs in exactly one way each, five callers, and
+ * every endpoint that can reveal an order — the list, the queues, the detail, the documents,
+ * bulk confirm and the duplicate warning. A scope that is right on the list and wrong on the
+ * detail is the commonest shape of this bug, so no endpoint is taken on trust because another
+ * one passed.
  */
 
 let harness: HttpHarness;
@@ -123,7 +126,7 @@ async function listIds(actor: RoleClient, query = ''): Promise<Set<string>> {
 
 // --- check 5 --------------------------------------------------------------------
 
-describe('check 5: sales sees only its own orders plus the unassigned queue', () => {
+describe('check 5, as D-725 has it: sales reads every order and works its own and the queue', () => {
   it('holds on every endpoint that can reveal an order, for every caller', async () => {
     const mine1 = await take(sales1, { assignedTo: sales1.userId });
     const mine2 = await take(sales2, { assignedTo: sales2.userId });
@@ -135,18 +138,18 @@ describe('check 5: sales sees only its own orders plus the unassigned queue', ()
     type Name = keyof typeof all;
 
     /*
-     * The matrix. `true` means the caller may see the order. Read a row as a sentence:
-     * "sales1 sees its own order, the queue and the order handed to it, and nothing else."
-     * The reseller row is D-098: the same `read Order|own` grant as sales, without the queue.
+     * The matrix. `true` means the caller may open the order: since D-725 a sales agent opens
+     * every order of the brand. The reseller row is D-098: `read Order|own`, without the queue,
+     * and nothing of D-725.
      */
     const matrix: Record<string, { client: RoleClient; sees: Record<Name, boolean> }> = {
       sales1: {
         client: sales1,
-        sees: { mine1: true, mine2: false, queued: true, handedTo1: true, adminsOwn: false },
+        sees: { mine1: true, mine2: true, queued: true, handedTo1: true, adminsOwn: true },
       },
       sales2: {
         client: sales2,
-        sees: { mine1: false, mine2: true, queued: true, handedTo1: false, adminsOwn: false },
+        sees: { mine1: true, mine2: true, queued: true, handedTo1: true, adminsOwn: true },
       },
       org_admin: {
         client: admin,
@@ -192,21 +195,37 @@ describe('check 5: sales sees only its own orders plus the unassigned queue', ()
     expect(queue1.has(mine2.id)).toBe(false);
     expect((await listIds(reseller, '&queue=unassigned')).has(queued.id)).toBe(false);
 
-    // Once sales2 claims the queued order it leaves sales1's reach, on the list and the detail.
+    /*
+     * A queue lists the orders the caller works on (D-725), even one whose own filter names no
+     * assignee: sales2 calls its buyer, so mine2 is Verifying — in sales2's and the admin's
+     * tab, never in sales1's, who can still open it.
+     */
+    const called = await sales2.client.request('POST', `/v1/orders/${mine2.id}/calls`, {
+      body: { outcome: 'no_answer' },
+    });
+    expect(called.statusCode, called.body).toBe(201);
+    expect((await listIds(sales2, '&queue=verifying')).has(mine2.id)).toBe(true);
+    expect((await listIds(admin, '&queue=verifying')).has(mine2.id)).toBe(true);
+    expect((await listIds(sales1, '&queue=verifying')).has(mine2.id)).toBe(false);
+    expect((await listIds(sales1, '&queue=mine')).has(mine2.id)).toBe(false);
+
+    // Once sales2 claims the queued order it leaves sales1's queue; sales1 still opens it.
     expect((await sales2.client.request('POST', `/v1/orders/${queued.id}/claim`)).statusCode).toBe(
       201,
     );
-    expect((await listIds(sales1)).has(queued.id)).toBe(false);
-    expect((await sales1.client.request('GET', `/v1/orders/${queued.id}`)).statusCode).toBe(404);
+    expect((await listIds(sales1, '&queue=unassigned')).has(queued.id)).toBe(false);
+    expect((await sales1.client.request('GET', `/v1/orders/${queued.id}`)).statusCode).toBe(200);
 
-    // An agent filter cannot reach past the scope: asking for sales2's orders as sales1
-    // returns nothing of sales2's.
+    // "All orders": the agent filter shows sales1 a colleague's orders.
     const asked = await listIds(sales1, `&assignedTo=${sales2.userId}`);
-    expect(asked.has(mine2.id)).toBe(false);
-    expect(asked.has(queued.id)).toBe(false);
+    expect(asked.has(mine2.id)).toBe(true);
+    expect(asked.has(queued.id)).toBe(true);
+    expect(asked.has(mine1.id)).toBe(false);
   }, 240_000);
 
   it('confirms in bulk only what the caller could confirm one by one', async () => {
+    // A colleague's order answers with the owner's gate (D-725): refused naming them, never
+    // confirmed without "go ahead".
     const mine = await take(sales1, { assignedTo: sales1.userId });
     const theirs = await take(sales2, { assignedTo: sales2.userId });
 
@@ -221,8 +240,7 @@ describe('check 5: sales sees only its own orders plus the unassigned queue', ()
     expect(result.confirmed).toBe(1);
     expect(result.results).toEqual([
       expect.objectContaining({ id: mine.id, ok: true, status: 'confirmed' }),
-      // Not "forbidden": outside the scope an order does not exist.
-      expect.objectContaining({ id: theirs.id, ok: false, code: 'ORDER_NOT_FOUND' }),
+      expect.objectContaining({ id: theirs.id, ok: false, code: 'ORDER_HANDLED_BY_OTHER' }),
     ]);
 
     const stillPending = body<{ status: string }>(
@@ -231,7 +249,7 @@ describe('check 5: sales sees only its own orders plus the unassigned queue', ()
     expect(stillPending.status).toBe('pending');
   }, 120_000);
 
-  it('warns about a colleague’s duplicate without handing over the order', async () => {
+  it('warns about a colleague’s duplicate, with the order to open (D-725)', async () => {
     const phone = freshPhone();
     const theirs = await take(sales2, { phone, assignedTo: sales2.userId, skuIndex: 1 });
 
@@ -244,7 +262,8 @@ describe('check 5: sales sees only its own orders plus the unassigned queue', ()
       items: { id: string | null; orderNo: string; visible: boolean; skuIds: string[] }[];
     }>(response);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ orderNo: theirs.orderNo, visible: false, id: null });
+    // Since D-725 a sales agent opens a colleague's order, so the warning links it.
+    expect(items[0]).toMatchObject({ orderNo: theirs.orderNo, visible: true, id: theirs.id });
     expect(items[0]?.skuIds).toEqual([sku(1)]);
 
     // The owner sees the same duplicate, with the id to open it.

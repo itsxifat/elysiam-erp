@@ -14,6 +14,7 @@ import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import { decodeCode128Svg } from '../../testing/code128-decode.js';
 import {
   ORG_A,
+  createBranch,
   ORG_B,
   startHttpHarness,
   type HttpHarness,
@@ -511,12 +512,14 @@ describe('the packing station (M38b check 1, M38 check 5)', () => {
     expect((await open(sales, { orderId: theirs.id })).status).toBe(200);
 
     const sessionId = sessionIdOf((await open(packer, { orderId: someoneElses.id })).body);
-    expect((await call(sales, 'GET', `/v1/packing/sessions/${sessionId}`)).status).toBe(404);
+    // Since D-725 a sales agent reads every order, so its packing session too; packing it stays
+    // the hub's and the order's own people's.
+    expect((await call(sales, 'GET', `/v1/packing/sessions/${sessionId}`)).status).toBe(200);
     expect((await scan(sales, sessionId, cap.barcode)).status).toBe(404);
     const listed = (await call(sales, 'GET', '/v1/packing/sessions')).body.items as {
       orderId: string;
     }[];
-    expect(listed.map((item) => item.orderId)).not.toContain(someoneElses.id);
+    expect(listed.map((item) => item.orderId)).toContain(someoneElses.id);
 
     // Another brand's admin cannot see the session at all.
     const other = await harness.asRole('org_admin', ORG_B);
@@ -564,18 +567,45 @@ describe('the packing station (M38b check 1, M38 check 5)', () => {
 });
 
 describe('the packing station after the ledger audit (M38b)', () => {
-  it('shows a sales agent their own newest sessions, however many colleagues packed since', async () => {
-    const theirs = await confirmedOrder([{ sku: cap, qty: 1 }], sales.userId);
-    expect((await open(sales, { orderId: theirs.id })).status).toBe(200);
+  it('shows a scoped person their own newest sessions, however many colleagues packed since', async () => {
+    /*
+     * The limit is taken after the scope, not before. A branch manager kept to one branch is
+     * the scoped reader here: since D-725 a sales agent reads every order's packing, so the
+     * newest session of all is the first they see.
+     */
+    const branch = await createBranch(ORG_A, `PS${String(Date.now()).slice(-6)}`);
+    const manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [branch] });
+    const theirs = await seedOrder(ORG_A, {
+      status: 'confirmed',
+      customerId,
+      createdBy: admin.userId,
+      branchId: branch,
+      lines: [
+        {
+          skuId: cap.id,
+          skuCode: cap.code,
+          productName: `Product ${cap.code}`,
+          qty: 1,
+          unitPricePoisha: 150_000n,
+        },
+      ],
+    });
+    expect((await open(packer, { orderId: theirs.id })).status).toBe(200);
+    let newest = '';
     for (let n = 0; n < 3; n += 1) {
       const others = await confirmedOrder([{ sku: cap, qty: 1 }]);
       expect((await open(packer, { orderId: others.id })).status).toBe(200);
+      newest = others.id;
     }
-    // The newest sessions are the packer's; the agent's own still fills their list.
-    const listed = await call(sales, 'GET', '/v1/packing/sessions?limit=1');
+    // The newest sessions are the packer's; the manager's branch still fills their list.
+    const listed = await call(manager, 'GET', '/v1/packing/sessions?limit=1');
     expect(listed.status).toBe(200);
     const items = listed.body.items as { orderId: string }[];
     expect(items.map((item) => item.orderId)).toEqual([theirs.id]);
+    const asSales = await call(sales, 'GET', '/v1/packing/sessions?limit=1');
+    expect((asSales.body.items as { orderId: string }[]).map((item) => item.orderId)).toEqual([
+      newest,
+    ]);
     const everyone = await call(admin, 'GET', '/v1/packing/sessions?limit=2');
     expect(
       (everyone.body.items as { orderId: string }[]).map((item) => item.orderId),

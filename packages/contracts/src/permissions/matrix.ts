@@ -401,7 +401,15 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'Catalog', scope: 'org' },
     { action: 'read', subject: 'CostedItem', scope: 'org' },
     { action: 'read', subject: 'Stock', scope: 'org' },
-    { action: ['read', 'create', 'update'], subject: 'Order', scope: 'own' },
+    /*
+     * D-725 (the owner, 2026-10-12): a sales agent opens any order of the brand, a colleague's
+     * with "Handled by …" over it. Acting stays `own` (with §6's unassigned queue, which
+     * `orderScopeSql` adds): a colleague's order is reached only by the desk's acts, each
+     * through the owner's acknowledgement (D-710), never by the hub's moves. No order view
+     * carries a cost field, and `serializeFor` still strips any (invariant 5).
+     */
+    { action: 'read', subject: 'Order', scope: 'org' },
+    { action: ['create', 'update'], subject: 'Order', scope: 'own' },
     { action: ['read', 'create', 'update'], subject: 'Customer', scope: 'own' },
     // §6 says "apply codes", not edit pages. `update LandingPage` would have let
     // a sales agent rewrite a brand's storefront; applying a promo code is an

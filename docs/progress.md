@@ -3139,4 +3139,13 @@ dry-run|commit --file <users.json>`.
   package's typecheck, lint of the touched packages, `check:migrations`, `check:schema`,
   `check-i18n`, and the contracts, domain assignment, i18n, CORS, module-boundaries and
   console workflow unit tests. The full verify and the stack specs are the integrator's.
+- **Follow-up a, colleagues' orders (D-725, the owner's answer to D-724 (3)):** a sales agent
+  opens any order of the brand under "Handled by …" (`read Order` at `org`); every desk act on a
+  colleague's order answers with the owner's gate (409 `ORDER_HANDLED_BY_OTHER`, then through
+  with the acknowledgement and the owner told), a hand-over with 403, and the hub's moves stay
+  theirs alone (not offered, 404). The desk's and the hub's queues list the orders the caller
+  works on; Orders → List with "Every agent" is the all-orders view. Buyers stay "customers of
+  own orders", and the website's online-payments list now asks org-wide `read Customer` so its
+  audience is unchanged. No cost field on any of it. Tests: the contracts' permission suite,
+  `workflow`, `orders`, `desk`, `inbox`, `pack-station`, `packing` and `buying` e2e, all green.
 - **New dependencies:** none.

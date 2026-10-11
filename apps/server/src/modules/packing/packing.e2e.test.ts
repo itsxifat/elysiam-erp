@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   ORG_A,
   PASSWORD,
+  createBranch,
   startHttpHarness,
   type HttpHarness,
   type RoleClient,
@@ -287,8 +288,9 @@ describe('a scanner phone (check 5)', () => {
   it('keeps a scanner to its person’s own order scope', async () => {
     const signedIn = await post('/v1/scanner/sign-in', { email: sales.email, password: PASSWORD });
     expect(signedIn.status).toBe(200);
-    // The order is assigned to nobody and was made by the admin: a sales agent's own scope
-    // reaches unassigned orders (the queue), so it is found; one assigned elsewhere is not.
+    // The order was made by the admin and is held by them. Since D-725 a sales agent reads
+    // every order of the brand, so their scanner finds it; a branch manager kept to one branch
+    // does not find a desk order, which has no branch: the scanner reads as its person does.
     await withSystem(
       (tx) =>
         tx.execute(
@@ -296,7 +298,17 @@ describe('a scanner phone (check 5)', () => {
         ),
       { orgId: ORG_A },
     );
-    expect((await lookup(signedIn.body.token as string, orderNo)).body).toEqual({
+    expect((await lookup(signedIn.body.token as string, orderNo)).body).toMatchObject({
+      found: true,
+    });
+    const branch = await createBranch(ORG_A, `PK${String(Date.now()).slice(-6)}`);
+    const manager = await harness.asRole('branch_manager', ORG_A, { branchIds: [branch] });
+    const managerIn = await post('/v1/scanner/sign-in', {
+      email: manager.email,
+      password: PASSWORD,
+    });
+    expect(managerIn.status).toBe(200);
+    expect((await lookup(managerIn.body.token as string, orderNo)).body).toEqual({
       found: false,
       code: orderNo,
     });

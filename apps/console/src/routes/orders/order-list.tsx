@@ -56,9 +56,10 @@ import { DateRangePicker } from '../../ui/date-picker.js';
  * zone), with bulk confirm, bulk pack and hand-over (D-393) and bulk print.
  *
  * The filters are in the URL (M05), so "yesterday's unconfirmed WhatsApp orders" is a link.
- * The list is §6-scoped by the server — a sales agent's "every agent" is their own orders
- * and the unassigned queue, because that is what the query returns to them, not because
- * this screen hides anything.
+ * The list is §6-scoped by the server. Since D-725 a sales agent's "every agent" is every
+ * order of the brand (the "all orders" view; a colleague's opens under "Handled by …"), while
+ * the desk's tabs and the hub's stay their own and the unassigned. Bulk confirm on a colleague's
+ * order is refused by its owner's gate, and the hub's moves on it are not theirs.
  *
  * Selection is per page and lives in component state: it is a gesture, not a view, and a
  * shared link that arrived with forty orders pre-selected would be a trap.

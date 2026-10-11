@@ -43572,7 +43572,7 @@
         "operationId": "getV1StorefrontPaymentsSessions",
         "summary": "GET /v1/storefront/payments/sessions",
         "tags": ["storefront"],
-        "x-ability": "read:Order",
+        "x-ability": "read:Customer",
         "responses": {
           "200": {
             "description": "Success.",

@@ -289,9 +289,21 @@ describe('scope is enforced, not merely recorded', () => {
   it('limits `own` to rows the user created or was assigned', () => {
     const ability = abilityFor(['sales']);
 
-    expect(ability.can('read', tag('Order', { createdBy: 'usr_1' }))).toBe(true);
-    expect(ability.can('read', tag('Order', { assignedTo: 'usr_1' }))).toBe(true);
-    expect(ability.can('read', tag('Order', { createdBy: 'usr_2' }))).toBe(false);
+    // `update`: since D-725 a sales agent reads every order, and acts on their own.
+    expect(ability.can('update', tag('Order', { createdBy: 'usr_1' }))).toBe(true);
+    expect(ability.can('update', tag('Order', { assignedTo: 'usr_1' }))).toBe(true);
+    expect(ability.can('update', tag('Order', { createdBy: 'usr_2' }))).toBe(false);
+  });
+
+  it('lets a sales agent read a colleague’s order and act only on their own (D-725)', () => {
+    const ability = abilityFor(['sales']);
+    const colleagues = tag('Order', { createdBy: 'usr_2', assignedTo: 'usr_2' });
+
+    expect(ability.can('read', colleagues)).toBe(true);
+    expect(ability.can('update', colleagues)).toBe(false);
+    expect(ability.can('create', colleagues)).toBe(false);
+    // A reseller holds `read Order` at `own` and gains nothing from it.
+    expect(abilityFor(['reseller']).can('read', colleagues)).toBe(false);
   });
 
   it('does not express `own` as a $or, because CASL silently denies those', () => {
@@ -305,7 +317,7 @@ describe('scope is enforced, not merely recorded', () => {
 
     expect(naive.can('read', tag('Order', { createdBy: 'usr_1' }))).toBe(false);
     // ...whereas ours, built as separate rules, allows it.
-    expect(abilityFor(['sales']).can('read', tag('Order', { createdBy: 'usr_1' }))).toBe(true);
+    expect(abilityFor(['sales']).can('update', tag('Order', { createdBy: 'usr_1' }))).toBe(true);
   });
 
   it('limits `branch` to the branches in scope', () => {
@@ -332,9 +344,10 @@ describe('scope is enforced, not merely recorded', () => {
   });
 
   it('unions the scopes of several roles rather than taking the first', () => {
-    expect(effectiveScope(['sales'], 'read', 'Order')).toBe('own');
-    expect(effectiveScope(['sales', 'branch_manager'], 'read', 'Order')).toBe('branch');
-    expect(effectiveScope(['sales', 'org_admin'], 'read', 'Order')).toBe('org');
+    expect(effectiveScope(['sales'], 'update', 'Order')).toBe('own');
+    expect(effectiveScope(['sales', 'branch_manager'], 'update', 'Order')).toBe('branch');
+    expect(effectiveScope(['sales', 'org_admin'], 'update', 'Order')).toBe('org');
+    expect(effectiveScope(['sales'], 'read', 'Order')).toBe('org');
   });
 });
 
@@ -358,7 +371,7 @@ describe('scopeFilterFor: the list-query half of scope', () => {
       scopeFilterFor({ ...base, roles: ['branch_manager'] }, 'read', 'ApprovalRequest'),
     ).toEqual({ kind: 'some', anyOf: [{ field: 'branchId', in: ['branch-a'] }] });
 
-    const own = scopeFilterFor({ ...base, roles: ['sales'] }, 'read', 'Order');
+    const own = scopeFilterFor({ ...base, roles: ['sales'] }, 'update', 'Order');
     expect(own).toEqual({
       kind: 'some',
       anyOf: [
@@ -372,7 +385,11 @@ describe('scopeFilterFor: the list-query half of scope', () => {
     // `effectiveScope` says "branch" for sales + branch_manager. A branch filter
     // alone would hide the agent's own orders in other branches; this keeps
     // both halves.
-    const filter = scopeFilterFor({ ...base, roles: ['sales', 'branch_manager'] }, 'read', 'Order');
+    const filter = scopeFilterFor(
+      { ...base, roles: ['sales', 'branch_manager'] },
+      'update',
+      'Order',
+    );
     expect(rowInScope(filter, { createdBy: 'usr_1', branchId: 'branch-z' })).toBe(true);
     expect(rowInScope(filter, { createdBy: 'usr_2', branchId: 'branch-a' })).toBe(true);
     expect(rowInScope(filter, { createdBy: 'usr_2', branchId: 'branch-z' })).toBe(false);

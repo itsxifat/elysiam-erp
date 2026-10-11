@@ -1019,7 +1019,12 @@ describe('SSLCommerz (check 3, D-525, D-526)', () => {
     const placed = await checkout([{ skuId: sku(0), qty: 1 }], priced.body.quote.total.poisha);
     expect(placed.status, placed.raw).toBe(201);
     const orderId = await orderIdOf(placed.body.order.orderNo);
-    const hidden = await sales.client.request('GET', `/v1/storefront/orders/${orderId}`);
+    // The card reads as the order does: since D-725 a sales agent opens every order, so this one
+    // too; a reseller, whose orders are their own, does not.
+    const seen = await sales.client.request('GET', `/v1/storefront/orders/${orderId}`);
+    expect(seen.statusCode, seen.body).toBe(200);
+    const reseller = await harness.asRole('reseller', ORG_A);
+    const hidden = await reseller.client.request('GET', `/v1/storefront/orders/${orderId}`);
     expect(hidden.statusCode).toBe(404);
     const shown = await admin.client.request('GET', `/v1/storefront/orders/${orderId}`);
     expect(shown.statusCode, shown.body).toBe(200);
