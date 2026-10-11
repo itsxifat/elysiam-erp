@@ -282,11 +282,20 @@ test('check 5: the hub prints, packs and hands over at its location; the desk se
 
   // The hub's location on the packer's desk profile, from the Staff screen.
   await admin.goto('/users');
+  // The order's own stock location is the packer's hub.
+  const placed = await api<{ locationId: string }>(admin, 'GET', `/v1/orders/${order.id}`);
+  const places = await api<{ items: { id: string; name: string }[] }>(
+    admin,
+    'GET',
+    '/v1/inventory/locations',
+  );
+  const hubName = places.items.find((place) => place.id === placed.locationId)?.name ?? '';
+  expect(hubName).not.toBe('');
   await admin.getByRole('button', { name: 'Manage: E2E packer agent' }).click();
   const section = admin.getByTestId('desk-profile');
   await expect(section).toBeVisible();
   await section.getByRole('combobox', { name: 'Hub location' }).click();
-  await admin.getByRole('option').filter({ hasNotText: 'No hub' }).first().click();
+  await admin.getByRole('option', { name: hubName, exact: true }).click();
   await section.getByRole('button', { name: 'Save' }).click();
   await expect(section.getByRole('status')).toHaveText('Saved.');
   await noBlockingViolations(admin, 'staff-desk-profile');
@@ -299,9 +308,10 @@ test('check 5: the hub prints, packs and hands over at its location; the desk se
   await expect(row).toBeVisible();
   await bothThemes(packer, 'hub-to-print');
   await row.getByRole('checkbox').check();
-  const popup = packer.waitForEvent('popup');
+  // The slips open in their own tab (a `noopener` window, so the context's page event).
+  const slips = packer.context().waitForEvent('page');
   await packer.getByTestId('print-slips').click();
-  await (await popup).close();
+  await (await slips).close();
 
   await packer.getByTestId('hub-tab-hub_packing').click();
   await expect(
