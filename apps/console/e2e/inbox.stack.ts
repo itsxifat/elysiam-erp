@@ -328,7 +328,7 @@ test('Fraud shows red in the inbox and on the order desk for that phone', async 
   const phone = `+${WA_ID}`;
   await page.getByRole('button', { name: `Save ${shown(phone)}` }).click();
   await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
-  await page.getByRole('combobox', { name: 'Stage' }).click();
+  await page.getByRole('combobox', { name: 'Stage', exact: true }).click();
   await page.getByRole('option', { name: 'Fraud' }).click();
   await expect(
     page.getByText('Marked as fraud. Check before taking an order or sending anything.'),

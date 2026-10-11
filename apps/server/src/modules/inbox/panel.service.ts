@@ -263,14 +263,29 @@ export class ContactPanelService {
             ? buyer
             : null;
         await repo.setContactPhone(tx, context.orgId, contact.id, phone, customerId);
+        // A buyer who has ordered makes the contact a Customer now, not at their next order
+        // (D-738), so the list's stage filter and the thread agree with the panel.
+        const ordered =
+          customerId === null
+            ? false
+            : ((await this.orders.customerPanel(tx, context.orgId, customerId, 0, context))
+                ?.orders ?? 0) > 0;
+        const stage = reconcileStage(contact.stage, { hasOrdered: ordered });
+        if (stage !== contact.stage) {
+          await repo.setContactStage(tx, context.orgId, contact.id, stage, 'system');
+        }
         await this.conversations.recordWrite(tx, context, request, {
           action: 'contact.phone',
           conversationId,
           ownership,
           entityType: 'inbox_contact',
           entityId: contact.id,
-          before: { phone: contact.phone_e164, customerId: contact.customer_id },
-          after: { phone, customerId },
+          before: {
+            phone: contact.phone_e164,
+            customerId: contact.customer_id,
+            stage: contact.stage,
+          },
+          after: { phone, customerId, stage },
         });
         return { phone, customerId };
       }),

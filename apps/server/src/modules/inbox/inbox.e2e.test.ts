@@ -840,6 +840,11 @@ describe('check 3: phones in the chat, the matched customer, and Customer on an 
     });
     expect(after.customer.recentOrders).toEqual([expect.objectContaining({ status: 'delivered' })]);
     expect(after.contact.stage).toBe('customer');
+    // Stored, not only shown: the list and the thread say Customer too.
+    const listed = json<{ conversation: { contact: { stage: string } } }>(
+      await salesA.client.request('GET', `/v1/inbox/conversations/${id}`),
+    );
+    expect(listed.conversation.contact.stage).toBe('customer');
   });
 
   it('a contact becomes Customer when an order is placed from the chat; Fraud stays and warns the desk', async () => {
