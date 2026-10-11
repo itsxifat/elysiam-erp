@@ -109,22 +109,82 @@ MOTHER_RELEASE=<sha> docker compose -p elysium-mother -f infra/mother/docker-com
 It prints a one-time link. The owner sets a password and enrols two-step sign-in (required
 for everyone, D-487), then invites the others from **People**.
 
-## 5. Adding a brand
+## 5. Brands: add, re-point, re-key (on the server only)
 
-1. In the console, **Brands → Add**: the slug (must equal the brand's `ERP_BRAND_SLUG`), its
-   name, its admin URL (`https://erp.<brand domain>`) and the read connection:
+Adding a brand, changing how the mother reaches it and making or replacing its owner sign-in
+key are done **only here, on the mother's server**, with the CLI (D-690, D-700). The console
+has no button for any of them and the API no route: a brand's database password is never
+typed into a browser, and a stolen session cannot point the mother elsewhere or swap a key.
+In the console, **Brands** can still rename a brand, change its staff console address, stop
+reading it, test its connection and read it again.
 
-   ```
-   postgres://erp_analytics:<the brand's BRAND_DB_ANALYTICS_PASSWORD>@tunnel:<listen>/erp
-   ```
+Every command runs in the `release` container (the tunnel must be up for `test`):
 
-   The registry refuses any user but `erp_analytics`. **Test connection** must answer with the
-   brand's org and version.
+```sh
+cd ~/mother/src/<sha>
+DC() {
+  MOTHER_RELEASE=<sha> MOTHER_TUNNEL_DIR=$HOME/mother/tunnel docker compose \
+    -p elysium-mother -f infra/mother/docker-compose.yml \
+    --env-file ~/mother/.env.mother "$@"
+}
+```
 
-2. **Make the owner-link key.** The public key is shown once: paste it into the brand's
-   `.env.brand` as `OWNER_LINK_PUBLIC_KEY` and redeploy that brand. "Open <brand> ERP" then
-   signs the owner in there. A staging or restored copy of a brand needs its own key pair.
-3. The worker pulls the brand within 10 minutes (and nightly in full); the overview shows it.
+The read connection is always the brand's `erp_analytics` role through the tunnel:
+
+```
+postgres://erp_analytics:<the brand's BRAND_DB_ANALYTICS_PASSWORD>@tunnel:<listen>/erp
+```
+
+Pass it in `MOTHER_BRAND_READ_URL`, read from the brand's `.env.brand` on the server, never
+typed on a command line or pasted into a chat; the CLI prints only its fingerprint:
+
+```sh
+pw=$(grep '^BRAND_DB_ANALYTICS_PASSWORD=' ~/erp-brands/brands/<slug>/.env.brand | cut -d= -f2-)
+export MOTHER_BRAND_READ_URL="postgres://erp_analytics:${pw}@tunnel:<listen>/erp"
+```
+
+- **List the brands:** `DC run --rm --no-deps release node dist/main.cli.js brands list`
+  (slug, name, read or switched off, admin URL, connection and key fingerprints, last read,
+  last error).
+- **Add a brand** (the slug must equal the brand's `ERP_BRAND_SLUG`; the admin URL is
+  `https://erp.<brand domain>`):
+
+  ```sh
+  DC run --rm --no-deps -e MOTHER_BRAND_READ_URL release node dist/main.cli.js \
+    brands add --slug <slug> --name "<name>" --admin-url <url> </dev/null
+  ```
+
+  It refuses any user but `erp_analytics`, makes the owner sign-in key at once, prints the
+  `OWNER_LINK_PUBLIC_KEY=` line and then the connection test, such as
+  `Connection test: ok (version 139 of 139).` Put the line in the brand's `.env.brand` and
+  redeploy that brand: "Open <brand> ERP" then signs the owner in there. A staging or
+  restored copy of a brand needs its own key.
+
+- **Change a brand's connection** (a new password, a new tunnel port):
+
+  ```sh
+  DC run --rm --no-deps -e MOTHER_BRAND_READ_URL release node dist/main.cli.js \
+    brands set-connection --slug <slug> </dev/null
+  ```
+
+  It prints the new fingerprint and the connection test. The next pull uses it.
+
+- **Make or replace a brand's owner sign-in key:**
+
+  ```sh
+  DC run --rm --no-deps release node dist/main.cli.js brands rotate-key --slug <slug> </dev/null
+  ```
+
+  Put the printed `OWNER_LINK_PUBLIC_KEY=` line in the brand's `.env.brand` (replacing the old
+  one) and redeploy the brand. Until then, "Open <brand> ERP" is refused there.
+
+- **Test a connection:** `… brands test --slug <slug>` prints the same result code as the
+  console's **Test connection** (see §9).
+
+Then `unset MOTHER_BRAND_READ_URL pw`. Every command is audited as `system:operator`
+(`brand.added`, `brand.connection_changed`, `brand.owner_link_key.created` or `.rotated`,
+`brand.connection_tested`). The worker pulls a new brand within 10 minutes (and nightly in
+full); the overview shows it.
 
 ## 6. Every release
 
@@ -134,8 +194,14 @@ for everyone, D-487), then invites the others from **People**.
 
 ## 7. Owners and the break-glass reset
 
-- An owner who lost their authenticator: another owner asks for the reset in **People**, and a
-  third owner decides it (D-488).
+- Each owner manages their own sign-in under **My account** (D-701 to D-705): name, password,
+  moving two-step sign-in to a new phone, new recovery codes, and signing out other devices.
+  Every change to how they sign in asks for the password and a code held now (the app's, or a
+  recovery code). Two-step sign-in cannot be turned off. An owner who lost their phone but
+  kept recovery codes signs in with one, moves to the new phone with another, and ticks "Also
+  sign out my other devices".
+- An owner who lost their authenticator and their recovery codes: another owner asks for the
+  reset in **People**, and a third owner decides it (D-488).
 - With fewer than three owners, or none able to sign in, on the mother server:
 
   ```sh
@@ -160,7 +226,7 @@ for everyone, D-487), then invites the others from **People**.
 | ------------------- | ------------------------------------------ | ------------------------------------------------------------------------ |
 | `unreachable`       | The tunnel or the brand's Postgres is down | `docker logs elysium-mother-tunnel-1`; the brand's port and `permitopen` |
 | `timeout`           | The brand answered too slowly              | The brands server's load; the next pull retries                          |
-| `auth_failed`       | Wrong `erp_analytics` password             | The brand's `BRAND_DB_ANALYTICS_PASSWORD`; re-enter the connection       |
+| `auth_failed`       | Wrong `erp_analytics` password             | The brand's `BRAND_DB_ANALYTICS_PASSWORD`; `brands set-connection` (§5)  |
 | `database_missing`  | No database `erp` at that address          | The connection's database name and listen port                           |
 | `permission_denied` | The brand lacks the reporting grants       | Deploy the brand from the mother's commit (migration 0131)               |
 | `version_mismatch`  | The brand and the mother differ in commit  | Deploy both from one commit, brands first                                |

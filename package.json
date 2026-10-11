@@ -52,6 +52,7 @@
     "mother:db:generate": "pnpm --filter @elysium/mother-server run db:generate",
     "mother:bootstrap": "pnpm --filter @elysium/mother-server run mother:bootstrap",
     "mother:people": "pnpm --filter @elysium/mother-server run mother:people",
+    "mother:brands": "pnpm --filter @elysium/mother-server run mother:brands",
     "mother:dev": "turbo run dev --filter=@elysium/mother-server --filter=@elysium/mother-console"
   },
   "devDependencies": {
