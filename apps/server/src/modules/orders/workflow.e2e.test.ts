@@ -1109,6 +1109,60 @@ describe('D-725: a colleague’s order, read by any agent and worked only throug
     );
     expect(own.transitions.map((row) => row.trigger)).toContain('pack');
   }, 120_000);
+
+  it('widens nothing for a person holding several roles but by what sales reads (the ledger audit)', async () => {
+    const suffix = String(Date.now()).slice(-5);
+    const north = await createBranch(ORG_A, `MRN${suffix}`);
+    const south = await createBranch(ORG_A, `MRS${suffix}`);
+    const southOrder = async (assignedTo: string | null) =>
+      (
+        await seedOrder(ORG_A, {
+          status: 'pending',
+          customerId: buyer,
+          locationId: location,
+          branchId: south,
+          lines: [
+            { skuId, skuCode, productName: 'Workflow product', qty: 1, unitPricePoisha: 150_000n },
+          ],
+          ...(assignedTo === null ? {} : { assignedTo }),
+          createdBy: admin.userId,
+        })
+      ).id;
+
+    // A North branch manager who is also accounts reads every order (accounts) and acts on
+    // North's: a South order nobody holds is not theirs to cancel, gate or no gate.
+    const managerAccounts = await harness.asRole(['branch_manager', 'accounts'], ORG_A, {
+      branchIds: [north],
+    });
+    const queued = await southOrder(null);
+    expect((await managerAccounts.client.request('GET', `/v1/orders/${queued}`)).statusCode).toBe(
+      200,
+    );
+    const cancelled = await managerAccounts.client.request('POST', `/v1/orders/${queued}/cancel`, {
+      body: { reason: 'Not this branch' },
+      headers: ACK,
+    });
+    expect(cancelled.statusCode).toBe(404);
+    expect((await detail(queued)).status).toBe('pending');
+
+    // A sales agent who is also North's branch manager reaches Rahim's South order through what
+    // sales reads: the owner's gate answers a desk act, and they may not move it as a supervisor.
+    const salesManager = await harness.asRole(['sales', 'branch_manager'], ORG_A, {
+      branchIds: [north],
+    });
+    const held = await southOrder(rahim.userId);
+    const gated = await salesManager.client.request('POST', `/v1/orders/${held}/calls`, {
+      body: { outcome: 'no_answer' },
+    });
+    expect(gated.statusCode).toBe(409);
+    expect(codeOf(gated)).toBe('ORDER_HANDLED_BY_OTHER');
+    const moved = await salesManager.client.request('POST', `/v1/orders/${held}/assign`, {
+      body: { assignedTo: salesManager.userId },
+    });
+    expect(moved.statusCode).toBe(403);
+    expect(codeOf(moved)).toBe('ORDER_ASSIGN_NOT_ALLOWED');
+    expect((await detail(held)).assignedTo).toBe(rahim.userId);
+  }, 120_000);
 });
 
 // --- D-726: a branch manager's team board ---------------------------------------------------

@@ -1437,11 +1437,24 @@ export class OrdersService {
         // D-725: a sales agent reaches a colleague's order here too, so a refusal names the owner.
         const order = await this.lockReadable(tx, context, request, id);
         const previous = order.assigned_to;
+        /*
+         * A supervisor reassigns only orders in their own scope (D-712): one a sales agent who is
+         * also a branch manager reaches only through sales' reading (D-725) is not theirs to
+         * move, so there they are judged as anyone else.
+         */
+        const supervising =
+          isSupervisor(context.roles, context.isSuperAdmin) &&
+          (await repo.orderByIdInScope(
+            tx,
+            context.orgId,
+            order.id,
+            orderScopeSql(context, request),
+          )) !== undefined;
         const decision = assignmentDecision({
           ownerId: previous,
           callerId: context.userId,
           target,
-          supervisor: isSupervisor(context.roles, context.isSuperAdmin),
+          supervisor: supervising,
         });
         if (!decision.allowed) {
           const owner =
@@ -1857,10 +1870,10 @@ export class OrdersService {
   }
 
   /**
-   * The order, locked in every order the caller may read (D-725): a sales agent reaches a
-   * colleague's order for a desk act or a hand-over, and the owner's gate or the assignment rule,
-   * not a 404, is what answers them. Only those two callers use it; everything else locks in the
-   * route's own scope.
+   * The order, locked in the route's scope widened by what sales reads (D-725, `deskActScopeSql`):
+   * a sales agent reaches a colleague's order for a desk act or a hand-over, and the owner's gate
+   * or the assignment rule, not a 404, is what answers them. Only those two callers use it;
+   * everything else locks in the route's own scope.
    */
   private async lockReadable(
     tx: Tx,

@@ -3171,4 +3171,13 @@ dry-run|commit --file <users.json>`.
 - **After all four:** the route matrix and the cost sweep e2e green on the final tree (the
   conversation-offer fixture gives each offer its own agent, as M41's does); plans M41 to M43
   carry the integration in their Status. `docs/build-status.md` does not count M41 to M43 yet.
+- **Ledger audit of the four follow-ups:** 1 critical, fixed: the desk acts widened by the
+  caller's whole read scope, so a branch manager who was also accounts or marketing could act
+  gate-free on any branch's unassigned order, and a sales agent who was also a branch manager
+  could reassign a colleague's order of another branch. Now only what the sales role reads widens,
+  for a sales holder, and a supervisor reassigns only orders in their own scope; a workflow e2e
+  test covers both (orders, desk and workflow e2e: 59 green). Warning, recorded in D-725 for the
+  owner: brand-wide reading includes the order lists, parcels, labels and packing sessions. Notes
+  kept: the team board filters its people in memory (fails closed); a withdrawn conversation offer
+  writes no audit row, as M41's order offers do not.
 - **New dependencies:** none.

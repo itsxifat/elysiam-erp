@@ -61,16 +61,28 @@ export function orderInActScope(context: RequestContext, row: ScopedRow): boolea
 }
 
 /**
- * The scope a desk act locks its order in (M41 D-710, D-725): the route's own, widened to every
- * order the caller may read. A sales agent therefore reaches a colleague's order with an edit,
- * a confirm, a hold, a cancel, an exchange, a call or an advance claim, and the owner's gate is
- * what stands in the way: `ORDER_HANDLED_BY_OTHER` until they acknowledge the owner, who is then
- * told. The hub's moves keep the route's scope (`orderScopeSql`): nobody packs or ships a
- * colleague's order from the sales desk. For every other role the read scope is the act scope,
- * so nothing widens.
+ * The scope a desk act locks its order in (M41 D-710, D-725): the route's own, widened by what
+ * the **sales** role reads, and only for a caller who holds sales. A sales agent therefore
+ * reaches a colleague's order with an edit, a confirm, a hold, a cancel, an exchange, a call or
+ * an advance claim, and the owner's gate is what stands in the way: `ORDER_HANDLED_BY_OTHER`
+ * until they acknowledge the owner, who is then told. An unassigned order needs no gate, and
+ * sales already acts on every one of those (§6's queue), so the widening reaches only orders
+ * somebody holds. The hub's moves keep the route's scope (`orderScopeSql`): nobody packs or
+ * ships a colleague's order from the sales desk.
+ *
+ * Not the caller's whole read scope: a person holding several roles (a branch manager who is
+ * also accounts or marketing, both `read Order` at `org`) would then act gate-free on any
+ * unassigned order of any branch (the ledger audit of D-725). Only sales' own read rule widens.
  */
 export function deskActScopeSql(context: ActiveContext, request: object): SQL {
-  return sql`(${orderScopeSql(context, request)} or ${orderReadScopeFor(context)})`;
+  const route = orderScopeSql(context, request);
+  if (!context.roles.includes('sales')) return route;
+  const salesRead = filterWhere(
+    scopeFilterFor({ ...context, roles: ['sales'] }, 'read', 'Order'),
+    COLUMNS,
+    'Order',
+  );
+  return sql`(${route} or ${salesRead})`;
 }
 
 /**

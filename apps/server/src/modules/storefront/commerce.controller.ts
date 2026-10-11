@@ -58,8 +58,9 @@ const limitSchema = z.object({ limit: z.coerce.number().int().min(1).max(200).de
  * agent's `own` reach cannot be applied to a list of website accounts or gateway sessions, so
  * it is refused rather than widened. The payments list asked `read Order` until D-725 gave sales
  * that at org scope for opening a colleague's order; reading orders one by one is not a ledger of
- * every shopper's online payments, so it asks the buyer's grant now, which leaves its audience
- * as it was.
+ * every shopper's online payments, so it asks the buyer's grant now. The console's audience is
+ * unchanged (org_admin and marketing, the roles that open Website → Payments); warehouse, which
+ * held `read Order` at org but never had the screen, no longer reaches the list.
  */
 function requireOrgWide(request: FastifyRequest, message: string): void {
   if (scopeOf(request).kind !== 'all') {
