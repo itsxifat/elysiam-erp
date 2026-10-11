@@ -219,7 +219,9 @@ test('an agent takes a conversation, saves the phone, sees the customer’s orde
   await expect(page.getByRole('link', { name: 'Inbox', exact: true }).first()).toBeVisible();
   await page.goto('/inbox');
   const list = page.getByRole('list', { name: 'Conversations' });
-  await expect(list.getByRole('button', { name: /Black kurti ache/ })).toBeVisible({ timeout: 30_000 });
+  await expect(list.getByRole('button', { name: /Black kurti ache/ })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(list.getByRole('button', { name: /Rumana Akter/ })).toBeVisible();
   await expect(list.getByRole('button', { name: /available in M/ })).toBeVisible();
   await bothThemes(page, 'b-inbox-list');
@@ -244,7 +246,9 @@ test('an agent takes a conversation, saves the phone, sees the customer’s orde
   await expect(thread.getByText('Ji, black kurti available in M.')).toBeVisible();
   await expect(thread.getByText('Sent', { exact: true })).toBeVisible({ timeout: 30_000 });
 
-  await page.getByLabel('What we talked about today').fill('Wants the black kurti in M; call after 6 pm.');
+  await page
+    .getByLabel('What we talked about today')
+    .fill('Wants the black kurti in M; call after 6 pm.');
   await page.getByRole('button', { name: 'Add note' }).click();
   await expect(page.getByText('Wants the black kurti in M; call after 6 pm.')).toBeVisible();
 
@@ -324,7 +328,9 @@ test('Fraud shows red in the inbox and on the order desk for that phone', async 
   await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
   await page.getByRole('combobox', { name: 'Stage' }).click();
   await page.getByRole('option', { name: 'Fraud' }).click();
-  await expect(page.getByText('Marked as fraud. Check before taking an order or sending anything.')).toBeVisible();
+  await expect(
+    page.getByText('Marked as fraud. Check before taking an order or sending anything.'),
+  ).toBeVisible();
   await bothThemes(page, 'h-fraud');
 
   await page.goto('/orders/new');
