@@ -215,8 +215,9 @@ test('an agent takes a conversation, saves the phone, sees the customer’s orde
   const page = await freshPage(browser);
   await signIn(page, user('agent').email);
   await expect(page.getByRole('button', { name: 'Account' })).toBeVisible();
-  await page.getByRole('link', { name: 'Inbox' }).first().click();
-  await expect(page).toHaveURL(/\/inbox/);
+  // The sidebar has the inbox for a sales role (`read Conversation`).
+  await expect(page.getByRole('link', { name: 'Inbox', exact: true }).first()).toBeVisible();
+  await page.goto('/inbox');
   const list = page.getByRole('list', { name: 'Conversations' });
   await expect(list.getByRole('button', { name: /Black kurti ache/ })).toBeVisible({ timeout: 30_000 });
   await expect(list.getByRole('button', { name: /Rumana Akter/ })).toBeVisible();

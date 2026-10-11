@@ -142,7 +142,7 @@ function Inbox() {
           {notice}
         </p>
       )}
-      <div className="grid overflow-hidden rounded-lg border border-border bg-card lg:h-[calc(100vh-13rem)] lg:min-h-[32rem] lg:grid-cols-[19rem_minmax(0,1fr)_21rem]">
+      <div className="grid overflow-hidden rounded-lg border border-border bg-card lg:h-[calc(100vh-13rem)] lg:grid-cols-4">
         <ConversationList
           filters={filters}
           selected={search.c ?? null}
@@ -153,7 +153,7 @@ function Inbox() {
           }
         />
         {search.c === undefined ? (
-          <div className="flex items-center justify-center border-t border-border p-8 lg:col-span-2 lg:border-t-0 lg:border-l">
+          <div className="flex items-center justify-center border-l border-border p-6 lg:col-span-3">
             <EmptyState
               icon={MessagesSquare}
               title={t('inbox.thread.pick')}
@@ -357,7 +357,6 @@ function ConversationRow({
           'motion-safe:duration-fast hover:bg-accent motion-safe:transition-colors',
           'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset',
           selected && 'bg-selected text-selected-foreground',
-          item.contact.stage === 'fraud' && 'border-l-2 border-l-destructive',
         )}
       >
         <span className="flex items-center gap-2">
@@ -422,18 +421,18 @@ function Conversation({ id, me }: { readonly id: string; readonly me: string | n
   if (thread.isPending) {
     return (
       <div
-        className="space-y-3 border-t border-border p-4 lg:col-span-2 lg:border-t-0 lg:border-l"
+        className="space-y-3 border-l border-border p-4 lg:col-span-3"
         aria-busy="true"
         aria-label={t('inbox.loading')}
       >
-        <Skeleton className="h-10 w-1/2" />
+        <Skeleton className="h-10 w-48" />
         <Skeleton className="h-64 w-full" />
       </div>
     );
   }
   if (thread.isError) {
     return (
-      <div className="border-t border-border p-4 lg:col-span-2 lg:border-t-0 lg:border-l">
+      <div className="border-l border-border p-4 lg:col-span-3">
         <ErrorState
           title={t('inbox.errorTitle')}
           detail={thread.error instanceof ApiError ? thread.error.message : t('inbox.errorDetail')}
@@ -526,7 +525,7 @@ function Thread({ view, me }: { readonly view: ThreadView; readonly me: string |
   return (
     <section
       aria-labelledby={`${ids}-name`}
-      className="flex min-h-[28rem] min-w-0 flex-col border-t border-border lg:min-h-0 lg:border-t-0 lg:border-l"
+      className="flex min-h-0 min-w-0 flex-col border-l border-border lg:col-span-2"
     >
       <header className="space-y-2 border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -639,7 +638,7 @@ function Thread({ view, me }: { readonly view: ThreadView; readonly me: string |
               disabled={!window.open || send.isPending}
               placeholder={t('inbox.thread.composePlaceholder')}
               aria-describedby={`${ids}-hint`}
-              className="min-h-10 flex-1 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
+              className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
             />
             <Button type="submit" disabled={!window.open || send.isPending || draft.trim() === ''}>
               <Send aria-hidden className="size-4" />
@@ -693,10 +692,10 @@ function Bubble({ message }: { readonly message: MessageView }) {
   const inbound = message.direction === 'inbound';
   const failure = message.error === null ? null : failureKey(message.error.code);
   return (
-    <li className={cn('flex', inbound ? 'justify-start' : 'justify-end')}>
+    <li className={cn('flex', !inbound && 'justify-end')}>
       <div
         className={cn(
-          'max-w-[80%] rounded-lg px-3 py-2 text-sm',
+          'max-w-md rounded-lg px-3 py-2 text-sm',
           inbound ? 'bg-muted text-foreground' : 'bg-selected text-selected-foreground',
         )}
       >

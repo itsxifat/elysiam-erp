@@ -65,7 +65,7 @@ export function ContactPanel({
   return (
     <aside
       aria-labelledby={`${ids}-title`}
-      className="min-h-0 overflow-y-auto border-t border-border lg:border-t-0 lg:border-l"
+      className="min-h-0 overflow-y-auto border-l border-border"
     >
       <h2 id={`${ids}-title`} className="sr-only">
         {t('inbox.panel.label')}
@@ -99,7 +99,7 @@ function Block({ title, children }: { readonly title: string; readonly children:
   const ids = useId();
   return (
     <section aria-labelledby={ids} className="space-y-2 border-b border-border px-4 py-3">
-      <h3 id={ids} className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <h3 id={ids} className="text-xs font-medium text-muted-foreground uppercase">
         {title}
       </h3>
       {children}
@@ -413,7 +413,7 @@ function CustomerBlock({ view }: { readonly view: PanelView }) {
                 <li key={order.id} className="flex items-center gap-2 text-sm">
                   <Link
                     to={ordersPath(`/orders/${order.id}`)}
-                    className="font-medium text-primary-text underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    className="font-medium tabular-nums underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >
                     {order.orderNo}
                   </Link>
@@ -460,7 +460,7 @@ function NotesBlock({ view, mayWrite, busy, run, id }: BlockProps) {
             rows={2}
             maxLength={2000}
             placeholder={t('inbox.panel.notePlaceholder')}
-            className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           />
           <Button type="submit" size="sm" variant="outline" disabled={busy || text.trim() === ''}>
             {t('inbox.panel.addNote')}
