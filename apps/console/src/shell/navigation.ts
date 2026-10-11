@@ -14,8 +14,8 @@ import {
   Landmark,
   LayoutDashboard,
   ListChecks,
+  Inbox,
   Megaphone,
-  MessagesSquare,
   Package,
   PackageCheck,
   PackagePlus,
@@ -138,7 +138,7 @@ export const NAVIGATION: readonly NavSection[] = [
       {
         to: '/inbox',
         labelKey: 'nav.inbox',
-        icon: MessagesSquare,
+        icon: Inbox,
         required: { action: 'read', subject: 'Conversation' },
       },
       {

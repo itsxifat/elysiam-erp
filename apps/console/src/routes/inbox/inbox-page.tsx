@@ -17,7 +17,7 @@ import {
   cn,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getRouteApi } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { AlertTriangle, ChevronDown, MessagesSquare, Paperclip, Send } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 
@@ -41,6 +41,7 @@ import {
   CHANNEL_KINDS,
   CONTACT_STAGES,
   failureKey,
+  inboxSearchSchema,
   stageTone,
   statusTone,
   type InboxSearch,
@@ -57,8 +58,6 @@ import { ContactPanel } from './panel.js';
  * queries it concerns and the server answers again through `serializeFor`; nothing from the
  * socket is shown as it arrived. A write on someone else's conversation asks first (D-737).
  */
-
-const route = getRouteApi('/inbox');
 
 const INBOX_EVENTS = [
   'inbox.message_received',
@@ -82,8 +81,12 @@ export function InboxPage() {
 
 function Inbox() {
   const t = useInboxT();
-  const search = route.useSearch();
-  const navigate = route.useNavigate();
+  // Parsed here rather than by the route (see `routes.tsx`); a hand-edited value falls back.
+  const raw: unknown = useSearch({ strict: false });
+  const search = inboxSearchSchema.parse(raw ?? {});
+  const routerNavigate = useNavigate();
+  const navigate = (next: { readonly search: (prev: InboxSearch) => InboxSearch }) =>
+    routerNavigate({ to: '.', search: next.search(search) as never });
   const queryClient = useQueryClient();
   const session = useSession();
   const me = session.context?.userId ?? null;
@@ -396,6 +399,11 @@ function Conversation({ id, me }: { readonly id: string; readonly me: string | n
   const thread = useQuery({
     queryKey: [...INBOX_KEY, 'thread', id],
     queryFn: () => getThread(id),
+    // While a reply is still sending, ask again now and then in case the socket is down.
+    refetchInterval: (query) =>
+      query.state.data?.messages.some((message) => message.status === 'queued') === true
+        ? 3_000
+        : false,
   });
 
   // The owner has read it once it is on their screen.

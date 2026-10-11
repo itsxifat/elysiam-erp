@@ -14,7 +14,7 @@ import {
   Select,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getRouteApi, Link } from '@tanstack/react-router';
+import { Link, useSearch } from '@tanstack/react-router';
 import { AlertTriangle, CheckCircle2, Keyboard, Trash2 } from 'lucide-react';
 import {
   useEffect,
@@ -117,8 +117,17 @@ interface Outcome {
   readonly message?: string;
 }
 
-/** `/orders/new?conversation=<id>`: the inbox chat an order is taken from (M42, D-742). */
-const deskRoute = getRouteApi('/orders/new');
+/**
+ * `/orders/new?conversation=<id>`: the inbox chat an order is taken from (M42, D-742). Read
+ * here, not by the route, so nothing about it is in the first download.
+ */
+function conversationIn(search: unknown): string | null {
+  const value = (search as { conversation?: unknown } | null)?.conversation;
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
+}
 
 function messageOf(error: unknown): string {
   return error instanceof ApiError || error instanceof Error ? error.message : String(error);
@@ -258,7 +267,7 @@ function Desk() {
   // --- from an inbox chat (M42, D-742) and the inbox's fraud warning (D-738) -----------------
   const tInbox = useInboxT();
   const mayInbox = ability.can('read', 'Conversation');
-  const conversationId = deskRoute.useSearch().conversation ?? null;
+  const conversationId = conversationIn(useSearch({ strict: false }));
   const draft = useQuery({
     queryKey: ['inbox', 'order-draft', conversationId],
     queryFn: () => getOrderDraft(conversationId ?? ''),

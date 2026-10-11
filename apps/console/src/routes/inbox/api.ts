@@ -4,7 +4,7 @@ import {
   type InboxContactStage,
 } from '@elysium/contracts';
 
-import { api } from '../../api.js';
+import { api, request } from '../../api.js';
 
 /**
  * The inbox's endpoints (M42), typed to what the server returns. A write that may land on
@@ -177,8 +177,19 @@ function query(params: Readonly<Record<string, string | undefined>>): string {
   return text === '' ? '' : `?${text}`;
 }
 
-const ack = (acknowledged: boolean) =>
-  acknowledged ? { [ACKNOWLEDGE_OWNER_HEADER]: '1' } : undefined;
+/** A write that may land on someone else's conversation: the header only once confirmed. */
+function send<T>(
+  method: 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  body: unknown,
+  acknowledged: boolean,
+): Promise<T> {
+  return request<T>(path, {
+    method,
+    ...(body === undefined ? {} : { body }),
+    ...(acknowledged ? { headers: { [ACKNOWLEDGE_OWNER_HEADER]: '1' } } : {}),
+  });
+}
 
 export const INBOX_KEY = ['inbox'] as const;
 
@@ -216,44 +227,39 @@ const at = (id: string, suffix: string) =>
 export type ConversationAction = 'take' | 'release' | 'close' | 'reopen';
 
 export const act = (id: string, action: ConversationAction, acknowledged: boolean) =>
-  api.send<unknown>('POST', at(id, `/${action}`), undefined, ack(acknowledged));
+  send<unknown>('POST', at(id, `/${action}`), undefined, acknowledged);
 export const markRead = (id: string) => api.post<unknown>(at(id, '/read'));
 export const handOver = (id: string, userId: string, acknowledged: boolean) =>
-  api.send<unknown>('POST', at(id, '/hand-over'), { userId }, ack(acknowledged));
+  send<unknown>('POST', at(id, '/hand-over'), { userId }, acknowledged);
 export const reply = (id: string, body: { id: string; text: string }, acknowledged: boolean) =>
-  api.send<{ id: string; status: OutboundStatus }>(
-    'POST',
-    at(id, '/messages'),
-    body,
-    ack(acknowledged),
-  );
+  send<{ id: string; status: OutboundStatus }>('POST', at(id, '/messages'), body, acknowledged);
 export const savePhone = (id: string, phone: string, acknowledged: boolean) =>
-  api.send<unknown>('PUT', at(id, '/contact/phone'), { phone }, ack(acknowledged));
+  send<unknown>('PUT', at(id, '/contact/phone'), { phone }, acknowledged);
 export const saveAddress = (
   id: string,
   address: { districtId: number; thanaId: number; area?: string; addressLine: string },
   acknowledged: boolean,
-) => api.send<unknown>('PUT', at(id, '/contact/address'), address, ack(acknowledged));
+) => send<unknown>('PUT', at(id, '/contact/address'), address, acknowledged);
 export const setStage = (
   id: string,
   stage: 'lead' | 'not_qualified' | 'fraud' | 'auto',
   acknowledged: boolean,
-) => api.send<unknown>('PUT', at(id, '/contact/stage'), { stage }, ack(acknowledged));
+) => send<unknown>('PUT', at(id, '/contact/stage'), { stage }, acknowledged);
 export const setTags = (id: string, tags: readonly string[], acknowledged: boolean) =>
-  api.send<unknown>('PUT', at(id, '/contact/tags'), { tags }, ack(acknowledged));
+  send<unknown>('PUT', at(id, '/contact/tags'), { tags }, acknowledged);
 export const addNote = (id: string, body: string, acknowledged: boolean) =>
-  api.send<unknown>('POST', at(id, '/notes'), { body }, ack(acknowledged));
+  send<unknown>('POST', at(id, '/notes'), { body }, acknowledged);
 export const addInterest = (
   id: string,
   interest: { productId: string; skuId?: string },
   acknowledged: boolean,
-) => api.send<unknown>('POST', at(id, '/interests'), interest, ack(acknowledged));
+) => send<unknown>('POST', at(id, '/interests'), interest, acknowledged);
 export const removeInterest = (id: string, interestId: string, acknowledged: boolean) =>
-  api.send<unknown>(
+  send<unknown>(
     'DELETE',
     at(id, `/interests/${encodeURIComponent(interestId)}`),
     undefined,
-    ack(acknowledged),
+    acknowledged,
   );
 
 /** The catalog's product search, for "Interested in" (`read Catalog`). */

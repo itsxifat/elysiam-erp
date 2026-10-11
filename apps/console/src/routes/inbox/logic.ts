@@ -1,5 +1,4 @@
 import { INBOX_CHANNEL_KINDS, INBOX_CONTACT_STAGES } from '@elysium/contracts';
-import { z } from 'zod';
 
 import type { ChannelKind, ContactStage, ConversationItem, MessageView } from './api.js';
 
@@ -7,20 +6,7 @@ import type { ChannelKind, ContactStage, ConversationItem, MessageView } from '.
  * The inbox screen's rules, pure so they are tested without a browser (M42).
  */
 
-/**
- * The list's filters and the open conversation, in the address bar so a filtered inbox is
- * shareable and Back works. A hand-edited value falls back to the default view.
- */
-export const inboxSearchSchema = z.object({
-  view: z.enum(['all', 'mine', 'unassigned']).catch('all').default('all'),
-  channel: z.enum(INBOX_CHANNEL_KINDS).optional().catch(undefined),
-  stage: z.enum(INBOX_CONTACT_STAGES).optional().catch(undefined),
-  unread: z.boolean().optional().catch(undefined),
-  closed: z.boolean().optional().catch(undefined),
-  q: z.string().max(64).optional().catch(undefined),
-  c: z.string().uuid().optional().catch(undefined),
-});
-export type InboxSearch = z.infer<typeof inboxSearchSchema>;
+export { inboxSearchSchema, type InboxSearch } from './search.js';
 
 /** Replace each `{name}` in a message with its value; an unknown name is left as it is. */
 export function fill(template: string, values: Readonly<Record<string, string>>): string {
@@ -103,9 +89,7 @@ export function statusTone(status: MessageView['status']): Tone {
 }
 
 /** The words for why one of our messages failed: ours, Meta's coded refusal, or Meta's. */
-export function failureKey(
-  code: string,
-):
+export function failureKey(code: string):
   | {
       readonly key:
         | 'inbox.error.window_closed'

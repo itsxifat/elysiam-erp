@@ -51,14 +51,18 @@ export class NetworkError extends Error {
   }
 }
 
-interface RequestOptions {
+export interface RequestOptions {
   readonly method?: string;
   readonly body?: unknown;
   /** Extra request headers, e.g. the inbox's `x-acknowledge-owner` (M42, D-737). */
   readonly headers?: Readonly<Record<string, string>>;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+/**
+ * One request. Exported for a caller that needs a header of its own (the inbox's
+ * acknowledgement of a conversation's owner, M42); everyone else uses `api` below.
+ */
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? 'GET';
   const headers: Record<string, string> = { ...options.headers };
 
@@ -121,18 +125,6 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PATCH', ...(body === undefined ? {} : { body }) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
-  /** Any method, with extra headers (the inbox's acknowledgement of a conversation's owner). */
-  send: <T>(
-    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
-    path: string,
-    body?: unknown,
-    headers?: Readonly<Record<string, string>>,
-  ) =>
-    request<T>(path, {
-      method,
-      ...(body === undefined ? {} : { body }),
-      ...(headers === undefined ? {} : { headers }),
-    }),
 };
 
 // --- shapes, mirroring what the server returns -----------------------------
