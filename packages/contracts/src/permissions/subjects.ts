@@ -136,6 +136,13 @@ export const SUBJECTS = [
    * a row in §6's grid, which predates the packing station.
    */
   'PackingVideo',
+  /**
+   * The brand's sign-in security (M40, D-692): which roles must use two-step sign-in. No
+   * membership role holds it, org_admin included: who must prove a second factor is the top
+   * power's call, so only a super admin reaches it, through `manage all`. Not a row in §6's
+   * grid; §6's 2FA list is this setting's default.
+   */
+  'SecurityPolicy',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];

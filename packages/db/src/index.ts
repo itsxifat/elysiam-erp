@@ -109,3 +109,13 @@ export {
   type SmsProvider,
 } from './auth/index.js';
 export { OWNER_SESSION_SECONDS } from './auth/owner-session.js';
+export {
+  loadTwoFactorPolicy,
+  newAuthenticatorSecret,
+  totpMatchesEncrypted,
+  twoFactorPolicyFor,
+  twoFactorStanding,
+  type AuthSecrets,
+  type PendingSecret,
+  type TwoFactorStanding,
+} from './auth/two-factor.js';

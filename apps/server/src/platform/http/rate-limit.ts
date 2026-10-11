@@ -64,6 +64,13 @@ export const CREDENTIAL_RULES: Readonly<Record<string, RateLimitRule>> = {
   // per address and per email.
   '/v1/scanner/sign-in': { windowSeconds: 600, perIp: 8, perIdentifier: 8 },
   '/api/admin/scanner/login': { windowSeconds: 600, perIp: 8, perIdentifier: 8 },
+  // M40 (D-693, D-694): My account's checks of a password or a code. A session is needed for
+  // each, so these are per address; a wrong code also counts toward the person's own lockout.
+  '/api/auth/change-password': { windowSeconds: 60, perIp: 10 },
+  '/api/auth/two-factor/generate-backup-codes': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/replace': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/replace/confirm': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/turn-off': { windowSeconds: 60, perIp: 10 },
 };
 
 /**

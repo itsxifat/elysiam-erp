@@ -186,6 +186,13 @@ export const twoFactors = iam.table(
     verified: boolean('verified').notNull().default(false),
     failedVerificationCount: integer('failed_verification_count').notNull().default(0),
     lockedUntil: timestamp('locked_until', { withTimezone: true, mode: 'date' }),
+    /**
+     * When this factor was set up (M40, D-698): stamped by the database
+     * (`iam.two_factors_stamp_enabled_at`, migration 0141) when the factor becomes verified
+     * or its secret is replaced while verified. Better Auth knows nothing of it. Null for a
+     * factor set up before the column existed, or one still waiting for its first code.
+     */
+    enabledAt: timestamp('enabled_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [index('two_factors_user_idx').on(table.userId)],
 );

@@ -68,6 +68,7 @@ import {
   prepareLoanFixtures,
 } from '../../modules/loans/loans.route-fixtures.js';
 import { USERS_ROUTE_FIXTURES } from '../../modules/iam/users.route-fixtures.js';
+import { ACCOUNT_ROUTE_FIXTURES } from '../../modules/iam/account.route-fixtures.js';
 import {
   prepareStorefrontFixtures,
   STOREFRONT_ROUTE_FIXTURES,
@@ -292,6 +293,8 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...ANALYTICS_ROUTE_FIXTURES,
   ...LOANS_ROUTE_FIXTURES,
   ...USERS_ROUTE_FIXTURES,
+  // M40: My account, Settings → Security, and the Staff screen's sign-out and turn-off.
+  ...ACCOUNT_ROUTE_FIXTURES,
   ...STOREFRONT_ROUTE_FIXTURES,
   // M39a: delete and archive everywhere (D-621 to D-634).
   ...DELETE_ROUTE_FIXTURES,

@@ -2,22 +2,22 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { phoneNumber, twoFactor } from 'better-auth/plugins';
-import { and, eq, sql } from 'drizzle-orm';
+import {
+  DEFAULT_TWO_FACTOR_POLICY,
+  DEFAULT_TWO_FACTOR_REQUIRED_ROLES,
+  requiresTwoFactorUnder,
+  type TwoFactorPolicy,
+} from '@elysium/domain/iam';
+import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 import { currentDatabaseConfig, withGlobal, withUser } from '../client.js';
 import { requireUrl } from '../config.js';
 import * as schema from '../schema/index.js';
-import {
-  accounts,
-  memberships,
-  sessions,
-  twoFactors,
-  users,
-  verifications,
-} from '../schema/iam/index.js';
+import { accounts, sessions, twoFactors, users, verifications } from '../schema/iam/index.js';
 import { ownerSession } from './owner-session.js';
+import { twoFactorStanding } from './two-factor.js';
 
 /**
  * Authentication (architecture §6, §25).
@@ -30,8 +30,9 @@ import { ownerSession } from './owner-session.js';
  *
  * Two things here are ours rather than the library's, and both matter:
  *
- * - **2FA is required, not offered**, for super_admin, org_admin, accounts and
- *   investor (§6). Enforced as an enrolment wall on the request path
+ * - **2FA is required, not offered**, for super admins and for the roles each brand's
+ *   security setting names (§6, M40 D-691; org_admin, accounts and investor until a super
+ *   admin changes it). Enforced as an enrolment wall on the request path
  *   (`mustEnrolTwoFactor`), not at session issue: enrolling needs a session, so
  *   refusing the session would leave a privileged user with no way in at all.
  * - **Rate limits are per identifier as well as per IP** (§25). Per-IP alone is
@@ -40,8 +41,12 @@ import { ownerSession } from './owner-session.js';
  *   attacker would lock out a whole network.
  */
 
-/** Roles that cannot hold a session without a second factor (§6). */
-export const TWO_FACTOR_REQUIRED_ROLES = ['org_admin', 'accounts', 'investor'] as const;
+/**
+ * The roles that require a second factor in a brand whose super admin has chosen nothing
+ * (§6). Each brand's own choice lives in its security setting (M40, D-691) and is read by
+ * `twoFactorStanding`; this is only the default it falls back to.
+ */
+export const TWO_FACTOR_REQUIRED_ROLES = DEFAULT_TWO_FACTOR_REQUIRED_ROLES;
 
 export interface SmsProvider {
   /** Bound to a recorder until a verified BD gateway carries OTPs too (D-012, D-212). */
@@ -231,10 +236,15 @@ export function createAuth(options: AuthOptions) {
     // The phone-number plugin's own reset pair is closed for the same reason (the ledger
     // audit's W2): an OTP reset with no audit, no limits and no second admin, and the day
     // SMS is wired it would let anyone with a phone take over the account behind it.
+    // `/two-factor/disable` too (M40, D-694): it switched the factor off on the password
+    // alone, whatever the brand's policy said. Turning it off is `POST
+    // /v1/account/two-factor/turn-off` now, which asks for a current code as well and refuses
+    // while any role requires it.
     disabledPaths: [
       '/request-password-reset',
       '/phone-number/request-password-reset',
       '/phone-number/reset-password',
+      '/two-factor/disable',
     ],
 
     /**
@@ -381,12 +391,14 @@ export function verificationText(brandName: string, code: string): string {
  * Must this user enrol a second factor before they may act? (§6)
  *
  * The enrolment wall. Read per request rather than cached on the session,
- * because the answer changes the moment a role is granted — and the direction
- * that matters (unprivileged becoming privileged) must take effect at once, not
- * at next sign-in.
+ * because the answer changes the moment a role is granted or a brand's security
+ * setting starts requiring a role (M40, D-691) — and the direction that matters
+ * (unprivileged becoming privileged) must take effect at once, not at next sign-in.
  *
- * Short-circuits on `two_factor_enabled`, so the membership read only happens
- * for users who have not enrolled — which is exactly the set being walled.
+ * Short-circuits on `two_factor_enabled`, so the membership and policy reads only
+ * happen for users who have not enrolled — which is exactly the set being walled.
+ * An unknown user id is walled: not "no second factor needed" but a caller bug,
+ * and it fails closed.
  */
 export async function mustEnrolTwoFactor(userId: string): Promise<boolean> {
   const [user] = await withGlobal(async (tx) =>
@@ -394,32 +406,13 @@ export async function mustEnrolTwoFactor(userId: string): Promise<boolean> {
       sql`select two_factor_enabled, is_super_admin from iam.users where id = ${userId}`,
     ),
   );
-
-  // No such user is not "no second factor needed" — it is a caller bug. Fail
-  // closed rather than wave an unknown id through.
   if (user === undefined) return true;
   if (user.two_factor_enabled) return false;
   if (user.is_super_admin) return true;
 
-  // Through `withUser`, not this module's own connection. `iam.memberships` is
-  // RLS-protected, and a connection with no context sees zero rows — which
-  // would read as "not privileged" for everyone. A security control that fails
-  // open is worse than none, because it looks like protection.
-  //
-  // The self policy (D-050) is the right lens: "does this user hold a
-  // privileged role anywhere" is a question about their own memberships,
-  // across orgs, before any org is chosen.
-  const held = await withUser({ userId }, async (tx) =>
-    tx
-      .select({ role: memberships.role })
-      .from(memberships)
-      .where(and(eq(memberships.userId, userId), eq(memberships.isActive, true))),
-  );
-
-  return requiresTwoFactor(
-    held.map((row) => row.role),
-    false,
-  );
+  // Each role against its own brand's policy, through the person's own lens (D-050) and
+  // each brand's own context — `twoFactorStanding` explains why neither may be skipped.
+  return (await twoFactorStanding(userId)).requirement.required;
 }
 
 /** How long a password reset link works, in seconds (D-402). */
@@ -458,10 +451,16 @@ export async function mayHoldSession(userId: string): Promise<boolean> {
   return held?.found === true;
 }
 
-/** Whether a set of roles requires a second factor (§6). */
-export function requiresTwoFactor(roles: readonly string[], isSuperAdmin: boolean): boolean {
-  if (isSuperAdmin) return true;
-  return roles.some((role) => (TWO_FACTOR_REQUIRED_ROLES as readonly string[]).includes(role));
+/**
+ * Whether a set of roles held in one brand requires a second factor there (§6), under that
+ * brand's policy (`loadTwoFactorPolicy`); the default policy when none is given.
+ */
+export function requiresTwoFactor(
+  roles: readonly string[],
+  isSuperAdmin: boolean,
+  policy: TwoFactorPolicy = DEFAULT_TWO_FACTOR_POLICY,
+): boolean {
+  return requiresTwoFactorUnder(policy, roles, isSuperAdmin);
 }
 
 export { requireUrl };

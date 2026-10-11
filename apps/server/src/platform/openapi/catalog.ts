@@ -4,20 +4,24 @@ import {
   approvalRequestSchema,
   cashInSchema,
   closePeriodSchema,
+  confirmWithCodeSchema,
   createUserSchema,
   credentialResetSchema,
   dateRangeSchema,
-  deactivateUserSchema,
   dayBookQuerySchema,
+  deactivateUserSchema,
   ERROR_CODES,
   packingCameraCreateSchema,
   packingCameraUpdateSchema,
   partyBalanceQuerySchema,
   reopenPeriodSchema,
+  replacementCodeSchema,
   setRolesSchema,
   switchOrgSchema,
   thresholdSchema,
   trialBalanceQuerySchema,
+  twoFactorPolicySchema,
+  updateProfileSchema,
 } from '@elysium/contracts';
 import { z } from 'zod';
 
@@ -174,6 +178,64 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
   'POST /v1/users/me/step-down': {
     operationId: 'stepDownSuperAdmin',
     summary: 'Give up your own super admin power at once; never the last super admin.',
+  },
+  'POST /v1/users/:id/two-factor/turn-off': {
+    operationId: 'turnOffUserTwoFactor',
+    summary: "Turn a person's two-step sign-in off, where no role of theirs requires it.",
+    body: named('CredentialReset', credentialResetSchema, 'CredentialResetInput'),
+  },
+  'POST /v1/users/:id/sign-out-everywhere': {
+    operationId: 'signOutUserEverywhere',
+    summary: "End a person's sessions: everywhere, or in this brand for someone in another.",
+  },
+
+  // M40: My account and Settings → Security.
+  'GET /v1/account': {
+    operationId: 'getMyAccount',
+    summary: 'Your name, roles here, and two-step sign-in: on or off, and whether it is required.',
+  },
+  'PATCH /v1/account/profile': {
+    operationId: 'updateMyProfile',
+    summary: 'Change the name you go by.',
+    body: named('UpdateProfile', updateProfileSchema, 'UpdateProfile'),
+  },
+  'GET /v1/account/sessions': {
+    operationId: 'listMySessions',
+    summary: 'The devices you are signed in on, with the address partly hidden.',
+  },
+  'DELETE /v1/account/sessions/:id': {
+    operationId: 'endMySession',
+    summary: 'Sign one of your other devices out.',
+  },
+  'POST /v1/account/sessions/sign-out-others': {
+    operationId: 'endMyOtherSessions',
+    summary: 'Sign out every device but this one.',
+  },
+  'POST /v1/account/two-factor/replace': {
+    operationId: 'startTwoFactorReplacement',
+    summary: 'With your password and a current code, start moving two-step sign-in to a new phone.',
+    body: named('ConfirmWithCode', confirmWithCodeSchema, 'ConfirmWithCode'),
+  },
+  'POST /v1/account/two-factor/replace/confirm': {
+    operationId: 'confirmTwoFactorReplacement',
+    summary:
+      "Finish moving two-step sign-in with the new phone's code; the old phone stops working.",
+    body: named('ReplacementCode', replacementCodeSchema, 'ReplacementCode'),
+  },
+  'POST /v1/account/two-factor/turn-off': {
+    operationId: 'turnOffMyTwoFactor',
+    summary:
+      'With your password and a current code, turn two-step sign-in off where nothing requires it.',
+    body: named('ConfirmWithCode', confirmWithCodeSchema, 'ConfirmWithCode'),
+  },
+  'GET /v1/security/two-factor-policy': {
+    operationId: 'getTwoFactorPolicy',
+    summary: 'Which roles must use two-step sign-in in this brand (super admins only).',
+  },
+  'PUT /v1/security/two-factor-policy': {
+    operationId: 'setTwoFactorPolicy',
+    summary: 'Choose which roles must use two-step sign-in in this brand (super admins only).',
+    body: named('TwoFactorPolicy', twoFactorPolicySchema, 'TwoFactorPolicyInput'),
   },
 
   'GET /v1/approvals': {

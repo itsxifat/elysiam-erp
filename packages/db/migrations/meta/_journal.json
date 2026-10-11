@@ -967,6 +967,20 @@
       "when": 1791646005836,
       "tag": "0139_super_admin_removal_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1791702420697,
+      "tag": "0140_m40_two_factor_enabled_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1791702429043,
+      "tag": "0141_m40_two_factor_enabled_at_stamp",
+      "breakpoints": true
     }
   ]
 }

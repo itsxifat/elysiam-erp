@@ -9,8 +9,10 @@ import {
 import { resetNeedsSecondPerson, type MembershipRole, type RoleGrant } from '@elysium/contracts';
 import {
   INVITE_LINK_SECONDS,
+  loadTwoFactorPolicy,
   PASSWORD_LINK_SECONDS,
   requiresTwoFactor,
+  twoFactorStanding,
   withOrg,
   type Tx,
 } from '@elysium/db';
@@ -24,6 +26,7 @@ import {
   planRoleChange,
   resetAllowedByLimits,
   type ResetKind,
+  type TwoFactorPolicy,
   type TrustRefusalCode,
   type ResetPlan,
   type ResetTarget,
@@ -440,6 +443,7 @@ export class UsersService {
       const elsewhere = await repo.activeElsewhere(tx, userIds, context.orgId);
       const trust = await loadTrust(tx, context.orgId);
       const nominations = await loadNominations(tx, context.orgId);
+      const policy = await loadTwoFactorPolicy(tx, context.orgId);
 
       const items: StaffRow[] = [];
       for (const userId of userIds) {
@@ -448,7 +452,9 @@ export class UsersService {
         // An owner holds no role here (D-473), and is listed only as a super admin.
         if (person.is_owner && !person.is_super_admin) continue;
         const held = person.is_owner ? [] : memberships.filter((row) => row.user_id === userId);
-        items.push(this.view(context, person, held, elsewhere.has(userId), trust, nominations));
+        items.push(
+          this.view(context, person, held, elsewhere.has(userId), trust, nominations, policy),
+        );
       }
       items.sort(
         (a, b) =>
@@ -485,7 +491,8 @@ export class UsersService {
       const elsewhere = await repo.activeElsewhere(tx, [userId], context.orgId);
       const trust = await loadTrust(tx, context.orgId);
       const nominations = await loadNominations(tx, context.orgId);
-      return this.view(context, person, held, elsewhere.has(userId), trust, nominations);
+      const policy = await loadTwoFactorPolicy(tx, context.orgId);
+      return this.view(context, person, held, elsewhere.has(userId), trust, nominations, policy);
     });
   }
 
@@ -496,6 +503,7 @@ export class UsersService {
     inOtherBrand: boolean,
     trust: TrustFacts,
     nominations: NominationFacts,
+    policy: TwoFactorPolicy,
   ): StaffRow {
     const active = held.filter((row) => row.is_active);
     // A super admin reaches every brand with or without a role here (section 6).
@@ -525,9 +533,11 @@ export class UsersService {
       formerRoles: held.filter((row) => !row.is_active).map((row) => row.role),
       // An owner's link is minted behind the mother's second factor (D-473).
       twoFactorEnabled: person.two_factor_enabled || person.is_owner,
+      // This brand's own policy (M40, D-691): the roles its super admin made required.
       twoFactorRequired: requiresTwoFactor(
         active.map((row) => row.role),
         person.is_super_admin,
+        policy,
       ),
       lastSignInAt: iso(person.last_sign_in_at),
       hasPassword: person.has_password,
@@ -1188,6 +1198,41 @@ export class UsersService {
     userId: string,
     reason: string,
   ): Promise<TwoFactorOutcome> {
+    return this.removeFactorFor(context, request, userId, reason, 'reset');
+  }
+
+  /**
+   * Turn a person's two-step sign-in off for good (M40, D-697): only when nothing requires it
+   * of them — no role in any brand under that brand's policy, not a super admin — and otherwise
+   * exactly a reset: the same rules, limits, reset log and second admin (D-403 to D-406). For
+   * someone whose role requires it, the lost-phone reset stays the way.
+   */
+  async turnOffTwoFactor(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+    reason: string,
+  ): Promise<TwoFactorOutcome> {
+    const standing = await twoFactorStanding(userId);
+    if (standing.requirement.required) {
+      throw usersHttpError(
+        'TWO_FACTOR_REQUIRED',
+        standing.requirement.isSuperAdmin
+          ? 'Super admins always use two-step sign-in. Reset it instead if their phone is lost.'
+          : 'A role this person holds requires two-step sign-in. Reset it instead if their phone is lost.',
+      );
+    }
+    return this.removeFactorFor(context, request, userId, reason, 'turn_off');
+  }
+
+  private async removeFactorFor(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+    reason: string,
+    mode: 'reset' | 'turn_off',
+  ): Promise<TwoFactorOutcome> {
+    const action = mode === 'reset' ? 'iam.two_factor_reset' : 'iam.two_factor_turned_off';
     return this.inOrg(context, async (tx) => {
       const target = await this.target(tx, context.orgId, userId);
       const open = await repo.openResetFor(tx, context.orgId, userId, 'two_factor');
@@ -1221,7 +1266,7 @@ export class UsersService {
         orgId: context.orgId,
         actorUserId: context.userId,
         operation: 'update',
-        action: 'iam.two_factor_reset',
+        action,
         entityType: 'User',
         entityId: userId,
         before: { twoFactorEnabled: true },
@@ -1230,6 +1275,51 @@ export class UsersService {
         request,
       });
       return { outcome: 'completed' as const, resetId, sessionsEnded };
+    });
+  }
+
+  // --- signing a person out ---------------------------------------------------------------
+
+  /**
+   * End a person's sessions (M40, D-696): every one when a super admin asks or the person
+   * works only here; otherwise only the ones acting in this brand, as deactivation does
+   * (D-405's reasoning: one brand's admin does not reach another brand's sign-ins). Not
+   * yourself (My account signs out your devices); a super admin only by a super admin; an
+   * owner never, from here (they hold no role, so they are not found). Their password and
+   * second factor are untouched: they simply sign in again.
+   */
+  async signOutEverywhere(
+    context: ActiveContext,
+    request: AuditableRequest,
+    userId: string,
+  ): Promise<{ userId: string; sessionsEnded: number; scope: 'all' | 'brand' }> {
+    if (userId === context.userId) {
+      throw usersHttpError(
+        'USER_SELF_MANAGEMENT',
+        'Sign your own devices out from My account → Devices.',
+      );
+    }
+    return this.inOrg(context, async (tx) => {
+      const target = await this.target(tx, context.orgId, userId);
+      this.guardManage(context, target);
+      const scope: 'all' | 'brand' = context.isSuperAdmin || !target.inOtherBrand ? 'all' : 'brand';
+      const sessionsEnded =
+        scope === 'all'
+          ? await repo.endSessions(tx, userId, 'all')
+          : await repo.endSessions(tx, userId, { orgId: context.orgId });
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'delete',
+        action: 'iam.user_signed_out_everywhere',
+        entityType: 'User',
+        entityId: userId,
+        before: null,
+        after: { sessionsEnded, scope },
+        requestId: context.requestId,
+        request,
+      });
+      return { userId, sessionsEnded, scope };
     });
   }
 

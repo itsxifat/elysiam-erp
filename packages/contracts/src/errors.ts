@@ -609,6 +609,26 @@ export const ERROR_CODES = [
   'PACKING_CAMERA_IN_USE',
   /** The camera's live picture is not coming in (no fresh frame in the last few seconds). */
   'PACKING_PREVIEW_UNAVAILABLE',
+  // M40: My account, the brand's two-step policy, and the Staff screen's sign-out and turn-off
+  /** The password given to confirm an account change is not this person's. */
+  'ACCOUNT_PASSWORD_INVALID',
+  /** The authenticator or backup code given to confirm an account change is not current. */
+  'TWO_FACTOR_CODE_INVALID',
+  /** Too many wrong codes: two-step sign-in is locked for a quarter of an hour. */
+  'TWO_FACTOR_LOCKED',
+  /** Two-step sign-in is not on for this person, so there is nothing to change or turn off. */
+  'TWO_FACTOR_NOT_ENABLED',
+  /**
+   * Two-step sign-in stays on: the person is a super admin or an owner, or a role they hold
+   * requires it under its brand's security setting (D-691). A lost phone is reset instead.
+   */
+  'TWO_FACTOR_REQUIRED',
+  /** The new phone's set-up was not started, or its ten minutes ran out: start again. */
+  'TWO_FACTOR_REPLACEMENT_EXPIRED',
+  /** No session of this person has that id (or it has already ended). */
+  'SESSION_NOT_FOUND',
+  /** This device's own session is ended with Sign out, not from the devices list. */
+  'SESSION_CURRENT',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
