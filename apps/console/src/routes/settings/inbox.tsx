@@ -240,7 +240,8 @@ function ChannelForm({
   const current = view.channels.find((channel) => channel.kind === kind);
   const text = CHANNEL_TEXT[kind];
   const [externalId, setExternalId] = useState(current?.externalId ?? '');
-  const [enabled, setEnabled] = useState(current?.enabled ?? true);
+  // A channel not set up yet starts switched on: saving its id is the point of the form.
+  const [enabled, setEnabled] = useState(current?.configured === true ? current.enabled : true);
   const [token, setToken] = useState('');
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const save = useMutation({

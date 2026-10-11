@@ -128,6 +128,8 @@ test('the brand’s admin connects Messenger, Instagram and WhatsApp in Settings
     const form = page.getByRole('form', { name });
     await form.locator('input[inputmode="numeric"]').fill(id);
     if (token !== null) await form.getByLabel('Access token').fill(token);
+    // A channel not set up yet starts switched on.
+    await expect(form.getByRole('checkbox', { name: 'On' })).toBeChecked();
     await form.getByRole('button', { name: 'Save channel' }).click();
     await expect(form.getByText('Saved')).toBeVisible();
   }

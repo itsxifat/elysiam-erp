@@ -6,6 +6,7 @@ import { nextOutboundStatus } from '@elysium/domain/inbox';
 import { maskPhonesInText } from '@elysium/domain';
 
 import { emit } from '../../platform/events/outbox.js';
+import { createLogger } from '../../platform/logging/logger.js';
 import { enqueue } from '../../platform/jobs/enqueue.js';
 import { appSecretBinding, openSecret, verifyTokenBinding } from './inbox-secrets.js';
 import { INBOX_QUEUES } from './inbox.queues.js';
@@ -57,6 +58,13 @@ function sameSecret(given: string, expected: string): boolean {
  */
 @Injectable()
 export class InboxWebhookService {
+  private cachedLogger: ReturnType<typeof createLogger> | undefined;
+
+  private get logger(): ReturnType<typeof createLogger> {
+    this.cachedLogger ??= createLogger('inbox');
+    return this.cachedLogger;
+  }
+
   constructor(@Inject(CONVERSATION_OFFER) private readonly offer: ConversationOfferPort) {}
 
   /**
@@ -166,6 +174,15 @@ export class InboxWebhookService {
       }
 
       await repo.markWebhookProcessed(tx, orgId, eventId, outcome);
+      // Counts only: never a sender, a phone or the words.
+      if (outcome.unknownChannel > 0) {
+        this.logger.warn(
+          { eventId, ...outcome },
+          'inbox webhook named an account that is not one of this brand’s switched-on channels',
+        );
+      } else {
+        this.logger.info({ eventId, ...outcome }, 'inbox webhook threaded');
+      }
       return outcome;
     });
   }
