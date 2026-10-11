@@ -1,6 +1,6 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-08** (Friday's tests done: the packing station and video (M38b) and the mother ERP (M32) tested, audited and fixed; M38 live on both brands; two security holes in super admin votes found and closed the same day). This is the short, plain-language view. The
+Last updated: **2026-10-11** (the mother ERP is live at elyerp.enfinito.cloud and reads both brands; IP camera recording with a live view, and super admin removal, live on both brands). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
@@ -91,7 +91,7 @@ Wave 3         [##################--]  93%   (M31 to M39)
 | M34  | Website checkout, accounts, payment          |  100% | Done; live in Elysium's ERP (SSLCommerz needs the store's keys)                                                                                                                        |
 | M35  | Website offers, tracking, ncom               |  100% | Done: discounts and flash sales live; campaign links, tracking, ncom, scanner app and labels joined, live with the next deploy                                                         |
 | M36  | The new Elysium website on the ERP           |  100% | Done; live at demo.elysium-lifestyle.bd (campaign links and tracking arrive with M35b)                                                                                                 |
-| M37  | Servers, addresses, go-live                  |   35% | Elysiam's and Beownz's ERPs live on the brands server; the mother's server and the final domains to come                                                                               |
+| M37  | Servers, addresses, go-live                  |   60% | Elysiam's and Beownz's ERPs and the mother ERP (elyerp.enfinito.cloud) live; the final domains to come                                                                                 |
 | M38  | Barcode stickers, strict stock, scan-to-pack |  100% | Done 2026-10-08; stickers, stock in hand, scanner and the packing station with video, live                                                                                             |
 | M39  | Catalog management: delete, variant prices   |  100% | Done and live: delete or archive everywhere; prices by size or colour, bulk price changes, buying price per variant, margins, standard buying prices, duplicate product, regular price |
 

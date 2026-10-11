@@ -2758,3 +2758,25 @@ dry-run|commit --file <users.json>`.
   is fixed (a removed super admin's nomination and removal votes go, e2e checked), and its
   should-fix on how "the first" is ordered is recorded as OPEN in D-689.
 - New dependencies: none.
+
+## 2026-10-11 · wave 3 · super admin removal live; the mother ERP live at elyerp.enfinito.cloud
+
+- **Super admin removal** (D-685 to D-689, migrations 0138, 0139): verify green (3935 tests,
+  every gate; rerun with 2 workers after the PC ran short of memory), deployed to both brands
+  once the server came back from an outage (SSH and the sites timed out for a while; nothing
+  had been changed).
+- **The mother ERP at `https://elyerp.enfinito.cloud`**, on the brands server itself (the owner,
+  D-690), replacing the old preview there (its stack stopped, its data volumes kept, its nginx
+  site switched off). New `mother brands add` CLI (the read password from the environment,
+  never a command line or output; audited as `system:operator`; `http.db.test.ts` 23/23).
+  Set up by script: `new-env.sh`, the `mother-tunnel` account (no shell, `from=` the Docker and
+  LAN ranges, `permitopen` 127.0.0.1:5541 and 5542, an sshd `Match` block, `sshd -t` first),
+  the brands' `BRAND_REPORTING_DB_PORT` 5541 (Elysiam) and 5542 (Beownz), the mother deploy,
+  certbot, the first owner (the owner's address, a one-time link), both brands registered and
+  their `OWNER_LINK_PUBLIC_KEY` set, the brands redeployed. The first scheduled pull read both
+  brands (Elysiam 12 days, Beownz 10 days). Lesson: `docker compose run` in a script piped to
+  `bash -s` swallows the rest of the script unless its stdin is `/dev/null`.
+- **Disk:** old `erp-server` images (about 2 GB each, one per deploy) had filled the server to
+  42 GB free; removed all but the last two and old build cache (61 GB free), and
+  `infra/brand/server-deploy.sh` now keeps only the last two images and prunes build cache
+  older than 72 hours on every deploy.

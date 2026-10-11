@@ -179,10 +179,17 @@ done
 # The release the runbook's shorthand points at.
 ln -sfn "src/$SHA" "$BASE/current"
 
-say "tidy: the last three source releases are kept"
+say "tidy: the last three source releases and the last two server images are kept"
 ls -1t "$SRC_ROOT" | tail -n +4 | while read -r old; do
   [ "$old" = "$SHA" ] || rm -rf "${SRC_ROOT:?}/$old"
 done
+# Each release's image is about 2 GB; without this they filled the disk (2026-10-11). The
+# current one and the one before it stay for a rollback; an image a container still uses
+# is never removed (docker refuses).
+docker images --format '{{.CreatedAt}}	{{.Repository}}:{{.Tag}}'   | grep -F "erp-server:" | sort -r | cut -f2 | tail -n +3 | while read -r image; do
+  [ "$image" = "erp-server:$SHA" ] || docker rmi "$image" >/dev/null 2>&1 || true
+done
 docker image prune -f >/dev/null
+docker builder prune -f --filter until=72h >/dev/null 2>&1 || true
 
 say "done"
