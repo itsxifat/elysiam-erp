@@ -181,7 +181,7 @@ export class InboxWebhookService {
           'inbox webhook named an account that is not one of this brand’s switched-on channels',
         );
       } else {
-        this.logger.info({ eventId, ...outcome }, 'inbox webhook threaded');
+        this.logger.debug({ eventId, ...outcome }, 'inbox webhook threaded');
       }
       return outcome;
     });

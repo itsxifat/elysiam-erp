@@ -52,6 +52,8 @@ export const USAGE_REASONS = [
   'marketplace_holds',
   // M38b: a packing scan names the SKU it put in (or refused at) the box.
   'packing_scans',
+  // M42: a customer's interest in a product (or one of its sizes) in the inbox.
+  'inbox_interests',
   // Marketing and messages.
   'leads',
   'campaigns',

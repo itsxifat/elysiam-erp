@@ -973,3 +973,21 @@ export async function deleteInterest(
   `);
   return rows.length === 1;
 }
+
+// --- what the catalog asks (D-621) ---------------------------------------------------------
+
+/** Contacts' interests naming any of the products, or any of the SKUs. */
+export async function interestsFor(
+  tx: Tx,
+  orgId: string,
+  column: 'product_id' | 'sku_id',
+  ids: readonly string[],
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from inbox.interests
+    where org_id = ${orgId}
+      and ${column === 'product_id' ? sql`product_id` : sql`sku_id`} = any (${sql.param([...ids])}::uuid[])
+  `);
+  return rows[0]?.n ?? 0;
+}

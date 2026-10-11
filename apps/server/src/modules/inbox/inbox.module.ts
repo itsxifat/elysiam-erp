@@ -4,6 +4,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
+import { InboxCatalogReferences } from './catalog-references.binding.js';
 import { InboxChannelsService } from './channels.service.js';
 import { ConversationsService } from './conversations.service.js';
 import {
@@ -57,6 +58,8 @@ const gatewayProvider: Provider = {
     InboxWebhookService,
     InboxSendService,
     InboxOrderListener,
+    // D-621: a customer's interest keeps the product it names.
+    InboxCatalogReferences,
   ],
   exports: [InboxWebhookService, InboxSendService, InboxOrderListener, MESSAGING_GATEWAY],
 })
