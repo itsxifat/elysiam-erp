@@ -74,6 +74,9 @@ const OWNER: Readonly<Record<string, string>> = {
   // inventory, files and delivery zones are reached through their APIs, so no debt.
   storefront: 'storefront',
   supply: 'supply',
+  // M41: presence and desk profiles. People come from `IamApi`; orders read these through
+  // `TeamApi`, so no debt either way.
+  team: 'team',
   wallets: 'wallets',
 };
 

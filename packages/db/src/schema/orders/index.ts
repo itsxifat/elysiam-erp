@@ -453,6 +453,23 @@ export const orders = sales.table(
     /** `iam.users.id` is text, so these are text. Null means the unassigned queue (§6). */
     assignedTo: text('assigned_to'),
     createdBy: text('created_by').notNull(),
+    /**
+     * When the order reached its current owner (M41, D-710): "handled by Rahim since 10:42".
+     * Null while it is unassigned, and for orders assigned before M41.
+     */
+    assignedAt: timestamp('assigned_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * The verification calls (M41, D-718), summarised for the queue: how many attempts, the
+     * last one's outcome and time, and when to call back if the last one asked for that. The
+     * attempts themselves are `call_attempts`, append-only; these are written in the same
+     * transaction as each attempt.
+     */
+    callAttempts: integer('call_attempts').notNull().default(0),
+    lastCallOutcome: text('last_call_outcome'),
+    lastCallAt: timestamp('last_call_at', { withTimezone: true, mode: 'date' }),
+    callBackAt: timestamp('call_back_at', { withTimezone: true, mode: 'date' }),
+    /** When the hub printed this order's slip (M41, D-719): "To print" until then. */
+    slipPrintedAt: timestamp('slip_printed_at', { withTimezone: true, mode: 'date' }),
 
     confirmedBy: text('confirmed_by'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true, mode: 'date' }),
@@ -490,6 +507,12 @@ export const orders = sales.table(
     index('orders_org_phone_created_idx').on(table.orgId, table.shipPhoneE164, table.createdAt),
     // The order list's channel filter and the buyer list's, both bounded by a date range.
     index('orders_org_channel_created_idx').on(table.orgId, table.channel, table.createdAt),
+    // M41: the desk's "Call-backs due" tab, and Mine's due-first ordering.
+    index('orders_org_call_back_idx')
+      .on(table.orgId, table.callBackAt)
+      .where(sql`${table.callBackAt} is not null`),
+    // M41: the hub's queues, by location and stage.
+    index('orders_org_location_status_idx').on(table.orgId, table.locationId, table.status),
     foreignKey({
       name: 'orders_org_id_branch_id_fk',
       columns: [table.orgId, table.branchId],
@@ -556,6 +579,17 @@ export const orders = sales.table(
     check(
       'orders_stock_held_has_location',
       sql`${table.stockHeldAt} is null or ${table.locationId} is not null`,
+    ),
+    // M41 (D-718): the call summary is what `call_attempts` says, never a free-for-all.
+    check('orders_call_attempts_not_negative', sql`${table.callAttempts} >= 0`),
+    check(
+      'orders_last_call_outcome',
+      sql`${table.lastCallOutcome} is null or ${table.lastCallOutcome} in
+          ('reached', 'no_answer', 'busy', 'wrong_number', 'call_back')`,
+    ),
+    check(
+      'orders_call_back_needs_outcome',
+      sql`${table.callBackAt} is null or ${table.lastCallOutcome} = 'call_back'`,
     ),
   ],
 );
@@ -701,5 +735,126 @@ export const orderEvents = sales.table(
       'order_events_reason_length',
       sql`${table.reason} is null or length(${table.reason}) <= 500`,
     ),
+  ],
+);
+
+/**
+ * An order offered to one person by auto-assign (M41, D-717).
+ *
+ * Like a ride offer: the person accepts or declines within `expires_at`, and the order is
+ * theirs only when they accept. At most one live offer per order and per person, which the two
+ * partial unique indexes enforce whatever the dispatchers race to do. An offer is answered once:
+ * offered, then accepted, declined, expired or withdrawn (the order was taken another way, or
+ * auto-assign was switched off), and the M41 policies migration's trigger refuses any other
+ * change. Never deleted: who declined what is what keeps an order from going round the same
+ * person twice.
+ */
+export const orderOffers = sales.table(
+  'order_offers',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    orderId: uuid('order_id').notNull(),
+    /** `iam.users.id`, text like `assigned_to`. */
+    userId: text('user_id').notNull(),
+    status: text('status').notNull().default('offered'),
+    offeredAt: timestamp('offered_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    respondedAt: timestamp('responded_at', { withTimezone: true, mode: 'date' }),
+    ...timestamps,
+  },
+  (table) => [
+    unique('order_offers_org_id_id_key').on(table.orgId, table.id),
+    index('order_offers_org_idx').on(table.orgId),
+    index('order_offers_org_order_idx').on(table.orgId, table.orderId),
+    index('order_offers_org_user_idx').on(table.orgId, table.userId, table.offeredAt),
+    uniqueIndex('order_offers_live_order_idx')
+      .on(table.orgId, table.orderId)
+      .where(sql`${table.status} = 'offered'`),
+    uniqueIndex('order_offers_live_user_idx')
+      .on(table.orgId, table.userId)
+      .where(sql`${table.status} = 'offered'`),
+    foreignKey({
+      name: 'order_offers_org_id_order_id_fk',
+      columns: [table.orgId, table.orderId],
+      foreignColumns: [orders.orgId, orders.id],
+    }).onDelete('restrict'),
+    check(
+      'order_offers_status',
+      sql`${table.status} in ('offered', 'accepted', 'declined', 'expired', 'withdrawn')`,
+    ),
+    check(
+      'order_offers_answered',
+      sql`(${table.status} = 'offered') = (${table.respondedAt} is null)`,
+    ),
+    check('order_offers_expiry', sql`${table.expiresAt} > ${table.offeredAt}`),
+  ],
+);
+
+/**
+ * One verification call to the buyer (M41, D-718), append-only.
+ *
+ * The record a "nobody ever called me" complaint is settled from, so it is never edited or
+ * deleted (the M41 policies migration refuses both with a trigger, and `erp_app` holds INSERT
+ * and SELECT only). The order's own `call_attempts`, `last_call_*` and `call_back_at` are the
+ * queue's summary of these rows, written in the same transaction.
+ */
+export const callAttempts = sales.table(
+  'call_attempts',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    orderId: uuid('order_id').notNull(),
+    outcome: text('outcome').notNull(),
+    callBackAt: timestamp('call_back_at', { withTimezone: true, mode: 'date' }),
+    note: text('note'),
+    calledBy: text('called_by').notNull(),
+    calledAt: timestamp('called_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('call_attempts_org_id_id_key').on(table.orgId, table.id),
+    index('call_attempts_org_idx').on(table.orgId),
+    index('call_attempts_org_order_idx').on(table.orgId, table.orderId, table.calledAt),
+    foreignKey({
+      name: 'call_attempts_org_id_order_id_fk',
+      columns: [table.orgId, table.orderId],
+      foreignColumns: [orders.orgId, orders.id],
+    }).onDelete('restrict'),
+    check(
+      'call_attempts_outcome',
+      sql`${table.outcome} in ('reached', 'no_answer', 'busy', 'wrong_number', 'call_back')`,
+    ),
+    check(
+      'call_attempts_call_back',
+      sql`(${table.outcome} = 'call_back') = (${table.callBackAt} is not null)`,
+    ),
+    check('call_attempts_note_length', sql`${table.note} is null or length(${table.note}) <= 500`),
+  ],
+);
+
+/**
+ * The brand's order workflow (M41, D-715): auto-assign, the offer countdown and the cap on open
+ * orders per person. One row, written the first time an org admin saves; no row reads as the
+ * defaults (off, 45 seconds, 25 orders).
+ */
+export const workflowSettings = sales.table(
+  'workflow_settings',
+  {
+    orgId: uuid('org_id')
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    autoAssign: boolean('auto_assign').notNull().default(false),
+    offerSeconds: integer('offer_seconds').notNull().default(45),
+    maxOpen: integer('max_open').notNull().default(25),
+    updatedBy: text('updated_by').notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    check('workflow_settings_offer_seconds', sql`${table.offerSeconds} between 15 and 300`),
+    check('workflow_settings_max_open', sql`${table.maxOpen} between 1 and 200`),
   ],
 );

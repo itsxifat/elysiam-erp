@@ -66,6 +66,8 @@ export default defineConfig({
     // M33. The website's settings, hero, menu, size charts, old ids and site keys.
     'storefront',
     'supply',
+    // M41. Presence at the desks and each person's desk profile.
+    'team',
     'wallets',
   ],
   strict: true,

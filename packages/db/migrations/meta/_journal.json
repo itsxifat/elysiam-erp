@@ -981,6 +981,20 @@
       "when": 1791702429043,
       "tag": "0141_m40_two_factor_enabled_at_stamp",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1791739025033,
+      "tag": "0142_m41_order_workflow_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1791739039344,
+      "tag": "0143_m41_order_workflow_policies",
+      "breakpoints": true
     }
   ]
 }
