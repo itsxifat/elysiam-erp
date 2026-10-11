@@ -11,10 +11,8 @@ import { useLocale } from '../../i18n/locale.js';
  * second write discards the first. The integrator folds `courierEn` and `courierBn` into it,
  * after which this file becomes a `sectionCatalogue` of the keys like the others.
  *
- * `courierBn` is typed `Record<keyof typeof courierEn, string>`, so a key translated on one
- * side only does not compile. The console defaults to English (D-036); the Bangla keeps the
- * ERP nouns Dhaka staff say in English — COD, courier, consignment — in English, because
- * translating them slows a warehouse hand down.
+ * The console is English only (D-750), in the ERP nouns Dhaka staff already say — COD,
+ * courier, consignment.
  *
  * Several keys end in a snake_case segment (`courier.status.out_for_delivery`) because the
  * screens build them from a server enum value; a camelCase spelling would need a mapping

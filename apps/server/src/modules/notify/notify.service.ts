@@ -100,7 +100,14 @@ export class NotifyService {
     }
 
     // English, always (D-750): `body_en` is the one body. `body_bn` stays in the table only
-    // until one migration drops it once the parallel branches have merged (D-755).
+    // until one migration drops it once the parallel branches have merged (D-755). A body saved
+    // before the save-time check, with Bangla in it, is refused here rather than texted.
+    if (!isFreeOfBangla(template.body_en)) {
+      throw new NotifyError(
+        'NOTIFY_TEMPLATE_INVALID',
+        `${input.templateKey} is not written in English; rewrite it before it is sent.`,
+      );
+    }
     let body: string;
     try {
       body = renderTemplate(template.body_en, input.values);

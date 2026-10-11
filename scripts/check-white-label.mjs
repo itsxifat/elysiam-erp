@@ -38,10 +38,10 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 export const DEFAULT_DISTS = ['apps/console/dist', 'apps/pos/dist', 'apps/portal/dist'];
 const SECTIONS = 'packages/i18n/src/locales/sections';
 
-/** The core catalogues and every section catalogue (D-607): all of them reach a browser. */
+/** The core catalogue and every section catalogue (D-607): all of them reach a browser. */
 export const DEFAULT_SOURCES = [
+  // English only since D-750: there is no other core catalogue to scan.
   'packages/i18n/src/locales/en.ts',
-  'packages/i18n/src/locales/bn.ts',
   ...(existsSync(path.join(REPO_ROOT, SECTIONS))
     ? readdirSync(path.join(REPO_ROOT, SECTIONS))
         .filter((name) => name.endsWith('.ts'))

@@ -11,9 +11,8 @@ import { useLocale } from '../../i18n/locale.js';
  * file keeps the key list, which is what keeps the section's key type narrower than the
  * whole catalogue.
  *
- * The staff console defaults to English (D-036). The Bangla keeps the ERP nouns Dhaka staff
- * say in English — order, SKU, COD, courier — in English, because translating them slows a
- * desk agent down.
+ * The console is English only (D-750), in the ERP nouns Dhaka staff already say — order,
+ * SKU, COD, courier.
  *
  * Several keys end in a snake_case segment (`orders.status.on_hold`,
  * `orders.channel.walk_in`) because the call sites build them from a server enum. A mapping table

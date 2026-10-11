@@ -285,6 +285,23 @@ describe('every SMS is English (M43, D-750)', () => {
     expect(stored).toEqual({ locale: 'en', body: 'Your code is EID25' });
   });
 
+  it('refuses to send from a template whose English body was stored in Bangla', async () => {
+    const bangla = String.fromCodePoint(0x0995, 0x09cb, 0x09a1);
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into notify.templates (org_id, key, channel, category, body_bn, body_en, updated_by)
+          values (${ORG_A}, 'offer.legacy', 'sms', 'marketing',
+                  ${`${bangla} {code}`}, ${`${bangla} {code}`}, 'usr_notify_test')
+          on conflict (org_id, channel, key) do update set body_en = excluded.body_en
+        `),
+      { orgId: ORG_A },
+    );
+    await expect(queueAt('offer.legacy', PHONE, NOON)).rejects.toMatchObject({
+      code: 'NOTIFY_TEMPLATE_INVALID',
+    });
+  });
+
   it('refuses a template written in Bangla, and saves an English one with one body', async () => {
     const marketing = await harness.asRole('marketing', ORG_A);
     const bangla = String.fromCodePoint(0x09b9, 0x09cd, 0x09af, 0x09be, 0x09b2, 0x09cb);

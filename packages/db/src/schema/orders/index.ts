@@ -143,7 +143,7 @@ export const deliveryZones = sales.table(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     code: text('code').notNull(),
     nameEn: text('name_en').notNull(),
-    /** Shown to customers, so it is Bangla (D-036). */
+    /** The zone's Bangla name, kept as data for the website; screens show `name_en` (D-756). */
     nameBn: text('name_bn').notNull(),
     chargePoisha: bigint('charge_poisha', { mode: 'bigint' }).notNull(),
     /** Which courier this zone books with unless the desk chooses another (§9). */

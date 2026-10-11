@@ -35,9 +35,9 @@ import '../../i18n/manage.js';
 import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 
 /**
- * Message templates (M16; D-205): what each SMS says, in Bangla and English.
+ * Message templates (M16; D-205): what each SMS says, in English (D-750, D-755).
  *
- * Buyers receive Bangla (D-036); the English is for staff reading the log. A template is
+ * One body per template, and the server refuses one written in Bangla. A template is
  * keyed by its name, so saving one with an existing key replaces it — which is how an
  * edit works, and why the key is read-only once the template exists.
  */

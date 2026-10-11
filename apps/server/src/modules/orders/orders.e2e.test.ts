@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { findCostFields } from '@elysium/contracts';
 import { withSystem } from '@elysium/db';
 import { banglaCharactersIn } from '@elysium/domain';
@@ -14,6 +16,8 @@ import {
   type RoleClient,
 } from '../../testing/http-harness.js';
 import { describeRoutes } from '../../platform/auth/route-map.js';
+import { attachScope } from '../../platform/auth/scope.js';
+import type { ActiveContext } from '../../platform/http/context.js';
 import { routeKey } from '../../platform/auth/route-matrix.manifest.js';
 import { loadFonts } from '../files/pdf/fonts.js';
 import { GotenbergClient } from '../files/pdf/gotenberg.client.js';
@@ -22,7 +26,12 @@ import {
   warehouseId,
   type SeededSku,
 } from '../inventory/inventory.testing.js';
-import { renderOrderInvoiceHtml, renderPackingSlipHtml } from './documents.service.js';
+import {
+  DocumentsService,
+  renderOrderInvoiceHtml,
+  renderPackingSlipHtml,
+} from './documents.service.js';
+import { renderOrderDocumentHtml } from './order-documents.js';
 import { SAMPLE_BRAND, SAMPLE_ORDER } from './order-documents.sample.js';
 import { OrdersModule } from './orders.module.js';
 import { ORDERS_ROUTE_KEYS } from './orders.route-fixtures.js';
@@ -612,6 +621,38 @@ describe('§22’s invoice and packing slip', () => {
     });
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('renders a real order from the database in English: seeded geography, no Bangla (D-750)', async () => {
+    const order = await takeOrder(admin);
+    // The service's own gathering, at org-wide scope, exactly as the route calls it: the
+    // seeded `ref` districts and thanas hold Bangla names beside the English ones.
+    const scoped = { headers: {} };
+    attachScope(scoped, 'read', 'Order', { kind: 'all' });
+    const context = {
+      userId: admin.userId,
+      orgId: ORG_A,
+      roles: ['org_admin'],
+      branchIds: [],
+      branchIdsByRole: {},
+      isSuperAdmin: false,
+      requestId: randomUUID(),
+    } as unknown as ActiveContext;
+    const documents = harness.app.get(DocumentsService, { strict: false });
+    const { brand, data } = await documents.gather(context, scoped, order.id);
+    expect(data.district).not.toBe('');
+    expect(data.district).toMatch(/^[A-Za-z' ()-]+$/);
+    for (const [kind, paper] of [
+      ['invoice', 'a4'],
+      ['packing_slip', 'a4'],
+      ['packing_slip', 'a5'],
+      ['label', 'a4'],
+    ] as const) {
+      const html = renderOrderDocumentHtml(kind, brand, data, [], paper);
+      expect(banglaCharactersIn(html), `${kind} ${paper}`).toEqual([]);
+      expect(html).toContain(order.orderNo);
+      expect(html).toContain(data.district);
+    }
   });
 
   it('refuses A5 for anything but the packing slip', async () => {

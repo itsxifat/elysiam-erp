@@ -17,9 +17,8 @@ import type { MessageKey } from '@elysium/i18n';
  * and a mapping table is a second list to forget to update when a status is
  * added.
  *
- * The payslip **document** is Bangla-only and lives on the server
- * (`payslip.template.ts`), because it is handed to the employee it is about
- * (D-036). These strings are the console's, which defaults to English.
+ * The payslip **document** lives on the server (`payslip.template.ts`), in
+ * English like everything else (D-750). These strings are the console's.
  */
 
 const HR_KEYS = [

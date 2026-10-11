@@ -602,18 +602,18 @@ describe('the payroll scenario (check 1)', () => {
     ]);
   });
 
-  it('renders the Bangla payslip PDF for the employee it is about', async () => {
+  it('renders the English payslip PDF for the employee it is about', async () => {
     const client = new GotenbergClient(process.env.GOTENBERG_URL ?? 'http://localhost:3030');
     /*
      * Skipped rather than failed when Gotenberg is not up, and the skip is loud — the same
-     * choice `invoice-pdf.test.ts` makes, and for the same reason: a red suite on a machine
+     * choice `documents-review.test.ts` makes, and for the same reason: a red suite on a machine
      * without the compose stack running trains people to ignore the file.
      */
     if (!(await client.isReady())) {
       console.warn(
         'Gotenberg is not reachable. Start it with ' +
           '`docker compose -f infra/docker-compose.dev.yml up -d gotenberg` ' +
-          'to exercise the Bangla payslip.',
+          'to exercise the payslip PDF.',
       );
       expect(true).toBe(true);
       return;
