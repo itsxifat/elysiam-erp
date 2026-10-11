@@ -1451,7 +1451,9 @@ describe('bulk booking and labels', () => {
     });
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
-    expect(html).toContain('৳2,480.00');
+    // English, with money as `Tk` (D-750, D-751).
+    expect(html).toContain('Tk 2,480.00');
+    expect(html).toContain('lang="en"');
     expect(html).toContain('<svg');
     expect(html).not.toMatch(/cost|unit_price/i);
   });

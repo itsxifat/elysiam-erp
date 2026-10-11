@@ -263,8 +263,8 @@ packages/
                    payouts, costing, schedules, scoring, target splits
   contracts/       Zod schemas and DTO types, permission matrix (CASL), error codes, event types
   api-client/      Generated typed client from OpenAPI, plus TanStack Query hooks
-  ui/              shadcn/ui components, Tailwind preset, Bangla fonts, formatting components
-  i18n/            bn + en messages, money/date/number formatters
+  ui/              shadcn/ui components, Tailwind preset, fonts, formatting components
+  i18n/            English messages (D-750), money/date/number formatters
   integrations/    Adapters behind interfaces: couriers, fraud providers, SMS, Meta, Chatwoot,
                    payment
   landing-blocks/  Puck components shared by the console editor and the sites renderer
@@ -964,7 +964,7 @@ interface CourierAdapter {
 ### Notifications (`notify`)
 
 - Channels: `sms` (BD gateway adapter), `whatsapp_template` (Phase 5), `in_app`.
-- Templates in bn and en with variables.
+- Templates in English with variables (D-750, D-755); a template written in Bangla is refused.
 - Opt-out list.
 - Delivery log that keeps the provider message id.
 - Rate limits.
@@ -1033,7 +1033,7 @@ interface CourierAdapter {
 - **Payroll:**
   - salary structures made of components and deductions (D-029)
   - payroll runs go `draft → approved (maker-checker) → posted → paid`
-  - payslip PDF in Bangla
+  - payslip PDF in English (D-750)
   - employee loans with schedules and automatic deduction
   - bonuses come from the rules below
 - **Targets:**
@@ -1320,10 +1320,12 @@ Rules for every integration:
   - each upload creates a `files.objects` row with sha256, owner and visibility
   - images are re-encoded with sharp into thumb, card and full sizes, with EXIF stripped
 - **PDFs:**
-  - HTML templates are rendered on the server and converted by **Gotenberg** (headless Chromium), so Bangla conjuncts shape correctly
-  - embed Noto Sans Bengali or Hind Siliguri
-  - templates: invoice, packing slip, courier label, reseller invoice, payslip, statements
-  - every template takes the active org's `brand` block (§24) for logo, legal name, address, VAT number and footer. The reseller invoice substitutes the reseller's business name (§13).
+  - HTML templates are rendered on the server and converted by **Gotenberg** (headless Chromium), at their exact paper size (to Chromium's 1/75-inch print grid): invoices and payslips A4, the packing slip A4 or A5, parcel and courier labels 4 × 6 in, stickers their roll or sheet (D-752)
+  - in formal English with money as `Tk 1,250.00` through `takaText` (D-750, D-751), set in Inter alone, uploaded with each page; a buyer's own Bangla text falls back to the renderer's Noto Sans Bengali (D-753)
+  - black ink, 1 px rules, tabular figures on amounts: they print cleanly on laser and thermal printers alike
+  - the order's documents lead with the order number and its Code 128 barcode (the code the packing station opens), the cash to collect, and the recipient large and bold, then the courier and its numbers, the items and the totals (D-752)
+  - templates: invoice, packing slip, parcel label, courier label, the QR label sheet, stickers, reseller invoice, payslip, statements
+  - every template takes the active org's `brand` block (§24) for legal name, address, VAT number and footer, and the logo (the block's, else the website's, D-754). The reseller invoice substitutes the reseller's business name (§13).
 
 ---
 
@@ -1372,7 +1374,7 @@ Staff operate this product for eight hours a day, so "premium" here means confid
 Tokens live in `packages/ui/src/styles/tokens.css` and reach components through the Tailwind preset. No component hard-codes a colour, radius, shadow or duration.
 
 - **Colour is OKLCH**, as CSS custom properties. Every semantic role (`--background`, `--foreground`, `--muted`, `--border`, `--ring`, `--primary`, `--destructive`, `--success`, `--warning`) has a light and a dark value. Accent shades are _derived_ from one hue and chroma pair, so changing an org's brand hue re-derives hover, active, subtle background, ring and foreground-on-accent with their contrast intact. This is what makes five brands cost one design system instead of five.
-- **Type:** Inter for Latin and all numerals, Hind Siliguri for Bangla. Both self-hosted as subset woff2 with `font-display: swap`. The `@font-face` rules carry `size-adjust` so a mixed bn/en string sits on one optical baseline. Without it, mixed text looks ragged, which is the fastest way for a Bangla product to look unfinished.
+- **Type:** Inter for every word and numeral, self-hosted as subset woff2 with `font-display: swap`. The product is English only (D-750); Hind Siliguri stays in the stack, with a `size-adjust` that matches Inter, only to draw text a person typed in Bangla (a buyer's name or address).
 - **Numerals:** `font-variant-numeric: tabular-nums` on every money value, quantity, metric tile and numeric table column. Money columns are right-aligned.
 - **Radius:** one `--radius` (8 px) with derived `sm`/`md`/`lg`. **Spacing:** a 4 px base scale.
 - **Motion:** 120-200 ms, ease-out, on enter, exit and state change only. Everything honours `prefers-reduced-motion`.
@@ -1400,19 +1402,20 @@ Enforced in CI wherever it is testable.
 
 - the console, portal and POS accent and logo for the active org
 - the login screen when the org is known from the route or hostname (§6)
-- every document template in §22: invoice, packing slip, label, reseller invoice, payslip, statements
+- every document template in §22: invoice, packing slip, label, reseller invoice, payslip, statements (printed in black ink, so the accent does not reach paper; the brand shows in its name and logo, D-752)
 
 Chrome stays neutral in every org. The brand shows in the accent, the logo and the documents. Brand values are data, so adding a sixth brand is a row, not a release.
 
-### Language (D-036)
+### Language (D-750, superseding D-036)
 
-- Every string goes through `packages/i18n` (bn, en). A key missing in either language fails CI.
-- **The staff console defaults to English. Everything customer-facing is Bangla:** invoices, labels, payslips, SMS, notifications, the reseller portal and landing pages. Any user can switch their own console language.
-- Latin digits by default, with a per-user option for Bangla digits.
+- **English only, everywhere** (the owner, 2026-10-11): the console, the till, the portals, every document, SMS, email and receipt. There is no language switch.
+- Every string goes through `packages/i18n`, whose one locale is `en`. `scripts/check-i18n.mjs` fails on a missing key, on any catalogue but `en`, and on Bangla text in a value.
+- Latin digits always. Bangla digits a person types into a phone or tracking field are still read.
+- District and thana names are printed and shown in English (`name_en`); the `name_bn` columns stay as data for the website (D-756).
 
 ### Formatting
 
-- Money always renders through `<Money>` / `formatMoney`
+- Money on screens renders through `<Money>` / `formatMoney` (`৳1,23,456.78`); on paper and in messages through `takaText` (`Tk 123,456.78`, D-751)
 - Dates display in Asia/Dhaka
 
 ### Permissions
@@ -1741,7 +1744,7 @@ the account routes answer with an account id and the website keeps its own sessi
   hashes), email codes as HMACs under a key derived from `INTAKE_KEY_SECRET`, reset and view
   tokens as SHA-256 of 32 random bytes; Google links only to a verified address (D-522).
   Per-shopper limits count the `client.ip` the website signs into the body (D-534).
-- **Email.** `notify`'s SMTP channel (nodemailer) per brand, Bangla and English templates in
+- **Email.** `notify`'s SMTP channel (nodemailer) per brand, English templates (D-750) in
   `packages/domain/src/notify/emails.ts`, written in the caller's transaction and sent by
   `notify.send_email` with the body sealed until sent (D-529, D-530).
 - **Secrets.** `STOREFRONT_CREDENTIALS_KEY` seals the SSLCommerz and SMTP passwords and queued

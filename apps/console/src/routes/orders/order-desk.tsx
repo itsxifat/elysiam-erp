@@ -256,7 +256,7 @@ function Desk() {
       area !== null && areaQuery === areaLabel(area)
         ? []
         : filterAreas(areas.data?.areas ?? [], areaQuery),
-    [areas.data, areaQuery, area, locale],
+    [areas.data, areaQuery, area],
   );
   const zone = useMemo(
     () => areas.data?.zones.find((entry) => entry.id === area?.zoneId) ?? null,

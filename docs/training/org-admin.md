@@ -90,7 +90,7 @@ Every change is recorded with what it was before and after.
    A request under it is approved at once; at or above it, a second person decides. With no
    threshold, every request waits. Lowering one applies now. Raising one, or setting the
    first, waits for another org admin. Some types are always decided by a second person.
-2. **Delivery zones**: **Add zone** or **Edit**: a code, the English and Bangla names, the
+2. **Delivery zones**: **Add zone** or **Edit**: a code, the name, the
    **Charge** and the default courier. The order desk prices deliveries from these.
 3. **Courier accounts**: **Set up a courier**: label, adapter, **Sandbox** or **Live**, the API
    keys, the webhook secret, the settlement wallet and **Active**. Keys are stored encrypted and

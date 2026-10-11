@@ -71,7 +71,7 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
 - The mother ERP (M32, `apps/mother-server`, `apps/mother-console`, architecture §30): `pnpm mother:db:bootstrap` (its roles, once per database), `pnpm mother:db:migrate`, `pnpm mother:db:generate`, `pnpm mother:bootstrap --email <address> --name "<name>"` (the first owner's one-time link), `pnpm mother:people reset-two-factor --email <address>` (break-glass, audited), `pnpm mother:brands list|add|set-connection|rotate-key|test` (the brand registry, changed only here, never in the console, D-700; a read connection comes from `MOTHER_BRAND_READ_URL` and is printed only as its fingerprint) and `pnpm mother:dev`. `pnpm --filter @elysium/mother-console e2e:stack` runs its stack spec: two brand databases filled by `preview:seed --brand`, each brand's own API, the mother's API, worker and console (build the brand server, the mother server and the console first; `TEST_DATABASE_URL` is the dev Postgres's admin URL); screenshots to `docs/review/M32/`. On servers: `sh infra/mother/new-env.sh <domain> <brands host> ~/mother/.env.mother` once, then `sh infra/mother/deploy.sh <user@server> [commit]`, from the brands' commit (`docs/runbooks/mother-deploy.md`). A brand opts into being read by setting `BRAND_REPORTING_DB_PORT` in its `.env.brand`.
 - `pnpm api:client` regenerates the typed OpenAPI client. Live from M04.
 - `pnpm bench` is the shared benchmark harness; every latency acceptance check measures through it. `pnpm bench --list` names the module benches; `pnpm bench catalog` (M06 check 2) runs under tsx against the dev stack's Postgres. With no argument it runs the harness's self-test.
-- `pnpm fonts:fetch` re-vendors Inter and Hind Siliguri and recomputes the Bangla `size-adjust`.
+- `pnpm fonts:fetch` re-vendors Inter and Hind Siliguri and recomputes the Bangla `size-adjust` (documents use Inter alone; Hind Siliguri only draws Bangla a person typed, D-753).
 
 ## Invariants: never break these
 
@@ -110,8 +110,8 @@ docs/      spec, milestones, decisions, progress, plans, runbooks
   - every colour, radius, shadow and duration comes from the tokens in `packages/ui`; never hard-code one
   - use shadcn/ui + Tailwind, and lucide-react icons only
   - never use emojis as UI elements
-  - every string goes through i18n (bn + en); the console defaults to en and customer-facing output is bn
-  - money is always shown with `<Money>`, in tabular numerals
+  - every string goes through i18n, English only (D-750): no Bangla anywhere, documents, SMS, emails and receipts included, and no language switch
+  - money on screens is shown with `<Money>`, in tabular numerals; on paper and in messages it is `Tk 1,250.00` through `takaText` (D-751)
   - WCAG AA contrast in both themes; every interactive element is keyboard-reachable with a visible focus ring
 - Integrations:
   - build only against official docs and real credentials; never invent endpoints or fields

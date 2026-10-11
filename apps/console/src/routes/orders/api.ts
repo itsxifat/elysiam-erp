@@ -423,14 +423,28 @@ export const listBuyers = (filters: BuyerFilters, limit: number, offset: number)
  * the browser handles better than a blob URL does — the session cookie travels with a
  * top-level navigation to the API's origin exactly as it does with `fetch`.
  */
-export const documentsUrl = (ids: readonly string[], kind: 'invoice' | 'label' | 'packing_slip') =>
+/** A4, or A5 for the packing slip (M43, D-752). */
+export type DocumentPaper = 'a4' | 'a5';
+
+export const documentsUrl = (
+  ids: readonly string[],
+  kind: 'invoice' | 'label' | 'packing_slip',
+  paper: DocumentPaper = 'a4',
+) =>
   new URL(
-    `/v1/orders/documents${query({ ids: ids.join(','), kind })}`,
+    `/v1/orders/documents${query({ ids: ids.join(','), kind, ...(paper === 'a5' ? { paper } : {}) })}`,
     env.VITE_API_URL,
   ).toString();
 
-export const documentUrl = (id: string, kind: 'invoice' | 'label' | 'packing_slip') =>
-  new URL(`/v1/orders/${id}/document${query({ kind })}`, env.VITE_API_URL).toString();
+export const documentUrl = (
+  id: string,
+  kind: 'invoice' | 'label' | 'packing_slip',
+  paper: DocumentPaper = 'a4',
+) =>
+  new URL(
+    `/v1/orders/${id}/document${query({ kind, ...(paper === 'a5' ? { paper } : {}) })}`,
+    env.VITE_API_URL,
+  ).toString();
 
 export const buyersExportUrl = (filters: BuyerFilters, format: 'csv' | 'xlsx') =>
   new URL(`/v1/buyers/export${query({ ...filters, format })}`, env.VITE_API_URL).toString();

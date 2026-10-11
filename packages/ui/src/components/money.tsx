@@ -17,7 +17,7 @@ import { cn } from '../lib/cn.js';
  *    proportional digits does not line up — an accountant scanning a cash book
  *    for an anomaly is reading the *shape* of the column, and proportional
  *    figures destroy that signal.
- * 3. **`formatMoney`**, so grouping is lakh/crore rather than thousands. ৳১,২৩,৪৫৬.৭৮,
+ * 3. **`formatMoney`**, so grouping is lakh/crore rather than thousands. ৳1,23,456.78,
  *    not ৳123,456.78. Getting this wrong is not a cosmetic bug in Bangladesh; it
  *    is a number the reader has to stop and re-parse.
  *

@@ -2,9 +2,11 @@
  * The Gotenberg client (architecture §22, §21).
  *
  * Gotenberg is headless Chromium behind an HTTP API. It is used instead of a
- * PDF library because §22's real requirement is Bangla: a library that draws
- * text box by box does not run the font's GSUB table, so `ক্ষ` comes out as
- * three separate letters. Chromium shapes it because Chromium is a browser.
+ * PDF library because a document is a designed page — grid, hairlines, a
+ * variable font's weights, tabular figures — and a browser lays that out from
+ * the same HTML and CSS a test can read. It also shapes any script a buyer
+ * types into their own name or address, which a box-by-box PDF library does
+ * not (the documents' own words are English, D-750).
  *
  * ## What was verified, and how
  *
@@ -130,7 +132,7 @@ export class GotenbergClient {
   /**
    * Rasterize a document to PNG.
    *
-   * Used for the human-checkable Bangla proof (acceptance check 5). It renders
+   * Used for the review pictures of every document (M43). It renders
    * the same HTML through the same Chromium with the same fonts as `renderPdf`,
    * so what it shows is what the PDF contains — which is the property that
    * makes it evidence rather than decoration.

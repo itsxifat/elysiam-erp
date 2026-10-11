@@ -102,7 +102,6 @@ The controls at the top right of the console:
   what you want to do ("new order", "add product", "invite"), and press Enter;
 - the bell shows what is waiting for you;
 - the moon or sun button switches between the dark and light themes;
-- the **বাংলা** / **English** button switches the language (the console starts in English);
 - the round button with your initials opens your account menu, with **My account** and
   **Sign out**.
 
@@ -110,8 +109,9 @@ The menu on the left groups the screens (Sell, Products and stock, Money, People
 a group's name to fold it away; the button at the bottom left folds the whole menu to icons.
 Settings is at the bottom of the menu.
 
-The investor portal and the buyers' tracking page start in Bangla, and the language button at
-the top switches them. The till has its own language and theme buttons.
+Everything is in English: the console, the till, the investor portal, the buyers' tracking page,
+and every invoice, slip, label, receipt, SMS and email. There is no language button. The till
+has its own theme button.
 
 ## Forgotten password or lost phone
 

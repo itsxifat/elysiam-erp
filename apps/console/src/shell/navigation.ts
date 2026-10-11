@@ -631,7 +631,7 @@ export const PALETTE_ACTIONS: readonly PaletteAction[] = [
     labelKey: 'palette.actionNewOrder',
     icon: SquarePen,
     required: { action: 'create', subject: 'Order' },
-    keywords: ['new order', 'sell', 'order desk', 'নতুন অর্ডার'],
+    keywords: ['new order', 'sell', 'order desk'],
   },
   {
     id: 'order-queue',

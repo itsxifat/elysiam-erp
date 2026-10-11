@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Fragment, useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
-import { useLocale } from '../../i18n/locale.js';
 import { deliveryZones, performance, type PerformanceRow } from './api.js';
 import { CourierHeader, Field } from './courier-nav.js';
 import { daysBefore, percentOfBps, todayInDhaka } from './courier-ui.js';
@@ -24,7 +23,6 @@ import { DateRangePicker } from '../../ui/date-picker.js';
  */
 export function CourierPerformancePage() {
   const t = useCourierT();
-  const { locale } = useLocale();
   const ability = useAbility();
   const mayRead = ability.can('read', 'LedgerReport');
 
@@ -48,7 +46,7 @@ export function CourierPerformancePage() {
     const names = new Map((zones.data?.zones ?? []).map((zone) => [zone.id, zone.nameEn]));
     return (id: string | null) =>
       id === null ? t('courier.performance.noZone') : (names.get(id) ?? id.slice(0, 8));
-  }, [zones.data, locale, t]);
+  }, [zones.data, t]);
 
   const rows = report.data?.rows ?? [];
   const couriers = report.data?.couriers ?? [];

@@ -21,7 +21,7 @@ the round button with your initials (see [Your account](README.md#your-account))
 ## Take an order
 
 1. Open **Orders** and press **New order**, or open the **Order desk** tab.
-2. **Phone**: type the buyer's mobile number (`01XXXXXXXXX`, `+880` or Bangla digits). For a
+2. **Phone**: type the buyer's mobile number (`01XXXXXXXXX` or `+880`). For a
    returning buyer, their recent orders and saved addresses appear. **Use this address** fills
    a saved one.
 3. **Buyer name**, then **Area (thana, district)**: type, then pick from the list with the

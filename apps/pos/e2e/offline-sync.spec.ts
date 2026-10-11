@@ -1,3 +1,6 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
+
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 import { STUB_API } from '../playwright.config.js';
@@ -248,6 +251,10 @@ test('a receipt prints through the print stylesheet: 80 mm, English, and nothing
   const printed = await receipt.innerText();
   const bengali = new RegExp(`[${String.fromCodePoint(0x0980)}-${String.fromCodePoint(0x09ff)}]`);
   expect(bengali.test(printed), printed).toBe(false);
+  // The receipt as the customer gets it, for the owner's review (M43).
+  const review = path.resolve(import.meta.dirname, '../../../docs/review/M43');
+  mkdirSync(review, { recursive: true });
+  await receipt.screenshot({ path: path.join(review, 'till-receipt-80mm.png') });
   await expect(receipt.getByTestId('receipt-no')).toHaveText('GUL1-1-0001');
 
   // And the browser's own print pipeline lays it out on an 80 mm page.

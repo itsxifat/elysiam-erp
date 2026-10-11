@@ -68,7 +68,7 @@ staging.
       Who: Operator.
 - [ ] **RedX.** Verified against a merchant account (D-200), or left off
       (`COURIER_REDX_ENABLED` unset). Who: Operator.
-- [ ] **BulkSMSBD.** A real Bangla message sent and received on staging with the brand's key
+- [ ] **BulkSMSBD.** A real English message sent and received on staging with the brand's key
       and sender ID. Or the fake gateway stays, and no SMS is sent. Who: Operator.
 - [ ] **Meta (D-257).** The spend import and the Conversions API tested with a brand's
       system-user token, pixel and a test event code. Or left off (`MARKETING_META_ENABLED`

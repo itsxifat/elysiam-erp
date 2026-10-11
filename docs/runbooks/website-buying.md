@@ -37,7 +37,7 @@ sealed under the old key and not yet sent is recorded as skipped.
    key). Addresses are masked in the server's logs, never in this list.
 
 Shoppers get: the six-digit email code, the password link, and order placed, confirmed,
-shipped (with the tracking code), delivered and cancelled, in Bangla or English. The order
+shipped (with the tracking code), delivered and cancelled, in English (D-750). The order
 emails link to `<website address>/order-confirmation/<order no>?token=…`, so set the "Website
 address" on Website → Settings (`https://…`) first; without it the emails go without the link.
 

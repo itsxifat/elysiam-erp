@@ -10,7 +10,7 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft, FileText, Tag } from 'lucide-react';
+import { ArrowLeft, ClipboardList, FileText, Tag } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -207,6 +207,15 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
           >
             <FileText aria-hidden="true" />
             {t('orders.detail.printInvoice')}
+          </a>
+          <a
+            href={documentUrl(order.id, 'packing_slip')}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            <ClipboardList aria-hidden="true" />
+            {t('orders.detail.printSlip')}
           </a>
           <a
             href={documentUrl(order.id, 'label')}

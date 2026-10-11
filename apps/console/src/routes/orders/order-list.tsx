@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   CheckCheck,
+  ClipboardList,
   FileText,
   PackageCheck,
   Plus,
@@ -133,7 +134,7 @@ function OrderList() {
   );
   const zoneName = useMemo(
     () => new Map((areas.data?.zones ?? []).map((zone) => [zone.id, zone.nameEn])),
-    [areas.data, locale],
+    [areas.data],
   );
 
   const rows = orders.data?.items ?? [];
@@ -437,6 +438,22 @@ function OrderList() {
           >
             <FileText aria-hidden="true" />
             {t('orders.bulk.printInvoices')}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => window.open(documentsUrl(chosen, 'packing_slip'), '_blank')}
+          >
+            <ClipboardList aria-hidden="true" />
+            {t('orders.bulk.printSlips')}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => window.open(documentsUrl(chosen, 'packing_slip', 'a5'), '_blank')}
+          >
+            <ClipboardList aria-hidden="true" />
+            {t('orders.bulk.printSlipsA5')}
           </Button>
           <Button
             size="sm"

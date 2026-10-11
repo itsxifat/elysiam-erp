@@ -42,10 +42,9 @@ From then on, each sign-in asks for the current 6-digit code from the app. If se
 people set this up at the same moment from one office, the system may say "Too many
 attempts. Wait a minute and try again". Wait a minute and try again.
 
-**Language and look.** The console starts in English. The **বাংলা** button at the top right
-switches to Bangla, and the moon icon switches to the dark theme. **Ctrl K** (or the search box
-at the top) jumps to any screen or action: try "new order", "transfer" or "stuck". The portal and the tracking page
-start in Bangla; the language button at the top switches them to English.
+**Language and look.** Everything is in English, with no language button (the owner's
+decision, D-750). The moon icon switches to the dark theme. **Ctrl K** (or the search box
+at the top) jumps to any screen or action: try "new order", "transfer" or "stuck".
 
 **If something looks wrong**, note the screen, the sign-in you used and what you did. A
 screenshot helps. Re-making the preview gives everyone new passwords and fresh demo data.
@@ -183,8 +182,8 @@ Sign in as **Marketing**.
 3. **Leads**: people who asked about a product. Change a lead's status as you follow up.
 4. **Promo codes**: **EID10** is live. **New code** creates another: a percentage, a flat
    amount or free delivery, with limits and dates.
-5. **Message templates**: the birthday offer and the loan reminder texts, in Bangla and
-   English. No SMS leaves the preview; messages go to a stand-in.
+5. **Message templates**: the birthday offer and the loan reminder texts, in English (a
+   message written in Bangla is refused). No SMS leaves the preview; messages go to a stand-in.
 
 ## 6. Money: wallets, cash and statements
 
@@ -289,8 +288,7 @@ They see nothing else of the business.
 Open https://elyerp.enfinito.cloud/portal/track/elysium-lifestyle-bd. You need no sign-in.
 Type the order number and the four phone digits that the credentials file gives, then
 press **Track**.
-The buyer sees where the parcel is, in Bangla or English, and nothing else about the
-order.
+The buyer sees where the parcel is, in English, and nothing else about the order.
 
 ## 12. Dashboards
 
