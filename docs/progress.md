@@ -2968,7 +2968,12 @@ dry-run|commit --file <users.json>`.
   - The domain's property tests (`assignment.test.ts`, `ownership.test.ts`).
   - Route matrix, cost sweep, tenancy guard, module boundaries and catalog deletes.
   - `order-workflow.stack.ts`: 6 of 6 in a real browser, axe clean in both themes, 30
-    screenshots in `docs/review/M41/`.
+    screenshots in `docs/review/M41/`; run with the touched specs (`advances`, `order-desk`,
+    `order-lifecycle`, `packing`): 21 of 21 (`D:/Projects/erp-tools/stack-m41-5.log`). The
+    stubbed `pnpm e2e`: 13 of 13.
+  - The acceptance auditor's gaps closed: an expiry now provably moves the order to the next
+    person (a busier agent who had not passed on it), the touched stack specs re-run, and the
+    progress entry and plan status written.
 - **New dependencies:** none.
 - **Follow-ups (owner: human, D-724):**
   - Switch auto-assign on per brand.
