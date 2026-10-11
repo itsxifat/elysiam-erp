@@ -76,11 +76,11 @@ there holds everything about your own sign-in:
 - **Two-step sign-in**: whether it is on, whether your role requires it, when you set it up and
   how many recovery codes are left.
   - **Set up two-step sign-in** if it is off.
-  - **Set up on a new phone** when you change phones: enter your password and a code from the
-    old phone (or a recovery code), scan the new QR code with the new phone and type its code.
-    The old phone keeps working until you finish, and stops after.
-  - **New recovery codes** makes ten new ones; the old ones stop working. Copy, download or
-    print them, and keep them away from your phone.
+  - **Set up on a new phone** when you change phones: enter your password and the code the old
+    phone shows, scan the new QR code with the new phone and type its code. The old phone keeps
+    working until you finish, and stops after.
+  - **New recovery codes** makes ten new ones with your password and a current code; the old
+    ones stop working. Copy, download or print them, and keep them away from your phone.
   - **Turn off** needs your password and a current code. It is greyed out, with the reason
     beside it, when your role requires two-step sign-in or you are a super admin.
 - **Devices**: every phone and computer signed in as you, with the browser, the address (its
@@ -121,10 +121,9 @@ There is no "forgot password" link. Only an org admin can reset a sign-in.
   hour. Your old password stops working and you are signed out everywhere.
 - **New phone, old one still with you.** Move it yourself: **My account** →
   **Set up on a new phone**.
-- **Lost phone.** If you still have a recovery code, sign in with it and use **Set up on a new
-  phone** with the same recovery code; then tell an org admin. Without one, tell an org admin
-  at once: they reset your two-step sign-in, and at your next sign-in you set it up again on
-  the new phone.
+- **Lost phone.** Tell an org admin at once. If you still have a recovery code, it gets you in
+  today. The admin resets your two-step sign-in, and at your next sign-in you set it up again on
+  the new phone. A recovery code cannot move it to a new phone by itself.
 - **A second admin.** For org admins, accounts, HR, branch managers, warehouse staff and
   investors, a second org admin must approve the reset before it takes effect. This can take
   some time, so ask early. Sales and marketing staff are reset by one admin.

@@ -61,9 +61,8 @@ sign-in** says when they last finished signing in.
 
 - **Manage** → **Sign out everywhere** ends every session the person has, for example when a
   phone was lost or a shared computer was left signed in. Their password and two-step sign-in
-  stay; they simply sign in again. For someone who also works in another brand it ends only
-  their sessions in this brand, unless a super admin does it. You cannot do it to yourself:
-  use **My account** → **Devices**.
+  stay; they simply sign in again. You cannot do it to yourself: use **My account** →
+  **Devices**.
 - **Manage** → **Turn off two-step**, with a reason, appears only for someone whose roles do
   not require it (sales or marketing, unless the super admin requires it for them). For
   warehouse, HR and branch managers it waits for a second org admin, like a reset. For anyone
