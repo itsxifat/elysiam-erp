@@ -1,4 +1,4 @@
-import { Button, Money, StatusBadge, cn } from '@elysium/ui';
+import { Button, Money, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { BellRing, Check, CirclePause, CirclePlay, X } from 'lucide-react';
@@ -183,7 +183,7 @@ function Dock() {
     <div
       role="region"
       aria-label={t('wf.dock.label')}
-      className="pointer-events-none fixed right-4 bottom-4 z-40 flex w-[min(24rem,calc(100vw-2rem))] flex-col items-end gap-2"
+      className="pointer-events-none fixed right-4 bottom-4 left-4 z-40 ml-auto flex max-w-sm flex-col items-end gap-2"
       data-testid="work-dock"
     >
       <p className="sr-only" aria-live="polite">
@@ -234,7 +234,7 @@ function Dock() {
       ))}
 
       {showsStatus && presence !== undefined ? (
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border bg-popover py-1 pr-1 pl-3 text-xs text-popover-foreground shadow-popover">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-popover">
           <span className="sr-only">{t('wf.status.yours')}:</span>
           <StatusBadge tone={STATE_TONE[presence.state]}>
             {t(`wf.status.${presence.state}`)}
@@ -300,7 +300,7 @@ function OfferCardView({
   return (
     <section
       aria-labelledby={`offer-${offer.id}`}
-      className="pointer-events-auto w-full overflow-hidden rounded-xl border border-primary/50 bg-popover text-popover-foreground shadow-popover"
+      className="pointer-events-auto w-full overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-popover"
       data-testid="offer-card"
       data-order-no={offer.orderNo}
     >
@@ -358,12 +358,7 @@ function OfferCardView({
         aria-valuetext={`${String(left)} ${t('wf.offer.left')}`}
         value={Math.round(share * 100)}
         max={100}
-        className={cn(
-          'block h-1.5 w-full appearance-none bg-muted [&::-webkit-progress-bar]:bg-muted',
-          left <= 10
-            ? '[&::-moz-progress-bar]:bg-destructive [&::-webkit-progress-value]:bg-destructive'
-            : '[&::-moz-progress-bar]:bg-primary [&::-webkit-progress-value]:bg-primary',
-        )}
+        className="h-1.5 w-full appearance-none bg-muted [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary"
       />
       <p
         className="px-4 pb-2 text-right text-xs text-muted-foreground tabular-nums"

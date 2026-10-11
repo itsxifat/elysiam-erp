@@ -1,7 +1,5 @@
-import { OWNER_ACK_HEADER } from '@elysium/contracts';
-
 import { api } from '../../api.js';
-import type { OrderRow, OrderStatus } from './api.js';
+import { ackHeaders, type OrderRow, type OrderStatus } from './api.js';
 
 /**
  * The order workflow's endpoints (M41, D-710 to D-720), typed to what the server returns.
@@ -9,11 +7,6 @@ import type { OrderRow, OrderStatus } from './api.js';
  * Hand-written for the reason the rest of the orders client gives. **Every amount is a decimal
  * string of poisha.** No cost field anywhere (invariant 5).
  */
-
-/** "I know somebody else is handling this order" (D-710), on a desk write. */
-export function ackHeaders(ack: boolean | undefined): Readonly<Record<string, string>> | undefined {
-  return ack === true ? { [OWNER_ACK_HEADER]: '1' } : undefined;
-}
 
 // --- ownership ----------------------------------------------------------------------
 

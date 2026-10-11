@@ -1,6 +1,6 @@
 import { api } from '../../api.js';
 import type { ReturnReason } from './returns-logic.js';
-import { ackHeaders } from './workflow-api.js';
+import { ackHeaders } from './api.js';
 
 /**
  * Advances and return reasons over HTTP (M17), typed to what `advances.controller.ts`

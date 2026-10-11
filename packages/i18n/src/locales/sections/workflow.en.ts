@@ -14,17 +14,14 @@ const en = {
   'wf.saving': 'Saving…',
   'wf.saved': 'Saved.',
   'wf.someone': 'A colleague',
-  'wf.you': 'You',
   'wf.order': 'Order',
   'wf.customer': 'Customer',
-  'wf.area': 'Area',
   'wf.cod': 'Collect',
   'wf.items': 'Pieces',
   'wf.owner': 'Handled by',
   'wf.nobody': 'Nobody',
   'wf.waitingSince': 'Waiting since',
   'wf.stage': 'At the hub',
-  'wf.open': 'Open',
 
   // Presence and the work dock.
   'wf.dock.label': 'Your work',
@@ -45,12 +42,9 @@ const en = {
   'wf.offer.accept': 'Accept',
   'wf.offer.decline': 'Decline',
   'wf.offer.gone': 'This offer has ended.',
-  'wf.offer.accepted': 'is yours now.',
-  'wf.offer.declined': 'Declined. It goes to the next person.',
   'wf.offer.announce': 'New order offered to you:',
 
   // Somebody acted on your order.
-  'wf.notice.title': 'Someone worked on your order',
   'wf.notice.on': 'on your order',
   'wf.notice.dismiss': 'Dismiss',
   'wf.act.edit': 'edited',
@@ -208,7 +202,6 @@ const en = {
   'wf.settings.denied': 'Only an org admin changes the order workflow.',
 
   // Staff → desk profile.
-  'wf.profile.button': 'Desk',
   'wf.profile.title': 'Desk profile',
   'wf.profile.detail':
     'What this person may be offered, and the hub they pack at. Sales staff take orders and messages unless this says otherwise.',

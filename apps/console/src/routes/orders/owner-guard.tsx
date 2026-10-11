@@ -155,7 +155,7 @@ export function OwnershipBanner({
       open ? (
         <section
           aria-labelledby="ownership-title"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4"
           data-testid="ownership-banner"
           data-owner="nobody"
         >
@@ -224,7 +224,7 @@ export function OwnershipBanner({
       <section
         role="status"
         aria-labelledby="ownership-title"
-        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/50 bg-warning-subtle p-4 text-warning-subtle-foreground"
+        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-warning-subtle p-4 text-warning-subtle-foreground"
         data-testid="ownership-banner"
         data-owner="other"
       >

@@ -1,3 +1,4 @@
+import { OWNER_ACK_HEADER } from '@elysium/contracts';
 import { en } from '@elysium/i18n/locales/sections/workflow.en';
 import { describe, expect, it } from 'vitest';
 
@@ -10,10 +11,20 @@ import {
   offerShareLeft,
   secondsLeft,
 } from './workflow-logic.js';
+import { OWNER_ACK, ackHeaders } from './api.js';
 
 /** M41's console logic: the heartbeat, the offer countdown, call-backs and the hand-over list. */
 
 const NOW = Date.parse('2026-10-11T10:00:00.000Z');
+
+describe('the owner acknowledgement', () => {
+  it('is the contract’s header, sent only after go ahead', () => {
+    expect(OWNER_ACK).toBe(OWNER_ACK_HEADER);
+    expect(ackHeaders(true)).toEqual({ [OWNER_ACK_HEADER]: '1' });
+    expect(ackHeaders(false)).toBeUndefined();
+    expect(ackHeaders(undefined)).toBeUndefined();
+  });
+});
 
 describe('the heartbeat', () => {
   it('reports only whether this tab is visible and the seconds since its last input', () => {

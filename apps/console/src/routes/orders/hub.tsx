@@ -396,7 +396,7 @@ function Handover({ items }: { readonly items: readonly QueuedOrder[] }) {
             if (code.trim() !== '') add(code);
           }}
         >
-          <label className="block min-w-64 flex-1 space-y-1.5 text-sm" htmlFor={`${id}-code`}>
+          <label className="block flex-1 space-y-1.5 text-sm" htmlFor={`${id}-code`}>
             <span className="font-medium">{t('wf.hubPage.scan')}</span>
             <input
               id={`${id}-code`}

@@ -227,7 +227,7 @@ function PersonRows({
         </td>
       </tr>
       {open ? (
-        <tr className="border-b border-border bg-muted/30">
+        <tr className="border-b border-border bg-muted/50">
           <td colSpan={6} className="px-3 py-3">
             <PersonOrders person={person} people={people} />
           </td>
