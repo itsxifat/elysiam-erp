@@ -7,7 +7,6 @@ import {
   callAttemptProblem,
   hubStageOf,
   isSupervisor,
-  type CallOutcome,
   type HubStage,
   type OwnerGatedAct,
   applicableAdvance,
@@ -1477,7 +1476,7 @@ export class OrdersService {
         }
         const callBackAt = input.callBackAt === undefined ? null : new Date(input.callBackAt);
         const problem = callAttemptProblem({
-          outcome: input.outcome as CallOutcome,
+          outcome: input.outcome,
           callBackAt,
           now: new Date(),
         });

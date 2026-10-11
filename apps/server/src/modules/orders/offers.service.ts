@@ -188,7 +188,7 @@ export class OffersService {
       { orgId: context.orgId, userId: context.userId },
       async (tx): Promise<{ orderId: string; orderNo: string } | { gone: string }> => {
         const offer = await offers.offerById(tx, context.orgId, offerId);
-        if (offer === undefined || offer.user_id !== context.userId) {
+        if (offer?.user_id !== context.userId) {
           return { gone: 'No such offer.' };
         }
         // The order first, then its offer: the order a take, a transition and a dispatch lock
@@ -205,7 +205,7 @@ export class OffersService {
           const order = await repo.orderById(tx, context.orgId, offer.order_id);
           if (
             offer.status === 'offered' &&
-            (order === undefined || order.status !== 'pending' || order.assigned_to !== null)
+            (order?.status !== 'pending' || order.assigned_to !== null)
           ) {
             await this.closeAndTell(tx, context.orgId, offerId, 'withdrawn');
           }
@@ -386,7 +386,7 @@ export class OffersService {
   async expire(orgId: string, offerId: string): Promise<boolean> {
     return withOrg({ orgId, userId: OFFER_ACTOR }, async (tx) => {
       const offer = await offers.offerById(tx, orgId, offerId);
-      if (offer === undefined || offer.status !== 'offered') return false;
+      if (offer?.status !== 'offered') return false;
       // The order first, then the offer, the same order a take locks them in (no deadlock).
       await repo.orderForUpdate(tx, orgId, offer.order_id);
       const closed = await this.closeAndTell(tx, orgId, offerId, 'expired', true);
@@ -441,9 +441,7 @@ export class OffersService {
     const settings = await this.settingsIn(tx, orgId);
     if (!settings.autoAssign) return false;
     const order = await repo.orderForUpdate(tx, orgId, orderId);
-    if (order === undefined || order.status !== 'pending' || order.assigned_to !== null) {
-      return false;
-    }
+    if (order?.status !== 'pending' || order.assigned_to !== null) return false;
     if ((await offers.liveOfferFor(tx, orgId, orderId)) !== undefined) return false;
     // Anything past its deadline for this order is lapsed first, so it counts as declined.
     for (const row of await offers.overdueOffers(tx, orgId, 200)) {
