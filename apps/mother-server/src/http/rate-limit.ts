@@ -19,6 +19,12 @@ export const CREDENTIAL_RULES: Readonly<Record<string, RateRule>> = {
   '/api/auth/reset-password': { windowSeconds: 60, perIp: 10 },
   '/api/auth/two-factor/verify-totp': { windowSeconds: 60, perIp: 10 },
   '/api/auth/two-factor/verify-backup-code': { windowSeconds: 60, perIp: 10 },
+  // My account's checks of a password or a code (M40, D-705): per address here, and per
+  // person in the account service, which refuses after five wrong answers in 15 minutes.
+  '/v1/account/password': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/new-app': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/new-app/confirm': { windowSeconds: 60, perIp: 10 },
+  '/v1/account/two-factor/backup-codes': { windowSeconds: 60, perIp: 10 },
 };
 
 export interface RateDecision {

@@ -22,3 +22,6 @@ export interface MotherRuntime {
 }
 
 export const RUNTIME = Symbol('MOTHER_RUNTIME');
+
+/** Better Auth's hasher and sealer for My account (M40), resolved once at start-up. */
+export const ACCOUNT_CRYPTO = Symbol('MOTHER_ACCOUNT_CRYPTO');

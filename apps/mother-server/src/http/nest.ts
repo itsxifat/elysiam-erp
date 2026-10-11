@@ -105,3 +105,10 @@ export function actorOf(request: FastifyRequest): Actor {
     requestId: (request as OwnerRequest).requestId ?? null,
   };
 }
+
+/** The session the request came from: My account's "this device" (D-704). */
+export function sessionOf(request: FastifyRequest): string {
+  const owner = (request as OwnerRequest).owner;
+  if (owner === undefined) throw new MotherError('UNAUTHENTICATED', 'Sign in first.');
+  return owner.sessionId;
+}

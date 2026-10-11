@@ -122,17 +122,26 @@ export const brandCreateSchema = z.object({
 });
 export type BrandCreateInput = z.infer<typeof brandCreateSchema>;
 
+/**
+ * What an owner may change about a brand from the console. Strict: a brand's read
+ * connection (and its owner-link key) change only on the server, by the operator's
+ * `brands set-connection` and `brands rotate-key` (D-700), so a body naming
+ * `readConnection` is refused rather than quietly ignored.
+ */
 export const brandUpdateSchema = z
-  .object({
+  .strictObject({
     displayName: z.string().trim().min(1).max(120).optional(),
     adminUrl: adminUrlSchema.optional(),
-    readConnection: readConnectionSchema.optional(),
     isActive: z.boolean().optional(),
   })
   .refine((value) => Object.values(value).some((field) => field !== undefined), {
     message: 'Change at least one field.',
   });
 export type BrandUpdateInput = z.infer<typeof brandUpdateSchema>;
+
+/** The operator's `brands set-connection` on the server (D-700): a new read connection. */
+export const brandConnectionSchema = z.object({ readConnection: readConnectionSchema });
+export type BrandConnectionInput = z.infer<typeof brandConnectionSchema>;
 
 export const pullRequestSchema = z.object({
   /** Every day the brand has, rather than the recent window (D-484). */
@@ -156,3 +165,62 @@ export const activityQuerySchema = z.object({
 });
 
 export const uuidParamSchema = z.string().uuid();
+
+// --- my account (M40, D-701 to D-705) ----------------------------------------------------
+
+/** Better Auth's limits as the mother sets them (`minPasswordLength`, its default maximum). */
+export const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MAX_LENGTH = 128;
+
+/** A password typed to confirm a change: checked against the stored one, never parsed. */
+const typedPassword = z.string().min(1).max(PASSWORD_MAX_LENGTH);
+
+export const accountNameSchema = z.object({ name: z.string().trim().min(1).max(200) });
+export type AccountNameInput = z.infer<typeof accountNameSchema>;
+
+export const passwordChangeSchema = z
+  .object({
+    currentPassword: typedPassword,
+    newPassword: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH),
+    /** End every other session of this person; this one stays signed in. */
+    signOutOtherDevices: z.boolean().default(true),
+  })
+  .refine((value) => value.newPassword !== value.currentPassword, {
+    message: 'The new password must differ from the current one.',
+    path: ['newPassword'],
+  });
+export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;
+
+export const passwordConfirmSchema = z.object({ password: typedPassword });
+export type PasswordConfirmInput = z.infer<typeof passwordConfirmSchema>;
+
+/** A 6-digit code from an authenticator app, spaces allowed while typing. */
+export const totpCodeSchema = z
+  .string()
+  .transform((value) => value.replace(/\s/g, ''))
+  .pipe(z.string().regex(/^\d{6}$/, 'Expected the 6-digit code.'));
+
+/**
+ * Proof of the second factor held now: the app's 6-digit code, or one of the recovery
+ * codes (`xxxxx-xxxxx`), which is then used up.
+ */
+export const currentCodeSchema = z
+  .string()
+  .trim()
+  .min(6)
+  .max(32)
+  .transform((value) => (/^[\d\s]+$/.test(value) ? value.replace(/\s/g, '') : value));
+
+/** Setting two-step sign-in up on a new phone, step 1: the password and the code held now. */
+export const newAuthenticatorSchema = z.object({
+  password: typedPassword,
+  code: currentCodeSchema,
+});
+export type NewAuthenticatorInput = z.infer<typeof newAuthenticatorSchema>;
+
+/** Step 2: the first code the new phone shows. */
+export const confirmAuthenticatorSchema = z.object({ code: totpCodeSchema });
+export type ConfirmAuthenticatorInput = z.infer<typeof confirmAuthenticatorSchema>;
+
+/** A Better Auth session id, as the devices list hands it out. Never a session token. */
+export const sessionIdParamSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);

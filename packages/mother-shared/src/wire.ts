@@ -290,6 +290,50 @@ export interface MeWire {
   readonly email: string;
 }
 
+/** My account (M40, D-701): who I am here and the state of my sign-in. */
+export interface AccountWire {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
+  readonly createdAt: string;
+  readonly lastSignInAt: string | null;
+  /** When the password was last set or changed. */
+  readonly passwordChangedAt: string | null;
+  readonly twoFactor: {
+    /** Always true once past the enrolment wall: it cannot be turned off (D-487). */
+    readonly enabled: boolean;
+    /** Recovery codes not yet used; null when they cannot be read. */
+    readonly backupCodesLeft: number | null;
+    readonly backupCodesIssued: number;
+  };
+}
+
+/** A device signed in as me (D-704). Never the session's token, never the whole address. */
+export interface AccountSessionWire {
+  readonly id: string;
+  /** The session this request came from. */
+  readonly current: boolean;
+  /** A browser and system read from the user agent, or null when it says nothing known. */
+  readonly browser: string | null;
+  readonly os: string | null;
+  /** The address it signed in from, masked (`103.129.*.*`). */
+  readonly address: string | null;
+  readonly createdAt: string;
+  readonly lastActiveAt: string;
+  readonly expiresAt: string;
+}
+
+/** Step 1 of a new phone (D-702): the key to add, shown until it is confirmed or expires. */
+export interface AuthenticatorSetupWire {
+  readonly totpURI: string;
+  readonly expiresAt: string;
+}
+
+/** New recovery codes (D-703): returned once, never readable again. */
+export interface BackupCodesWire {
+  readonly backupCodes: readonly string[];
+}
+
 export interface PersonWire {
   readonly id: string;
   readonly name: string;

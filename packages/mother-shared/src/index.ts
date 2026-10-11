@@ -7,6 +7,7 @@
  * no shared package may depend on it (`mother-separation.test.ts`), so nothing here
  * reaches a brand's image or bundle.
  */
+export * from './devices.js';
 export * from './errors.js';
 export * from './schemas.js';
 export * from './figures.js';

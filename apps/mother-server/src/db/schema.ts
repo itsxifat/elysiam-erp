@@ -68,6 +68,14 @@ export const sessions = auth.table(
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
+    /**
+     * The last request this session made, at most a minute stale (M40, D-704): what My
+     * account's devices list shows. Sessions are never refreshed (D-487), so `updated_at`
+     * does not move; this is the mother's own column, which Better Auth never writes.
+     */
+    lastActiveAt: timestamp('last_active_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
     ...timestamps,
   },
   (table) => [index('sessions_user_idx').on(table.userId)],

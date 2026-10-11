@@ -5,12 +5,13 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, NestFactory, Reflector } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 
+import { accountCryptoFrom } from './account/account.js';
 import type { MotherAuth } from './auth/auth.js';
 import { registerAuth } from './http/auth-plugin.js';
 import { CONTROLLERS } from './http/controllers.js';
 import { OwnerGuard, ProblemFilter } from './http/nest.js';
 import type { MemoryRateLimiter } from './http/rate-limit.js';
-import { RUNTIME, type MotherRuntime } from './runtime.js';
+import { ACCOUNT_CRYPTO, RUNTIME, type MotherRuntime } from './runtime.js';
 
 /**
  * The mother's API, assembled the one way both `main.api.ts` and the tests use (D-480):
@@ -20,12 +21,13 @@ import { RUNTIME, type MotherRuntime } from './runtime.js';
 
 @Module({})
 class MotherModule {
-  static register(runtime: MotherRuntime): DynamicModule {
+  static register(runtime: MotherRuntime, auth: MotherAuth): DynamicModule {
     return {
       module: MotherModule,
       controllers: CONTROLLERS,
       providers: [
         { provide: RUNTIME, useValue: runtime },
+        { provide: ACCOUNT_CRYPTO, useFactory: () => accountCryptoFrom(auth) },
         {
           provide: APP_GUARD,
           useFactory: (reflector: Reflector) => new OwnerGuard(reflector),
@@ -56,7 +58,7 @@ export async function buildMotherApp(options: BuildOptions): Promise<NestFastify
     bodyLimit: 256 * 1024,
   });
   const app = await NestFactory.create<NestFastifyApplication>(
-    MotherModule.register(options.runtime),
+    MotherModule.register(options.runtime, options.auth),
     adapter,
     { logger: false, abortOnError: false },
   );

@@ -14,13 +14,20 @@ import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildMotherApp } from './app.js';
+import type { Actor } from './audit/audit.js';
 import { createMotherAuth, type MotherAuth } from './auth/auth.js';
 import { BrandPools } from './brands/pools.js';
+import { createBrand } from './brands/registry.js';
 import {
   bootstrapOwner,
   breakGlassTwoFactorReset,
   CliRefused,
+  describeConnectionTest,
+  listBrandsFromServer,
   registerBrandFromServer,
+  rotateBrandKeyFromServer,
+  setBrandConnectionFromServer,
+  testBrandFromServer,
 } from './cli.js';
 import { secretsKeyFrom } from './crypto/secrets.js';
 import { motherSql } from './db/client.js';
@@ -32,17 +39,26 @@ import {
   Browser,
   PASSWORD,
   PUBLIC_URL,
+  secretOf,
   signInWithCode,
 } from './testing/http-client.js';
 
 /**
- * The mother's HTTP surface end to end (D-487 to D-491): the first owner, the second-factor
- * wall, sessions, CSRF, the credential limiter, the brand registry, the owner sign-in link
- * (check 2's mother half), the people rules and the activity log.
+ * The mother's HTTP surface end to end (D-487 to D-491, D-700 to D-705): the first owner,
+ * the second-factor wall, sessions, CSRF, the credential limiter, the brand registry (whose
+ * changes are the server's alone), the owner sign-in link (check 2's mother half), My
+ * account, the people rules and the activity log.
  */
 
 const ORG_A = SEED_ORG_IDS['elysium-lifestyle-bd'] ?? '';
 const silent = pino({ level: 'silent' });
+const OPERATOR: Actor = {
+  userId: 'system:operator',
+  email: 'system:operator',
+  name: 'Operator',
+  ipAddress: null,
+  requestId: null,
+};
 const secrets = secretsKeyFrom(randomBytes(32).toString('base64'), 'k1');
 
 let brand: TestDatabase;
@@ -253,45 +269,79 @@ describe('the first owner and the second-factor wall (D-487)', () => {
   });
 });
 
-describe('the brand registry and the owner sign-in link (D-481, D-490)', () => {
+describe('the brand registry and the owner sign-in link (D-481, D-490, D-700)', () => {
   let brandId = '';
+  let publicKey = '';
 
-  it('refuses a connection that is not the read-only role', async () => {
-    const answer = await owners.a.browser.post('/v1/brands', {
+  it('refuses a connection that is not the read-only role, without echoing it', async () => {
+    const refused = registerBrandFromServer(secrets, {
       slug: 'elysium-lifestyle-bd',
       displayName: 'Elysium Lifestyle BD',
       adminUrl: 'https://admin.elysium.example',
       readConnection: brand.ownerUrl,
     });
-    expect(answer.status).toBe(400);
-    expect((answer.body as { code: string }).code).toBe('VALIDATION_FAILED');
-    expect(JSON.stringify(answer.body)).not.toContain('erp_owner:');
+    await expect(refused).rejects.toBeInstanceOf(CliRefused);
+    await refused.catch((error: unknown) => {
+      expect(String(error)).toMatch(/readConnection/);
+      expect(String(error)).not.toContain(new URL(brand.ownerUrl).password);
+    });
   });
 
-  it('adds a brand, queues its first full pull, and never echoes the connection', async () => {
-    const answer = await owners.a.browser.post('/v1/brands', {
+  it('adds a brand from the server only, with its key, and never echoes the connection', async () => {
+    const result = await registerBrandFromServer(secrets, {
       slug: 'elysium-lifestyle-bd',
       displayName: 'Elysium Lifestyle BD',
       adminUrl: 'https://admin.elysium.example',
       readConnection: brand.analyticsUrl,
     });
-    expect(answer.status).toBe(201);
-    const body = answer.body as {
-      id: string;
-      connectionFingerprint: string;
-      hasOwnerLinkKey: boolean;
-    };
-    brandId = body.id;
-    expect(body.hasOwnerLinkKey).toBe(false);
-    expect(JSON.stringify(answer.body)).not.toContain('erp_analytics:');
-    expect(queued).toContainEqual({ brandId, trigger: 'first', full: true });
-    const again = await owners.a.browser.post('/v1/brands', {
-      slug: 'elysium-lifestyle-bd',
-      displayName: 'Again',
-      adminUrl: 'https://admin.elysium.example',
+    brandId = result.id;
+    publicKey = result.envLine.replace('OWNER_LINK_PUBLIC_KEY=', '');
+    expect(JSON.stringify(result)).not.toContain('erp_analytics:');
+    const listed = await owners.a.browser.get('/v1/brands');
+    const body = (listed.body as { brands: { id: string; hasOwnerLinkKey: boolean }[] }).brands;
+    expect(body.find((row) => row.id === brandId)?.hasOwnerLinkKey).toBe(true);
+    expect(JSON.stringify(listed.body)).not.toContain('erp_analytics:');
+    await expect(
+      registerBrandFromServer(secrets, {
+        slug: 'elysium-lifestyle-bd',
+        displayName: 'Again',
+        adminUrl: 'https://admin.elysium.example',
+        readConnection: brand.analyticsUrl,
+      }),
+    ).rejects.toThrow(/already registered/);
+  });
+
+  it('has no route to add a brand, change its connection or replace its key (D-700)', async () => {
+    const { browser } = owners.a;
+    const before = await browser.get(`/v1/brands/${brandId}`);
+    const fingerprint = (before.body as { connectionFingerprint: string }).connectionFingerprint;
+
+    const add = await browser.post('/v1/brands', {
+      slug: 'oura-lifestyle',
+      displayName: 'Oura',
+      adminUrl: 'https://admin.oura.example',
       readConnection: brand.analyticsUrl,
     });
-    expect((again.body as { code: string }).code).toBe('BRAND_SLUG_TAKEN');
+    expect(add.status).toBe(404);
+    expect((await browser.post(`/v1/brands/${brandId}/owner-link-key`)).status).toBe(404);
+    const repoint = await browser.patch(`/v1/brands/${brandId}`, {
+      readConnection: 'postgres://erp_analytics:x@127.0.0.1:9/elsewhere',
+    });
+    expect(repoint.status).toBe(400);
+    const sneaked = await browser.patch(`/v1/brands/${brandId}`, {
+      displayName: 'Elysium Lifestyle BD',
+      readConnection: 'postgres://erp_analytics:x@127.0.0.1:9/elsewhere',
+    });
+    expect(sneaked.status).toBe(400);
+
+    const after = await browser.get(`/v1/brands/${brandId}`);
+    expect((after.body as { connectionFingerprint: string }).connectionFingerprint).toBe(
+      fingerprint,
+    );
+    const [row] = await motherSql()<{ count: number }[]>`
+      select count(*)::int as count from mother.brands where slug = 'oura-lifestyle'
+    `;
+    expect(row?.count).toBe(0);
   });
 
   it('tests the connection', async () => {
@@ -301,23 +351,25 @@ describe('the brand registry and the owner sign-in link (D-481, D-490)', () => {
   });
 
   it('needs a key before it can make a link', async () => {
-    const answer = await owners.a.browser.post(`/v1/brands/${brandId}/owner-link`);
+    // A brand registered before D-690 made its key at once.
+    const keyless = await createBrand(
+      secrets,
+      {
+        slug: 'wear-x-clothing',
+        displayName: 'Wear X',
+        adminUrl: 'https://admin.wearx.example',
+        readConnection: brand.analyticsUrl,
+      },
+      OPERATOR,
+    );
+    const answer = await owners.a.browser.post(`/v1/brands/${keyless.id}/owner-link`);
     expect(answer.status).toBe(409);
     expect((answer.body as { code: string }).code).toBe('OWNER_LINK_KEY_MISSING');
   });
 
   it('mints links the brand verifies with the public key it was shown once', async () => {
-    const key = await owners.a.browser.post(`/v1/brands/${brandId}/owner-link-key`);
-    expect(key.status).toBe(201);
-    const { publicKey, envLine, fingerprint } = key.body as {
-      publicKey: string;
-      envLine: string;
-      fingerprint: string;
-    };
-    expect(envLine).toBe(`OWNER_LINK_PUBLIC_KEY=${publicKey}`);
     const listed = await owners.a.browser.get('/v1/brands');
     expect(JSON.stringify(listed.body)).not.toContain(publicKey);
-    expect(JSON.stringify(listed.body)).toContain(fingerprint);
 
     const minted = await owners.a.browser.post(`/v1/brands/${brandId}/owner-link`);
     expect(minted.status).toBe(200);
@@ -354,22 +406,34 @@ describe('the brand registry and the owner sign-in link (D-481, D-490)', () => {
     if (!parsed2.ok) throw new Error(parsed2.reason);
     expect(parsed2.claims.jti).not.toBe(parsed.claims.jti);
 
-    // Rotating the key: links signed before no longer verify with the new public key.
-    const rotated = await owners.a.browser.post(`/v1/brands/${brandId}/owner-link-key`);
+    // Replacing the key on the server: links signed before no longer verify with the new one.
+    const rotated = await rotateBrandKeyFromServer(secrets, 'elysium-lifestyle-bd');
+    expect(rotated.replaced).toBe(true);
+    expect(rotated.envLine).toMatch(/^OWNER_LINK_PUBLIC_KEY=[A-Za-z0-9+/=]+$/);
     const newKey = createPublicKey({
-      key: Buffer.from((rotated.body as { publicKey: string }).publicKey, 'base64'),
+      key: Buffer.from(rotated.envLine.replace('OWNER_LINK_PUBLIC_KEY=', ''), 'base64'),
       format: 'der',
       type: 'spki',
     });
     expect(verify(null, Buffer.from(parsed.signedText, 'utf8'), newKey, parsed.signature)).toBe(
       false,
     );
+    const after = (await owners.a.browser.get(`/v1/brands/${brandId}`)).body as {
+      ownerLinkKeyFingerprint: string;
+    };
+    expect(after.ownerLinkKeyFingerprint).toBe(rotated.fingerprint);
 
     const [issued] = await motherSql()<{ count: number }[]>`
       select count(*)::int as count from mother.audit_log
       where action = 'brand.owner_link.issued' and detail->>'jti' in (${parsed.claims.jti}, ${parsed2.claims.jti})
     `;
     expect(issued?.count).toBe(2);
+    const [byOperator] = await motherSql()<{ actor_user_id: string | null }[]>`
+      select actor_user_id from mother.audit_log
+      where action = 'brand.owner_link_key.rotated' and entity_id = ${brandId}
+      order by id desc limit 1
+    `;
+    expect(byOperator?.actor_user_id).toBe('system:operator');
   });
 
   it('reads the brand’s live lists over HTTP', async () => {
@@ -396,6 +460,376 @@ describe('the brand registry and the owner sign-in link (D-481, D-490)', () => {
     expect(row?.detail.changed).toEqual({
       displayName: { from: 'Elysium Lifestyle BD', to: 'Elysium' },
     });
+  });
+
+  it('lists, re-points and tests a brand from the server, never printing the connection', async () => {
+    const secretOfUrl = (url: string) => new URL(url).password;
+    const lines = await listBrandsFromServer();
+    expect(lines.some((line) => line.startsWith('elysium-lifestyle-bd '))).toBe(true);
+    const printed = lines.join('\n');
+    expect(printed).not.toMatch(/postgres:\/\//);
+    expect(printed).not.toContain(secretOfUrl(brand.analyticsUrl));
+
+    const wrongRole = setBrandConnectionFromServer(secrets, {
+      slug: 'elysium-lifestyle-bd',
+      readConnection: brand.ownerUrl,
+    });
+    await expect(wrongRole).rejects.toBeInstanceOf(CliRefused);
+    await wrongRole.catch((error: unknown) => {
+      expect(String(error)).not.toContain(secretOfUrl(brand.ownerUrl));
+    });
+    await expect(
+      setBrandConnectionFromServer(secrets, {
+        slug: 'no-such-brand',
+        readConnection: brand.analyticsUrl,
+      }),
+    ).rejects.toThrow(/No brand with the slug/);
+
+    const before = (await owners.a.browser.get(`/v1/brands/${brandId}`)).body as {
+      connectionFingerprint: string;
+    };
+    const moved = await setBrandConnectionFromServer(secrets, {
+      slug: 'elysium-lifestyle-bd',
+      readConnection: `${brand.analyticsUrl}?sslmode=disable`,
+    });
+    expect(moved.fingerprint).not.toBe(before.connectionFingerprint);
+    expect(JSON.stringify(moved)).not.toMatch(/postgres:\/\//);
+    const [audited] = await motherSql()<{ actor_user_id: string; detail: unknown }[]>`
+      select actor_user_id, detail from mother.audit_log
+      where action = 'brand.connection_changed' and entity_id = ${brandId}
+      order by id desc limit 1
+    `;
+    expect(audited?.actor_user_id).toBe('system:operator');
+    expect(audited?.detail).toMatchObject({
+      connectionFingerprint: { from: before.connectionFingerprint, to: moved.fingerprint },
+    });
+    expect(JSON.stringify(audited)).not.toMatch(/postgres:\/\//);
+
+    const tested = await testBrandFromServer(pools, 'elysium-lifestyle-bd');
+    expect(tested).toMatchObject({ ok: true, code: 'ok' });
+    expect(describeConnectionTest(tested)).toMatch(
+      /^Connection test: ok \(version \d+ of \d+\)\.$/,
+    );
+    const listedAfter = (await owners.a.browser.get(`/v1/brands/${brandId}`)).body as {
+      connectionFingerprint: string;
+    };
+    expect(listedAfter.connectionFingerprint).toBe(moved.fingerprint);
+  });
+});
+
+describe('my account: name, password, two-step sign-in and devices (M40, D-701 to D-705)', () => {
+  const CHROME =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+  const IPHONE =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const email = 'owner.d@example.com';
+  let password = PASSWORD;
+  let secret = '';
+  let backupCodes: string[] = [];
+  let desk: Browser;
+
+  const signIn = async (userAgent?: string) => {
+    limiterSkewMs += 61_000;
+    const browser = new Browser(app, userAgent);
+    const answer = await signInWithCode(browser, auth, { email, secret, password });
+    expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+    return browser;
+  };
+  const audited = async (action: string) => {
+    const [row] = await motherSql()<{ count: number }[]>`
+      select count(*)::int as count from mother.audit_log a
+      join auth.users u on u.id = a.actor_user_id
+      where u.email = ${email} and a.action = ${action}
+    `;
+    return row?.count ?? 0;
+  };
+
+  beforeAll(async () => {
+    const invite = await owners.a.browser.post('/v1/people', { email, name: 'Owner D' });
+    desk = new Browser(app, CHROME);
+    const enrolled = await acceptAndEnrol(desk, auth, {
+      link: (invite.body as { link: string }).link,
+      email,
+    });
+    secret = enrolled.secret;
+    backupCodes = enrolled.backupCodes;
+  });
+
+  it('shows who I am, and that two-step sign-in is on with ten recovery codes', async () => {
+    const answer = await desk.get('/v1/account');
+    expect(answer.status).toBe(200);
+    expect(answer.body).toMatchObject({
+      name: 'Owner D',
+      email,
+      twoFactor: { enabled: true, backupCodesLeft: 10, backupCodesIssued: 10 },
+    });
+    expect((answer.body as { passwordChangedAt: string | null }).passwordChangedAt).not.toBeNull();
+    expect(JSON.stringify(answer.body)).not.toMatch(/secret|backupCodes"/i);
+  });
+
+  it('changes my name, audited, and the console sees it at once', async () => {
+    const answer = await desk.patch('/v1/account', { name: '  Owner Dee ' });
+    expect(answer.status).toBe(200);
+    expect((answer.body as { name: string }).name).toBe('Owner Dee');
+    expect((await desk.get('/v1/me')).body).toMatchObject({ name: 'Owner Dee' });
+    expect((await desk.patch('/v1/account', { name: '' })).status).toBe(400);
+    expect(await audited('account.name_changed')).toBe(1);
+  });
+
+  it('closes Better Auth’s own account routes: no change goes round the audit (D-705)', async () => {
+    for (const path of [
+      '/api/auth/two-factor/disable',
+      '/api/auth/two-factor/get-totp-uri',
+      '/api/auth/two-factor/generate-backup-codes',
+      '/api/auth/change-password',
+      '/api/auth/list-sessions',
+      '/api/auth/revoke-session',
+      '/api/auth/revoke-sessions',
+      '/api/auth/revoke-other-sessions',
+      '/api/auth/update-session',
+      '/api/auth/update-user',
+    ]) {
+      const answer = await desk.post(path, { password, currentPassword: password });
+      expect(answer.status, path).toBe(404);
+    }
+    const [row] = await motherSql()<{ two_factor_enabled: boolean }[]>`
+      select two_factor_enabled from auth.users where email = ${email}
+    `;
+    expect(row?.two_factor_enabled).toBe(true);
+  });
+
+  it('lists my devices, masked, with this one marked, and signs one or all others out', async () => {
+    const phone = await signIn(IPHONE);
+    const laptop = await signIn();
+    const answer = await desk.get('/v1/account/sessions');
+    expect(answer.status).toBe(200);
+    const { sessions } = answer.body as {
+      sessions: {
+        id: string;
+        current: boolean;
+        browser: string | null;
+        os: string | null;
+        address: string | null;
+        lastActiveAt: string;
+      }[];
+    };
+    expect(sessions.length).toBe(3);
+    expect(sessions[0]).toMatchObject({ current: true, browser: 'Chrome', os: 'Windows' });
+    expect(sessions.filter((session) => session.current).length).toBe(1);
+    expect(sessions.some((row) => row.browser === 'Safari' && row.os === 'iPhone')).toBe(true);
+    for (const session of sessions) expect(session.address).toMatch(/^10\.9\.\*\.\*$/);
+    // No token, and no whole address, ever leaves.
+    const [tokens] = await motherSql()<{ list: string[] }[]>`
+      select array_agg(token) as list from auth.sessions s join auth.users u on u.id = s.user_id
+      where u.email = ${email}
+    `;
+    for (const token of tokens?.list ?? [])
+      expect(JSON.stringify(answer.body)).not.toContain(token);
+    expect(JSON.stringify(answer.body)).not.toContain(desk.ip);
+
+    const current = sessions.find((session) => session.current)?.id ?? '';
+    const own = await desk.post(`/v1/account/sessions/${current}/sign-out`);
+    expect((own.body as { code: string }).code).toBe('CONFLICT');
+    const iphone = sessions.find((session) => session.os === 'iPhone')?.id ?? '';
+    expect((await desk.post(`/v1/account/sessions/${iphone}/sign-out`)).status).toBe(200);
+    expect((await phone.get('/v1/me')).status).toBe(401);
+    expect((await laptop.get('/v1/me')).status).toBe(200);
+    // Someone else's session is not mine to end.
+    const [others] = await motherSql()<{ id: string }[]>`
+      select s.id from auth.sessions s join auth.users u on u.id = s.user_id
+      where u.email = ${owners.a.email} limit 1
+    `;
+    const foreign = await desk.post(`/v1/account/sessions/${others?.id ?? 'none'}/sign-out`);
+    expect(foreign.status).toBe(404);
+
+    const rest = await desk.post('/v1/account/sessions/sign-out-others');
+    expect(rest.body).toEqual({ signedOut: 1 });
+    expect((await laptop.get('/v1/me')).status).toBe(401);
+    expect((await desk.get('/v1/me')).status).toBe(200);
+    expect(await audited('account.session.signed_out')).toBe(1);
+    expect(await audited('account.sessions.signed_out_others')).toBe(1);
+  });
+
+  it('keeps each session’s last activity, at most a minute stale', async () => {
+    await motherSql()`
+      update auth.sessions set last_active_at = now() - interval '10 minutes'
+      where user_id = (select id from auth.users where email = ${email})
+    `;
+    const answer = await desk.get('/v1/account/sessions');
+    const [session] = (answer.body as { sessions: { lastActiveAt: string }[] }).sessions;
+    expect(Date.now() - new Date(session?.lastActiveAt ?? 0).getTime()).toBeLessThan(60_000);
+  });
+
+  it('changes my password with the current one, signing my other devices out', async () => {
+    const other = await signIn();
+    const wrong = await desk.post('/v1/account/password', {
+      currentPassword: 'not-my-password-at-all',
+      newPassword: 'a-brand-new-password-1',
+    });
+    expect(wrong.status).toBe(400);
+    expect((wrong.body as { code: string }).code).toBe('INVALID_PASSWORD');
+    expect(await audited('account.check_failed')).toBe(1);
+    const short = await desk.post('/v1/account/password', {
+      currentPassword: password,
+      newPassword: 'short',
+    });
+    expect((short.body as { code: string }).code).toBe('VALIDATION_FAILED');
+
+    const changed = await desk.post('/v1/account/password', {
+      currentPassword: password,
+      newPassword: 'a-brand-new-password-1',
+      signOutOtherDevices: true,
+    });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toEqual({ signedOutOtherDevices: 1 });
+    expect((await other.get('/v1/me')).status).toBe(401);
+    expect((await desk.get('/v1/me')).status).toBe(200);
+    expect(await audited('account.password_changed')).toBe(1);
+
+    limiterSkewMs += 61_000;
+    const old = await new Browser(app).post('/api/auth/sign-in/email', { email, password });
+    expect(old.status).toBe(401);
+    password = 'a-brand-new-password-1';
+    await signIn();
+
+    // Keeping the other devices signed in is a choice.
+    const kept = await signIn();
+    const again = await desk.post('/v1/account/password', {
+      currentPassword: password,
+      newPassword: 'another-new-password-2',
+      signOutOtherDevices: false,
+    });
+    expect(again.body).toEqual({ signedOutOtherDevices: 0 });
+    expect((await kept.get('/v1/me')).status).toBe(200);
+    password = 'another-new-password-2';
+  });
+
+  it('moves two-step sign-in to a new phone only with the password and a code held now', async () => {
+    const totpNow = async (key: string) =>
+      (await auth.api.generateTOTP({ body: { secret: key } })).code;
+    const wrongPassword = await desk.post('/v1/account/two-factor/new-app', {
+      password: 'not-my-password-at-all',
+      code: await totpNow(secret),
+    });
+    expect((wrongPassword.body as { code: string }).code).toBe('INVALID_PASSWORD');
+    const wrongCode = await desk.post('/v1/account/two-factor/new-app', {
+      password,
+      code: '000000',
+    });
+    expect((wrongCode.body as { code: string }).code).toBe('INVALID_CODE');
+
+    const started = await desk.post('/v1/account/two-factor/new-app', {
+      password,
+      code: await totpNow(secret),
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    const { totpURI } = started.body as { totpURI: string; expiresAt: string };
+    expect(totpURI).toMatch(/^otpauth:\/\/totp\//);
+    const fresh = secretOf(totpURI);
+    expect(fresh).not.toBe(secret);
+
+    // Until the new phone answers, the old one still signs in.
+    await signIn();
+    // The new key waits for this session only.
+    const elsewhere = await signIn();
+    const stranger = await elsewhere.post('/v1/account/two-factor/new-app/confirm', {
+      code: await totpNow(fresh),
+    });
+    expect((stranger.body as { code: string }).code).toBe('TWO_FACTOR_SETUP_EXPIRED');
+    const badConfirm = await desk.post('/v1/account/two-factor/new-app/confirm', {
+      code: '000000',
+    });
+    expect((badConfirm.body as { code: string }).code).toBe('INVALID_CODE');
+    const confirmed = await desk.post('/v1/account/two-factor/new-app/confirm', {
+      code: await totpNow(fresh),
+    });
+    expect(confirmed.status).toBe(200);
+
+    // The old phone no longer signs in; the new one does.
+    limiterSkewMs += 61_000;
+    const oldPhone = await signInWithCode(new Browser(app), auth, { email, secret, password });
+    expect(oldPhone.status).not.toBe(200);
+    secret = fresh;
+    await signIn();
+    expect(await audited('account.two_factor.new_app_started')).toBe(1);
+    expect(await audited('account.two_factor.new_app_confirmed')).toBe(1);
+    // Spent: the same key cannot be confirmed twice.
+    const twice = await desk.post('/v1/account/two-factor/new-app/confirm', {
+      code: await totpNow(fresh),
+    });
+    expect((twice.body as { code: string }).code).toBe('TWO_FACTOR_SETUP_EXPIRED');
+  });
+
+  it('takes a recovery code as the code held now, and uses it up', async () => {
+    const code = backupCodes[0] ?? '';
+    const started = await desk.post('/v1/account/two-factor/new-app', { password, code });
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    expect(
+      ((await desk.get('/v1/account')).body as { twoFactor: { backupCodesLeft: number } }).twoFactor
+        .backupCodesLeft,
+    ).toBe(9);
+    const reused = await desk.post('/v1/account/two-factor/new-app', { password, code });
+    expect((reused.body as { code: string }).code).toBe('INVALID_CODE');
+  });
+
+  it('makes new recovery codes with the password, shown once; the old ones stop working', async () => {
+    const renewed = await desk.post('/v1/account/two-factor/backup-codes', { password });
+    expect(renewed.status).toBe(200);
+    const codes = (renewed.body as { backupCodes: string[] }).backupCodes;
+    expect(codes.length).toBe(10);
+    for (const code of codes) expect(code).toMatch(/^[A-Za-z0-9]{5}-[A-Za-z0-9]{5}$/);
+    expect(new Set(codes).size).toBe(10);
+    expect(
+      ((await desk.get('/v1/account')).body as { twoFactor: { backupCodesLeft: number } }).twoFactor
+        .backupCodesLeft,
+    ).toBe(10);
+    expect(JSON.stringify((await desk.get('/v1/account')).body)).not.toContain(codes[0] ?? '-');
+
+    const signInWithBackup = async (backup: string) => {
+      limiterSkewMs += 61_000;
+      const browser = new Browser(app);
+      const first = await browser.post('/api/auth/sign-in/email', { email, password });
+      expect((first.body as { twoFactorRedirect?: boolean }).twoFactorRedirect).toBe(true);
+      return browser.post('/api/auth/two-factor/verify-backup-code', { code: backup });
+    };
+    expect((await signInWithBackup(backupCodes[1] ?? '')).status).not.toBe(200);
+    expect((await signInWithBackup(codes[0] ?? '')).status).toBe(200);
+    expect(await audited('account.backup_codes.renewed')).toBe(1);
+  });
+
+  it('stops every check after five wrong answers in fifteen minutes (D-705)', async () => {
+    // Its own owner, so the wrong answers above do not count here.
+    const invite = await owners.a.browser.post('/v1/people', {
+      email: 'owner.e@example.com',
+      name: 'Owner E',
+    });
+    const browser = new Browser(app);
+    await acceptAndEnrol(browser, auth, {
+      link: (invite.body as { link: string }).link,
+      email: 'owner.e@example.com',
+    });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const answer = await browser.post('/v1/account/two-factor/backup-codes', {
+        password: `wrong-password-${String(attempt)}`,
+      });
+      expect((answer.body as { code: string }).code).toBe('INVALID_PASSWORD');
+    }
+    const locked = await browser.post('/v1/account/two-factor/backup-codes', {
+      password: PASSWORD,
+    });
+    expect(locked.status).toBe(429);
+    expect((locked.body as { code: string }).code).toBe('RATE_LIMITED');
+    const lockedPassword = await browser.post('/v1/account/password', {
+      currentPassword: PASSWORD,
+      newPassword: 'yet-another-password-3',
+    });
+    expect(lockedPassword.status).toBe(429);
+    const [failures] = await motherSql()<{ count: number }[]>`
+      select count(*)::int as count from mother.audit_log a
+      join auth.users u on u.id = a.actor_user_id
+      where u.email = 'owner.e@example.com' and a.action = 'account.check_failed'
+    `;
+    expect(failures?.count).toBe(5);
   });
 });
 
@@ -545,6 +979,7 @@ describe('the activity log (D-487)', () => {
       'auth.password_set',
       'brand.added',
       'brand.changed',
+      'brand.connection_changed',
       'brand.owner_link_key.created',
       'brand.owner_link_key.rotated',
       'brand.owner_link.issued',
@@ -553,6 +988,12 @@ describe('the activity log (D-487)', () => {
       'person.two_factor_reset.requested',
       'person.two_factor_reset.approved',
       'person.removed',
+      'account.name_changed',
+      'account.password_changed',
+      'account.check_failed',
+      'account.two_factor.new_app_confirmed',
+      'account.backup_codes.renewed',
+      'account.sessions.signed_out_others',
     ]) {
       expect(actions, action).toContain(action);
     }

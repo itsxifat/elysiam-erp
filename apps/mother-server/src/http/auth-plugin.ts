@@ -27,6 +27,8 @@ export interface Owner {
   readonly id: string;
   readonly email: string;
   readonly name: string;
+  /** The session this request came from: My account's "this device" (D-704). */
+  readonly sessionId: string;
 }
 
 export type OwnerRequest = FastifyRequest & {
@@ -44,10 +46,15 @@ const ENROLMENT_PATHS = new Set([
   '/api/auth/two-factor/enable',
   '/api/auth/two-factor/verify-totp',
   '/api/auth/two-factor/verify-backup-code',
-  '/api/auth/two-factor/get-totp-uri',
   '/api/auth/get-session',
   '/api/auth/sign-out',
 ]);
+
+/**
+ * How stale a session's `last_active_at` may get (D-704): one write a minute per session
+ * at most, however many requests it makes.
+ */
+const ACTIVITY_GRANULARITY_SECONDS = 60;
 
 /**
  * Signing in again and the password links prove who the caller is afresh, so a half-enrolled
@@ -317,6 +324,12 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
+      sessionId: session.session.id,
     };
+    await motherSql()`
+      update auth.sessions set last_active_at = now()
+      where id = ${session.session.id}
+        and last_active_at < now() - make_interval(secs => ${ACTIVITY_GRANULARITY_SECONDS})
+    `;
   });
 }

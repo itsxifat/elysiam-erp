@@ -35,6 +35,50 @@ export const LIBRARY_RATE_RULES = {
   '/two-factor/verify-backup-code': { window: 60, max: 10 },
 } as const;
 
+/**
+ * Better Auth's routes the mother does not serve (D-487, D-705). A person changes their
+ * name, password, second factor and devices through `/v1/account`, which checks what each
+ * change needs and audits it (M40); the library's own routes for those would do it
+ * unaudited, and two of them would weaken the factor: `/two-factor/disable` turns it off
+ * with a password alone, and `/two-factor/get-totp-uri` hands out the current secret for
+ * one. The rest are features the mother has no use for (social sign-in, email checks).
+ */
+export const DISABLED_AUTH_PATHS = [
+  '/request-password-reset',
+  '/change-email',
+  '/delete-user',
+  '/delete-user/callback',
+  '/update-user',
+  '/list-accounts',
+  '/unlink-account',
+  '/account-info',
+  '/link-social',
+  '/sign-in/social',
+  '/get-access-token',
+  '/refresh-token',
+  '/send-verification-email',
+  '/verify-email',
+  '/verify-password',
+  '/change-password',
+  '/list-sessions',
+  '/revoke-session',
+  '/revoke-sessions',
+  '/revoke-other-sessions',
+  '/update-session',
+  '/two-factor/disable',
+  '/two-factor/get-totp-uri',
+  '/two-factor/generate-backup-codes',
+  '/two-factor/send-otp',
+  '/two-factor/verify-otp',
+] as const;
+
+/** The TOTP the mother's two-factor plugin uses: what a new phone is checked against. */
+export const TOTP_ISSUER = 'Owner console';
+export const TOTP_DIGITS = 6;
+export const TOTP_PERIOD_SECONDS = 30;
+export const BACKUP_CODE_COUNT = 10;
+export const BACKUP_CODE_LENGTH = 10;
+
 export interface MotherAuthOptions {
   readonly baseUrl: string;
   readonly secret: string;
@@ -87,14 +131,7 @@ export function createMotherAuth(options: MotherAuthOptions) {
       // break-glass command); nothing is ever sent from here.
       sendResetPassword: () => Promise.resolve(),
     },
-    disabledPaths: [
-      '/request-password-reset',
-      '/change-email',
-      '/delete-user',
-      '/update-user',
-      '/list-accounts',
-      '/unlink-account',
-    ],
+    disabledPaths: [...DISABLED_AUTH_PATHS],
     session: {
       expiresIn: SESSION_SECONDS,
       disableSessionRefresh: true,
@@ -118,8 +155,9 @@ export function createMotherAuth(options: MotherAuthOptions) {
     },
     plugins: [
       twoFactor({
-        issuer: 'Owner console',
-        backupCodeOptions: { amount: 10, length: 10 },
+        issuer: TOTP_ISSUER,
+        totpOptions: { digits: TOTP_DIGITS, period: TOTP_PERIOD_SECONDS },
+        backupCodeOptions: { amount: BACKUP_CODE_COUNT, length: BACKUP_CODE_LENGTH },
       }),
     ],
     databaseHooks: {

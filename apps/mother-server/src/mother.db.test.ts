@@ -27,7 +27,7 @@ import type { Actor } from './audit/audit.js';
 import { brandLive } from './brands/live.js';
 import { BrandPools } from './brands/pools.js';
 import { expectedBrandSchema } from './brands/reader.js';
-import { createBrand, findBrand, updateBrand, type BrandRow } from './brands/registry.js';
+import { createBrand, findBrand, setBrandConnection, type BrandRow } from './brands/registry.js';
 import { secretsKeyFrom } from './crypto/secrets.js';
 import { motherSql } from './db/client.js';
 import { PullService } from './pull/pull.js';
@@ -407,10 +407,10 @@ describe('check 4: a brand that cannot be reached keeps its last figures, and th
     const figuresAt = (await findBrand(rowB.id))?.figures_at;
     expect(figuresAt).not.toBeNull();
 
-    await updateBrand(
+    await setBrandConnection(
       secrets,
       rowB.id,
-      { readConnection: 'postgres://erp_analytics:nothing@127.0.0.1:9/nowhere' },
+      'postgres://erp_analytics:nothing@127.0.0.1:9/nowhere',
       actor,
     );
     try {
@@ -426,7 +426,7 @@ describe('check 4: a brand that cannot be reached keeps its last figures, and th
       // The error is a code; the connection string is nowhere in the answer.
       expect(JSON.stringify(after)).not.toContain('nothing@');
     } finally {
-      await updateBrand(secrets, rowB.id, { readConnection: brandB.analyticsUrl }, actor);
+      await setBrandConnection(secrets, rowB.id, brandB.analyticsUrl, actor);
     }
     expect((await puller.pull(rowB.id, { trigger: 'owner', full: false })).status).toBe('ok');
     const healed = (await overview(range)).brands.find((row) => row.brand.id === rowB.id);
