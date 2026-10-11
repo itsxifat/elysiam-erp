@@ -142,7 +142,7 @@ function Inbox() {
           {notice}
         </p>
       )}
-      <div className="grid overflow-hidden rounded-lg border border-border bg-card lg:h-[calc(100vh-13rem)] lg:grid-cols-4">
+      <div className="grid overflow-hidden rounded-lg border border-border bg-card lg:grid-cols-4">
         <ConversationList
           filters={filters}
           selected={search.c ?? null}
@@ -207,7 +207,10 @@ function ConversationList({
   ] as const;
 
   return (
-    <section aria-labelledby={`${ids}-title`} className="flex min-h-0 flex-col">
+    <section
+      aria-labelledby={`${ids}-title`}
+      className="flex min-h-0 flex-col md:max-h-[calc(100dvh-14rem)]"
+    >
       <h2 id={`${ids}-title`} className="sr-only">
         {t('inbox.list.label')}
       </h2>
@@ -526,7 +529,7 @@ function Thread({ view, me }: { readonly view: ThreadView; readonly me: string |
   return (
     <section
       aria-labelledby={`${ids}-name`}
-      className="flex min-h-0 min-w-0 flex-col border-l border-border lg:col-span-2"
+      className="flex min-h-0 min-w-0 flex-col border-l border-border md:max-h-[calc(100dvh-14rem)] lg:col-span-2"
     >
       <header className="space-y-2 border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
