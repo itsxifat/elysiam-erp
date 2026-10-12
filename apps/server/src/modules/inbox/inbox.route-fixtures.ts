@@ -150,6 +150,28 @@ async function freshOffer(): Promise<string> {
   );
 }
 
+/** M44a (D-763): a saved reply of its own for each call, so a delete never finds one gone. */
+async function freshSavedReply(): Promise<string> {
+  return withSystem(
+    async (tx) =>
+      (
+        await tx.execute<{ id: string }>(sql`
+          insert into inbox.saved_replies (org_id, title, shortcut, body, created_by, updated_by)
+          values (${ORG_A}, 'Matrix reply', ${`m-${randomUUID().slice(0, 8)}`},
+                  'Hello {name}', ${TEAMMATE}, ${TEAMMATE})
+          returning id
+        `)
+      )[0]?.id ?? randomUUID(),
+    { orgId: ORG_A },
+  );
+}
+
+const savedReplyBody = () => ({
+  title: 'Matrix reply',
+  shortcut: `m-${randomUUID().slice(0, 8)}`,
+  body: 'Thank you {name}',
+});
+
 const at = async (suffix: string, body?: unknown): Promise<Call> => {
   const conversation = await freshConversation();
   return {
@@ -216,6 +238,22 @@ export const INBOX_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
   'PUT /v1/inbox/channels/:kind': () => ({
     url: '/v1/inbox/channels/whatsapp',
     body: { externalId: '900000000000002', enabled: false },
+  }),
+  'GET /v1/inbox/unread': () => ({ url: '/v1/inbox/unread' }),
+  'GET /v1/inbox/saved-replies': () => ({ url: '/v1/inbox/saved-replies' }),
+  'POST /v1/inbox/saved-replies': () => ({
+    url: '/v1/inbox/saved-replies',
+    body: savedReplyBody(),
+  }),
+  'PUT /v1/inbox/saved-replies/:id': async () => ({
+    url: `/v1/inbox/saved-replies/${await freshSavedReply()}`,
+    body: savedReplyBody(),
+  }),
+  'DELETE /v1/inbox/saved-replies/:id': async () => ({
+    url: `/v1/inbox/saved-replies/${await freshSavedReply()}`,
+  }),
+  'POST /v1/inbox/saved-replies/:id/use': async () => ({
+    url: `/v1/inbox/saved-replies/${await freshSavedReply()}/use`,
   }),
   'PUT /v1/inbox/meta-app': () => ({
     url: '/v1/inbox/meta-app',

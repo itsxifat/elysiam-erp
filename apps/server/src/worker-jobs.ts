@@ -49,6 +49,7 @@ import { InboxModule } from './modules/inbox/inbox.module.js';
 import { ConversationOffersService } from './modules/inbox/conversation-offers.service.js';
 import { registerInboxJobs } from './modules/inbox/inbox.worker.js';
 import { InboxOrderListener } from './modules/inbox/order-listener.service.js';
+import { InboxProfileService } from './modules/inbox/profile.service.js';
 import { InboxSendService } from './modules/inbox/send.service.js';
 import { InboxWebhookService } from './modules/inbox/webhook.service.js';
 import type { OutboxDispatcher } from './platform/events/dispatcher.js';
@@ -174,6 +175,8 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     orders: context.get(InboxOrderListener),
     // D-748: the conversation auto-offer's dispatch, deadlines and minute sweep.
     offers: context.get(ConversationOffersService),
+    // M44a (D-761): senders' names and photos from Meta, and the six-hourly refresh.
+    profiles: context.get(InboxProfileService),
     report,
   });
 

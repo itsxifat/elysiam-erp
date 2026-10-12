@@ -22,6 +22,7 @@ import { useT } from '../../i18n/locale.js';
 import '../../i18n/workflow.js';
 import { useRealtime } from '../../realtime/use-realtime.js';
 import { listAgents } from './api.js';
+import '../../alive/alive.css';
 import { LiveIndicator, OrdersNav } from './parts.js';
 import { ordersPath } from './paths.js';
 import {
@@ -196,7 +197,10 @@ function PersonRows({
         </td>
         <td className="px-3">
           <span className="inline-flex flex-wrap items-center gap-1.5">
-            <StatusBadge tone={PRESENCE_TONE[person.presence.state]}>
+            <StatusBadge
+              tone={PRESENCE_TONE[person.presence.state]}
+              className={person.presence.state === 'active' ? 'alive-presence' : undefined}
+            >
               {t(PRESENCE_LABEL[person.presence.state])}
             </StatusBadge>
             {person.presence.paused ? (

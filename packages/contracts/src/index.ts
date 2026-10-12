@@ -66,5 +66,7 @@ export * from './stickers.js';
 export * from './duplicates.js';
 // M42: the unified inbox.
 export * from './inbox.js';
+// M44a: the inbox's saved replies.
+export * from './inbox-saved-replies.js';
 // M41: the order workflow: ownership, presence, desk profiles, calls and auto-assign.
 export * from './workflow.js';

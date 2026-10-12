@@ -35,6 +35,10 @@ export interface ConversationItem {
     readonly id: string;
     readonly name: string | null;
     readonly stage: ContactStage;
+    /** M44a (D-761): Meta's photo, an https URL that expires; null without one. */
+    readonly avatarUrl: string | null;
+    /** Instagram's username. */
+    readonly handle: string | null;
   };
   readonly assignedTo: PersonRef | null;
   readonly assignedAt: string | null;
@@ -213,8 +217,14 @@ export const listConversations = (filters: ListFilters, before?: string) =>
     })}`,
   );
 
-export const getThread = (id: string) =>
-  api.get<ThreadView>(`/v1/inbox/conversations/${encodeURIComponent(id)}`);
+export const getThread = (id: string, limit?: number) =>
+  api.get<ThreadView>(
+    `/v1/inbox/conversations/${encodeURIComponent(id)}${query({
+      limit: limit === undefined ? undefined : String(limit),
+    })}`,
+  );
+/** M44a (D-764): unread messages in the caller's conversations and in nobody's. */
+export const getUnread = () => api.get<{ mine: number; unassigned: number }>('/v1/inbox/unread');
 export const getPanel = (id: string) =>
   api.get<PanelView>(`/v1/inbox/conversations/${encodeURIComponent(id)}/panel`);
 export const getOrderDraft = (id: string) =>
@@ -307,3 +317,37 @@ export const saveChannel = (
 ) => api.put<unknown>(`/v1/inbox/channels/${kind}`, body);
 export const saveMetaApp = (body: { appSecret?: string; verifyToken?: string }) =>
   api.put<unknown>('/v1/inbox/meta-app', body);
+
+// --- M44a: saved replies (D-763) ---------------------------------------------------------------
+
+export interface SavedReply {
+  readonly id: string;
+  readonly title: string;
+  readonly shortcut: string;
+  readonly body: string;
+  readonly category: string | null;
+  readonly usageCount: number;
+  readonly lastUsedAt: string | null;
+  readonly updatedAt: string;
+}
+
+export interface SavedReplyBody {
+  readonly title: string;
+  readonly shortcut: string;
+  readonly body: string;
+  readonly category?: string;
+}
+
+export const SAVED_REPLIES_KEY = ['inbox', 'saved-replies'] as const;
+export const listSavedReplies = () => api.get<{ items: SavedReply[] }>('/v1/inbox/saved-replies');
+export const createSavedReply = (body: SavedReplyBody) =>
+  api.post<SavedReply>('/v1/inbox/saved-replies', body);
+export const updateSavedReply = (id: string, body: SavedReplyBody) =>
+  api.put<SavedReply>(`/v1/inbox/saved-replies/${encodeURIComponent(id)}`, body);
+export const deleteSavedReply = (id: string) =>
+  api.delete<unknown>(`/v1/inbox/saved-replies/${encodeURIComponent(id)}`);
+/** Counted when inserted into a reply; the picker orders by it. */
+export const countSavedReplyUse = (id: string) =>
+  api.post<{ id: string; usageCount: number }>(
+    `/v1/inbox/saved-replies/${encodeURIComponent(id)}/use`,
+  );

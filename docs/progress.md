@@ -3181,3 +3181,51 @@ dry-run|commit --file <users.json>`.
   kept: the team board filters its people in memory (fails closed); a withdrawn conversation offer
   writes no audit row, as M41's order offers do not.
 - **New dependencies:** none.
+
+## 2026-10-12 · M44a · the alive inbox (not merged or deployed)
+
+- **Branch:** `m44a-alive-inbox` from `integration-wave2` (afb532e5), worktree
+  `D:/Projects/elysium-erp-m44a`. M44b (selling from the chat) and M45 (voice and calls) are built
+  in parallel; plan `docs/plans/M44.md` (section M44a), decisions D-760 to D-767.
+- **Layout (D-760):** the shell's fill mode for `/inbox`; list, thread and customer panel fill the
+  viewport and scroll on their own (M42's per-pane `max-h` and the thread's document-wide
+  `scrollIntoView` were the cause of the half-height frame); the thread follows the newest message
+  unless scrolled up ("New messages" pill); below 64rem the panes take turns.
+- **Names and photos (D-761, UNVERIFIED; D-762):** `inbox.fetch_profile` (Messenger and Instagram
+  User Profile API, the Page token, outside any transaction) after a message from someone never
+  asked or not for three days; `inbox.profile_sweep` every six hours; WhatsApp's webhook name
+  followed when it changes. `inbox.contacts` gains `avatar_url`, `handle`, `profile_fetched_at`;
+  `erp_app` may update `inbox.identities.profile_name` only. Avatars: the photo or initials on a
+  tint picked by the contact's id.
+- **Saved replies (D-763):** `inbox.saved_replies` (RLS), subject `SavedReply` (org_admin writes,
+  sales reads and uses), five routes, Settings → Inbox → Saved replies; `/` in the reply box with
+  a keyboard picker, placeholders filled from the chat, the five most used as quick replies.
+- **Alive (D-764 to D-767):** `GET /v1/inbox/unread` and the tab's title count;
+  `inbox.message_received` carries its direction; `inbox.contact_updated`. `apps/console/src/alive/`:
+  Web Audio tones (message, offer, sent, error), mute and volume in the account menu, desktop
+  alerts while hidden (asked once), motion tokens and CSS in lazy chunks, FLIP list reorder,
+  arrivals that slide in, popping counts, breathing presence, ringing offer cards with an amber
+  last quarter; reduced motion respected. Bangla text marked `lang="bn"` (Hind Siliguri, no
+  negative tracking); Instagram's limit counted in bytes. j/k/a/e// shortcuts; a draft per
+  conversation. The thread has one render point per message kind and the composer an `actions`
+  slot, for M45.
+- **Not done:** pasting an image (M42's reply is text only; left for M45). The customer panel's
+  components are M44b's; its height cap is overridden from `inbox.css` rather than edited.
+- **Evidence (minimal tests, D-758):** typecheck (server, console) and lint of the touched
+  packages; `saved-replies.test.ts` (domain, 16), `thread-logic.test.ts` (console, 11),
+  `profile.unit.test.ts` (Graph adapter against a stand-in, 3); `alive.e2e.test.ts` on a
+  throwaway Postgres (profile job, WhatsApp's name followed and a typed one kept, the sweep,
+  unread counts, saved replies with RLS, roles and audit: 5/5); `inbox.e2e.test.ts` and
+  `route-matrix.e2e.test.ts` (23/23, the matrix again after the audit fixes); the contracts'
+  permission suite;
+  `check:routes` (584 routes, PASS), `check:schema`, `check:migrations`, `check:i18n`,
+  `check:api-client` (regenerated); `check:bundle` 249.7 of 250 KB (249.3 before). Not run: full
+  `pnpm verify`, stack specs, screenshots, acceptance-auditor.
+- **Ledger audit (tenancy, permissions):** 0 critical, 1 warning, fixed: integration tests for
+  another brand's PUT and DELETE of a saved reply, the WhatsApp name path and the sweep. Notes
+  fixed: `saved_replies.updated_by` references `iam.users` (0149 regenerated before anything
+  outside the branch applied it), a use is audited as `inbox.saved_reply.use`, a shortcut race
+  answers 409 instead of 500, the sweep's error goes through the logger's scrubber.
+- **Merge notes:** migrations 0149 and 0150 may collide with M44b's or M45's numbers; the console's
+  first download has 0.3 KB left, so new utility classes belong in the lazy chunks' CSS.
+- **New dependencies:** none.

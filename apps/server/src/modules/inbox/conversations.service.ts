@@ -84,6 +84,9 @@ export class ConversationsService {
         id: row.contact_id,
         name: row.display_name ?? row.profile_name,
         stage: row.stage,
+        // M44a (D-761): Meta's photo (an expiring https URL) and Instagram's username.
+        avatarUrl: row.avatar_url,
+        handle: row.handle,
       },
       assignedTo: this.person(names, row.assigned_to),
       assignedAt: iso(row.assigned_at),
@@ -169,6 +172,15 @@ export class ConversationsService {
           hasMore,
         };
       }),
+    );
+  }
+
+  /** M44a (D-764): unread messages in the caller's conversations and in nobody's. */
+  async unread(context: ActiveContext) {
+    return mapInboxErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
+        repo.unreadCounts(tx, context.orgId, context.userId),
+      ),
     );
   }
 

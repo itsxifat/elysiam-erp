@@ -35,6 +35,7 @@ import type {
   PresencePause,
   ReopenPeriodInput,
   ReplacementCode,
+  SavedReplyInput,
   SetRoles,
   SwitchOrg,
   ThresholdInput,
@@ -81,11 +82,21 @@ export const OPERATIONS = {
     path: '/v1/account/two-factor/replace/confirm',
     ability: 'authenticated',
   },
+  countSavedReplyUse: {
+    method: 'POST',
+    path: '/v1/inbox/saved-replies/{id}/use',
+    ability: 'read:SavedReply',
+  },
   createApproval: { method: 'POST', path: '/v1/approvals', ability: 'request:ApprovalRequest' },
   createDemoCostedItem: {
     method: 'POST',
     path: '/v1/demo/costed-items',
     ability: 'create:CostedItem',
+  },
+  createSavedReply: {
+    method: 'POST',
+    path: '/v1/inbox/saved-replies',
+    ability: 'create:SavedReply',
   },
   createUser: { method: 'POST', path: '/v1/users', ability: 'create:User' },
   dayBook: { method: 'GET', path: '/v1/ledger/day-book', ability: 'read:LedgerReport' },
@@ -104,6 +115,11 @@ export const OPERATIONS = {
     method: 'DELETE',
     path: '/v1/packing/cameras/{id}',
     ability: 'update:PackingVideo',
+  },
+  deleteSavedReply: {
+    method: 'DELETE',
+    path: '/v1/inbox/saved-replies/{id}',
+    ability: 'delete:SavedReply',
   },
   deleteV1CatalogAttributesById: {
     method: 'DELETE',
@@ -1031,6 +1047,7 @@ export const OPERATIONS = {
   },
   healthLive: { method: 'GET', path: '/health/live', ability: 'public' },
   healthReady: { method: 'GET', path: '/health/ready', ability: 'public' },
+  inboxUnreadCounts: { method: 'GET', path: '/v1/inbox/unread', ability: 'read:Conversation' },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
   listDeskProfiles: { method: 'GET', path: '/v1/team/profiles', ability: 'read:User' },
@@ -1047,6 +1064,7 @@ export const OPERATIONS = {
   listOrderCalls: { method: 'GET', path: '/v1/orders/{id}/calls', ability: 'read:Order' },
   listPackingCameras: { method: 'GET', path: '/v1/packing/cameras', ability: 'update:Order' },
   listPeriods: { method: 'GET', path: '/v1/ledger/periods', ability: 'read:LedgerPeriod' },
+  listSavedReplies: { method: 'GET', path: '/v1/inbox/saved-replies', ability: 'read:SavedReply' },
   listUsers: { method: 'GET', path: '/v1/users', ability: 'read:User' },
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
@@ -2185,6 +2203,11 @@ export const OPERATIONS = {
     path: '/v1/packing/cameras/{id}',
     ability: 'update:PackingVideo',
   },
+  updateSavedReply: {
+    method: 'PUT',
+    path: '/v1/inbox/saved-replies/{id}',
+    ability: 'update:SavedReply',
+  },
   userPasswordLink: {
     method: 'POST',
     path: '/v1/users/{id}/password-link',
@@ -2276,6 +2299,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: ReplacementCode },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.confirmTwoFactorReplacement, input, options),
+    /** Count one use of a saved reply (inserted into a reply). */
+    countSavedReplyUse: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.countSavedReplyUse, input, options),
     /** Raise an approval request for a money-moving action. */
     createApproval: (
       input: { readonly body: ApprovalRequestInput },
@@ -2284,6 +2312,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Test fixture for the permission matrix. Not deployed to production. */
     createDemoCostedItem: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.createDemoCostedItem, undefined, options),
+    /** Add a saved reply: a title, a shortcut typed after /, a body in any language. */
+    createSavedReply: (
+      input: { readonly body: SavedReplyInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.createSavedReply, input, options),
     /** Invite a user into this organization with one or more roles. */
     createUser: (
       input: { readonly body: CreateUser },
@@ -2314,6 +2347,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.deletePackingCamera, input, options),
+    /** Delete a saved reply. */
+    deleteSavedReply: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteSavedReply, input, options),
     /** DELETE /v1/catalog/attributes/:id */
     deleteV1CatalogAttributesById: (
       input: { readonly path: { readonly id: string } },
@@ -3335,6 +3373,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Readiness probe. */
     healthReady: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.healthReady, undefined, options),
+    /** Unread messages in the caller's open conversations and in open ones nobody has. */
+    inboxUnreadCounts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.inboxUnreadCounts, undefined, options),
     /** Approval requests, filtered and cursor-paginated. */
     listApprovals: (
       input: {
@@ -3382,6 +3423,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Accounting periods and whether each is closed. */
     listPeriods: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listPeriods, undefined, options),
+    /** The brand's saved replies, the most used first. */
+    listSavedReplies: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listSavedReplies, undefined, options),
     /** This organization's staff, their roles and sign-in state, and open resets. */
     listUsers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listUsers, undefined, options),
@@ -4676,6 +4720,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: PackingCameraUpdateInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.updatePackingCamera, input, options),
+    /** Change a saved reply. */
+    updateSavedReply: (
+      input: { readonly path: { readonly id: string }; readonly body: SavedReplyInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updateSavedReply, input, options),
     /** Issue, ask for, or collect a one-time link that sets a password. */
     userPasswordLink: (
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },

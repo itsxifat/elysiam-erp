@@ -32,6 +32,7 @@ import {
   partyBalanceQuerySchema,
   reopenPeriodSchema,
   replacementCodeSchema,
+  savedReplyInputSchema,
   setRolesSchema,
   switchOrgSchema,
   thresholdSchema,
@@ -535,6 +536,33 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     operationId: 'saveInboxMetaApp',
     summary: "Save the Meta app's secret and the webhook's verify token (write-only).",
     body: named('InboxMetaApp', inboxMetaAppSchema, 'InboxMetaAppInput'),
+  },
+  // M44a (D-763, D-764): unread counts and the saved replies.
+  'GET /v1/inbox/unread': {
+    operationId: 'inboxUnreadCounts',
+    summary: "Unread messages in the caller's open conversations and in open ones nobody has.",
+  },
+  'GET /v1/inbox/saved-replies': {
+    operationId: 'listSavedReplies',
+    summary: "The brand's saved replies, the most used first.",
+  },
+  'POST /v1/inbox/saved-replies': {
+    operationId: 'createSavedReply',
+    summary: 'Add a saved reply: a title, a shortcut typed after /, a body in any language.',
+    body: named('SavedReply', savedReplyInputSchema, 'SavedReplyInput'),
+  },
+  'PUT /v1/inbox/saved-replies/:id': {
+    operationId: 'updateSavedReply',
+    summary: 'Change a saved reply.',
+    body: named('SavedReply', savedReplyInputSchema, 'SavedReplyInput'),
+  },
+  'DELETE /v1/inbox/saved-replies/:id': {
+    operationId: 'deleteSavedReply',
+    summary: 'Delete a saved reply.',
+  },
+  'POST /v1/inbox/saved-replies/:id/use': {
+    operationId: 'countSavedReplyUse',
+    summary: 'Count one use of a saved reply (inserted into a reply).',
   },
 
   'GET /v1/demo/costed-items': {

@@ -341,6 +341,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Conversation', scope: 'org' },
     { action: 'update', subject: 'ConversationAssignment', scope: 'org' },
     { action: ['read', 'update'], subject: 'InboxChannel', scope: 'org' },
+    // M44a (D-763): the inbox's saved replies, written by the inbox's supervisor.
+    { action: ['read', 'create', 'update', 'delete'], subject: 'SavedReply', scope: 'org' },
     // M41 (D-713, D-715, D-720): their own presence; the order workflow and the team board.
     { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
     { action: ['read', 'update'], subject: 'OrderWorkflow', scope: 'org' },
@@ -427,6 +429,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
      * is; the owner is protected by the acknowledgement every other writer must give (D-737).
      */
     { action: ['read', 'update'], subject: 'Conversation', scope: 'org' },
+    // M44a (D-763): the brand's saved replies, to answer with; org_admin writes them.
+    { action: 'read', subject: 'SavedReply', scope: 'org' },
     // M41 (D-713): their own presence at the desk, and "Not taking orders".
     { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
     // No `request ApprovalRequest`: §6 gives sales no action that goes through

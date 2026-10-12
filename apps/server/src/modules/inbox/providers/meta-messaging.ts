@@ -50,10 +50,45 @@ export class MessagingError extends Error {
   }
 }
 
+/**
+ * A person's profile (M44a, D-761). UNVERIFIED, from Meta's pages read 2026-10-12:
+ *
+ * - **Messenger** (Messenger Platform › IDs & Profile › User Profile API): `GET
+ *   https://graph.facebook.com/<PSID>?fields=first_name,last_name,profile_pic&access_token=<PAGE
+ *   ACCESS TOKEN>`; "if the app is unable to access the person's profile, an empty object is
+ *   returned", and an account made with a phone number answers error 2018218. Needs the Business
+ *   Asset User Profile Access feature. `profile_pic` "will expire".
+ * - **Instagram** (Instagram Messaging › User Profile API, the Messenger API for Instagram that
+ *   M42 sends with): `GET https://graph.facebook.com/v25.0/<IGSID>?fields=name,username,
+ *   profile_pic&access_token=<PAGE ACCESS TOKEN>`; consent is given by the person messaging the
+ *   business; `profile_pic` "expires after a few days".
+ * - **WhatsApp** has no such call: the name is `contacts[].profile.name` in the webhook itself.
+ */
+export interface FetchProfileRequest {
+  readonly channel: 'messenger' | 'instagram';
+  /** The PSID or IGSID. */
+  readonly userId: string;
+  /** The Page's access token. */
+  readonly token: string;
+}
+
+export interface FetchedProfile {
+  readonly name: string | null;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly username: string | null;
+  readonly pictureUrl: string | null;
+}
+
 export interface MessagingGateway {
   /** `graph` or `fake`, shown in Settings → Inbox so nobody mistakes one for the other. */
   readonly provider: 'graph' | 'fake';
   sendText(request: SendTextRequest): Promise<SendTextResult>;
+  /**
+   * The person's name and photo, or null when Meta has none to give (an empty answer, or a
+   * refusal that will not change on a retry). A retryable failure throws `MessagingError`.
+   */
+  fetchProfile(request: FetchProfileRequest): Promise<FetchedProfile | null>;
 }
 
 export const MESSAGING_GATEWAY = Symbol('MessagingGateway');
@@ -64,6 +99,15 @@ export class FakeMessagingGateway implements MessagingGateway {
   readonly sent: SendTextRequest[] = [];
   /** Set to make the next send fail, once. */
   failNext: MessagingError | null = null;
+
+  /** Profiles the fake answers with, by PSID or IGSID; anyone else has none (D-761). */
+  readonly profiles = new Map<string, FetchedProfile>();
+  readonly profileRequests: FetchProfileRequest[] = [];
+
+  fetchProfile(request: FetchProfileRequest): Promise<FetchedProfile | null> {
+    this.profileRequests.push(request);
+    return Promise.resolve(this.profiles.get(request.userId) ?? null);
+  }
 
   sendText(request: SendTextRequest): Promise<SendTextResult> {
     if (this.failNext !== null) {
@@ -139,6 +183,38 @@ export class GraphMessagingGateway implements MessagingGateway {
       }),
     });
     return this.idOrFail(text((body as { message_id?: unknown } | null)?.message_id));
+  }
+
+  async fetchProfile(request: FetchProfileRequest): Promise<FetchedProfile | null> {
+    const fields =
+      request.channel === 'instagram'
+        ? 'name,username,profile_pic'
+        : 'first_name,last_name,profile_pic';
+    const query = new URLSearchParams({ fields, access_token: request.token }).toString();
+    let body: unknown;
+    try {
+      body = await this.call(`${this.root()}/${encodeURIComponent(request.userId)}?${query}`, {
+        method: 'GET',
+      });
+    } catch (error) {
+      // A refusal (no profile for this account, no access to the feature, a blocked business)
+      // will not change on a retry: no profile. Only a timeout, a 5xx or a 429 is tried again.
+      if (error instanceof MessagingError && !error.retryable) return null;
+      throw error;
+    }
+    const read = (key: string): string | null => {
+      const value = (body as Record<string, unknown> | null)?.[key];
+      return typeof value === 'string' && value.trim() !== '' ? value : null;
+    };
+    const profile: FetchedProfile = {
+      name: read('name'),
+      firstName: read('first_name'),
+      lastName: read('last_name'),
+      username: read('username'),
+      pictureUrl: read('profile_pic'),
+    };
+    // "An empty object is returned" when the app cannot see the profile.
+    return Object.values(profile).every((value) => value === null) ? null : profile;
   }
 
   private idOrFail(id: string): SendTextResult {

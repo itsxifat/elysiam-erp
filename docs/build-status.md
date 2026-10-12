@@ -100,6 +100,7 @@ Wave 4         [####################] 100%   (M40 to M43; broad tests deferred, 
 | M41  | Order ownership, calls, auto-assign          |  100% | Live 2026-10-12: take an order, warnings for everyone else, call log, Uber-style offers (off until turned on), hub queues, team board                                                  |
 | M42  | Unified inbox and customer panel             |  100% | Live 2026-10-12: Messenger, Instagram and WhatsApp in one inbox with the customer panel; receives nothing until the Meta app is connected                                              |
 | M43  | Premium slips, English only                  |  100% | Live 2026-10-12: new slip, invoice and labels; Bangla removed everywhere                                                                                                               |
+| M44  | A fast, alive inbox                          |   50% | M44a built 2026-10-12, not merged: full-window inbox, names and photos from Meta, motion, sounds, alerts, saved replies; M44b to come                                                  |
 
 ## Being built now
 

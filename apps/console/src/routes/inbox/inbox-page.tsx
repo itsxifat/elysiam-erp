@@ -1,62 +1,56 @@
 import {
   Button,
-  DateTime,
   EmptyState,
   ErrorState,
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuTrigger,
-  Monogram,
-  PageHeader,
+  Kbd,
   PermissionGate,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   SearchInput,
   Select,
   Skeleton,
   StatusBadge,
   cn,
 } from '@elysium/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { AlertTriangle, ChevronDown, MessagesSquare, Paperclip, Send } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { BellRing, Keyboard, MessagesSquare } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
 
+import '../../alive/alive.css';
+import { useArrivals, useFlip, useNow } from '../../alive/motion.js';
+import { askForAlerts, rememberAsked, shouldOfferAlerts } from '../../alive/notify.js';
+import { playTone } from '../../alive/tones.js';
 import { ApiError } from '../../api.js';
 import { useAbility, useSession } from '../../auth/session.js';
 import { useRealtime } from '../../realtime/use-realtime.js';
-import {
-  act,
-  getTeam,
-  getThread,
-  INBOX_KEY,
-  listConversations,
-  markRead,
-  reply,
-  handOver,
-  type ConversationItem,
-  type MessageView,
-  type ThreadView,
-} from './api.js';
+import { myDesk } from '../orders/workflow-api.js';
+import { INBOX_KEY, listConversations, type ConversationItem } from './api.js';
+import { ContactAvatar } from './avatar.js';
+import { useSingleKeys } from './inbox-keys.js';
+import './inbox.css';
 import {
   CHANNEL_KINDS,
   CONTACT_STAGES,
-  failureKey,
   inboxSearchSchema,
   stageTone,
-  statusTone,
   type InboxSearch,
 } from './logic.js';
 import { useInboxT } from './messages.js';
-import { useOwnerGuard } from './owner-guard.js';
-import { ContactPanel } from './panel.js';
+import { Conversation, type Pane } from './thread.js';
+import { hasBangla, relativeTime, stepConversation } from './thread-logic.js';
+import { timeText } from './time-text.js';
 
 /**
- * The unified inbox (M42, D-730 to D-749): every channel in one list on the left, the thread in
- * the middle, the customer panel on the right.
+ * The unified inbox (M42, D-730 to D-749; M44a, D-760 to D-767): every channel in one list on
+ * the left, the thread in the middle, the customer panel on the right, filling the window under
+ * the shell's header with each pane scrolling on its own.
  *
  * Live, the way the approvals inbox is: §19's events carry ids only, so an event invalidates the
  * queries it concerns and the server answers again through `serializeFor`; nothing from the
- * socket is shown as it arrived. A write on someone else's conversation asks first (D-737).
+ * socket is shown as it arrived. A write on someone else's conversation asks first (D-737). The
+ * sounds and desktop alerts for new messages are the shell's work dock's, heard on every screen.
  */
 
 const INBOX_EVENTS = [
@@ -64,6 +58,7 @@ const INBOX_EVENTS = [
   'inbox.message_status',
   'inbox.conversation_changed',
   'inbox.owner_overridden',
+  'inbox.contact_updated',
 ] as const;
 
 export function InboxPage() {
@@ -85,29 +80,49 @@ function Inbox() {
   const raw: unknown = useSearch({ strict: false });
   const search = inboxSearchSchema.parse(raw ?? {});
   const routerNavigate = useNavigate();
-  const navigate = (next: { readonly search: (prev: InboxSearch) => InboxSearch }) =>
-    routerNavigate({ to: '.', search: next.search(search) as never });
+  const navigate = (next: (prev: InboxSearch) => InboxSearch) =>
+    void routerNavigate({ to: '.', search: next(search) as never });
   const queryClient = useQueryClient();
   const session = useSession();
   const me = session.context?.userId ?? null;
   const [notice, setNotice] = useState<string | null>(null);
+  const [pane, setPane] = useState<Pane>('thread');
+  const order = useRef<readonly string[]>([]);
 
   const status = useRealtime({
     events: INBOX_EVENTS,
     enabled: session.context !== null,
     onEvent: (name, payload) => {
-      const id = (payload as { conversationId?: unknown } | null)?.conversationId;
+      const body = (payload ?? {}) as {
+        conversationId?: unknown;
+        conversationIds?: unknown;
+        status?: unknown;
+        action?: unknown;
+      };
       void queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'list'] });
-      if (typeof id === 'string') {
+      const ids = [
+        ...(typeof body.conversationId === 'string' ? [body.conversationId] : []),
+        ...(Array.isArray(body.conversationIds)
+          ? body.conversationIds.filter((id): id is string => typeof id === 'string')
+          : []),
+      ];
+      for (const id of ids) {
         void queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'thread', id] });
         void queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'panel', id] });
       }
+      // A reply that did not go, in the chat on screen: a colleague's elsewhere is theirs to hear.
+      if (
+        name === 'inbox.message_status' &&
+        body.status === 'failed' &&
+        body.conversationId === search.c
+      ) {
+        playTone('error');
+      }
       if (name === 'inbox.owner_overridden') {
-        const body = payload as { action?: unknown } | null;
         setNotice(
           t('inbox.owner.overridden', {
             name: t('inbox.someone'),
-            action: typeof body?.action === 'string' ? body.action.replace(/[._]/g, ' ') : '',
+            action: typeof body.action === 'string' ? body.action.replace(/[._]/g, ' ') : '',
           }),
         );
       }
@@ -123,37 +138,62 @@ function Inbox() {
     q: search.q,
   };
 
-  const select = (id: string) =>
-    void navigate({ search: (prev: InboxSearch) => ({ ...prev, c: id }) });
+  const select = (id: string) => {
+    setPane('thread');
+    navigate((prev) => ({ ...prev, c: id }));
+  };
+
+  useSingleKeys({
+    j: () => {
+      const next = stepConversation(order.current, search.c ?? null, 1);
+      if (next !== null && next !== search.c) select(next);
+    },
+    k: () => {
+      const next = stepConversation(order.current, search.c ?? null, -1);
+      if (next !== null && next !== search.c) select(next);
+    },
+    '/': () => {
+      const box = document.querySelector<HTMLTextAreaElement>('[data-inbox-composer]');
+      if (box !== null && !box.disabled) box.focus();
+    },
+  });
+
+  const open = search.c !== undefined;
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title={t('inbox.title')}
-        description={t('inbox.subtitle')}
-        meta={
-          <StatusBadge tone={status === 'connected' ? 'success' : 'warning'}>
-            {status === 'connected' ? t('inbox.live') : t('inbox.offline')}
-          </StatusBadge>
-        }
-      />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2.5">
+        <h1 className="text-base font-semibold">{t('inbox.title')}</h1>
+        <StatusBadge
+          tone={status === 'connected' ? 'success' : 'warning'}
+          className={status === 'connected' ? 'alive-presence' : undefined}
+        >
+          {status === 'connected' ? t('inbox.live') : t('inbox.offline')}
+        </StatusBadge>
+        <MyStatus />
+        <div className="ml-auto flex items-center gap-2">
+          <AlertsOffer />
+          <ShortcutsHelp />
+        </div>
+      </header>
       {notice === null ? null : (
-        <p role="status" className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+        <p role="status" className="border-b border-border bg-muted px-4 py-2 text-sm">
           {notice}
         </p>
       )}
-      <div className="grid overflow-hidden rounded-lg border border-border bg-card lg:grid-cols-4">
+      <div className="inbox-grid" data-open={open ? pane : 'list'}>
         <ConversationList
           filters={filters}
           selected={search.c ?? null}
           me={me}
           onSelect={select}
-          onFilters={(next) =>
-            void navigate({ search: (prev: InboxSearch) => ({ ...prev, ...next }) })
-          }
+          onOrder={(ids) => {
+            order.current = ids;
+          }}
+          onFilters={(next) => navigate((prev) => ({ ...prev, ...next }))}
         />
         {search.c === undefined ? (
-          <div className="flex items-center justify-center border-l border-border p-6 lg:col-span-3">
+          <div className="inbox-thread flex items-center justify-center p-6">
             <EmptyState
               icon={MessagesSquare}
               title={t('inbox.thread.pick')}
@@ -161,10 +201,117 @@ function Inbox() {
             />
           </div>
         ) : (
-          <Conversation key={search.c} id={search.c} me={me} />
+          <Conversation
+            key={search.c}
+            id={search.c}
+            me={me}
+            onBack={() => navigate((prev) => ({ ...prev, c: undefined }))}
+            onPane={setPane}
+          />
         )}
       </div>
+      {open && pane === 'customer' ? (
+        <div className="inbox-small-only border-t border-border p-2">
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setPane('thread')}>
+            {t('inbox.thread.showMessages')}
+          </Button>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** "You · Active", breathing while active: the dock's own heartbeat, read from its cache. */
+function MyStatus() {
+  const t = useInboxT();
+  const ability = useAbility();
+  const desk = useQuery({
+    queryKey: ['team', 'me'],
+    queryFn: myDesk,
+    enabled: ability.can('update', 'Presence'),
+    staleTime: 30_000,
+  });
+  const presence = desk.data?.presence;
+  if (presence === undefined) return null;
+  const tone =
+    presence.state === 'active' ? 'success' : presence.state === 'idle' ? 'warning' : 'neutral';
+  return (
+    <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+      <span className="sr-only">{t('inbox.you')}:</span>
+      <span aria-hidden="true">{t('alive.presence.you')}</span>
+      <StatusBadge
+        tone={tone}
+        className={presence.state === 'active' ? 'alive-presence' : undefined}
+      >
+        {t(`inbox.presence.${presence.state}`)}
+      </StatusBadge>
+    </span>
+  );
+}
+
+/** "Turn on alerts", once: asked from a button, never on load (D-766). */
+function AlertsOffer() {
+  const t = useInboxT();
+  const [offer, setOffer] = useState(shouldOfferAlerts);
+  if (!offer) return null;
+  return (
+    <div className="alive-in flex items-center gap-2 rounded-md bg-info-subtle px-2.5 py-1 text-xs text-info-subtle-foreground">
+      <BellRing aria-hidden="true" className="size-3.5 shrink-0" />
+      <span className="hidden max-w-80 md:block">{t('alive.notify.ask')}</span>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          setOffer(false);
+          void askForAlerts();
+        }}
+      >
+        {t('alive.notify.allow')}
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          setOffer(false);
+          rememberAsked();
+        }}
+      >
+        {t('alive.notify.later')}
+      </Button>
+    </div>
+  );
+}
+
+function ShortcutsHelp() {
+  const t = useInboxT();
+  const rows = [
+    ['J', t('inbox.shortcuts.next')],
+    ['K', t('inbox.shortcuts.previous')],
+    ['A', t('inbox.shortcuts.take')],
+    ['E', t('inbox.shortcuts.close')],
+    ['/', t('inbox.shortcuts.reply')],
+  ] as const;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label={t('inbox.shortcuts.title')}>
+          <Keyboard aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72">
+        <p className="mb-2 text-sm font-medium">{t('inbox.shortcuts.title')}</p>
+        <dl className="space-y-1.5 text-sm">
+          {rows.map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between gap-3">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd>
+                <Kbd>{key}</Kbd>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -175,12 +322,14 @@ function ConversationList({
   selected,
   me,
   onSelect,
+  onOrder,
   onFilters,
 }: {
   readonly filters: Omit<InboxSearch, 'c'>;
   readonly selected: string | null;
   readonly me: string | null;
   readonly onSelect: (id: string) => void;
+  readonly onOrder: (ids: readonly string[]) => void;
   readonly onFilters: (next: Partial<InboxSearch>) => void;
 }) {
   const t = useInboxT();
@@ -199,6 +348,10 @@ function ConversationList({
     // A safety net while the socket reconnects; events invalidate it the rest of the time.
     refetchInterval: 60_000,
   });
+  const items = list.data?.items;
+  useEffect(() => {
+    onOrder(items?.map((item) => item.id) ?? []);
+  }, [items, onOrder]);
 
   const views = [
     ['all', t('inbox.view.all')],
@@ -207,10 +360,7 @@ function ConversationList({
   ] as const;
 
   return (
-    <section
-      aria-labelledby={`${ids}-title`}
-      className="flex min-h-0 flex-col md:max-h-[calc(100dvh-14rem)]"
-    >
+    <section aria-labelledby={`${ids}-title`} className="inbox-list flex min-h-0 flex-col">
       <h2 id={`${ids}-title`} className="sr-only">
         {t('inbox.list.label')}
       </h2>
@@ -291,11 +441,17 @@ function ConversationList({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {list.isPending ? (
-          <div className="space-y-2 p-3" aria-busy="true" aria-label={t('inbox.loading')}>
-            {[0, 1, 2, 3].map((n) => (
-              <Skeleton key={n} className="h-16 w-full" />
+          <ul className="space-y-1 p-2" aria-busy="true" aria-label={t('inbox.loading')}>
+            {[0, 1, 2, 3, 4, 5].map((n) => (
+              <li key={n} className="flex items-center gap-3 px-2 py-2.5">
+                <Skeleton className="size-9 shrink-0 rounded-full" />
+                <span className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-full" />
+                </span>
+              </li>
             ))}
-          </div>
+          </ul>
         ) : list.isError ? (
           <ErrorState
             title={t('inbox.errorTitle')}
@@ -313,452 +469,144 @@ function ConversationList({
             detail={t('inbox.list.emptyDetail')}
           />
         ) : (
-          <ul aria-label={t('inbox.list.label')}>
-            {list.data.items.map((item) => (
-              <ConversationRow
-                key={item.id}
-                item={item}
-                me={me}
-                selected={item.id === selected}
-                onSelect={() => onSelect(item.id)}
-              />
-            ))}
-          </ul>
+          <Rows items={list.data.items} selected={selected} me={me} onSelect={onSelect} />
         )}
       </div>
     </section>
+  );
+}
+
+/** The rows, mounted once there are some: what was there first never animates. */
+function Rows({
+  items,
+  selected,
+  me,
+  onSelect,
+}: {
+  readonly items: readonly ConversationItem[];
+  readonly selected: string | null;
+  readonly me: string | null;
+  readonly onSelect: (id: string) => void;
+}) {
+  const t = useInboxT();
+  const listRef = useRef<HTMLUListElement>(null);
+  const now = useNow();
+  const arrivals = useArrivals(items.map((item) => item.id));
+  const [counts] = useState(() => new Map(items.map((item) => [item.id, item.unreadCount])));
+  useFlip(listRef, items.map((item) => item.id).join(','));
+  return (
+    <ul ref={listRef} aria-label={t('inbox.list.label')}>
+      {items.map((item) => (
+        <ConversationRow
+          key={item.id}
+          item={item}
+          me={me}
+          now={now}
+          selected={item.id === selected}
+          arrived={arrivals.has(item.id)}
+          countChanged={counts.get(item.id) !== item.unreadCount}
+          onSelect={() => onSelect(item.id)}
+        />
+      ))}
+    </ul>
   );
 }
 
 function ConversationRow({
   item,
   me,
+  now,
   selected,
+  arrived,
+  countChanged,
   onSelect,
 }: {
   readonly item: ConversationItem;
   readonly me: string | null;
+  readonly now: number;
   readonly selected: boolean;
+  readonly arrived: boolean;
+  readonly countChanged: boolean;
   readonly onSelect: () => void;
 }) {
   const t = useInboxT();
   const name = item.contact.name ?? t('inbox.unknownPerson');
+  const unread = item.unreadCount > 0;
   const owner =
     item.assignedTo === null
       ? t('inbox.list.nobody')
       : item.assignedTo.userId === me
         ? t('inbox.list.you')
         : (item.assignedTo.name ?? t('inbox.someone'));
+  const preview = item.lastPreview ?? '';
   return (
-    <li className="border-b border-border">
+    <li data-flip-key={item.id} className={cn('border-b border-border', arrived && 'alive-in')}>
       <button
         type="button"
         onClick={onSelect}
         aria-current={selected ? 'true' : undefined}
         className={cn(
-          'block w-full px-3 py-2.5 text-left',
+          'alive-press flex w-full items-start gap-3 px-3 py-2.5 text-left',
           'motion-safe:duration-fast hover:bg-accent motion-safe:transition-colors',
           'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset',
           selected && 'bg-selected text-selected-foreground',
         )}
       >
-        <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{name}</span>
-          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-            <DateTime value={item.lastMessageAt} compact />
-          </span>
-        </span>
-        <span className="mt-0.5 flex items-center gap-2">
-          <span className="truncate text-sm text-muted-foreground">{item.lastPreview ?? ''}</span>
-          {item.unreadCount > 0 ? (
+        <ContactAvatar id={item.contact.id} name={item.contact.name} url={item.contact.avatarUrl} />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
             <span
-              className="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground tabular-nums"
-              aria-label={t('inbox.list.unread', { n: String(item.unreadCount) })}
+              lang={hasBangla(name) ? 'bn' : undefined}
+              className={cn('truncate text-sm', unread ? 'font-semibold' : 'font-medium')}
             >
-              {item.unreadCount}
+              {name}
             </span>
-          ) : null}
-        </span>
-        <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <StatusBadge tone="neutral">{t(`inbox.channel.${item.channel}`)}</StatusBadge>
-          {item.contact.stage === 'visitor' ? null : (
-            <StatusBadge tone={stageTone(item.contact.stage)}>
-              {t(`inbox.stage.${item.contact.stage}`)}
-            </StatusBadge>
-          )}
-          <span className="truncate">{owner}</span>
+            <time
+              dateTime={item.lastMessageAt}
+              className={cn(
+                'ml-auto shrink-0 text-xs',
+                unread ? 'font-medium text-primary' : 'text-muted-foreground',
+              )}
+            >
+              {timeText(relativeTime(item.lastMessageAt, now), t)}
+            </time>
+          </span>
+          <span className="mt-0.5 flex items-center gap-2">
+            <span
+              lang={hasBangla(preview) ? 'bn' : undefined}
+              className={cn(
+                'truncate text-sm',
+                unread ? 'text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              {item.lastDirection === 'outbound'
+                ? t('inbox.list.youWrote', { text: preview })
+                : preview}
+            </span>
+            {unread ? (
+              <span
+                key={item.unreadCount}
+                className={cn(
+                  'ml-auto shrink-0 rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground tabular-nums',
+                  countChanged && 'alive-pop',
+                )}
+                aria-label={t('inbox.list.unread', { n: String(item.unreadCount) })}
+              >
+                {item.unreadCount}
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <StatusBadge tone="neutral">{t(`inbox.channel.${item.channel}`)}</StatusBadge>
+            {item.contact.stage === 'visitor' ? null : (
+              <StatusBadge tone={stageTone(item.contact.stage)}>
+                {t(`inbox.stage.${item.contact.stage}`)}
+              </StatusBadge>
+            )}
+            <span className="truncate">{owner}</span>
+          </span>
         </span>
       </button>
     </li>
   );
-}
-
-// --- one conversation: the thread and the panel -----------------------------------------------
-
-function Conversation({ id, me }: { readonly id: string; readonly me: string | null }) {
-  const t = useInboxT();
-  const queryClient = useQueryClient();
-  const thread = useQuery({
-    queryKey: [...INBOX_KEY, 'thread', id],
-    queryFn: () => getThread(id),
-    // While a reply is still sending, ask again now and then in case the socket is down.
-    refetchInterval: (query) =>
-      query.state.data?.messages.some((message) => message.status === 'queued') === true
-        ? 3_000
-        : false,
-  });
-
-  // The owner has read it once it is on their screen.
-  const conversation = thread.data?.conversation;
-  const unreadMine =
-    conversation !== undefined &&
-    conversation.unreadCount > 0 &&
-    conversation.assignedTo?.userId === me;
-  useEffect(() => {
-    if (!unreadMine) return;
-    void markRead(id).then(() =>
-      queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'list'] }),
-    );
-  }, [unreadMine, id, queryClient]);
-
-  if (thread.isPending) {
-    return (
-      <div
-        className="space-y-3 border-l border-border p-4 lg:col-span-3"
-        aria-busy="true"
-        aria-label={t('inbox.loading')}
-      >
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
-  if (thread.isError) {
-    return (
-      <div className="border-l border-border p-4 lg:col-span-3">
-        <ErrorState
-          title={t('inbox.errorTitle')}
-          detail={thread.error instanceof ApiError ? thread.error.message : t('inbox.errorDetail')}
-          action={
-            <Button size="sm" variant="outline" onClick={() => void thread.refetch()}>
-              {t('inbox.retry')}
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-  return (
-    <>
-      <Thread view={thread.data} me={me} />
-      <ContactPanel conversation={thread.data.conversation} me={me} />
-    </>
-  );
-}
-
-function Thread({ view, me }: { readonly view: ThreadView; readonly me: string | null }) {
-  const t = useInboxT();
-  const ids = useId();
-  const ability = useAbility();
-  const queryClient = useQueryClient();
-  const conversation = view.conversation;
-  const { guard, dialog } = useOwnerGuard(conversation, me);
-  const [draft, setDraft] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
-  const mayWrite = ability.can('update', 'Conversation');
-  const mayReassign = ability.can('update', 'ConversationAssignment');
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView?.({ block: 'end' });
-  }, [view.messages.length]);
-
-  const refresh = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'thread', conversation.id] }),
-      queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'list'] }),
-      queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'panel', conversation.id] }),
-    ]);
-  };
-  const failed = (cause: unknown) =>
-    setError(cause instanceof ApiError || cause instanceof Error ? cause.message : String(cause));
-
-  const run = (action: (acknowledged: boolean) => Promise<unknown>) => {
-    setError(null);
-    void guard(async (acknowledged) => {
-      await action(acknowledged);
-      await refresh();
-    }).catch(failed);
-  };
-
-  const send = useMutation({
-    mutationFn: async () => {
-      const text = draft.trim();
-      if (text === '') return;
-      setError(null);
-      await guard(async (acknowledged) => {
-        await reply(conversation.id, { id: crypto.randomUUID(), text }, acknowledged);
-        setDraft('');
-        await refresh();
-      });
-    },
-    onError: failed,
-  });
-
-  const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      if (!send.isPending) send.mutate();
-    }
-  };
-
-  const owner = conversation.assignedTo;
-  const ownerLine =
-    owner === null
-      ? t('inbox.thread.unassigned')
-      : owner.userId === me
-        ? t('inbox.thread.assignedYou')
-        : t('inbox.thread.assignedOther', { name: owner.name ?? t('inbox.someone') });
-  const window = conversation.window;
-  const windowLine = window.open
-    ? t('inbox.thread.windowOpen', { time: shortTime(window.closesAt) })
-    : window.reason === 'never_wrote'
-      ? t('inbox.thread.windowNever')
-      : t('inbox.thread.windowExpired', { time: shortTime(window.closesAt) });
-
-  return (
-    <section
-      aria-labelledby={`${ids}-name`}
-      className="flex min-h-0 min-w-0 flex-col border-l border-border md:max-h-[calc(100dvh-14rem)] lg:col-span-2"
-    >
-      <header className="space-y-2 border-b border-border px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Monogram name={conversation.contact.name ?? '?'} size="sm" />
-          <h2 id={`${ids}-name`} className="truncate text-base font-semibold">
-            {conversation.contact.name ?? t('inbox.unknownPerson')}
-          </h2>
-          <StatusBadge tone="neutral">{t(`inbox.channel.${conversation.channel}`)}</StatusBadge>
-          <StatusBadge tone={stageTone(conversation.contact.stage)}>
-            {t(`inbox.stage.${conversation.contact.stage}`)}
-          </StatusBadge>
-          {conversation.status === 'closed' ? (
-            <StatusBadge tone="neutral">{t('inbox.thread.closed')}</StatusBadge>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-muted-foreground">{ownerLine}</p>
-          {mayWrite ? (
-            <div className="ml-auto flex flex-wrap gap-2">
-              {owner?.userId === me ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => run((ack) => act(conversation.id, 'release', ack))}
-                >
-                  {t('inbox.thread.release')}
-                </Button>
-              ) : owner === null || mayReassign ? (
-                // Taking over a colleague's conversation is a supervisor's (D-737).
-                <Button size="sm" onClick={() => run((ack) => act(conversation.id, 'take', ack))}>
-                  {t('inbox.thread.take')}
-                </Button>
-              ) : null}
-              {owner === null || owner.userId === me || mayReassign ? (
-                <HandOverMenu
-                  onPick={(userId) => run((ack) => handOver(conversation.id, userId, ack))}
-                />
-              ) : null}
-              {conversation.status === 'open' ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => run((ack) => act(conversation.id, 'close', ack))}
-                >
-                  {t('inbox.thread.close')}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => run((ack) => act(conversation.id, 'reopen', ack))}
-                >
-                  {t('inbox.thread.reopen')}
-                </Button>
-              )}
-            </div>
-          ) : null}
-        </div>
-        {conversation.contact.stage === 'fraud' ? (
-          <p
-            role="alert"
-            className="flex items-center gap-2 rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive-subtle-foreground"
-          >
-            <AlertTriangle aria-hidden className="size-4 shrink-0" />
-            {t('inbox.fraudBanner')}
-          </p>
-        ) : null}
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <ol aria-label={t('inbox.thread.label')} className="space-y-2">
-          {view.messages.map((message) => (
-            <Bubble key={message.id} message={message} />
-          ))}
-        </ol>
-        <div ref={endRef} />
-      </div>
-
-      <footer className="space-y-2 border-t border-border p-3">
-        <p
-          className={cn(
-            'text-xs',
-            window.open
-              ? 'text-muted-foreground'
-              : 'rounded-md bg-warning-subtle px-2 py-1 text-warning-subtle-foreground',
-          )}
-        >
-          {windowLine}
-        </p>
-        {error === null ? null : (
-          <p role="alert" className="text-sm text-destructive-text">
-            {error}
-          </p>
-        )}
-        {mayWrite ? (
-          <form
-            className="flex items-end gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!send.isPending) send.mutate();
-            }}
-          >
-            <label htmlFor={`${ids}-compose`} className="sr-only">
-              {t('inbox.thread.compose')}
-            </label>
-            <textarea
-              id={`${ids}-compose`}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onKey}
-              rows={2}
-              maxLength={1000}
-              disabled={!window.open || send.isPending}
-              placeholder={t('inbox.thread.composePlaceholder')}
-              aria-describedby={`${ids}-hint`}
-              className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
-            />
-            <Button type="submit" disabled={!window.open || send.isPending || draft.trim() === ''}>
-              <Send aria-hidden className="size-4" />
-              {t('inbox.thread.send')}
-            </Button>
-          </form>
-        ) : null}
-        <p id={`${ids}-hint`} className="text-xs text-muted-foreground">
-          {t('inbox.thread.sendHint')}
-        </p>
-      </footer>
-      {dialog}
-    </section>
-  );
-}
-
-function HandOverMenu({ onPick }: { readonly onPick: (userId: string) => void }) {
-  const t = useInboxT();
-  const [open, setOpen] = useState(false);
-  const team = useQuery({
-    queryKey: [...INBOX_KEY, 'team'],
-    queryFn: getTeam,
-    enabled: open,
-    staleTime: 60_000,
-  });
-  return (
-    <Menu open={open} onOpenChange={setOpen}>
-      <MenuTrigger asChild>
-        <Button size="sm" variant="outline">
-          {t('inbox.thread.handOver')}
-          <ChevronDown aria-hidden className="size-4" />
-        </Button>
-      </MenuTrigger>
-      <MenuContent align="end" aria-label={t('inbox.thread.handOverTo')}>
-        {team.data === undefined ? (
-          <MenuItem disabled>{t('inbox.loading')}</MenuItem>
-        ) : (
-          team.data.items.map((member) => (
-            <MenuItem key={member.userId} onSelect={() => onPick(member.userId)}>
-              {member.name}
-            </MenuItem>
-          ))
-        )}
-      </MenuContent>
-    </Menu>
-  );
-}
-
-function Bubble({ message }: { readonly message: MessageView }) {
-  const t = useInboxT();
-  const inbound = message.direction === 'inbound';
-  const failure = message.error === null ? null : failureKey(message.error.code);
-  return (
-    <li className={cn('flex', !inbound && 'justify-end')}>
-      <div
-        className={cn(
-          'max-w-md rounded-lg px-3 py-2 text-sm',
-          inbound ? 'bg-muted text-foreground' : 'bg-selected text-selected-foreground',
-        )}
-      >
-        {message.text === null ? null : (
-          <p className="break-words whitespace-pre-wrap">{message.text}</p>
-        )}
-        {message.attachments.map((attachment, index) => (
-          <p key={index} className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Paperclip aria-hidden className="size-3.5" />
-            {t('inbox.thread.attachment', { type: attachment.type })}
-            {attachment.url === undefined ? null : (
-              <a
-                href={attachment.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                {t('inbox.thread.openAttachment')}
-              </a>
-            )}
-          </p>
-        ))}
-        <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <DateTime value={message.at} compact />
-          {inbound ? null : (
-            <>
-              <StatusBadge tone={statusTone(message.status)}>
-                {t(`inbox.status.${message.status}`)}
-              </StatusBadge>
-              <span>
-                {message.sentBy === null
-                  ? t('inbox.thread.fromMeta')
-                  : t('inbox.thread.sentBy', { name: message.sentBy.name ?? t('inbox.someone') })}
-              </span>
-            </>
-          )}
-        </p>
-        {failure === null ? null : (
-          <p className="mt-1 text-xs text-destructive-text">
-            {'code' in failure ? t(failure.key, { code: failure.code }) : t(failure.key)}
-          </p>
-        )}
-      </div>
-    </li>
-  );
-}
-
-/** "11 Oct, 14:05" in Dhaka time, for the window line. */
-function shortTime(iso: string | null): string {
-  if (iso === null) return '';
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Dhaka',
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(iso));
 }

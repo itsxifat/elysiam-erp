@@ -65,6 +65,13 @@
   --duration-slow: 180ms;
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  /* The live layer (M44a, D-765): a message settling in, a count popping with a little
+     overshoot, and the slow ambient loop of a presence dot or a ringing offer. Every one of
+     them stops under reduced motion. */
+  --duration-enter: 220ms;
+  --duration-pop: 280ms;
+  --duration-ambient: 2400ms;
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
 
   /* Depth. Regions separate with a surface step or a 1px hairline; shadows belong
      only to layers that genuinely float above the page: a menu, a popover, a

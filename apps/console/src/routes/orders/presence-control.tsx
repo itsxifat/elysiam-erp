@@ -2,6 +2,7 @@ import { Button, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CirclePause, CirclePlay } from 'lucide-react';
 
+import '../../alive/alive.css';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/workflow.js';
@@ -39,7 +40,10 @@ export function PresenceControl() {
   return (
     <div className="flex items-center gap-2 text-sm" data-testid="presence-control">
       <span className="sr-only">{t('wf.status.yours')}:</span>
-      <StatusBadge tone={STATE_TONE[presence.state]}>
+      <StatusBadge
+        tone={STATE_TONE[presence.state]}
+        className={presence.state === 'active' ? 'alive-presence' : undefined}
+      >
         {t(`wf.status.${presence.state}`)}
       </StatusBadge>
       <span data-testid="taking-orders">

@@ -5,6 +5,7 @@ import type { JobFailureReporter, JobsRuntime } from '../../platform/jobs/jobs.r
 import type { ConversationOffersService } from './conversation-offers.service.js';
 import { INBOX_QUEUES } from './inbox.queues.js';
 import type { InboxOrderListener } from './order-listener.service.js';
+import type { InboxProfileService } from './profile.service.js';
 import type { InboxSendService } from './send.service.js';
 import type { InboxWebhookService } from './webhook.service.js';
 
@@ -17,6 +18,7 @@ const webhookPayload = z.object({ eventId: z.string().uuid() }).strict();
 const sendPayload = z.object({ messageId: z.string().uuid() }).strict();
 const offerDispatchPayload = z.object({ conversationId: z.string().uuid().nullable() }).strict();
 const offerExpirePayload = z.object({ offerId: z.string().uuid() }).strict();
+const profilePayload = z.object({ identityId: z.string().uuid() }).strict();
 const presenceEvent = z.object({ state: z.string(), paused: z.boolean() });
 
 export interface InboxWorkerDependencies {
@@ -27,11 +29,13 @@ export interface InboxWorkerDependencies {
   readonly orders: InboxOrderListener;
   /** D-748: the conversation auto-offer. Absent where a test runs the inbox without it. */
   readonly offers?: ConversationOffersService;
+  /** D-761: senders' names and photos from Meta. Absent where a test runs the inbox without it. */
+  readonly profiles?: InboxProfileService;
   readonly report: JobFailureReporter;
 }
 
 export async function registerInboxJobs(deps: InboxWorkerDependencies): Promise<void> {
-  const { jobs, dispatcher, webhooks, sender, orders, offers, report } = deps;
+  const { jobs, dispatcher, webhooks, sender, orders, offers, profiles, report } = deps;
 
   // An order placed for a contact makes them a Customer (D-738).
   dispatcher.on('order.created', (event) => orders.onOrderCreated(event));
@@ -56,6 +60,26 @@ export async function registerInboxJobs(deps: InboxWorkerDependencies): Promise<
     },
     report,
   );
+
+  if (profiles !== undefined) {
+    await jobs.work(
+      INBOX_QUEUES.fetchProfile.name,
+      async (job) => {
+        if (job.orgId === null)
+          throw new Error(`${INBOX_QUEUES.fetchProfile.name} is tenant-scoped`);
+        const { identityId } = profilePayload.parse(job.payload);
+        await profiles.refresh(job.orgId, identityId);
+      },
+      report,
+    );
+    await jobs.work(
+      INBOX_QUEUES.profileSweep.name,
+      async () => {
+        await profiles.sweep();
+      },
+      report,
+    );
+  }
 
   if (offers === undefined) return;
 
