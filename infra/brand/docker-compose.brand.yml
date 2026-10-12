@@ -43,6 +43,10 @@ x-server-env: &server-env
   INTAKE_RATE_LIMIT_STORE: valkey
   # The owner sign-in link's public key (D-473). Empty keeps the feature off.
   OWNER_LINK_PUBLIC_KEY: ${OWNER_LINK_PUBLIC_KEY:-}
+  # The inbox's Meta sending (M42, D-747): test mode until the brand's .env.brand sets both
+  # BRAND_INBOX_META_PROVIDER=graph and BRAND_INBOX_META_ENABLED=true. Receiving needs neither.
+  INBOX_META_PROVIDER: ${BRAND_INBOX_META_PROVIDER:-fake}
+  INBOX_META_ENABLED: ${BRAND_INBOX_META_ENABLED:-false}
   GOTENBERG_URL: http://gotenberg:3000
   # M38c (D-683): where the camera process writes each IP camera's live preview frame; the
   # API reads it (read-only) to serve the packing station's live view.
