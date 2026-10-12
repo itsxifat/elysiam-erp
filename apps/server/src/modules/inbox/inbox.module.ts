@@ -4,6 +4,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
+import { StorefrontModule } from '../storefront/storefront.module.js';
 import { TeamModule } from '../team/team.module.js';
 import { InboxCatalogReferences } from './catalog-references.binding.js';
 import { InboxChannelsService } from './channels.service.js';
@@ -21,6 +22,8 @@ import { ContactPanelService } from './panel.service.js';
 import { CONVERSATION_OFFER } from './ports/conversation-offer.port.js';
 import { MESSAGING_GATEWAY } from './providers/meta-messaging.js';
 import { MetaWebhookRawBody } from './raw-body.js';
+import { InboxSellingController } from './selling.controller.js';
+import { InboxSellingService } from './selling.service.js';
 import { InboxSendService } from './send.service.js';
 import { MetaWebhookController } from './webhook.controller.js';
 import { InboxWebhookService } from './webhook.service.js';
@@ -47,8 +50,9 @@ const gatewayProvider: Provider = {
 };
 
 @Module({
-  imports: [OrdersModule, CatalogModule, IamDirectoryModule, TeamModule],
-  controllers: [InboxController, MetaWebhookController],
+  // M44b: size charts and the website's address through STOREFRONT_API (D-771, D-772).
+  imports: [OrdersModule, CatalogModule, IamDirectoryModule, TeamModule, StorefrontModule],
+  controllers: [InboxController, MetaWebhookController, InboxSellingController],
   providers: [
     configProvider,
     gatewayProvider,
@@ -62,6 +66,7 @@ const gatewayProvider: Provider = {
     InboxWebhookService,
     InboxSendService,
     InboxOrderListener,
+    InboxSellingService,
     // D-621: a customer's interest keeps the product it names.
     InboxCatalogReferences,
   ],
