@@ -455,7 +455,7 @@ describe('the Graph media and calls adapter (UNVERIFIED, against a stand-in)', (
     const file = upload.get('file') as File;
     expect(file.type).toBe('audio/ogg');
     expect(new Uint8Array(await file.arrayBuffer())).toEqual(OGG);
-    expect(JSON.parse((seen[1]!).body.toString('utf8'))).toEqual({
+    expect(JSON.parse(seen[1]!.body.toString('utf8'))).toEqual({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: '8801712345678',
@@ -552,7 +552,7 @@ describe('the Graph media and calls adapter (UNVERIFIED, against a stand-in)', (
       sdp: SDP_OFFER,
     });
     expect(result).toEqual({ sdpAnswer: 'v=0\r\nanswer', sdpRenegotiation: null });
-    expect(JSON.parse((seen[0]!).body.toString('utf8'))).toEqual({
+    expect(JSON.parse(seen[0]!.body.toString('utf8'))).toEqual({
       platform: 'messenger',
       call_id: 'c_M5Y',
       action: 'accept',
