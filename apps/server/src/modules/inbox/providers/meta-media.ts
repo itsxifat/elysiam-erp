@@ -450,6 +450,8 @@ export class GraphMetaMediaGateway implements MetaMediaGateway {
     try {
       response = await this.fetch(url, {
         ...init,
+        // Graph answers; it never sends us elsewhere, so a redirect is a failure, not followed.
+        redirect: 'manual',
         signal: AbortSignal.timeout(this.options.timeoutMs),
       });
     } catch (cause) {

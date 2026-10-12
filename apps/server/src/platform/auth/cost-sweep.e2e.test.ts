@@ -23,6 +23,7 @@ import {
   INBOX_ROUTE_FIXTURES,
   prepareInboxFixtures,
 } from '../../modules/inbox/inbox.route-fixtures.js';
+import { VOICE_CALLS_ROUTE_FIXTURES } from '../../modules/inbox/voice-calls.route-fixtures.js';
 import {
   CATALOG_ROUTE_FIXTURES,
   prepareCatalogFixtures,
@@ -201,6 +202,8 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
   ...PACKING_ROUTE_FIXTURES,
   // M42: the unified inbox.
   ...INBOX_ROUTE_FIXTURES,
+  // M45: voice messages and calls.
+  ...VOICE_CALLS_ROUTE_FIXTURES,
   // M41: presence and desk profiles.
   ...TEAM_ROUTE_FIXTURES,
 };

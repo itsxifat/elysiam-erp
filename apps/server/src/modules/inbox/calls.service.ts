@@ -536,11 +536,10 @@ export class InboxCallsService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const call = await calls.callById(tx, context.orgId, callId, { lock: true });
         if (call === undefined) throw gone();
-        if (await calls.releaseCall(tx, context.orgId, callId, context.userId)) {
-          await this.record(tx, context, request, call, 'release', { status: 'ringing' });
-          await this.changed(tx, context.orgId, call, 'ringing', null);
-        }
-        return { id: callId, status: (await calls.callById(tx, context.orgId, callId))?.status };
+        if (!(await calls.releaseCall(tx, context.orgId, callId, context.userId))) throw gone();
+        await this.record(tx, context, request, call, 'release', { status: 'ringing' });
+        await this.changed(tx, context.orgId, call, 'ringing', null);
+        return { id: callId, status: 'ringing' as const };
       }),
     );
   }
