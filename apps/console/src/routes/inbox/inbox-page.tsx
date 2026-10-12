@@ -110,7 +110,14 @@ function Inbox() {
         void queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'thread', id] });
         void queryClient.invalidateQueries({ queryKey: [...INBOX_KEY, 'panel', id] });
       }
-      if (name === 'inbox.message_status' && body.status === 'failed') playTone('error');
+      // A reply that did not go, in the chat on screen: a colleague's elsewhere is theirs to hear.
+      if (
+        name === 'inbox.message_status' &&
+        body.status === 'failed' &&
+        body.conversationId === search.c
+      ) {
+        playTone('error');
+      }
       if (name === 'inbox.owner_overridden') {
         setNotice(
           t('inbox.owner.overridden', {
