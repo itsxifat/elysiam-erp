@@ -3,6 +3,7 @@ import type { SizeRecommendation } from '@elysium/domain/inbox';
 import { Plus, Search, Sparkles, X } from 'lucide-react';
 import { useId, type KeyboardEvent, type RefObject } from 'react';
 
+import '../../alive/alive.css';
 import { displayPhone } from './logic.js';
 import type { PickerProduct, SizeChart } from './sell-api.js';
 import { measureParts, refQuery, type CardRead } from './sell-logic.js';
@@ -103,7 +104,7 @@ export function HintCard({
       onKeyDown={onKey}
       className={cn(
         'space-y-2 rounded-lg border border-primary/40 bg-card p-3 shadow-popover',
-        'motion-safe:animate-sheet-in',
+        'alive-in',
         'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
       )}
     >

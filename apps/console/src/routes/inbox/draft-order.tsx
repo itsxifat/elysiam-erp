@@ -17,6 +17,7 @@ import { Link } from '@tanstack/react-router';
 import { CheckCircle2, ClipboardCopy, MessageSquareText, ShoppingCart, Trash2 } from 'lucide-react';
 import { useEffect, useId, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react';
 
+import '../../alive/alive.css';
 import { ApiError } from '../../api.js';
 import { useLocale } from '../../i18n/locale.js';
 import { recordAdvance } from '../orders/advances-api.js';
@@ -385,7 +386,7 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
             return (
               <li
                 key={line.skuId}
-                className="space-y-1.5 rounded-md border border-border p-2 motion-safe:animate-in"
+                className="alive-in space-y-1.5 rounded-md border border-border p-2"
               >
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
@@ -869,10 +870,7 @@ function Placed({
   };
 
   return (
-    <div
-      className="space-y-3 rounded-lg border border-border p-3 motion-safe:animate-in"
-      role="status"
-    >
+    <div className="alive-in space-y-3 rounded-lg border border-border p-3" role="status">
       <p className="flex items-center gap-2 text-sm font-semibold">
         <CheckCircle2 aria-hidden className="size-4 text-success" />
         {t('inbox.sell.placed', { orderNo: placed.orderNo })}
