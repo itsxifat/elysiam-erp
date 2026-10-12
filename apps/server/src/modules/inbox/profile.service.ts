@@ -168,10 +168,7 @@ export class InboxProfileService {
         });
       } catch (error) {
         // One brand's failure does not stop the others; the next sweep tries again.
-        this.logger.warn(
-          { orgId, error: error instanceof Error ? error.message : String(error) },
-          'inbox profile sweep failed for a brand',
-        );
+        this.logger.warn({ orgId, err: error }, 'inbox profile sweep failed for a brand');
       }
     }
     return { queued };

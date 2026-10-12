@@ -519,7 +519,9 @@ export const inboxSavedReplies = inbox.table(
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
-    updatedBy: text('updated_by').notNull(),
+    updatedBy: text('updated_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
     ...timestamps,
   },
   (table) => [

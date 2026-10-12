@@ -44,6 +44,14 @@ function notFound(): InboxError {
   return new InboxError('INBOX_NOT_FOUND', 'No such saved reply.');
 }
 
+/** A unique-index violation (23505), through Drizzle's wrapper that hangs it off `.cause`. */
+function isUniqueViolation(error: unknown): boolean {
+  for (let current: unknown = error; current instanceof Error; current = current.cause) {
+    if ((current as Error & { code?: unknown }).code === '23505') return true;
+  }
+  return false;
+}
+
 function taken(shortcut: string): InboxError {
   return new InboxError(
     'INBOX_SHORTCUT_TAKEN',
@@ -93,7 +101,13 @@ export class SavedRepliesService {
         if (await repo.shortcutTaken(tx, context.orgId, input.shortcut, id)) {
           throw taken(input.shortcut);
         }
-        const row = await repo.updateSavedReply(tx, context.orgId, id, input, context.userId);
+        // Two people renaming to one shortcut at once: the unique index is the backstop.
+        const row = await repo
+          .updateSavedReply(tx, context.orgId, id, input, context.userId)
+          .catch((error: unknown) => {
+            if (isUniqueViolation(error)) throw taken(input.shortcut);
+            throw error;
+          });
         if (row === undefined) throw notFound();
         await this.record(tx, context, request, 'update', id, snapshot(before), snapshot(row));
         return view(row);
@@ -112,12 +126,13 @@ export class SavedRepliesService {
     );
   }
 
-  /** Inserted into a reply: counted, nothing else. */
-  async use(context: ActiveContext, id: string) {
+  /** Inserted into a reply: counted, and audited as a use (who used which, and when). */
+  async use(context: ActiveContext, request: AuditableRequest, id: string) {
     return mapInboxErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const count = await repo.bumpSavedReply(tx, context.orgId, id);
         if (count === undefined) throw notFound();
+        await this.record(tx, context, request, 'update', id, null, { usageCount: count }, 'use');
         return { id, usageCount: count };
       }),
     );
@@ -131,12 +146,13 @@ export class SavedRepliesService {
     id: string,
     before: Record<string, unknown> | null,
     after: Record<string, unknown> | null,
+    action: string = operation,
   ): Promise<void> {
     await this.audit.record(tx, {
       orgId: context.orgId,
       actorUserId: context.userId,
       operation,
-      action: `inbox.saved_reply.${operation}`,
+      action: `inbox.saved_reply.${action}`,
       entityType: 'inbox_saved_reply',
       entityId: id,
       before,

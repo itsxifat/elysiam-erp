@@ -20,7 +20,7 @@ import {
 import { applyOrderMigrations } from '../orders/orders.testing.js';
 import { ConversationOffersService } from './conversation-offers.service.js';
 import { registerInboxJobs } from './inbox.worker.js';
-import { messengerText } from './meta-fixtures.js';
+import { messengerText, whatsAppText } from './meta-fixtures.js';
 import { InboxOrderListener } from './order-listener.service.js';
 import { InboxProfileService } from './profile.service.js';
 import { FakeMessagingGateway, MESSAGING_GATEWAY } from './providers/meta-messaging.js';
@@ -42,6 +42,8 @@ import { InboxWebhookService } from './webhook.service.js';
 const APP_SECRET = 'm44a-test-app-secret-0123456789abcdef';
 const PAGE = '104512345678777';
 const PSID = '7712345678900001';
+const PHONE_ID = '106540352242977';
+const WA_ID = '8801712345678';
 
 let harness: HttpHarness;
 let jobs: JobsRuntime | undefined;
@@ -119,7 +121,40 @@ beforeAll(async () => {
     body: { externalId: PAGE, enabled: true, accessToken: 'EAAB-m44a-page-token-0000000000' },
   });
   expect(channel.statusCode, channel.body).toBe(200);
+  const whatsapp = await admin.client.request('PUT', '/v1/inbox/channels/whatsapp', {
+    body: { externalId: PHONE_ID, enabled: true, accessToken: 'EAAG-m44a-wa-token-0000000000' },
+  });
+  expect(whatsapp.statusCode, whatsapp.body).toBe(200);
 }, 420_000);
+
+/** The contact and identity behind a sender, once the webhook job has threaded `messages`. */
+async function senderAfter(
+  externalUserId: string,
+  messages: number,
+): Promise<{ display_name: string | null; profile_name: string | null; contact_id: string }> {
+  return until(
+    () =>
+      withOrg({ orgId: ORG_A }, async (tx) => {
+        const rows = await tx.execute<{
+          display_name: string | null;
+          profile_name: string | null;
+          contact_id: string;
+          messages: number;
+        }>(sql`
+          select c.display_name, i.profile_name, c.id as contact_id,
+                 (select count(*)::int from inbox.messages m
+                  join inbox.conversations v on v.org_id = m.org_id and v.id = m.conversation_id
+                  where v.identity_id = i.id) as messages
+          from inbox.identities i
+          join inbox.contacts c on c.org_id = i.org_id and c.id = i.contact_id
+          where i.external_user_id = ${externalUserId}
+        `);
+        const row = rows[0];
+        return row !== undefined && row.messages >= messages ? row : undefined;
+      }),
+    `${String(messages)} message(s) from ${externalUserId}`,
+  );
+}
 
 afterAll(async () => {
   await jobs?.stop();
@@ -191,9 +226,87 @@ describe('senders’ names and photos (D-761)', () => {
       { orgId: ORG_A },
     );
     expect(events.some((event) => event.name === 'inbox.contact_updated')).toBe(true);
-    expect(
-      events.find((event) => event.name === 'inbox.message_received')?.payload.direction,
-    ).toBe('inbound');
+    expect(events.find((event) => event.name === 'inbox.message_received')?.payload.direction).toBe(
+      'inbound',
+    );
+  });
+
+  it('follows a WhatsApp name as the webhook changes it, and keeps one a person typed', async () => {
+    const send = (name: string, text: string) =>
+      deliver(
+        whatsAppText({
+          phoneNumberId: PHONE_ID,
+          waId: WA_ID,
+          name,
+          wamid: `wamid.${randomUUID()}`,
+          text,
+        }),
+      );
+    expect((await send('Karim', 'Assalamu alaikum')).statusCode).toBe(200);
+    expect((await senderAfter(WA_ID, 1)).display_name).toBe('Karim');
+
+    expect((await send('করিম হাসান', 'দাম কত?')).statusCode).toBe(200);
+    const renamed = await senderAfter(WA_ID, 2);
+    expect(renamed.display_name).toBe('করিম হাসান');
+    expect(renamed.profile_name).toBe('করিম হাসান');
+
+    // A name a person typed for the contact is theirs: Meta's next name does not replace it.
+    await withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          update inbox.contacts set display_name = 'Karim (wholesale)'
+          where org_id = ${ORG_A} and id = ${renamed.contact_id}
+        `);
+      },
+      { orgId: ORG_A },
+    );
+    expect((await send('Karim H', 'ok')).statusCode).toBe(200);
+    const kept = await senderAfter(WA_ID, 3);
+    expect(kept.display_name).toBe('Karim (wholesale)');
+    expect(kept.profile_name).toBe('Karim H');
+  });
+
+  it('the sweep asks again about a stale photo, in the brand it belongs to', async () => {
+    await withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          update inbox.contacts c set profile_fetched_at = now() - interval '4 days'
+          from inbox.identities i
+          where i.org_id = c.org_id and i.contact_id = c.id and i.external_user_id = ${PSID}
+        `);
+      },
+      { orgId: ORG_A },
+    );
+    gateway.profiles.set(PSID, {
+      name: null,
+      firstName: 'রহিম',
+      lastName: 'Uddin',
+      username: null,
+      pictureUrl: 'https://scontent.example/rahim-new.jpg',
+    });
+    const asked = gateway.profileRequests.length;
+    const swept = await harness.app.get(InboxProfileService).sweep();
+    expect(swept.queued).toBeGreaterThanOrEqual(1);
+    const photo = await until(
+      () =>
+        withOrg({ orgId: ORG_A }, async (tx) => {
+          const rows = await tx.execute<{ avatar_url: string | null }>(sql`
+            select c.avatar_url from inbox.contacts c
+            join inbox.identities i on i.org_id = c.org_id and i.contact_id = c.id
+            where i.external_user_id = ${PSID}
+          `);
+          const url = rows[0]?.avatar_url ?? null;
+          return url === 'https://scontent.example/rahim-new.jpg' ? url : undefined;
+        }),
+      'the sweep’s refresh',
+    );
+    expect(photo).toBe('https://scontent.example/rahim-new.jpg');
+    expect(gateway.profileRequests.length).toBe(asked + 1);
+    // Another brand's inbox is empty, and nothing of this brand's is visible there.
+    const other = await withOrg({ orgId: ORG_B }, async (tx) =>
+      tx.execute<{ n: number }>(sql`select count(*)::int as n from inbox.contacts`),
+    );
+    expect(other[0]?.n).toBe(0);
   });
 
   it('counts unread messages for the title: the caller’s and nobody’s', async () => {
@@ -253,6 +366,15 @@ describe('saved replies (D-763)', () => {
     expect(json<{ items: Reply[] }>(other).items.some((one) => one.id === reply.id)).toBe(false);
     const otherUse = await adminB.client.request('POST', `/v1/inbox/saved-replies/${reply.id}/use`);
     expect(otherUse.statusCode).toBe(404);
+    const otherEdit = await adminB.client.request('PUT', `/v1/inbox/saved-replies/${reply.id}`, {
+      body: { title: 'Taken over', shortcut: 'mine', body: 'x' },
+    });
+    expect(otherEdit.statusCode).toBe(404);
+    const otherDelete = await adminB.client.request(
+      'DELETE',
+      `/v1/inbox/saved-replies/${reply.id}`,
+    );
+    expect(otherDelete.statusCode).toBe(404);
 
     const changed = await admin.client.request('PUT', `/v1/inbox/saved-replies/${reply.id}`, {
       body: { title: 'Price list', shortcut: 'dam', body: 'দাম {total}' },
@@ -273,6 +395,7 @@ describe('saved replies (D-763)', () => {
     );
     expect(audit.map((row) => row.action)).toEqual([
       'inbox.saved_reply.create',
+      'inbox.saved_reply.use',
       'inbox.saved_reply.update',
       'inbox.saved_reply.delete',
     ]);

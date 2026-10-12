@@ -1,5 +1,5 @@
 {
-  "id": "1d1d55e7-8ed7-45ee-ac61-3a992a62d9f4",
+  "id": "3bddb01c-c44e-4c01-8f67-1197b2aebaa9",
   "prevId": "fde2f877-5298-471f-9574-13e516b382f6",
   "version": "7",
   "dialect": "postgresql",
@@ -13703,6 +13703,16 @@
           "tableTo": "users",
           "schemaTo": "iam",
           "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "saved_replies_updated_by_users_id_fk": {
+          "name": "saved_replies_updated_by_users_id_fk",
+          "tableFrom": "saved_replies",
+          "tableTo": "users",
+          "schemaTo": "iam",
+          "columnsFrom": ["updated_by"],
           "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"

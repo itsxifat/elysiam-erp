@@ -1,6 +1,6 @@
 {
-  "id": "6af3be9e-c1f1-4610-a073-4cf24df513b6",
-  "prevId": "1d1d55e7-8ed7-45ee-ac61-3a992a62d9f4",
+  "id": "cbb1550f-89b3-498c-9aeb-da17cc5b1663",
+  "prevId": "3bddb01c-c44e-4c01-8f67-1197b2aebaa9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13701,6 +13701,16 @@
           "name": "saved_replies_created_by_users_id_fk",
           "tableFrom": "saved_replies",
           "columnsFrom": ["created_by"],
+          "tableTo": "users",
+          "schemaTo": "iam",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "saved_replies_updated_by_users_id_fk": {
+          "name": "saved_replies_updated_by_users_id_fk",
+          "tableFrom": "saved_replies",
+          "columnsFrom": ["updated_by"],
           "tableTo": "users",
           "schemaTo": "iam",
           "columnsTo": ["id"],

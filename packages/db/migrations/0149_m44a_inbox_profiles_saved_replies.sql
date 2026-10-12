@@ -24,6 +24,7 @@ ALTER TABLE "inbox"."contacts" ADD COLUMN "handle" text;--> statement-breakpoint
 ALTER TABLE "inbox"."contacts" ADD COLUMN "profile_fetched_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "inbox"."saved_replies" ADD CONSTRAINT "saved_replies_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "org"."organizations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inbox"."saved_replies" ADD CONSTRAINT "saved_replies_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "iam"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "inbox"."saved_replies" ADD CONSTRAINT "saved_replies_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "iam"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "saved_replies_org_idx" ON "inbox"."saved_replies" USING btree ("org_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "saved_replies_org_shortcut_idx" ON "inbox"."saved_replies" USING btree ("org_id","shortcut");--> statement-breakpoint
 ALTER TABLE "inbox"."contacts" ADD CONSTRAINT "contacts_avatar_url" CHECK ("inbox"."contacts"."avatar_url" is null or (char_length("inbox"."contacts"."avatar_url") <= 2048 and "inbox"."contacts"."avatar_url" like 'https://%'));--> statement-breakpoint

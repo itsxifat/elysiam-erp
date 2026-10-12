@@ -91,6 +91,6 @@ export class SavedRepliesController {
   @Post(':id/use')
   @HttpCode(200)
   async use(@Req() request: FastifyRequest, @Param('id') id: string) {
-    return this.savedReplies.use(requireContext(request), parse(idSchema, id));
+    return this.savedReplies.use(requireContext(request), auditable(request), parse(idSchema, id));
   }
 }
