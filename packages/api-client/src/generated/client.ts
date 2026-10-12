@@ -140,6 +140,11 @@ export const OPERATIONS = {
     path: '/v1/hr/payroll/runs/{id}/inputs/{inputId}',
     ability: 'create:Payroll',
   },
+  deleteV1InboxSavedRepliesById: {
+    method: 'DELETE',
+    path: '/v1/inbox/saved-replies/{id}',
+    ability: 'delete:SavedReply',
+  },
   deleteV1InventoryLocationsById: {
     method: 'DELETE',
     path: '/v1/inventory/locations/{id}',
@@ -624,6 +629,12 @@ export const OPERATIONS = {
     path: '/v1/inbox/offers/mine',
     ability: 'read:Conversation',
   },
+  getV1InboxSavedReplies: {
+    method: 'GET',
+    path: '/v1/inbox/saved-replies',
+    ability: 'read:SavedReply',
+  },
+  getV1InboxUnread: { method: 'GET', path: '/v1/inbox/unread', ability: 'read:Conversation' },
   getV1IntakeSiteKeys: { method: 'GET', path: '/v1/intake/site-keys', ability: 'read:LandingPage' },
   getV1InventoryAdjustments: {
     method: 'GET',
@@ -1516,6 +1527,16 @@ export const OPERATIONS = {
     path: '/v1/inbox/offers/{id}/decline',
     ability: 'update:Conversation',
   },
+  postV1InboxSavedReplies: {
+    method: 'POST',
+    path: '/v1/inbox/saved-replies',
+    ability: 'create:SavedReply',
+  },
+  postV1InboxSavedRepliesByIdUse: {
+    method: 'POST',
+    path: '/v1/inbox/saved-replies/{id}/use',
+    ability: 'read:SavedReply',
+  },
   postV1IntakeSiteKeys: {
     method: 'POST',
     path: '/v1/intake/site-keys',
@@ -1968,6 +1989,11 @@ export const OPERATIONS = {
   putV1DeliveryZones: { method: 'PUT', path: '/v1/delivery-zones', ability: 'update:Catalog' },
   putV1FilesContent: { method: 'PUT', path: '/v1/files/content', ability: 'public' },
   putV1HrAttendance: { method: 'PUT', path: '/v1/hr/attendance', ability: 'update:Employee' },
+  putV1InboxSavedRepliesById: {
+    method: 'PUT',
+    path: '/v1/inbox/saved-replies/{id}',
+    ability: 'update:SavedReply',
+  },
   putV1InventoryCountsByIdLines: {
     method: 'PUT',
     path: '/v1/inventory/counts/{id}/lines',
@@ -2354,6 +2380,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1HrPayrollRunsByIdInputsByInputId, input, options),
+    /** DELETE /v1/inbox/saved-replies/:id */
+    deleteV1InboxSavedRepliesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.deleteV1InboxSavedRepliesById, input, options),
     /** DELETE /v1/inventory/locations/:id */
     deleteV1InventoryLocationsById: (
       input: { readonly path: { readonly id: string } },
@@ -2897,6 +2929,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/inbox/offers/mine */
     getV1InboxOffersMine: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InboxOffersMine, undefined, options),
+    /** GET /v1/inbox/saved-replies */
+    getV1InboxSavedReplies: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InboxSavedReplies, undefined, options),
+    /** GET /v1/inbox/unread */
+    getV1InboxUnread: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InboxUnread, undefined, options),
     /** GET /v1/intake/site-keys */
     getV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1IntakeSiteKeys, undefined, options),
@@ -3931,6 +3969,15 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InboxOffersByIdDecline, input, options),
+    /** POST /v1/inbox/saved-replies */
+    postV1InboxSavedReplies: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InboxSavedReplies, undefined, options),
+    /** POST /v1/inbox/saved-replies/:id/use */
+    postV1InboxSavedRepliesByIdUse: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InboxSavedRepliesByIdUse, input, options),
     /** POST /v1/intake/site-keys */
     postV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1IntakeSiteKeys, undefined, options),
@@ -4438,6 +4485,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/hr/attendance */
     putV1HrAttendance: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1HrAttendance, undefined, options),
+    /** PUT /v1/inbox/saved-replies/:id */
+    putV1InboxSavedRepliesById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1InboxSavedRepliesById, input, options),
     /** PUT /v1/inventory/counts/:id/lines */
     putV1InventoryCountsByIdLines: (
       input: { readonly path: { readonly id: string } },
