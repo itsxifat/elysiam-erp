@@ -1290,3 +1290,46 @@ The owner's decision of 2026-10-11: the brands never wanted Bangla. Everything, 
 2. No Bangla characters (U+0980 to U+09FF) in any rendered document, SMS or email.
 3. The console has no language switch, and the i18n check passes with English only.
 4. `pnpm verify` green; screenshots of each document; acceptance-auditor.
+
+## M44: A fast, alive inbox for the sales desk
+
+Phase 7 · Effort MAX · Depends on: M42, M41 · Decisions D-760 to D-779
+
+The owner's brief of 2026-10-12, after the first real Messenger chat: the screens feel flat; make them alive (motion, sound, notifications) and make selling from a chat as fast as possible. Customers and staff may write in Bangla.
+
+**Build**
+
+- M44a, the inbox itself:
+  - fix the inbox's height and scrolling, and fetch each sender's name and photo;
+  - motion: messages slide in, presence and unread counts animate; reduced motion respected;
+  - sounds made in the browser for a new message, an offer and a sent reply, with a mute switch per person;
+  - desktop notifications when the tab is hidden;
+  - Bangla typed by customers or staff shown in a proper Bangla font;
+  - saved replies: a shared library with shortcuts typed after "/", placeholders (name, order number, total) and usage counts.
+- M44b, selling from the chat:
+  - sizes, measurements, quantities, phones and addresses detected in English and Bangla messages, offered in a side card to add in one click;
+  - a measurement turned into a size through the product's size chart;
+  - an instant product picker (name, SKU or barcode; photo, price and sizes in stock) driven by the keyboard;
+  - a draft order in the panel (items, sizes, quantities, delivery charge, discount, advance) placed without leaving the chat.
+
+**Acceptance checks**
+
+1. The inbox fills the window and scrolls inside its panes; senders show their names.
+2. A new message animates in and plays its sound unless muted; a hidden tab gets a desktop notification.
+3. A saved reply is inserted with "/" and its placeholders filled.
+4. "XL", "L size", "chest 42" and their Bangla forms are detected and added with the right size and quantity.
+5. An order is placed from the panel's draft in under 30 seconds of clicks.
+
+## M45: Voice messages and calls in the inbox
+
+Phase 7 · Effort MAX · Depends on: M42 · Decisions D-780 to D-799
+
+**Build**
+
+- Voice messages received from Messenger, Instagram and WhatsApp are stored and played in the thread; staff record one in the browser and it is sent in each channel's accepted format.
+- Calls from Messenger and WhatsApp (and Instagram where Meta offers it) ring in the console: answer or decline in the browser, with each call, missed or answered, kept in the conversation. Built from Meta's official calling documentation and marked unverified until tested.
+
+**Acceptance checks**
+
+1. A voice message from each channel plays in the thread; a recorded one is sent and its delivery recorded.
+2. An incoming call rings for the conversation's owner (or everyone on the desk when unassigned), can be answered or declined, and is logged.
