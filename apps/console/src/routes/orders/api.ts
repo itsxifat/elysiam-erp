@@ -208,7 +208,12 @@ export interface CreateOrderBody {
     readonly area?: string;
     readonly addressLine: string;
   };
-  readonly lines: readonly { readonly skuId: string; readonly qty: number }[];
+  readonly lines: readonly {
+    readonly skuId: string;
+    readonly qty: number;
+    /** M44b: a price the agent typed in the inbox's draft; left out, the list price. */
+    readonly unitPricePoisha?: string;
+  }[];
   readonly deliveryChargePoisha?: string;
   readonly discountPoisha?: string;
   /** The word the buyer gave. Never an id or an amount: the server prices it (D-204). */

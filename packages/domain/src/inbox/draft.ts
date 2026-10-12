@@ -1,4 +1,4 @@
-import { add, mulQty, sub, sum, ZERO, type Poisha } from '../money/index.js';
+import { add, mulQty, poisha, sub, sum, ZERO, type Poisha } from '../money/index.js';
 
 /**
  * The chat's draft order, priced as the agent builds it (M44b, D-773): §9's formula, through the
@@ -92,4 +92,43 @@ export function draftTotals(input: DraftMoneyInput): DraftTotals {
     toCollectPoisha: max0(sub(totalPoisha, advancePoisha)),
     problems,
   };
+}
+
+/** The draft as a screen holds it: every amount a decimal string of poisha. */
+export interface DraftMoneyText {
+  readonly lines: readonly { readonly unitPricePoisha: string; readonly qty: number }[];
+  readonly discountPoisha: string;
+  readonly deliveryPoisha: string;
+  readonly promo?: {
+    readonly discountPoisha: string;
+    readonly deliveryDiscountPoisha: string;
+  } | null;
+  readonly advancePoisha: string;
+}
+
+/**
+ * `draftTotals` from strings, as the console keeps them. Null when an amount is not an integer
+ * number of poisha (a half-typed price), so the screen shows "amounts in taka" rather than throw.
+ */
+export function draftTotalsOf(input: DraftMoneyText): DraftTotals | null {
+  try {
+    return draftTotals({
+      lines: input.lines.map((line) => ({
+        unitPricePoisha: poisha(line.unitPricePoisha),
+        qty: line.qty,
+      })),
+      discountPoisha: poisha(input.discountPoisha),
+      deliveryPoisha: poisha(input.deliveryPoisha),
+      promo:
+        input.promo === undefined || input.promo === null
+          ? null
+          : {
+              discountPoisha: poisha(input.promo.discountPoisha),
+              deliveryDiscountPoisha: poisha(input.promo.deliveryDiscountPoisha),
+            },
+      advancePoisha: poisha(input.advancePoisha),
+    });
+  } catch {
+    return null;
+  }
 }

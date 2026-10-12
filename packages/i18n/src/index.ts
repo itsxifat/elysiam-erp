@@ -38,6 +38,7 @@ import { en as manageEn, type ManageKey } from './locales/sections/manage.en.js'
 import { en as trustEn, type TrustKey } from './locales/sections/trust.en.js';
 import { en as accountEn, type AccountKey } from './locales/sections/account.en.js';
 import { en as inboxEn, type InboxKey } from './locales/sections/inbox.en.js';
+import { en as inboxSellEn, type InboxSellKey } from './locales/sections/inbox-sell.en.js';
 import { en as workflowEn, type WorkflowKey } from './locales/sections/workflow.en.js';
 
 export { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './locale.js';
@@ -77,10 +78,12 @@ export type MessageKey =
   | TrustKey
   | AccountKey
   | InboxKey
+  | InboxSellKey
   | WorkflowKey;
 export type {
   AccountKey,
   InboxKey,
+  InboxSellKey,
   WorkflowKey,
   CatalogPricingKey,
   CoreMessageKey,
@@ -115,6 +118,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...trustEn,
     ...accountEn,
     ...inboxEn,
+    ...inboxSellEn,
     ...workflowEn,
   },
 };
