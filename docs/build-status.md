@@ -1,20 +1,20 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-12** (order ownership and auto-assign, the unified inbox and the new English-only slips are live on both brands; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
+Last updated: **2026-10-12** (order ownership and auto-assign, the unified inbox and the new English-only slips are live on both brands; the alive inbox, selling from the chat and voice messages and calls (M44, M45) are built and merged on `integration-wave2`, not yet deployed; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Everything     [###################-]  97%   (about 38.8 of 40 milestones)
+Everything     [###################-]  97%   (about 40.8 of 42 milestones)
 First plan     [###################-]  98%   (M00 to M30)
 Wave 3         [##################--]  93%   (M31 to M39)
-Wave 4         [####################] 100%   (M40 to M43; broad tests deferred, D-758)
+Wave 4         [####################] 100%   (M40 to M45; broad tests deferred, D-758)
 ```
 
 - The first plan had 33 milestones; six are out on the owner's instruction (M13, M21, M22, M27,
-  M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620) and **wave 4 adds 4**
-  (M40 to M43, 2026-10-11), so **40 count** in all.
+  M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620) and **wave 4 adds 6**
+  (M40 to M43, 2026-10-11; M44 and M45, 2026-10-12), so **42 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits; a part-built one counts
   for the share that is done.
 - Today: **33 done** (M32 and M38 on 2026-10-08), **3 part-built**: M14b and M30 (wait for a
@@ -100,7 +100,8 @@ Wave 4         [####################] 100%   (M40 to M43; broad tests deferred, 
 | M41  | Order ownership, calls, auto-assign          |  100% | Live 2026-10-12: take an order, warnings for everyone else, call log, Uber-style offers (off until turned on), hub queues, team board                                                  |
 | M42  | Unified inbox and customer panel             |  100% | Live 2026-10-12: Messenger, Instagram and WhatsApp in one inbox with the customer panel; receives nothing until the Meta app is connected                                              |
 | M43  | Premium slips, English only                  |  100% | Live 2026-10-12: new slip, invoice and labels; Bangla removed everywhere                                                                                                               |
-| M44  | A fast, alive inbox                          |   50% | M44a built 2026-10-12, not merged: full-window inbox, names and photos from Meta, motion, sounds, alerts, saved replies; M44b to come                                                  |
+| M44  | A fast, alive inbox, selling from the chat   |  100% | Built 2026-10-12, merged on integration-wave2, not deployed: full-window inbox, photos, sounds, saved replies; size hints, product picker, draft order from the chat                   |
+| M45  | Voice messages and calls in the inbox        |  100% | Built 2026-10-12, merged on integration-wave2, not deployed: voice notes kept, played and recorded; calls answered in the browser once Meta's calling is on (D-789)                    |
 
 ## Being built now
 
