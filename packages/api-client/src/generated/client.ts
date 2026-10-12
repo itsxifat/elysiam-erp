@@ -619,6 +619,21 @@ export const OPERATIONS = {
   getV1HrProductivity: { method: 'GET', path: '/v1/hr/productivity', ability: 'read:Target' },
   getV1HrTargets: { method: 'GET', path: '/v1/hr/targets', ability: 'read:Target' },
   getV1HrTargetsById: { method: 'GET', path: '/v1/hr/targets/{id}', ability: 'read:Target' },
+  getV1InboxCallsById: {
+    method: 'GET',
+    path: '/v1/inbox/calls/{id}',
+    ability: 'read:Conversation',
+  },
+  getV1InboxCallsLive: {
+    method: 'GET',
+    path: '/v1/inbox/calls/live',
+    ability: 'read:Conversation',
+  },
+  getV1InboxMediaByFileId: {
+    method: 'GET',
+    path: '/v1/inbox/media/{fileId}',
+    ability: 'read:Conversation',
+  },
   getV1InboxOffersMine: {
     method: 'GET',
     path: '/v1/inbox/offers/mine',
@@ -1505,6 +1520,41 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/hr/targets/refresh',
     ability: 'update:Target',
+  },
+  postV1InboxCallsByIdAnswer: {
+    method: 'POST',
+    path: '/v1/inbox/calls/{id}/answer',
+    ability: 'update:Conversation',
+  },
+  postV1InboxCallsByIdCallbackDone: {
+    method: 'POST',
+    path: '/v1/inbox/calls/{id}/callback-done',
+    ability: 'update:Conversation',
+  },
+  postV1InboxCallsByIdClaim: {
+    method: 'POST',
+    path: '/v1/inbox/calls/{id}/claim',
+    ability: 'update:Conversation',
+  },
+  postV1InboxCallsByIdDecline: {
+    method: 'POST',
+    path: '/v1/inbox/calls/{id}/decline',
+    ability: 'update:Conversation',
+  },
+  postV1InboxCallsByIdHangUp: {
+    method: 'POST',
+    path: '/v1/inbox/calls/{id}/hang-up',
+    ability: 'update:Conversation',
+  },
+  postV1InboxCallsByIdRelease: {
+    method: 'POST',
+    path: '/v1/inbox/calls/{id}/release',
+    ability: 'update:Conversation',
+  },
+  postV1InboxConversationsByIdVoice: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/voice',
+    ability: 'update:Conversation',
   },
   postV1InboxOffersByIdAccept: {
     method: 'POST',
@@ -2894,6 +2944,19 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1HrTargetsById, input, options),
+    /** GET /v1/inbox/calls/:id */
+    getV1InboxCallsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1InboxCallsById, input, options),
+    /** GET /v1/inbox/calls/live */
+    getV1InboxCallsLive: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InboxCallsLive, undefined, options),
+    /** GET /v1/inbox/media/:fileId */
+    getV1InboxMediaByFileId: (
+      input: { readonly path: { readonly fileId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1InboxMediaByFileId, input, options),
     /** GET /v1/inbox/offers/mine */
     getV1InboxOffersMine: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InboxOffersMine, undefined, options),
@@ -3920,6 +3983,43 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/hr/targets/refresh */
     postV1HrTargetsRefresh: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1HrTargetsRefresh, undefined, options),
+    /** POST /v1/inbox/calls/:id/answer */
+    postV1InboxCallsByIdAnswer: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1InboxCallsByIdAnswer, input, options),
+    /** POST /v1/inbox/calls/:id/callback-done */
+    postV1InboxCallsByIdCallbackDone: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InboxCallsByIdCallbackDone, input, options),
+    /** POST /v1/inbox/calls/:id/claim */
+    postV1InboxCallsByIdClaim: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1InboxCallsByIdClaim, input, options),
+    /** POST /v1/inbox/calls/:id/decline */
+    postV1InboxCallsByIdDecline: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1InboxCallsByIdDecline, input, options),
+    /** POST /v1/inbox/calls/:id/hang-up */
+    postV1InboxCallsByIdHangUp: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1InboxCallsByIdHangUp, input, options),
+    /** POST /v1/inbox/calls/:id/release */
+    postV1InboxCallsByIdRelease: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1InboxCallsByIdRelease, input, options),
+    /** POST /v1/inbox/conversations/:id/voice */
+    postV1InboxConversationsByIdVoice: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1InboxConversationsByIdVoice, input, options),
     /** POST /v1/inbox/offers/:id/accept */
     postV1InboxOffersByIdAccept: (
       input: { readonly path: { readonly id: string } },
