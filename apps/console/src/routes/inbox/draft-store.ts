@@ -3,14 +3,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { emptyDraft, type SellDraft } from './sell-logic.js';
 
 /**
- * Each conversation's draft order, kept in this browser (M44b, D-776) so switching chats, or a
- * reload, does not lose what the agent built. Per person: the key carries the signed-in user, so
- * a colleague on the same computer starts their own. Behind try/catch everywhere: a private
- * window, blocked storage or a full quota gives a draft that simply is not kept.
+ * Each conversation's draft order, kept in this tab's session storage (M44b, D-776) so switching
+ * chats, or a reload, does not lose what the agent built, and closing the tab (or the browser)
+ * forgets it: the draft holds a customer's name, phone and address, and a desk computer is often
+ * shared (the ledger audit's N2). Per person: the key carries the signed-in user. Behind
+ * try/catch everywhere: blocked storage or a full quota gives a draft that simply is not kept.
  *
- * Only what the draft needs (items, the delivery name, phone and address, amounts); a draft is
- * dropped once its order is placed and its summary dealt with, and any older than three days is
- * swept when the inbox opens.
+ * Only what the draft needs (items, the delivery name, phone and address, amounts); an empty
+ * draft is removed, and any older than three days is swept when the inbox opens.
  */
 
 const PREFIX = 'elysium.inbox.sell.v1';
@@ -20,7 +20,7 @@ const keyOf = (userId: string, conversationId: string) => `${PREFIX}:${userId}:$
 
 function storage(): Storage | null {
   try {
-    return typeof window === 'undefined' ? null : window.localStorage;
+    return typeof window === 'undefined' ? null : window.sessionStorage;
   } catch {
     return null;
   }
@@ -31,6 +31,7 @@ function isDraft(value: unknown, conversationId: string): value is SellDraft {
   const draft = value as Partial<SellDraft>;
   return (
     draft.version === 1 &&
+    typeof draft.placeKey === 'string' &&
     draft.conversationId === conversationId &&
     Array.isArray(draft.lines) &&
     typeof draft.customer?.name === 'string' &&
@@ -80,7 +81,7 @@ export function saveDraft(userId: string, draft: SellDraft): void {
   }
 }
 
-/** Forget drafts older than three days, of anyone on this browser. */
+/** Forget drafts older than three days, of anyone in this tab. */
 export function sweepDrafts(now = Date.now()): void {
   const store = storage();
   if (store === null) return;

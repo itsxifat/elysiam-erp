@@ -15,8 +15,10 @@ import {
   measureParts,
   orderBody,
   placeCheck,
+  placedSummary,
   prefillCustomer,
   readCard,
+  setLinePrice,
   summaryText,
   takaInput,
   typeCustomer,
@@ -203,7 +205,7 @@ describe('placing', () => {
       discountTaka: '100',
       deliveryTaka: '120',
       promoCode: 'EID10',
-      advance: { method: 'bkash', transactionRef: 'TX1', amountTaka: '500' },
+      advance: { method: 'bkash', transactionRef: 'bk8n7a-6b5c', amountTaka: '500' },
     };
     const check = placeCheck(draft, '6000', {
       kind: 'ok',
@@ -218,12 +220,18 @@ describe('placing', () => {
       toCollectPoisha: 269_000n,
     });
     expect(placeCheck(draft, '6000', { kind: 'checking' }).missing).toEqual(['promo']);
+    // A transaction id the server would refuse holds the order, rather than losing the advance.
+    const badRef: SellDraft = {
+      ...draft,
+      advance: { method: 'bkash', transactionRef: 'TX1', amountTaka: '500' },
+    };
+    expect(placeCheck(badRef, '6000', { kind: 'none' }).missing).toEqual(['promo', 'advance']);
     expect(placeCheck({ ...draft, discountTaka: '1.234' }, '6000', { kind: 'none' }).ready).toBe(
       false,
     );
   });
 
-  it('sends the chat’s channel and conversation, the agent as owner, prices only when changed', () => {
+  it('sends the chat’s channel and conversation, the agent as owner, and every line’s price', () => {
     const draft = ready();
     const body = orderBody(draft, placeCheck(draft, '6000', { kind: 'none' }), {
       channel: 'messenger',
@@ -234,7 +242,7 @@ describe('placing', () => {
       channel: 'facebook',
       customer: { phone: '01712345678', name: 'Rahim' },
       shipTo: { name: 'Rahim', districtId: 1, thanaId: 10, addressLine: 'House 4, Road 4' },
-      lines: [{ skuId: 's-xxl', qty: 2 }],
+      lines: [{ skuId: 's-xxl', qty: 2, unitPricePoisha: '160000' }],
       assignedTo: 'usr_agent',
       source: { inboxConversationId: 'conv-1' },
     });
@@ -261,6 +269,24 @@ describe('placing', () => {
         promoApplies: false,
       }),
     ).toBeNull();
+  });
+
+  it('a line picked again takes today’s price, unless the agent typed one', () => {
+    const xxl = panjabi.variants[2]!;
+    const draft = ready();
+    const dearer = { ...xxl, pricePoisha: '170000' };
+    expect(addToDraft(draft, panjabi, dearer, null).lines[0]).toMatchObject({
+      listPricePoisha: '170000',
+      unitPricePoisha: '170000',
+      qty: 3,
+    });
+    const typed = setLinePrice(draft, 's-xxl', '155000');
+    expect(addToDraft(typed, panjabi, dearer, null).lines[0]).toMatchObject({
+      listPricePoisha: '170000',
+      unitPricePoisha: '155000',
+    });
+    expect(draft.placeKey.length).toBeGreaterThanOrEqual(8);
+    expect(emptyDraft('c').placeKey).not.toBe(draft.placeKey);
   });
 
   it('takes taka as typed', () => {
@@ -302,5 +328,38 @@ describe('placing', () => {
       ].join('\n'),
     );
     expect(text).not.toMatch(/[ঀ-৿]/);
+  });
+
+  it('names the advance only once it is recorded', () => {
+    const base = {
+      orderId: 'o1',
+      orderNo: 'EL-1043',
+      summary: 'with the advance',
+      summaryWithoutAdvance: 'without it',
+      repriced: false,
+    };
+    expect(placedSummary({ ...base, advanceError: null })).toBe('with the advance');
+    expect(placedSummary({ ...base, advanceError: 'refused' })).toBe('without it');
+    const text = summaryText(
+      (key, values) => fill(en[key], values ?? {}),
+      (amount) => formatMoneyText(amount),
+      {
+        orderNo: 'EL-1043',
+        name: '',
+        lines: [{ item: 'Eid Panjabi (L)', qty: 1, totalPoisha: '160000' }],
+        totals: {
+          discountPoisha: 0n,
+          deliveryPoisha: 6_000n,
+          totalPoisha: 166_000n,
+          advancePoisha: 50_000n,
+          toCollectPoisha: 116_000n,
+        },
+        address: 'House 4, Road 4',
+        phone: '01712345678',
+      },
+    );
+    expect(text).toContain('Thank you. Your order EL-1043 is placed.');
+    expect(text).toContain('Advance paid: Tk 500.00 (being verified)');
+    expect(text).toContain('Cash on delivery: Tk 1,160.00');
   });
 });

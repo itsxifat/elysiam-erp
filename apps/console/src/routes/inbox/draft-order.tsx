@@ -1,3 +1,4 @@
+import { lineAmountOf } from '@elysium/domain/inbox';
 import { formatMoneyText } from '@elysium/i18n';
 import {
   Button,
@@ -19,18 +20,21 @@ import { useEffect, useId, useMemo, useState, type KeyboardEvent, type ReactNode
 import { ApiError } from '../../api.js';
 import { useLocale } from '../../i18n/locale.js';
 import { recordAdvance } from '../orders/advances-api.js';
-import { checkPromo, createOrder, listAreas } from '../orders/api.js';
+import { checkPromo, createOrder, getOrder, listAreas } from '../orders/api.js';
 import { ordersPath } from '../orders/paths.js';
-import { INBOX_KEY, type ConversationItem } from './api.js';
+import { addNote, INBOX_KEY, type ConversationItem } from './api.js';
 import { fillComposer } from './composer-bridge.js';
 import { districtsOf, thanasOf } from './logic.js';
 import { useOwnerGuard } from './owner-guard.js';
 import {
   ADVANCE_METHODS,
+  advanceRefReads,
   emptyDraft,
   lineName,
+  newPlaceKey,
   orderBody,
   placeCheck,
+  placedSummary,
   promoBasket,
   removeLine,
   setLinePrice,
@@ -42,6 +46,7 @@ import {
   ORDER_CHANNEL_FOR,
   type AdvanceMethod,
   type MissingField,
+  type PlacedOrder,
   type PromoState,
   type SellDraft,
 } from './sell-logic.js';
@@ -168,15 +173,27 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
   };
 
   const place = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (acknowledged: boolean): Promise<PlacedOrder> => {
       const body = orderBody(draft, check, {
         channel: conversation.channel,
         me,
         promoApplies: promoState.kind === 'ok',
       });
-      if (body === null || totals === null)
+      if (body === null || totals === null) {
         throw new Error(t('inbox.sell.missing', { fields: '' }));
-      const created = await createOrder(body);
+      }
+      // The draft's own key: a retry after a lost answer is this order again, not a second.
+      const created = await createOrder(body, { 'Idempotency-Key': draft.placeKey });
+
+      // A dated note in the chat's panel. On someone else's conversation it carries the
+      // acknowledgement the person just gave, so the owner is told and the audit names them
+      // (D-737, D-774). A note that fails does not undo the order.
+      await addNote(
+        conversation.id,
+        t('inbox.sell.note', { orderNo: created.orderNo }),
+        acknowledged,
+      ).catch(() => undefined);
+
       let advanceError: string | null = null;
       if (draft.advance !== null && check.advancePoisha !== null && check.advancePoisha !== '0') {
         try {
@@ -189,48 +206,89 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
           advanceError = messageOf(cause);
         }
       }
-      // The order's own total (the server priced it), less the advance once verified.
+
+      // What the summary states: the draft's figures, or the saved order's when its total is
+      // not the draft's (the ledger audit's W2), so the customer reads what the rider asks.
       const total = BigInt(created.codAmountPoisha);
-      const advance = totals.advancePoisha > total ? total : totals.advancePoisha;
-      const summary = summaryText(
-        (key, values) => t(key, values),
-        (amount) => formatMoneyText(amount),
-        {
-          orderNo: created.orderNo,
-          name: draft.customer.name,
-          lines: draft.lines.map((line, index) => ({
-            item: lineName(line),
-            qty: line.qty,
-            totalPoisha: (totals.lineTotals[index] ?? 0n).toString(),
-          })),
-          totals: {
-            ...totals,
-            totalPoisha: total as typeof totals.totalPoisha,
-            advancePoisha: advance as typeof totals.advancePoisha,
-            toCollectPoisha: (total - advance) as typeof totals.totalPoisha,
-          },
-          address: [
-            draft.customer.addressLine.trim(),
-            draft.customer.area.trim(),
-            area?.thanaEn ?? '',
-            area?.districtEn ?? '',
-          ]
-            .filter((part) => part !== '')
-            .join(', '),
-          phone: typedPhone(draft.customer.phone) ?? draft.customer.phone,
-        },
-      );
-      return { created, summary, advanceError };
-    },
-    onSuccess: ({ created, summary, advanceError }) => {
-      setError(null);
-      update((current) => ({
-        ...current,
-        placed: { orderId: created.id, orderNo: created.orderNo, summary, advanceError },
+      let lines = draft.lines.map((line, index) => ({
+        item: lineName(line),
+        qty: line.qty,
+        totalPoisha: (totals.lineTotals[index] ?? 0n).toString(),
       }));
+      let discount: bigint = totals.discountPoisha;
+      let delivery: bigint = totals.deliveryPoisha;
+      const repriced = total !== totals.totalPoisha;
+      if (repriced) {
+        try {
+          const saved = await getOrder(created.id);
+          const names = new Map(draft.lines.map((line) => [line.skuId, lineName(line)]));
+          lines = saved.lines.map((line) => ({
+            item: names.get(line.skuId) ?? line.productName,
+            qty: line.qty,
+            totalPoisha: (
+              BigInt(lineAmountOf(line.unitPricePoisha, line.qty) ?? '0') -
+              BigInt(line.discountPoisha)
+            ).toString(),
+          }));
+          discount = BigInt(saved.amounts.discountPoisha);
+          delivery = BigInt(saved.amounts.deliveryChargePoisha);
+        } catch {
+          // The order's total still leads the summary; its lines stay the draft's.
+        }
+      }
+      const wanted: bigint = totals.advancePoisha;
+      const build = (withAdvance: boolean) => {
+        const advance = !withAdvance ? 0n : wanted > total ? total : wanted;
+        return summaryText(
+          (key, values) => t(key, values),
+          (amount) => formatMoneyText(amount),
+          {
+            orderNo: created.orderNo,
+            name: draft.customer.name,
+            lines,
+            totals: {
+              discountPoisha: discount,
+              deliveryPoisha: delivery,
+              totalPoisha: total,
+              advancePoisha: advance,
+              toCollectPoisha: total - advance,
+            },
+            address: [
+              draft.customer.addressLine.trim(),
+              draft.customer.area.trim(),
+              area?.thanaEn ?? '',
+              area?.districtEn ?? '',
+            ]
+              .filter((part) => part !== '')
+              .join(', '),
+            phone: typedPhone(draft.customer.phone) ?? draft.customer.phone,
+          },
+        );
+      };
+      return {
+        orderId: created.id,
+        orderNo: created.orderNo,
+        summary: build(true),
+        summaryWithoutAdvance: build(false),
+        advanceError,
+        repriced,
+      };
+    },
+    onSuccess: (placed) => {
+      setError(null);
+      update((current) => ({ ...current, placed }));
       refresh();
     },
-    onError: (cause) => setError(t('inbox.sell.failed', { reason: messageOf(cause) })),
+    onError: (cause) => {
+      if (cause instanceof ApiError && cause.code === 'IDEMPOTENCY_CONFLICT') {
+        // This key already placed an order with other contents: say so, and let a deliberate
+        // second press place a new one.
+        setError(t('inbox.sell.alreadyPlaced'));
+        update((current) => ({ ...current, placeKey: newPlaceKey() }));
+        return;
+      }
+      setError(t('inbox.sell.failed', { reason: messageOf(cause) }));
+    },
   });
 
   const submit = () => {
@@ -238,8 +296,8 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
     if (!check.ready || place.isPending || draft.placed !== null) return;
     setError(null);
     // On a conversation someone else has, ask first, as every write from the panel does.
-    void guard(async () => {
-      await place.mutateAsync();
+    void guard(async (acknowledged) => {
+      await place.mutateAsync(acknowledged);
     }).catch(() => undefined);
   };
 
@@ -629,8 +687,13 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
               <Input
                 id={`${ids}-ref`}
                 value={draft.advance.transactionRef}
-                maxLength={40}
+                maxLength={30}
                 autoComplete="off"
+                aria-invalid={
+                  draft.advance.transactionRef.trim() !== '' &&
+                  !advanceRefReads(draft.advance.transactionRef)
+                }
+                aria-describedby={`${ids}-ref-hint`}
                 onChange={(event) =>
                   update((current) =>
                     current.advance === null
@@ -643,7 +706,21 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
                 }
               />
             </div>
-            <p className="text-xs text-muted-foreground">{t('inbox.sell.draft.advanceHint')}</p>
+            <p
+              id={`${ids}-ref-hint`}
+              className={cn(
+                'text-xs',
+                draft.advance.transactionRef.trim() !== '' &&
+                  !advanceRefReads(draft.advance.transactionRef)
+                  ? 'text-destructive-text'
+                  : 'text-muted-foreground',
+              )}
+            >
+              {draft.advance.transactionRef.trim() !== '' &&
+              !advanceRefReads(draft.advance.transactionRef)
+                ? t('inbox.sell.draft.advanceRefInvalid')
+                : t('inbox.sell.draft.advanceHint')}
+            </p>
           </div>
         )}
         <div className="space-y-1">
@@ -778,15 +855,16 @@ function Placed({
   if (placed === null) return null;
 
   const send = async () => {
-    if (fillComposer(conversationId, placed.summary)) {
+    const text = placedSummary(placed);
+    if (fillComposer(conversationId, text)) {
       setNotice(t('inbox.sell.summaryFilled'));
       return;
     }
     try {
-      await navigator.clipboard.writeText(placed.summary);
+      await navigator.clipboard.writeText(text);
       setNotice(t('inbox.sell.summaryCopied'));
     } catch {
-      setNotice(placed.summary);
+      setNotice(text);
     }
   };
 
@@ -800,6 +878,11 @@ function Placed({
         {t('inbox.sell.placed', { orderNo: placed.orderNo })}
       </p>
       <p className="text-xs text-muted-foreground">{t('inbox.sell.placedDetail')}</p>
+      {placed.repriced ? (
+        <p role="alert" className="text-xs text-warning-subtle-foreground">
+          {t('inbox.sell.repriced')}
+        </p>
+      ) : null}
       {placed.advanceError === null ? null : (
         <div className="space-y-1">
           <p role="alert" className="text-xs text-destructive-text">

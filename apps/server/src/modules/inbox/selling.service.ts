@@ -9,6 +9,8 @@ import { InboxError, mapInboxErrors } from './inbox.errors.js';
 
 /** How many products one picker answer lists: a screenful, fast. */
 export const PICKER_LIMIT = 8;
+/** How many interests `?ids=` lists: what the route accepts (`selling.controller.ts`). */
+export const PICKER_IDS_LIMIT = 20;
 
 /** The brand website's host, without `www.`, or nothing when it has no valid site URL. */
 function hostOf(siteUrl: string): string | null {
@@ -69,7 +71,7 @@ export class InboxSellingService {
           context.orgId,
           'q' in query
             ? { q: query.q, limit: PICKER_LIMIT }
-            : { ids: query.ids, limit: PICKER_LIMIT * 2 },
+            : { ids: query.ids, limit: PICKER_IDS_LIMIT },
         );
         if (products.length === 0) return { items: [] };
         const skus = await this.catalog.webSkus(

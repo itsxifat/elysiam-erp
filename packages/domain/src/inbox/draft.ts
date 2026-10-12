@@ -132,3 +132,23 @@ export function draftTotalsOf(input: DraftMoneyText): DraftTotals | null {
     return null;
   }
 }
+
+/**
+ * A line's amount (price × quantity) from strings, through `mulQty`; null when either is not a
+ * whole, valid amount. The promo check's basket is priced with it.
+ */
+export function lineAmountOf(unitPricePoisha: string, qty: number): string | null {
+  try {
+    if (!Number.isSafeInteger(qty) || qty < 1) return null;
+    return mulQty(poisha(unitPricePoisha), qty).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The advance's bKash, Nagad or bank reference as the server will take it (M17's rule), or null
+ * when it would be refused: the panel holds Place order until it reads, instead of placing the
+ * order and then failing to record its advance (the ledger audit's W1, D-773).
+ */
+export { normalizeTransactionRef } from '../orders/advances.js';

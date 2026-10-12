@@ -2,6 +2,8 @@ import {
   draftTotalsOf,
   extractBdPhones,
   hintsInMessages,
+  lineAmountOf,
+  normalizeTransactionRef,
   recommendSize,
   sameSize,
   summariseHints,
@@ -69,10 +71,19 @@ export type CustomerField = keyof DraftCustomer;
 export interface PlacedOrder {
   readonly orderId: string;
   readonly orderNo: string;
-  /** The summary to send, written when the order was placed. */
+  /** The summary to send with the advance in it, once the advance is recorded. */
   readonly summary: string;
+  /** The same without the advance: what is sent while the advance is not recorded (W1). */
+  readonly summaryWithoutAdvance: string;
   /** The advance failed to record: its reason, so the agent can try again. */
   readonly advanceError: string | null;
+  /** The saved order's total differed from the draft's; the summary uses the order's. */
+  readonly repriced: boolean;
+}
+
+/** The summary to send now: with the advance only when it was recorded. */
+export function placedSummary(placed: PlacedOrder): string {
+  return placed.advanceError === null ? placed.summary : placed.summaryWithoutAdvance;
 }
 
 export interface SellDraft {
@@ -98,11 +109,25 @@ export interface SellDraft {
   /** The product the agent last picked: the one the card's size applies to next. */
   readonly focus: { readonly id: string; readonly name: string } | null;
   readonly placed: PlacedOrder | null;
+  /**
+   * The Idempotency-Key Place order sends (§23): a retry after a lost answer is the same
+   * order, not a second one. A new draft gets a new key.
+   */
+  readonly placeKey: string;
+}
+
+export function newPlaceKey(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  }
 }
 
 export function emptyDraft(conversationId: string, now = Date.now()): SellDraft {
   return {
     version: 1,
+    placeKey: newPlaceKey(),
     conversationId,
     updatedAt: now,
     lines: [],
@@ -300,6 +325,12 @@ export function addToDraft(
                 ...line,
                 qty: clampQty(qty ?? line.qty + 1),
                 available: variant.available,
+                // Today's catalog price; a price the agent typed stays theirs.
+                listPricePoisha: variant.pricePoisha,
+                unitPricePoisha:
+                  line.unitPricePoisha === line.listPricePoisha
+                    ? variant.pricePoisha
+                    : line.unitPricePoisha,
               }
             : line,
         );
@@ -440,7 +471,13 @@ export function takaInput(text: string): string | null {
   return `${whole === '' ? '0' : whole}${(fraction ?? '').padEnd(2, '0')}`.replace(/^0+(?=\d)/, '');
 }
 
-export type MissingField = 'items' | 'name' | 'phone' | 'area' | 'address' | 'money' | 'promo';
+export type MissingField =
+  'items' | 'name' | 'phone' | 'area' | 'address' | 'money' | 'promo' | 'advance';
+
+/** Whether an advance's transaction id is one the server takes (6 to 30 letters and digits). */
+export function advanceRefReads(ref: string): boolean {
+  return normalizeTransactionRef(ref) !== null;
+}
 
 export interface PlaceCheck {
   readonly totals: DraftTotals | null;
@@ -483,11 +520,9 @@ export function placeCheck(
   if (draft.customer.addressLine.trim().length < 3) missing.push('address');
   if (priced === null) missing.push('money');
   if (draft.promoCode.trim() !== '' && promo.kind !== 'ok') missing.push('promo');
-  if (
-    draft.advance !== null &&
-    (draft.advance.transactionRef.trim() === '' || advancePoisha === '0')
-  ) {
-    missing.push('money');
+  if (draft.advance !== null) {
+    if (advancePoisha === '0') missing.push('money');
+    if (!advanceRefReads(draft.advance.transactionRef)) missing.push('advance');
   }
   const problems = (priced?.problems ?? []).filter((problem) => problem !== 'no_lines');
   return {
@@ -514,7 +549,7 @@ export interface OrderBody {
   readonly lines: readonly {
     readonly skuId: string;
     readonly qty: number;
-    readonly unitPricePoisha?: string;
+    readonly unitPricePoisha: string;
   }[];
   readonly deliveryChargePoisha?: string;
   readonly discountPoisha?: string;
@@ -554,12 +589,12 @@ export function orderBody(
       ...(area === '' ? {} : { area }),
       addressLine: draft.customer.addressLine.trim(),
     },
+    // Every line's price, always: the order charges exactly what the panel showed, even if the
+    // catalog moved since the item was picked (the discount ceiling still guards a lower one).
     lines: draft.lines.map((line) => ({
       skuId: line.skuId,
       qty: line.qty,
-      ...(line.unitPricePoisha === line.listPricePoisha
-        ? {}
-        : { unitPricePoisha: line.unitPricePoisha }),
+      unitPricePoisha: line.unitPricePoisha,
     })),
     ...(draft.deliveryTaka !== null && check.deliveryPoisha !== null
       ? { deliveryChargePoisha: check.deliveryPoisha }
@@ -583,9 +618,7 @@ export function promoBasket(
   return draft.lines.map((line) => ({
     skuId: line.skuId,
     qty: line.qty,
-    netPoisha: (
-      BigInt(/^\d+$/.test(line.unitPricePoisha) ? line.unitPricePoisha : '0') * BigInt(line.qty)
-    ).toString(),
+    netPoisha: lineAmountOf(line.unitPricePoisha, line.qty) ?? '0',
   }));
 }
 
@@ -604,6 +637,16 @@ export type SummaryKey =
   | 'inbox.sell.summary.phone'
   | 'inbox.sell.summary.closing';
 
+/** The figures a summary states, in poisha: the draft's, or the saved order's. */
+export interface SummaryMoney {
+  readonly discountPoisha: bigint;
+  readonly deliveryPoisha: bigint;
+  readonly totalPoisha: bigint;
+  /** Zero leaves the advance out (not recorded, or none). */
+  readonly advancePoisha: bigint;
+  readonly toCollectPoisha: bigint;
+}
+
 /**
  * The order summary in the customer's chat (D-775): formal English (D-750), money as `Tk 1,250.00`
  * (`money` is the domain's `takaText`, D-751), one fact a line.
@@ -619,7 +662,7 @@ export function summaryText(
       readonly qty: number;
       readonly totalPoisha: string;
     }[];
-    readonly totals: DraftTotals;
+    readonly totals: SummaryMoney;
     readonly address: string;
     readonly phone: string;
   },

@@ -17,7 +17,7 @@ import {
   type RoleClient,
 } from '../../testing/http-harness.js';
 import { seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
-import { applyOrderMigrations, seedStockLevel } from '../orders/orders.testing.js';
+import { applyOrderMigrations, seedStockLevel, walletAccount } from '../orders/orders.testing.js';
 
 /**
  * M44b on real Postgres, through the real routes (D-770 to D-773): the picker finds a product
@@ -244,15 +244,49 @@ describe('size from the size chart (M44b, D-771)', () => {
 });
 
 describe('placing the panel’s draft (M44b check 5, D-773)', () => {
-  it('comes out at the total the panel showed, pending, nothing reserved, the advance a claim', async () => {
-    const area = await withSystem(async (tx) => {
+  const area = () =>
+    withSystem(async (tx) => {
       const rows = await tx.execute<{ district_id: number; thana_id: number }>(
         sql`select district_id, id as thana_id from ref.thanas order by id limit 1`,
       );
       return rows[0];
     });
+
+  /** What the panel sends (`orderBody`): every line's price, the chat, the person placing it. */
+  const bodyFor = async (
+    lines: readonly { skuId: string; qty: number; unitPricePoisha: string }[],
+  ) => {
+    const place = await area();
+    return {
+      channel: 'facebook',
+      source: { inboxConversationId: conversationId },
+      customer: { phone: '01712000442', name: 'Rahim' },
+      shipTo: {
+        name: 'Rahim',
+        districtId: place?.district_id ?? 1,
+        thanaId: place?.thana_id ?? 1,
+        addressLine: 'House 4, Road 4',
+      },
+      lines,
+      discountPoisha: '5000',
+      deliveryChargePoisha: '6000',
+      assignedTo: sales.userId,
+    };
+  };
+
+  it('refuses a typed price deeper than the agent’s ceiling, as the desk does', async () => {
+    const refused = await sales.client.request('POST', '/v1/orders', {
+      body: await bodyFor([{ skuId: skuL, qty: 1, unitPricePoisha: '100000' }]),
+    });
+    expect(refused.statusCode).toBeGreaterThanOrEqual(400);
+    expect(refused.statusCode).toBeLessThan(500);
+    expect(json<{ code: string }>(refused).code).toBe('ORDER_DISCOUNT_ABOVE_CEILING');
+  });
+
+  it('comes out at the panel’s totals, pending, nothing reserved, once for a retried key; the verified advance lowers the COD', async () => {
+    // A typed price within the ceiling (160,000 → 150,000) and a list price.
     const lines = [
-      { skuId: skuL, qty: 2, unitPricePoisha: '160000' },
+      { skuId: skuL, qty: 2, unitPricePoisha: '150000' },
       { skuId: skuM, qty: 1, unitPricePoisha: '150000' },
     ];
     const preview = draftTotals({
@@ -265,22 +299,11 @@ describe('placing the panel’s draft (M44b check 5, D-773)', () => {
       advancePoisha: poisha(50_000),
     });
 
+    const key = `m44b-${randomUUID()}`;
+    const body = await bodyFor(lines);
     const placed = await sales.client.request('POST', '/v1/orders', {
-      body: {
-        channel: 'facebook',
-        source: { inboxConversationId: conversationId },
-        customer: { phone: '01712000442', name: 'Rahim' },
-        shipTo: {
-          name: 'Rahim',
-          districtId: area?.district_id ?? 1,
-          thanaId: area?.thana_id ?? 1,
-          addressLine: 'House 4, Road 4',
-        },
-        lines: lines.map((line) => ({ skuId: line.skuId, qty: line.qty })),
-        discountPoisha: '5000',
-        deliveryChargePoisha: '6000',
-        assignedTo: sales.userId,
-      },
+      body,
+      headers: { 'idempotency-key': key },
     });
     expect(placed.statusCode, placed.body).toBe(201);
     const order = json<{ id: string; orderNo: string; status: string; codAmountPoisha: string }>(
@@ -288,6 +311,40 @@ describe('placing the panel’s draft (M44b check 5, D-773)', () => {
     );
     expect(order.status).toBe('pending');
     expect(order.codAmountPoisha).toBe(preview.totalPoisha.toString());
+
+    // The answer was lost and the agent pressed again: the same order, not a second.
+    const again = await sales.client.request('POST', '/v1/orders', {
+      body,
+      headers: { 'idempotency-key': key },
+    });
+    expect(again.statusCode, again.body).toBe(201);
+    expect(json<{ id: string }>(again).id).toBe(order.id);
+
+    const saved = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{
+            channel: string;
+            assigned_to: string | null;
+            conversation: string | null;
+            orders: number;
+          }>(sql`
+            select o.channel::text as channel, o.assigned_to,
+                   o.source ->> 'inboxConversationId' as conversation,
+                   (select count(*)::int from sales.orders x
+                     where x.org_id = o.org_id
+                       and x.source ->> 'inboxConversationId' = ${conversationId}) as orders
+            from sales.orders o where o.id = ${order.id}
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(saved).toEqual({
+      channel: 'facebook',
+      assigned_to: sales.userId,
+      conversation: conversationId,
+      orders: 1,
+    });
 
     const reserved = await withSystem(
       async (tx) =>
@@ -302,13 +359,14 @@ describe('placing the panel’s draft (M44b check 5, D-773)', () => {
     expect(reserved).toBe(0);
 
     const advance = await sales.client.request('POST', `/v1/orders/${order.id}/advances`, {
-      body: { method: 'bkash', transactionRef: 'M44B-TX-1', amountPoisha: '50000' },
+      body: { method: 'bkash', transactionRef: 'M44BTX1001', amountPoisha: '50000' },
     });
     expect(advance.statusCode, advance.body).toBe(201);
-    expect(json<{ status: string }>(advance).status).toBe('pending');
-    // Until accounts verifies it, the order still collects its whole total.
-    const after = await sales.client.request('GET', `/v1/orders/${order.id}`);
-    expect(
+    const claim = json<{ id: string; status: string }>(advance);
+    expect(claim.status).toBe('pending');
+
+    // Until accounts verifies it, the order collects its whole total, at the panel's figures.
+    const amounts = async () =>
       json<{
         amounts: {
           itemsPoisha: string;
@@ -316,13 +374,21 @@ describe('placing the panel’s draft (M44b check 5, D-773)', () => {
           deliveryChargePoisha: string;
           codAmountPoisha: string;
         };
-      }>(after).amounts,
-    ).toMatchObject({
+      }>(await sales.client.request('GET', `/v1/orders/${order.id}`)).amounts;
+    expect(await amounts()).toMatchObject({
       itemsPoisha: preview.itemsPoisha.toString(),
       discountPoisha: preview.discountPoisha.toString(),
       deliveryChargePoisha: preview.deliveryPoisha.toString(),
       codAmountPoisha: preview.totalPoisha.toString(),
     });
-    expect(preview.toCollectPoisha).toBe(preview.totalPoisha - 50_000n);
+
+    // Accounts verifies it: the rider now collects what the panel called "to collect".
+    const verified = await accounts.client.request(
+      'POST',
+      `/v1/order-advances/${claim.id}/verify`,
+      { body: { walletAccountId: await walletAccount(ORG_A) } },
+    );
+    expect(verified.statusCode, verified.body).toBe(201);
+    expect((await amounts()).codAmountPoisha).toBe(preview.toCollectPoisha.toString());
   });
 });

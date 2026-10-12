@@ -91,6 +91,8 @@ const en = {
   'inbox.sell.draft.advanceRef': 'Transaction id',
   'inbox.sell.draft.advanceAmount': 'Advance',
   'inbox.sell.draft.advanceHint': 'Recorded with the order; accounts verifies it.',
+  'inbox.sell.draft.advanceRefInvalid':
+    '6 to 30 letters and digits, as the payment message shows it.',
   'inbox.sell.draft.notes': 'Note on the order',
   'inbox.sell.draft.clear': 'Clear the draft',
   'inbox.sell.method.bkash': 'bKash',
@@ -117,6 +119,7 @@ const en = {
   'inbox.sell.field.address': 'the address',
   'inbox.sell.field.money': 'amounts in taka',
   'inbox.sell.field.promo': 'a promo code that applies',
+  'inbox.sell.field.advance': 'the advance’s transaction id',
 
   'inbox.sell.place': 'Place order',
   'inbox.sell.placing': 'Placing the order',
@@ -130,6 +133,11 @@ const en = {
   'inbox.sell.summaryFilled': 'The summary is in the reply box.',
   'inbox.sell.summaryCopied': 'The summary is copied. Paste it into the reply.',
   'inbox.sell.newDraft': 'Start a new draft',
+  'inbox.sell.note': 'Order {orderNo} was placed from this chat.',
+  'inbox.sell.repriced':
+    'The saved order’s total differs from the draft’s, so the summary uses the order’s figures. Check them before sending.',
+  'inbox.sell.alreadyPlaced':
+    'This draft may already have been placed. Check the customer’s orders before placing it again.',
 
   'inbox.sell.summary.thanksName': 'Thank you, {name}. Your order {orderNo} is placed.',
   'inbox.sell.summary.thanks': 'Thank you. Your order {orderNo} is placed.',
@@ -137,7 +145,7 @@ const en = {
   'inbox.sell.summary.discount': 'Discount: {amount}',
   'inbox.sell.summary.delivery': 'Delivery: {amount}',
   'inbox.sell.summary.total': 'Total: {amount}',
-  'inbox.sell.summary.advance': 'Advance paid: {amount}',
+  'inbox.sell.summary.advance': 'Advance paid: {amount} (being verified)',
   'inbox.sell.summary.toCollect': 'Cash on delivery: {amount}',
   'inbox.sell.summary.shipTo': 'Delivery to: {address}',
   'inbox.sell.summary.phone': 'Phone: {phone}',

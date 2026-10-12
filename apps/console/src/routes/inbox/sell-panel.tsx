@@ -35,7 +35,7 @@ import { useSellT } from './sell-messages.js';
  * on the side to add it… as fast and efficient and user friendly as we can make it."
  *
  * The messages are the thread's own query (the same cache entry, so nothing is fetched twice and
- * M42's realtime events refresh it); the draft is this browser's, per conversation and person.
+ * M42's realtime events refresh it); the draft is this tab's, per conversation and person.
  * Alt+P finds a product and Alt+A adds what the card read, from anywhere on the page.
  */
 export function SellPanel({

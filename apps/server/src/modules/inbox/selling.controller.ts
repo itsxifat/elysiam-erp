@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
-import { InboxSellingService } from './selling.service.js';
+import { InboxSellingService, PICKER_IDS_LIMIT } from './selling.service.js';
 
 const idSchema = z.string().uuid('No such record.');
 
@@ -16,7 +16,7 @@ const productQuerySchema = z.union([
       ids: z
         .string()
         .transform((value) => value.split(',').filter((part) => part !== ''))
-        .pipe(z.array(z.string().uuid()).min(1).max(20)),
+        .pipe(z.array(z.string().uuid()).min(1).max(PICKER_IDS_LIMIT)),
     })
     .strict(),
 ]);

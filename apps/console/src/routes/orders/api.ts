@@ -231,7 +231,9 @@ export interface CreatedOrder {
   readonly codAmountPoisha: string;
 }
 
-export const createOrder = (body: CreateOrderBody) => api.post<CreatedOrder>('/v1/orders', body);
+/** M44b: the inbox's draft sends an `Idempotency-Key` (§23), so a retried save is one order. */
+export const createOrder = (body: CreateOrderBody, headers?: Readonly<Record<string, string>>) =>
+  api.post<CreatedOrder>('/v1/orders', body, headers);
 
 /** What the live check says about a code, for this basket. Claims no use. */
 export type PromoCheck =

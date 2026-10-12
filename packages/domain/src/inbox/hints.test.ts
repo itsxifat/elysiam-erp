@@ -8,6 +8,8 @@ import {
   chatHintDetector,
   detectHints,
   draftTotals,
+  lineAmountOf,
+  normalizeTransactionRef,
   hintsInMessages,
   MAX_HINT_QTY,
   parseChartCell,
@@ -505,6 +507,22 @@ describe('size from a size chart (D-771)', () => {
 });
 
 describe('the draft totals (D-773)', () => {
+  it('prices a line through the money functions, and reads an advance reference as M17 does', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 0n, max: 100_000_000_000n }),
+        fc.integer({ min: 1, max: 999 }),
+        (price, qty) => {
+          expect(lineAmountOf(price.toString(), qty)).toBe((price * BigInt(qty)).toString());
+        },
+      ),
+    );
+    expect(lineAmountOf('12.5', 1)).toBeNull();
+    expect(lineAmountOf('100', 0)).toBeNull();
+    expect(normalizeTransactionRef(' bk8n-7a6b5c ')).toBe('BK8N7A6B5C');
+    expect(normalizeTransactionRef('TX1')).toBeNull();
+  });
+
   const p = (value: number) => poisha(value);
 
   it('adds lines, takes the discount and the code, adds the delivery, and sets the advance apart', () => {
