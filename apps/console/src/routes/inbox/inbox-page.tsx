@@ -50,7 +50,7 @@ import { useInboxT } from './messages.js';
 import { useOwnerGuard } from './owner-guard.js';
 import { ContactPanel } from './panel.js';
 // M45: voice messages, kept pictures and calls in the thread, and the composer's recorder.
-import { InboxAttachment } from './voice/inbox-attachment.js';
+import { drawsAttachment, InboxAttachment } from './voice/inbox-attachment.js';
 import { ComposerVoice } from './voice/voice-recorder.js';
 
 /**
@@ -610,9 +610,11 @@ function Thread({ view, me }: { readonly view: ThreadView; readonly me: string |
             <Bubble
               key={message.id}
               message={message}
-              renderAttachment={(attachment) => (
-                <InboxAttachment attachment={attachment} guard={guard} onChanged={refresh} />
-              )}
+              renderAttachment={(attachment) =>
+                drawsAttachment(attachment) ? (
+                  <InboxAttachment attachment={attachment} guard={guard} onChanged={refresh} />
+                ) : null
+              }
             />
           ))}
         </ol>

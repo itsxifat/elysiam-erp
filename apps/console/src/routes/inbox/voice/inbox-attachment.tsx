@@ -9,6 +9,21 @@ import { KeptImage, VoicePlayer } from './voice-player.js';
 import { clock } from './waveform.js';
 
 /**
+ * Whether `InboxAttachment` draws this attachment; when it does not, the thread shows M42's own
+ * attachment line (a video, a file, a picture Meta's link still serves).
+ */
+export function drawsAttachment(attachment: MediaAttachment): boolean {
+  if (attachment.type === 'call') return attachment.call !== undefined;
+  if (attachment.type !== 'audio' && attachment.type !== 'image') return false;
+  const state = attachment.media ?? (attachment.fileId === undefined ? undefined : 'stored');
+  if (state === undefined) return false;
+  if (attachment.type === 'image') {
+    return state === 'pending' || (state === 'stored' && attachment.fileId !== undefined);
+  }
+  return true;
+}
+
+/**
  * How a thread shows M45's attachments (D-780, D-784): a voice message as a player, a kept
  * picture as the picture, and a call as an entry with its outcome and, when missed, the
  * call-back. Anything else gives null, so the thread shows M42's own attachment line.
