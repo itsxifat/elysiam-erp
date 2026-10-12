@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { MessageSquare, Mic, MicOff, Phone, PhoneOff, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { playTone } from '../../../alive/tones.js';
 import { ApiError } from '../../../api.js';
 import { useAbility, useSession } from '../../../auth/session.js';
 import { useRealtime } from '../../../realtime/use-realtime.js';
@@ -19,7 +20,6 @@ import {
 } from '../voice/api.js';
 import { useVoiceT } from '../voice/messages.js';
 import { clock } from '../voice/waveform.js';
-import { createRingSound, type RingSound } from './ring-sound.js';
 import {
   answerOffer,
   applyAnswer,
@@ -44,6 +44,9 @@ import {
 
 const CALL_EVENTS = ['inbox.call_ringing', 'inbox.call_changed'] as const;
 
+/** Two bursts, then a pause, again until the call is picked up or stops ringing. */
+const RING_CYCLE_MS = 3_000;
+
 export function CallBar() {
   const ability = useAbility();
   const session = useSession();
@@ -66,7 +69,6 @@ function Bar() {
   const [now, setNow] = useState(() => Date.now());
   const media = useRef<CallMedia | null>(null);
   const remote = useRef<HTMLAudioElement>(null);
-  const ring = useRef<RingSound | null>(null);
   const endedText = useRef(t('voice.call.ended'));
 
   useRealtime({
@@ -107,14 +109,15 @@ function Bar() {
     phase.kind === 'idle' ? null : (items.find((call) => call.id === phase.callId) ?? null);
   const shown = current ?? ringing[0] ?? null;
 
-  // The ring: while something rings for me and I am not on a call.
+  // The ring: while something rings for me and I am not on a call. M44a's shared tone, so the
+  // person's mute and volume apply to each ring (D-766, D-786).
   const shouldRing = phase.kind === 'idle' && ringing.length > 0;
   useEffect(() => {
-    ring.current ??= createRingSound();
-    if (shouldRing) ring.current.start();
-    else ring.current.stop();
+    if (!shouldRing) return;
+    playTone('ring');
+    const timer = window.setInterval(() => playTone('ring'), RING_CYCLE_MS);
+    return () => window.clearInterval(timer);
   }, [shouldRing]);
-  useEffect(() => () => ring.current?.stop(), []);
 
   // The clock on a call.
   const onCall = phase.kind === 'on_call';

@@ -9,12 +9,14 @@ import { soundPrefs, type SoundVolume } from './sound-prefs.js';
  * - `offer`: a brighter three-note rise, played twice. Work is waiting for an answer.
  * - `sent`: one short upward glide. The reply left.
  * - `error`: two low notes falling. It did not go.
+ * - `ring`: two short two-tone bursts, a phone's ring. A call (M45, D-786); the call bar plays it
+ *   every few seconds while the call rings, so muting stops it and the volume applies at once.
  *
  * Browsers start audio only after the person has used the page, so the context is created on
  * the first key or click and resumed whenever a tone plays. Muted, nothing is created at all.
  */
 
-export type Tone = 'message' | 'offer' | 'sent' | 'error';
+export type Tone = 'message' | 'offer' | 'sent' | 'error' | 'ring';
 
 export interface Note {
   /** Seconds after the tone starts. */
@@ -31,6 +33,16 @@ export interface Note {
 const C6 = 1046.5;
 const E6 = 1318.51;
 const G6 = 1567.98;
+
+/** A phone's two-tone burst (440 and 480 Hz together), as M45's call bar first rang. */
+const burst = (start: number): Note[] =>
+  [440, 480].map((frequency) => ({
+    at: start,
+    frequency,
+    seconds: 0.4,
+    wave: 'sine' as const,
+    level: 0.6,
+  }));
 
 const rise = (start: number): Note[] =>
   [C6, E6, G6].map((frequency, index) => ({
@@ -52,6 +64,7 @@ export const TONES: Readonly<Record<Tone, readonly Note[]>> = {
     { at: 0, frequency: 392, seconds: 0.18, wave: 'triangle', level: 0.8 },
     { at: 0.16, frequency: 293.66, seconds: 0.28, wave: 'triangle', level: 0.8 },
   ],
+  ring: [...burst(0), ...burst(0.6)],
 };
 
 /** The master level for each volume setting. */
@@ -67,6 +80,7 @@ export const MIN_GAP_MS: Readonly<Record<Tone, number>> = {
   offer: 2500,
   sent: 250,
   error: 800,
+  ring: 2500,
 };
 
 /** Whether a tone may play now, given when it last did. Pure, for the test. */
