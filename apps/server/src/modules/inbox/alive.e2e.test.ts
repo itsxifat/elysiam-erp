@@ -49,6 +49,8 @@ let admin: RoleClient;
 let sales: RoleClient;
 let adminB: RoleClient;
 let gateway: FakeMessagingGateway;
+/** What a job reported failing, so a test that waits on one says why. */
+const failures: unknown[] = [];
 
 function json<T>(response: InjectedResponse): T {
   return JSON.parse(response.body) as T;
@@ -60,7 +62,7 @@ async function until<T>(read: () => Promise<T | undefined>, label: string): Prom
     if (value !== undefined) return value;
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  throw new Error(`timed out waiting for ${label}`);
+  throw new Error(`timed out waiting for ${label}; job failures: ${JSON.stringify(failures)}`);
 }
 
 async function deliver(body: unknown): Promise<InjectedResponse> {
@@ -97,7 +99,10 @@ beforeAll(async () => {
     orders: harness.app.get(InboxOrderListener),
     offers: harness.app.get(ConversationOffersService),
     profiles: harness.app.get(InboxProfileService),
-    report: () => Promise.resolve(),
+    report: (failure) => {
+      failures.push(failure);
+      return Promise.resolve();
+    },
   });
   gateway = harness.app.get<FakeMessagingGateway>(MESSAGING_GATEWAY);
   expect(gateway).toBeInstanceOf(FakeMessagingGateway);
