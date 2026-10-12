@@ -9,6 +9,7 @@ import {
   replyWindow,
   voiceFormatFor,
   type KeptMediaKind,
+  type VoiceFormat,
 } from '@elysium/domain/inbox';
 import { sniffMime } from '@elysium/integrations';
 
@@ -148,6 +149,13 @@ const EXTENSIONS: Readonly<Record<string, string>> = {
 @Injectable()
 export class InboxMediaService {
   private readonly logger = new Logger('InboxMediaService');
+
+  /**
+   * How a recording becomes a channel's format: ffmpeg (`transcodeVoice`). A field so a suite
+   * with no ffmpeg on its machine can put a stand-in in its place; nothing else changes it.
+   */
+  transcode: (bytes: Uint8Array, format: VoiceFormat) => Promise<Uint8Array> = (bytes, format) =>
+    transcodeVoice(bytes, format, { ffmpegPath: this.config.FFMPEG_PATH });
 
   constructor(
     @Inject(META_MEDIA_GATEWAY) private readonly gateway: MetaMediaGateway,
@@ -509,9 +517,7 @@ export class InboxMediaService {
     const format = voiceFormatFor(prepared.channel);
     let converted: Uint8Array;
     try {
-      converted = await transcodeVoice(recording.bytes, format, {
-        ffmpegPath: this.config.FFMPEG_PATH,
-      });
+      converted = await this.transcode(recording.bytes, format);
     } catch (error) {
       if (error instanceof TranscodeFailed) {
         this.logger.warn({ messageId, reason: error.message }, 'a voice message did not convert');
