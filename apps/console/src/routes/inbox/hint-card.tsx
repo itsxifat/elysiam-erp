@@ -103,7 +103,7 @@ export function HintCard({
       aria-describedby={`${ids}-facts ${ids}-keys`}
       onKeyDown={onKey}
       className={cn(
-        'space-y-2 rounded-lg border border-primary/40 bg-card p-3 shadow-popover',
+        'space-y-2 rounded-lg border border-ring/50 bg-card p-3 shadow-popover',
         'alive-in',
         'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
       )}

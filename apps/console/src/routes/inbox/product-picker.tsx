@@ -289,7 +289,7 @@ export function ProductPicker({ recentIds, preset, pushed, onPick, inputRef }: P
           onKeyDown={onListKey}
           className={cn(
             'space-y-1 rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-            search.isFetching && searching && 'opacity-80',
+            search.isFetching && searching && 'opacity-70',
           )}
         >
           {items.map((product, productIndex) => (
@@ -298,8 +298,8 @@ export function ProductPicker({ recentIds, preset, pushed, onPick, inputRef }: P
               role="group"
               aria-label={product.name}
               className={cn(
-                'flex gap-2 rounded-md border border-transparent p-1.5',
-                productIndex === active.product && 'border-border bg-accent/60',
+                'flex gap-2 rounded-md border border-transparent p-2',
+                productIndex === active.product && 'border-border bg-accent',
               )}
             >
               <ProductThumb fileId={product.imageFileId} alt="" size="sm" />

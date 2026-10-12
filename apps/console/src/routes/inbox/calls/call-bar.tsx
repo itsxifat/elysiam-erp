@@ -247,7 +247,7 @@ function Bar() {
         )}
       >
         {shown === null ? null : (
-          <div className="mx-auto flex max-w-screen-xl flex-wrap items-center gap-3 px-4 py-3">
+          <div className="mx-auto flex max-w-page flex-wrap items-center gap-3 px-4 py-3">
             <Monogram name={name} size="md" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold" aria-live="assertive">
@@ -305,7 +305,7 @@ function Bar() {
         {notice === null ? null : (
           <p
             role="status"
-            className="mx-auto flex max-w-screen-xl items-center justify-between gap-3 px-4 pb-2 text-sm text-muted-foreground"
+            className="mx-auto flex max-w-page items-center justify-between gap-3 px-4 pb-2 text-sm text-muted-foreground"
           >
             {notice}
             <Button

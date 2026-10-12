@@ -153,10 +153,7 @@ export function VoiceRecorder({
     const elapsed = Math.max(0, now - state.startedAt);
     return (
       <div className="flex items-center gap-2" role="status" aria-live="polite">
-        <span
-          aria-hidden
-          className="size-2 rounded-full bg-destructive motion-safe:animate-pulse"
-        />
+        <span aria-hidden className="size-2 animate-pulse rounded-full bg-destructive" />
         <span className="text-sm tabular-nums">
           {t('voice.record.recording', { length: clock(elapsed / 1000) })}
         </span>

@@ -2,7 +2,7 @@ import { Button, cn, Money } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { BellRing, Check, MessageCircle, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import '../alive/alive.css';
 import { useInboxAlerts } from '../alive/inbox-alerts.js';
@@ -46,6 +46,12 @@ import { actKey, beatFor, offerShareLeft, secondsLeft } from '../routes/orders/w
  *    screen, and the tab's title counts the unread messages that are theirs.
  */
 
+// M45 (D-785): a call ringing for you, on every screen. Loaded from this lazy chunk rather than
+// the shell's, so the call bar adds nothing to the first download (the console's budget).
+const CallBar = lazy(() =>
+  import('../routes/inbox/calls/call-bar.js').then((module) => ({ default: module.CallBar })),
+);
+
 const BEAT_MS = 30_000;
 const NOTICE_MS = 15_000;
 const INPUT_EVENTS = ['keydown', 'pointerdown', 'touchstart', 'wheel'] as const;
@@ -61,8 +67,16 @@ interface Notice {
 export function WorkDock() {
   const ability = useAbility();
   const session = useSession();
-  if (session.context === null || !ability.can('update', 'Presence')) return null;
-  return <Dock />;
+  if (session.context === null) return null;
+  return (
+    <>
+      {/* The call bar checks `update Conversation` itself: the owner may answer without a desk. */}
+      <Suspense fallback={null}>
+        <CallBar />
+      </Suspense>
+      {ability.can('update', 'Presence') ? <Dock /> : null}
+    </>
+  );
 }
 
 function Dock() {

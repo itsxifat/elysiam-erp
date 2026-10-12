@@ -418,7 +418,7 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
                         update((current) => setLineQty(current, line.skuId, qty));
                       }
                     }}
-                    className="h-8 w-14 rounded-md border border-input bg-background px-2 text-sm tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   />
                   <span aria-hidden className="text-xs text-muted-foreground">
                     ×

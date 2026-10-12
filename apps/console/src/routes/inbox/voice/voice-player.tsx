@@ -19,20 +19,11 @@ import { clock, nextSpeed, peaks, seekFraction, type Speed } from './waveform.js
 
 const BARS = 40;
 
-/** A bar's height in tenths, as classes the design system's Tailwind build can see. */
-const HEIGHTS = [
-  'h-[8%]',
-  'h-[10%]',
-  'h-[20%]',
-  'h-[30%]',
-  'h-[40%]',
-  'h-[50%]',
-  'h-[60%]',
-  'h-[70%]',
-  'h-[80%]',
-  'h-[90%]',
-  'h-full',
-] as const;
+/**
+ * A bar's height in eight steps of the waveform's `h-8` box, as utilities the console's first
+ * stylesheet already holds: a new utility lands in the first download, which is at its budget.
+ */
+const HEIGHTS = ['h-0.5', 'h-1.5', 'h-3', 'h-4', 'h-5', 'h-6', 'h-7', 'h-8'] as const;
 
 type AudioContextClass = typeof AudioContext;
 
@@ -203,7 +194,7 @@ export function VoicePlayer({
             key={index}
             aria-hidden
             className={cn(
-              'w-full min-w-0.5 flex-1 rounded-full',
+              'w-full flex-1 rounded-full',
               HEIGHTS[Math.min(HEIGHTS.length - 1, Math.round(height * (HEIGHTS.length - 1)))],
               index / bars.length < played ? 'bg-primary' : 'bg-border',
             )}
@@ -269,7 +260,7 @@ export function KeptImage({ fileId, alt }: { readonly fileId: string; readonly a
   if (fetched.data === undefined) {
     return (
       <div
-        className="h-32 w-48 rounded-md bg-muted motion-safe:animate-pulse"
+        className="h-24 w-48 animate-pulse rounded-md bg-muted"
         aria-label={t('voice.image.pending')}
       />
     );
@@ -281,7 +272,7 @@ export function KeptImage({ fileId, alt }: { readonly fileId: string; readonly a
       rel="noreferrer noopener"
       className="block rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <img ref={image} alt={alt} className="max-h-60 max-w-full rounded-md border border-border" />
+      <img ref={image} alt={alt} className="max-h-64 max-w-full rounded-md border border-border" />
     </a>
   );
 }
