@@ -3181,3 +3181,45 @@ dry-run|commit --file <users.json>`.
   kept: the team board filters its people in memory (fails closed); a withdrawn conversation offer
   writes no audit row, as M41's order offers do not.
 - **New dependencies:** none.
+
+## 2026-10-12 · M45 · voice messages and calls in the inbox (not merged or deployed)
+
+- **Branch:** `m45-voice-calls` from `integration-wave2` (afb532e5), worktree
+  `D:/Projects/elysium-erp-m45`. Built beside M44a and M44b; M45's code is in new files, with
+  small insertions into M42's webhook service, thread view, `inbox-page.tsx` (the `Bubble`'s
+  `renderAttachment`, the composer's `ComposerVoice`, two events) and the shell (the lazy call
+  bar), for the integrator to merge. Plan: `docs/plans/M45.md`; decisions D-780 to D-790.
+- **Built:** customers' voice messages and pictures kept before Meta's link expires
+  (`inbox.media`, the `inbox-media` file purpose, audio types and sniffing in the storage
+  limits, `inbox.fetch_media`, `GET /v1/inbox/media/:fileId`, D-780, D-782); a player with a
+  waveform from the decoded audio, position and 1×/1.5×/2×; recorded voice messages sent through
+  `POST /v1/inbox/conversations/:id/voice` and `inbox.send_voice` (ffmpeg to Ogg/Opus for
+  WhatsApp, M4A for Messenger and Instagram, D-781); a year's retention and an orphan sweep
+  (`inbox.media_retention`, D-783); Meta's call webhooks recorded (`inbox.calls`, D-784), rung on
+  the owner or the active messages desk (D-785), a full-width call bar with a Web Audio ring and
+  our own 90-second deadline (D-786), answered in the browser over WebRTC with the SDP passed to
+  Meta's Calling API, mute and hang-up (D-787), missed calls as unread call-back items (D-788).
+- **For the owner (D-789):** subscribe `calls` on the WhatsApp Business Account and on the Page;
+  switch calling on for the WhatsApp number (messaging limit of 2,000 needed); Messenger's Calling
+  API is not offered to Pages in Bangladesh; Instagram has no calling API.
+- **Evidence (minimal tests, D-758):** domain `calls.test.ts` (12, property-based), storage sniff
+  tests (32), `voice-calls.unit.test.ts` (18: call webhooks, kept types, transcoder against a
+  stand-in, the Graph adapter against a stand-in for Meta: downloads, host and redirect refusal,
+  size limits, WhatsApp upload-then-send with `voice: true`, Messenger/Instagram multipart,
+  pre-accept/accept/reject/terminate, Messenger's offer and answer, no token in errors),
+  `voice-calls.e2e.test.ts` (9, real Postgres and pg-boss: a WhatsApp voice note kept and played,
+  a non-Meta link never fetched, a recorded message converted, uploaded, sent and delivered, the
+  window and someone else's recording refused, a call rung to both agents and claimed by one of
+  two racing, pre-accepted, accepted and ended with Meta's duration, the owner rung alone and
+  declining, a missed call's call-back, a ring-out, a Messenger accept with Meta's answer,
+  another brand's 404s, no deletes), M42's `inbox.e2e.test.ts` and `files.e2e.test.ts` (43),
+  `route-matrix.e2e.test.ts` (2, with M45's fixtures), `module-boundaries.test.ts` (32), the
+  console's waveform and attachment tests (12); `check:routes` (588 routes PASS),
+  `check:migrations`, `check:schema`, `check:i18n`, `check:api-client` (regenerated) PASS;
+  typecheck of the server and the console, lint of every touched file. Not run: the full verify,
+  stack specs, the acceptance auditor, a real browser call, the server image's ffmpeg.
+- **New dependencies:** none.
+- **Follow-ups:** business-initiated calls (WhatsApp call permission, D-788); the call bar,
+  inbox page and work dock each open a socket (one shared connection would do); the caller's
+  photo once M44a fetches sender photos; M44a's shared sounds and mute switch to replace
+  `RingSound`; `docs/build-status.md` to count M45 at integration.
