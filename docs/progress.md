@@ -3214,11 +3214,18 @@ dry-run|commit --file <users.json>`.
 - **Evidence (minimal tests, D-758):** typecheck (server, console) and lint of the touched
   packages; `saved-replies.test.ts` (domain, 16), `thread-logic.test.ts` (console, 11),
   `profile.unit.test.ts` (Graph adapter against a stand-in, 3); `alive.e2e.test.ts` on a
-  throwaway Postgres (profile job, unread counts, saved replies with RLS, roles and audit: 3/3);
-  `inbox.e2e.test.ts` and `route-matrix.e2e.test.ts` (23/23); the contracts' permission suite;
+  throwaway Postgres (profile job, WhatsApp's name followed and a typed one kept, the sweep,
+  unread counts, saved replies with RLS, roles and audit: 5/5); `inbox.e2e.test.ts` and
+  `route-matrix.e2e.test.ts` (23/23, the matrix again after the audit fixes); the contracts'
+  permission suite;
   `check:routes` (584 routes, PASS), `check:schema`, `check:migrations`, `check:i18n`,
   `check:api-client` (regenerated); `check:bundle` 249.7 of 250 KB (249.3 before). Not run: full
   `pnpm verify`, stack specs, screenshots, acceptance-auditor.
+- **Ledger audit (tenancy, permissions):** 0 critical, 1 warning, fixed: integration tests for
+  another brand's PUT and DELETE of a saved reply, the WhatsApp name path and the sweep. Notes
+  fixed: `saved_replies.updated_by` references `iam.users` (0149 regenerated before anything
+  outside the branch applied it), a use is audited as `inbox.saved_reply.use`, a shortcut race
+  answers 409 instead of 500, the sweep's error goes through the logger's scrubber.
 - **Merge notes:** migrations 0149 and 0150 may collide with M44b's or M45's numbers; the console's
   first download has 0.3 KB left, so new utility classes belong in the lazy chunks' CSS.
 - **New dependencies:** none.
