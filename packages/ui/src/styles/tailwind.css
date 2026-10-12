@@ -249,7 +249,8 @@
   }
 
   html:lang(bn) body,
-  .font-bangla {
+  .font-bangla,
+  [lang='bn'] {
     letter-spacing: 0;
   }
 

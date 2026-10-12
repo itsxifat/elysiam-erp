@@ -130,10 +130,13 @@ export {
 } from './components/date-picker.js';
 export {
   Menu,
+  MenuCheckboxItem,
   MenuContent,
   MenuGroup,
   MenuItem,
   MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
   MenuTrigger,
 } from './components/menu.js';

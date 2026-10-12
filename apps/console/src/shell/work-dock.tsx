@@ -1,11 +1,16 @@
-import { Button, Money } from '@elysium/ui';
+import { Button, cn, Money } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { BellRing, Check, MessageCircle, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import '../alive/alive.css';
+import { useInboxAlerts } from '../alive/inbox-alerts.js';
+import { alertIfHidden } from '../alive/notify.js';
+import { playTone } from '../alive/tones.js';
 import { ApiError } from '../api.js';
 import { useAbility, useSession } from '../auth/session.js';
+import '../i18n/alive.js';
 import { useLocale, useT } from '../i18n/locale.js';
 import '../i18n/workflow.js';
 import { useRealtime } from '../realtime/use-realtime.js';
@@ -35,7 +40,10 @@ import { actKey, beatFor, offerShareLeft, secondsLeft } from '../routes/orders/w
  *    person is typing; the card sits first in the tab order after the skip link;
  * 3. tells them when somebody else worked on their order;
  * 4. shows a new inbox conversation offered to them the same way (D-748), when their desk takes
- *    messages: who wrote, on which channel, the last words, and the same countdown.
+ *    messages: who wrote, on which channel, the last words, and the same countdown;
+ * 5. (M44a, D-766) rings: an offer arrives with an urgent tone and a gentle ring around its card
+ *    (a desktop alert too while the tab is hidden), a customer's new message chimes on every
+ *    screen, and the tab's title counts the unread messages that are theirs.
  */
 
 const BEAT_MS = 30_000;
@@ -61,6 +69,7 @@ function Dock() {
   const t = useT();
   const { locale } = useLocale();
   const ability = useAbility();
+  const session = useSession();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const lastInput = useRef(0);
@@ -85,6 +94,12 @@ function Dock() {
     queryFn: myConversationOffers,
     enabled: takesMessages,
     refetchInterval: 15_000,
+  });
+  // M44a (D-764, D-766): a customer's new message, heard on every screen, and the title's count.
+  const inboxAlerts = useInboxAlerts({
+    enabled: ability.can('read', 'Conversation'),
+    me: session.context?.userId ?? null,
+    takesMessages,
   });
   const agents = useQuery({
     queryKey: ['orders', 'agents'],
@@ -151,8 +166,13 @@ function Dock() {
       'order.acted_over_owner',
       'inbox.conversation_offered',
       'inbox.conversation_offer_closed',
+      'inbox.message_received',
     ],
     onEvent: (name, payload) => {
+      if (name === 'inbox.message_received') {
+        inboxAlerts.onMessage(payload);
+        return;
+      }
       if (name === 'inbox.conversation_offered' || name === 'inbox.conversation_offer_closed') {
         void queryClient.invalidateQueries({ queryKey: ['inbox', 'offers', 'mine'] });
         if (name === 'inbox.conversation_offered') setSaid(t('wf.offer.conversationAnnounce'));
@@ -291,6 +311,10 @@ function OfferCardView({
         </>
       }
       detail={t('wf.offer.detail')}
+      alert={{
+        title: t('alive.notify.orderOffer'),
+        body: [offer.orderNo, area === '' ? offer.area.detail : area].filter(Boolean).join(' · '),
+      }}
       offeredAt={offer.offeredAt}
       expiresAt={offer.expiresAt}
       now={now}
@@ -335,6 +359,10 @@ function ConversationOfferCardView({
         </>
       }
       detail={t('wf.offer.conversationDetail')}
+      alert={{
+        title: t('alive.notify.chatOffer'),
+        body: [name, offer.lastPreview].filter(Boolean).join(' · '),
+      }}
       offeredAt={offer.offeredAt}
       expiresAt={offer.expiresAt}
       now={now}
@@ -347,9 +375,14 @@ function ConversationOfferCardView({
   );
 }
 
+/** Offers that have rung in this tab: a card that re-renders or remounts rings once (D-766). */
+const rung = new Set<string>();
+
 /**
  * One offer, whatever it offers: the summary the caller passes, Accept and Decline, and the
- * countdown on a native <progress>. Announced by the dock; never steals focus.
+ * countdown on a native <progress>. Announced by the dock; never steals focus. It arrives with
+ * the urgent tone and a soft ring around the card while it waits; the countdown turns amber in
+ * its last quarter (M44a, D-765, D-766).
  */
 function OfferShell({
   id,
@@ -361,6 +394,7 @@ function OfferShell({
   sub,
   aside,
   detail,
+  alert,
   offeredAt,
   expiresAt,
   now,
@@ -377,6 +411,8 @@ function OfferShell({
   readonly sub: string | null;
   readonly aside: ReactNode;
   readonly detail: string;
+  /** The desktop alert while the tab is hidden. */
+  readonly alert: { readonly title: string; readonly body: string };
   readonly offeredAt: string;
   readonly expiresAt: string;
   readonly now: number;
@@ -402,10 +438,23 @@ function OfferShell({
   const declining = useMutation({ mutationFn: decline, onSettled: refresh });
   const busy = accepting.isPending || declining.isPending || left === 0;
 
+  useEffect(() => {
+    if (rung.has(id)) return;
+    rung.add(id);
+    playTone('offer');
+    alertIfHidden({ title: alert.title, body: alert.body, tag: `offer:${id}` });
+    // Once per offer: the alert's words are read when it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   return (
     <section
       aria-labelledby={`offer-${id}`}
-      className="pointer-events-auto w-full overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-popover"
+      className={cn(
+        'pointer-events-auto w-full overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-popover',
+        'alive-in',
+        !busy && 'alive-ring',
+      )}
       data-testid={testId}
       data-order-no={testId === 'offer-card' ? dataLabel : undefined}
       data-conversation-id={testId === 'offer-card' ? undefined : dataLabel}
@@ -414,7 +463,7 @@ function OfferShell({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-xs font-medium text-primary">
-              {icon}
+              <span className="alive-wiggle inline-flex">{icon}</span>
               {title}
             </p>
             <h2 id={`offer-${id}`} className="truncate text-lg font-semibold">
@@ -448,7 +497,10 @@ function OfferShell({
         aria-valuetext={`${String(left)} ${t('wf.offer.left')}`}
         value={Math.round(share * 100)}
         max={100}
-        className="h-1.5 w-full appearance-none bg-muted [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary"
+        className={cn(
+          'h-1.5 w-full appearance-none bg-muted [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary',
+          share < 0.25 && 'alive-urgent',
+        )}
       />
       <p
         className="px-4 pb-2 text-right text-xs text-muted-foreground tabular-nums"

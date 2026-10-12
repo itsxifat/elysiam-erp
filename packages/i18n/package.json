@@ -56,6 +56,10 @@
     "./locales/sections/workflow.en": {
       "types": "./dist/locales/sections/workflow.en.d.ts",
       "default": "./dist/locales/sections/workflow.en.js"
+    },
+    "./locales/sections/alive.en": {
+      "types": "./dist/locales/sections/alive.en.d.ts",
+      "default": "./dist/locales/sections/alive.en.js"
     }
   },
   "files": [

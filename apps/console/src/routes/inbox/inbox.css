@@ -1,0 +1,197 @@
+/*
+ * The inbox's own layout and bubbles (M44a, D-760, D-765), shipped with its lazy chunk. Every
+ * colour, radius and duration is a token from packages/ui.
+ *
+ * Three panes fill the window under the shell's header: the list, the thread and the customer
+ * panel, each scrolling on its own. Below the large breakpoint they take turns: the list, or the
+ * open conversation's thread, or its customer (`data-open` on the grid).
+ */
+
+.inbox-grid {
+  display: grid;
+  flex: 1 1 0%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.inbox-grid > * {
+  min-height: 0;
+  min-width: 0;
+}
+
+/* The customer panel (`ContactPanel`'s <aside>) scrolls in its pane rather than to a height of
+   its own. Unlayered, so it wins over the panel's utility classes. */
+.inbox-grid > aside {
+  max-height: none;
+  overflow-y: auto;
+}
+
+@media (width < 64rem) {
+  .inbox-grid[data-open='list'] > :not(.inbox-list),
+  .inbox-grid[data-open='thread'] > :not(.inbox-thread),
+  .inbox-grid[data-open='customer'] > :not(aside) {
+    display: none;
+  }
+
+  .inbox-grid > aside {
+    border-left-width: 0;
+  }
+}
+
+@media (width >= 64rem) {
+  /* The back button and the customer toggle are for the narrow layout alone. Unlayered, so
+     it wins over a button's own display. */
+  .inbox-small-only {
+    display: none;
+  }
+
+  .inbox-grid {
+    grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr) minmax(17rem, 22rem);
+  }
+
+  .inbox-list {
+    border-right: 1px solid var(--border);
+  }
+
+  /* No conversation open: the empty thread takes the panel's column too. */
+  .inbox-grid[data-open='list'] > .inbox-thread {
+    grid-column: span 2;
+  }
+}
+
+/* --- the thread ------------------------------------------------------------------------------ */
+
+.inbox-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.inbox-day {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 0 0.5rem;
+  color: var(--muted-foreground);
+}
+
+.inbox-day::before,
+.inbox-day::after {
+  content: '';
+  flex: 1 1 0%;
+  height: 1px;
+  background-color: var(--border);
+}
+
+.inbox-msg {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.inbox-msg[data-side='end'] {
+  flex-direction: row-reverse;
+}
+
+/* A gap after each group, none inside one. */
+.inbox-msg[data-pos='last'],
+.inbox-msg[data-pos='single'] {
+  margin-bottom: 0.625rem;
+}
+
+.inbox-gutter {
+  width: 1.75rem;
+  flex-shrink: 0;
+}
+
+.inbox-msg-body {
+  display: flex;
+  min-width: 0;
+  max-width: min(75%, 36rem);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+
+.inbox-msg[data-side='end'] .inbox-msg-body {
+  align-items: flex-end;
+}
+
+.inbox-bubble {
+  max-width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: calc(var(--radius) + 6px);
+}
+
+.inbox-bubble[data-side='start'] {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+.inbox-bubble[data-side='end'] {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* Bangla needs a little more room between lines for its vowel signs and conjuncts. */
+.inbox-bubble [lang='bn'],
+.inbox-bubble[lang='bn'] {
+  line-height: 1.6;
+}
+
+/* Consecutive bubbles from one side hug: the corners between them tighten. */
+.inbox-bubble[data-side='start'][data-pos='first'] {
+  border-bottom-left-radius: calc(var(--radius) - 6px);
+}
+
+.inbox-bubble[data-side='start'][data-pos='middle'] {
+  border-top-left-radius: calc(var(--radius) - 6px);
+  border-bottom-left-radius: calc(var(--radius) - 6px);
+}
+
+.inbox-bubble[data-side='start'][data-pos='last'] {
+  border-top-left-radius: calc(var(--radius) - 6px);
+}
+
+.inbox-bubble[data-side='end'][data-pos='first'] {
+  border-bottom-right-radius: calc(var(--radius) - 6px);
+}
+
+.inbox-bubble[data-side='end'][data-pos='middle'] {
+  border-top-right-radius: calc(var(--radius) - 6px);
+  border-bottom-right-radius: calc(var(--radius) - 6px);
+}
+
+.inbox-bubble[data-side='end'][data-pos='last'] {
+  border-top-right-radius: calc(var(--radius) - 6px);
+}
+
+.inbox-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.25rem;
+  color: var(--muted-foreground);
+}
+
+.inbox-photo {
+  display: block;
+  margin: 0.25rem -0.375rem;
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+
+.inbox-photo img {
+  display: block;
+  max-width: min(100%, 16rem);
+  max-height: 16rem;
+  object-fit: cover;
+}
+
+/* The reply box grows with what is written, up to a point. */
+[data-inbox-composer] {
+  min-height: var(--control-height-lg);
+  max-height: 10rem;
+  resize: none;
+}

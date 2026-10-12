@@ -64,6 +64,13 @@ function readRail(): boolean {
 }
 
 /**
+ * Screens that fill the window rather than scroll as a page (M44a, D-760): the inbox's three
+ * panes each scroll on their own, so the sheet is exactly the viewport's height and the outlet
+ * has no padding or measure of its own.
+ */
+const FILL_PATHS: ReadonlySet<string> = new Set(['/inbox']);
+
+/**
  * The console frame: sidebar, topbar, and the outlet every module fills (§24, D-449).
  *
  * Restrained on purpose. The chrome sits on the warm `canvas`; the page is a sheet
@@ -88,6 +95,7 @@ export function AppShell() {
   const [paletteWanted, setPaletteWanted] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerWanted, setDrawerWanted] = useState(false);
+  const fill = useRouterState({ select: (state) => FILL_PATHS.has(state.location.pathname) });
 
   /*
    * Ctrl/Cmd+K, captured at the document so it works wherever focus is. The shell
@@ -156,7 +164,7 @@ export function AppShell() {
         </Suspense>
       )}
 
-      <div className="flex min-h-dvh">
+      <div className={cn('flex', fill ? 'h-dvh' : 'min-h-dvh')}>
         <aside
           aria-label={t('nav.sidebar')}
           className={cn(
@@ -168,8 +176,13 @@ export function AppShell() {
           <SidebarContent mode={rail ? 'rail' : 'auto'} onToggleRail={toggleRail} />
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col md:py-2 md:pr-2">
-          <div className="flex min-h-dvh flex-1 flex-col bg-background md:min-h-[calc(100dvh-1rem)] md:rounded-xl md:border md:border-border">
+        <div className={cn('flex min-w-0 flex-1 flex-col md:py-2 md:pr-2', fill && 'min-h-0')}>
+          <div
+            className={cn(
+              'flex flex-1 flex-col bg-background md:rounded-xl md:border md:border-border',
+              fill ? 'min-h-0 overflow-hidden' : 'min-h-dvh md:min-h-[calc(100dvh-1rem)]',
+            )}
+          >
             <Topbar
               onOpenPalette={() => {
                 setPaletteWanted(true);
@@ -182,7 +195,11 @@ export function AppShell() {
             />
             <main
               id="console-main"
-              className="mx-auto w-full max-w-page min-w-0 flex-1 px-4 pt-6 pb-12 md:px-8 md:pt-8"
+              className={
+                fill
+                  ? 'flex min-h-0 w-full min-w-0 flex-1 flex-col'
+                  : 'mx-auto w-full max-w-page min-w-0 flex-1 px-4 pt-6 pb-12 md:px-8 md:pt-8'
+              }
             >
               {session.context === null ? null : <Outlet />}
             </main>

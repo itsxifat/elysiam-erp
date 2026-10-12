@@ -15,6 +15,7 @@ import {
 } from '../inbox/api.js';
 import { useInboxT, type InboxKey } from '../inbox/messages.js';
 import { Loadable, SettingsPage } from './parts.js';
+import { SavedRepliesSettings } from './saved-replies.js';
 
 /**
  * Settings → Inbox (M42, D-733): the brand's Meta app secret and verify token, the webhook
@@ -24,11 +25,18 @@ import { Loadable, SettingsPage } from './parts.js';
  */
 export function InboxSettingsPage() {
   const t = useInboxT();
+  const ability = useAbility();
   const query = useQuery({ queryKey: CHANNELS_KEY, queryFn: getChannels });
   return (
     <SettingsPage tab="/settings/inbox">
       <p className="max-w-3xl text-sm text-muted-foreground">{t('inbox.settings.caption')}</p>
       <Loadable query={query}>{(view) => <InboxSettings view={view} />}</Loadable>
+      {/* M44a (D-763): the brand's saved replies, typed into a reply with "/". */}
+      {ability.can('read', 'SavedReply') ? (
+        <div className="mt-8 border-t border-border pt-6">
+          <SavedRepliesSettings />
+        </div>
+      ) : null}
     </SettingsPage>
   );
 }

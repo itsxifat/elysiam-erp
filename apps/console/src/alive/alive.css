@@ -1,0 +1,158 @@
+/*
+ * The console's live layer (M44a, D-765): a message settling into the thread, a count popping,
+ * the slow pulse of a presence dot and the ring of an offer waiting for an answer. Shipped with
+ * the lazy chunks that use it, never in the first download. Every duration, easing and colour is
+ * a token from packages/ui; each animation stops under reduced motion (the kit's own guard
+ * shortens them too).
+ */
+
+@keyframes alive-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes alive-from-start {
+  from {
+    opacity: 0;
+    transform: translateX(-12px) scale(0.98);
+  }
+}
+
+@keyframes alive-from-end {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.98);
+  }
+}
+
+@keyframes alive-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes alive-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, currentColor 50%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 5px color-mix(in oklch, currentColor 0%, transparent);
+  }
+}
+
+@keyframes alive-ring {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 color-mix(in oklch, var(--primary) 0%, transparent),
+      var(--shadow-popover);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px color-mix(in oklch, var(--primary) 26%, transparent),
+      var(--shadow-popover);
+  }
+}
+
+@keyframes alive-wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20% {
+    transform: rotate(-14deg);
+  }
+  40% {
+    transform: rotate(11deg);
+  }
+  60% {
+    transform: rotate(-7deg);
+  }
+  80% {
+    transform: rotate(3deg);
+  }
+}
+
+.alive-in {
+  animation: alive-rise var(--duration-enter) var(--ease-out) both;
+}
+
+.alive-in-start {
+  animation: alive-from-start var(--duration-enter) var(--ease-out) both;
+}
+
+.alive-in-end {
+  animation: alive-from-end var(--duration-enter) var(--ease-out) both;
+}
+
+.alive-pop {
+  animation: alive-pop var(--duration-pop) var(--ease-spring) both;
+}
+
+/* A status badge's dot (StatusBadge draws it as ::before) breathing: someone is here. */
+.alive-presence::before {
+  animation: alive-pulse var(--duration-ambient) var(--ease-out) infinite;
+}
+
+/* A plain dot that breathes, for places without a badge. */
+.alive-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background-color: currentColor;
+  animation: alive-pulse var(--duration-ambient) var(--ease-out) infinite;
+}
+
+.alive-ring {
+  animation: alive-ring var(--duration-ambient) var(--ease-out) infinite;
+}
+
+.alive-wiggle {
+  transform-origin: 50% 10%;
+  animation: alive-wiggle calc(var(--duration-pop) * 3) var(--ease-out) 2;
+}
+
+/* A pressed control gives a little; hover and focus colours stay the kit's. */
+.alive-press {
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.alive-press:active {
+  transform: scale(0.985);
+}
+
+/* An offer's countdown in its last quarter. */
+.alive-urgent::-webkit-progress-value {
+  background-color: var(--warning);
+}
+
+.alive-urgent::-moz-progress-bar {
+  background-color: var(--warning);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alive-in,
+  .alive-in-start,
+  .alive-in-end,
+  .alive-pop,
+  .alive-presence::before,
+  .alive-dot,
+  .alive-ring,
+  .alive-wiggle {
+    animation: none;
+  }
+
+  .alive-press:active {
+    transform: none;
+  }
+}

@@ -1,4 +1,5 @@
 import * as MenuPrimitive from '@radix-ui/react-dropdown-menu';
+import { Check } from 'lucide-react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 
 import { cn } from '../lib/cn.js';
@@ -15,6 +16,7 @@ import { cn } from '../lib/cn.js';
 export const Menu = MenuPrimitive.Root;
 export const MenuTrigger = MenuPrimitive.Trigger;
 export const MenuGroup = MenuPrimitive.Group;
+export const MenuRadioGroup = MenuPrimitive.RadioGroup;
 
 export function MenuContent({
   className,
@@ -77,6 +79,49 @@ export function MenuItem({
     >
       {content}
     </MenuPrimitive.Item>
+  );
+}
+
+/** The look every item shares; the check and radio items add a mark at the end. */
+const ITEM = cn(
+  'relative flex h-control-sm cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm outline-none select-none',
+  'data-highlighted:bg-accent data-highlighted:text-accent-foreground',
+  'data-disabled:pointer-events-none data-disabled:opacity-50',
+  '[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground',
+);
+
+/**
+ * A setting that is on or off, inside a menu (M44a: the account menu's "Play sounds"). Radix
+ * gives it `menuitemcheckbox` and `aria-checked`; the tick at the end says it without colour.
+ */
+export function MenuCheckboxItem({
+  className,
+  children,
+  ...props
+}: ComponentPropsWithoutRef<typeof MenuPrimitive.CheckboxItem>) {
+  return (
+    <MenuPrimitive.CheckboxItem className={cn(ITEM, className)} {...props}>
+      {children}
+      <MenuPrimitive.ItemIndicator className="ml-auto">
+        <Check aria-hidden="true" />
+      </MenuPrimitive.ItemIndicator>
+    </MenuPrimitive.CheckboxItem>
+  );
+}
+
+/** One choice of a `MenuRadioGroup` (`menuitemradio`), ticked when chosen. */
+export function MenuRadioItem({
+  className,
+  children,
+  ...props
+}: ComponentPropsWithoutRef<typeof MenuPrimitive.RadioItem>) {
+  return (
+    <MenuPrimitive.RadioItem className={cn(ITEM, className)} {...props}>
+      {children}
+      <MenuPrimitive.ItemIndicator className="ml-auto">
+        <Check aria-hidden="true" />
+      </MenuPrimitive.ItemIndicator>
+    </MenuPrimitive.RadioItem>
   );
 }
 
