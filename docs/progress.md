@@ -3181,3 +3181,75 @@ dry-run|commit --file <users.json>`.
   kept: the team board filters its people in memory (fails closed); a withdrawn conversation offer
   writes no audit row, as M41's order offers do not.
 - **New dependencies:** none.
+
+## 2026-10-12 · M44b · selling from the chat (not merged or deployed)
+
+- **Asked for:** the owner, 2026-10-12: "the product search and select must be fast and dynamic.
+  like customer typed size or measurement a popup open on side to add the size, customer needs
+  how many how much every details.. as much we can make it fast and efficient and user friendly
+  to our staffs." Branch `m44b-sell-from-chat` from `integration-wave2` (afb532e5), worktree
+  `D:/Projects/elysium-erp-m44b`, built beside M44a and M45. Plan `docs/plans/M44.md` (section
+  M44b). Decisions D-770 to D-777. No migration, no new table.
+- **Built:** `@elysium/domain/inbox` gains `chatHintDetector` / `hintsInMessages` /
+  `summariseHints` (sizes, measurements, quantities, colours and product references in English,
+  Bangla and Banglish with Bangla digits, each hint with its message and span, D-770),
+  `recommendSize` (a measurement to a size through the product's size chart, D-771) and
+  `draftTotals` / `draftTotalsOf` (the draft's totals through the money functions, D-773). Server,
+  reads only under `read Conversation`: `GET /v1/inbox/products` (the picker: exact SKU or
+  barcode, website slug, then each word against `search_text`; photo, size chart, every size and
+  colour at its selling price with the desk's stock in hand; no cost, D-772),
+  `GET /v1/inbox/size-charts/:id`, `GET /v1/inbox/selling-context` (colour names, website host);
+  new `CatalogApi.pickerProducts`, `CatalogApi.colourNames` (`catalog-picker.repository.ts`) and
+  `StorefrontApi.sizeChart`; the inbox module imports the storefront module. Console, at the top
+  of the customer panel: the side card (slides in, updates as messages arrive through the thread's
+  own query, Enter adds, Esc dismisses, Alt+A from anywhere; "Size XL · Qty 2 · Chest 42 in → L
+  (from the Panjabi size chart)"), the instant picker (120 ms debounce, keeps the last answer on
+  screen, arrows, 1–9 for the quantity, Enter, Alt+P; size chips with stock, greyed at none; the
+  customer's interests before anything is typed; a pick joins the interests), the draft order
+  (items editable in place, delivery name, phone and address with district and thana pickers
+  prefilled from the contact, the matched customer and the chat, zone delivery charge unless
+  typed, discount, promo code with the desk's live check, advance) and Place order through the
+  order desk's own `POST /v1/orders` (channel by the chat, `source.inboxConversationId`, the
+  person placing it as owner, pending; D-773, D-774), then the advance as an M17 claim and a
+  one-click English order summary for the reply box (`fillComposer`, falling back to the
+  clipboard, D-775). Drafts kept per user and conversation in the tab's `sessionStorage` (D-776); Place order sends the draft's `Idempotency-Key` and every line's price. Strings in a
+  new i18n section, `inbox-sell.en.ts`. The console's `CreateOrderBody` line type takes the
+  optional `unitPricePoisha` the server already accepted.
+- **Evidence (minimal tests, D-758):** `packages/domain/src/inbox/hints.test.ts` (examples and
+  fast-check properties; the inbox domain suite 120 tests green), console
+  `sell-logic.test.ts` with M42's `logic.test.ts` (20 green), `selling.e2e.test.ts` against
+  Postgres in Testcontainers (7 green: the picker by name, SKU, lower-case SKU, parent SKU,
+  barcode, slug and ids with prices and stock and no cost field or cost value; another brand
+  sees nothing, `accounts` is refused, a bare query is a 400; the chart read and "chest 42 → L";
+  the brand's colours; a typed price past the sales ceiling refused; the draft placed through
+  `POST /v1/orders` with a typed price at exactly the panel's items, discount, delivery and
+  total, saved with the chat's channel, conversation and the agent as owner, pending with nothing
+  reserved, one order for a retried `Idempotency-Key`, its advance a pending claim that leaves
+  the COD alone until accounts verifies it, and then the COD is the panel's "to collect"), `module-boundaries.test.ts` (32 green), `check:routes` (581 routes,
+  PASS), `check-i18n` PASS, `check-api-client` PASS (the client regenerated), the i18n package's tests (68 green), typecheck of domain, i18n,
+  server and console, eslint and prettier on every touched file. Not run: `pnpm verify`, the
+  route-matrix and cost-sweep suites (the three routes have fixtures), a stack spec, the
+  acceptance-auditor.
+- **Ledger audit:** 0 critical, 4 warnings, 6 notes, by the `ledger-auditor` (which also ran
+  the cost sweep's "across every endpoint" with the new routes in it). Fixed: W1 (an advance whose
+  transaction id M17 would refuse holds Place order; the summary names the advance only once it
+  is recorded, and a retried recording brings it back), W2 (every line's price is sent, a line
+  picked again takes today's price, and when the saved order's total is not the draft's the
+  summary is written from `GET /v1/orders/:id` with a warning), W3 in part (on someone else's
+  conversation the panel writes a note "Order … was placed from this chat" through the inbox
+  with the acknowledgement, so the owner is told and the audit names them; the server still does
+  not gate `source.inboxConversationId`, a gap since M42's desk prefill: follow-up in D-774),
+  W4 (the e2e above), N1 (`Idempotency-Key`), N2 (`sessionStorage` instead of
+  `localStorage`), N3 (the decision rows were written after the audit's snapshot), N4 in part
+  (the promo basket through `mulQty`), N6 (`?ids=` limits agree at 20). Kept: N5 (a cleared
+  delivery field is free delivery, as on the desk), N4's `takaInput` (tested; `takaToPoisha`
+  in `@elysium/ui` also takes negatives).
+- **Follow-up (claude):** the inbox port that refuses an order naming someone else's
+  conversation without `x-acknowledge-owner` (D-774).
+- **For integration:** M44a's composer calls `useComposerFill(conversation.id, setText)` from
+  `composer-bridge.ts` (one line) so "Send order summary" fills the reply box; the card's
+  `animate-sheet-in` and the lines' `animate-in` give way to M44a's motion utilities;
+  `docs/plans/M44.md`, `decisions.md`, `progress.md` and the i18n index take both halves' rows.
+- **Not built:** the optional "add this to the draft" on a highlighted thread message (the thread
+  is M44a's).
+- **New dependencies:** none.
