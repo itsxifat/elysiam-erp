@@ -308,9 +308,21 @@ describe('placing the panel’s draft (M44b check 5, D-773)', () => {
     expect(json<{ status: string }>(advance).status).toBe('pending');
     // Until accounts verifies it, the order still collects its whole total.
     const after = await sales.client.request('GET', `/v1/orders/${order.id}`);
-    expect(json<{ codAmountPoisha: string }>(after).codAmountPoisha).toBe(
-      preview.totalPoisha.toString(),
-    );
+    expect(
+      json<{
+        amounts: {
+          itemsPoisha: string;
+          discountPoisha: string;
+          deliveryChargePoisha: string;
+          codAmountPoisha: string;
+        };
+      }>(after).amounts,
+    ).toMatchObject({
+      itemsPoisha: preview.itemsPoisha.toString(),
+      discountPoisha: preview.discountPoisha.toString(),
+      deliveryChargePoisha: preview.deliveryPoisha.toString(),
+      codAmountPoisha: preview.totalPoisha.toString(),
+    });
     expect(preview.toCollectPoisha).toBe(preview.totalPoisha - 50_000n);
   });
 });
