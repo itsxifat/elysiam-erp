@@ -82,6 +82,24 @@ export interface StorefrontApi {
    * marketplace's), logged and queued in the caller's transaction.
    */
   recordPurchase(tx: Tx, orgId: string, facts: PurchaseFacts): Promise<void>;
+
+  /**
+   * One size chart as the brand typed it (M44b, D-771): the inbox turns a customer's measurement
+   * into a size through the chart of the product being sold. Absent when the brand has none.
+   */
+  sizeChart(
+    tx: Tx,
+    orgId: string,
+    id: string,
+  ): Promise<
+    | {
+        readonly id: string;
+        readonly name: string;
+        readonly columns: readonly string[];
+        readonly rows: readonly (readonly string[])[];
+      }
+    | undefined
+  >;
 }
 
 export const STOREFRONT_API = Symbol('StorefrontApi');
@@ -171,5 +189,12 @@ export class StorefrontApiService implements StorefrontApi {
     rows: readonly { readonly kind: string; readonly legacyId: string; readonly erpId: string }[],
   ): Promise<number> {
     return repo.insertLegacyIds(tx, orgId, rows);
+  }
+
+  async sizeChart(tx: Tx, orgId: string, id: string) {
+    const row = await repo.sizeChartById(tx, orgId, id);
+    return row === undefined
+      ? undefined
+      : { id: row.id, name: row.name, columns: row.columns, rows: row.rows };
   }
 }

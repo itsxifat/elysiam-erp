@@ -4,6 +4,8 @@ import { SEED_ORG_IDS, withGlobal, withSystem } from '@elysium/db';
 import { createTestUser, grantMembership } from '@elysium/db/testing';
 import { sql } from 'drizzle-orm';
 
+import { SELLING_ROUTE_FIXTURES } from './selling.route-fixtures.js';
+
 /**
  * How the route-matrix suite and the cost sweep call M42's inbox routes (D-070).
  *
@@ -259,4 +261,6 @@ export const INBOX_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
     url: '/v1/inbox/meta-app',
     body: { verifyToken: `matrix-verify-${randomUUID()}` },
   }),
+  // M44b: selling from the chat.
+  ...SELLING_ROUTE_FIXTURES,
 };

@@ -600,6 +600,10 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/inbox/calls/:id/decline',
   'POST /v1/inbox/calls/:id/hang-up',
   'POST /v1/inbox/calls/:id/callback-done',
+  // M44b: selling from the chat (`read Conversation`; the order itself is `POST /v1/orders`).
+  'GET /v1/inbox/selling-context',
+  'GET /v1/inbox/products',
+  'GET /v1/inbox/size-charts/:id',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

@@ -5,6 +5,7 @@ import { CatalogModule } from '../catalog/catalog.module.js';
 import { FilesModule } from '../files/files.module.js';
 import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
+import { StorefrontModule } from '../storefront/storefront.module.js';
 import { TeamModule } from '../team/team.module.js';
 import { InboxCallsService } from './calls.service.js';
 import { InboxCatalogReferences } from './catalog-references.binding.js';
@@ -28,6 +29,8 @@ import { META_MEDIA_GATEWAY } from './providers/meta-media.js';
 import { MetaWebhookRawBody } from './raw-body.js';
 import { SavedRepliesController } from './saved-replies.controller.js';
 import { SavedRepliesService } from './saved-replies.service.js';
+import { InboxSellingController } from './selling.controller.js';
+import { InboxSellingService } from './selling.service.js';
 import { InboxSendService } from './send.service.js';
 import { VOICE_CALLS_CONFIG, mediaGatewayFor, voiceCallsConfig } from './voice-calls.config.js';
 import { VoiceCallsController } from './voice-calls.controller.js';
@@ -67,12 +70,21 @@ const voiceCallsConfigProvider: Provider = {
 };
 
 @Module({
-  imports: [OrdersModule, CatalogModule, IamDirectoryModule, TeamModule, FilesModule],
+  // M44b: size charts and the website's address through STOREFRONT_API (D-771, D-772).
+  imports: [
+    OrdersModule,
+    CatalogModule,
+    IamDirectoryModule,
+    TeamModule,
+    FilesModule,
+    StorefrontModule,
+  ],
   controllers: [
     InboxController,
     SavedRepliesController,
     MetaWebhookController,
     VoiceCallsController,
+    InboxSellingController,
   ],
   providers: [
     configProvider,
@@ -95,6 +107,7 @@ const voiceCallsConfigProvider: Provider = {
     InboxProfileService,
     // M44a (D-763): the saved replies.
     SavedRepliesService,
+    InboxSellingService,
     // D-621: a customer's interest keeps the product it names.
     InboxCatalogReferences,
   ],

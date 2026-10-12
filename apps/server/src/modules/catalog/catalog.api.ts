@@ -3,6 +3,7 @@ import { poisha, variantKey } from '@elysium/domain';
 import { importSlug, type ImportProduct, type SkusRefs } from '@elysium/domain/migration';
 
 import { assertNotInternal, nextInternalBarcodes } from './barcodes.js';
+import * as picker from './catalog-picker.repository.js';
 import * as pricing from './catalog-pricing.repository.js';
 import * as repo from './catalog.repository.js';
 import * as web from './catalog-web.repository.js';
@@ -293,6 +294,35 @@ export interface CatalogApi {
     orgId: string,
     filter: { readonly productId?: string | undefined; readonly activeOnly: boolean },
   ): Promise<readonly DirectorySku[]>;
+
+  // --- M44b: selling from the chat (D-772) ----------------------------------------------------
+
+  /**
+   * The inbox's product picker: active products for what an agent typed (a name, a SKU or
+   * parent SKU, a barcode, a website slug), best first, or these ids in their order. Each with
+   * its size chart, first photo and, for an exact SKU or barcode, the SKU it named. No price
+   * (`webSkus` has the selling prices) and never a cost.
+   */
+  pickerProducts(
+    tx: Tx,
+    orgId: string,
+    query:
+      | { readonly q: string; readonly limit: number }
+      | { readonly ids: readonly string[]; readonly limit: number },
+  ): Promise<PickerProduct[]>;
+
+  /** The brand's colour names, for reading a colour in a chat. */
+  colourNames(tx: Tx, orgId: string): Promise<string[]>;
+}
+
+/** A product as the inbox's picker lists it (M44b): no price, no cost. */
+export interface PickerProduct {
+  readonly id: string;
+  readonly name: string;
+  readonly imageFileId: string | null;
+  readonly sizeChartId: string | null;
+  /** The SKU an exact code or barcode named, so the picker can choose that size at once. */
+  readonly matchedSkuId: string | null;
 }
 
 /** A product as the marketplace connector serialises it (M35b). */
@@ -895,6 +925,34 @@ export class CatalogApiService implements CatalogApi {
       variantLabel: labels.get(row.id) ?? '',
       status: row.status,
     }));
+  }
+
+  async pickerProducts(
+    tx: Tx,
+    orgId: string,
+    query:
+      | { readonly q: string; readonly limit: number }
+      | { readonly ids: readonly string[]; readonly limit: number },
+  ): Promise<PickerProduct[]> {
+    const found =
+      'q' in query
+        ? await picker.pickerProductIds(tx, orgId, query.q, query.limit)
+        : {
+            ids: [...new Set(query.ids)].slice(0, query.limit),
+            matchedSkus: new Map<string, string>(),
+          };
+    const rows = await picker.pickerProductsByIds(tx, orgId, found.ids);
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      imageFileId: row.image_file_id,
+      sizeChartId: row.size_chart_id,
+      matchedSkuId: found.matchedSkus.get(row.id) ?? null,
+    }));
+  }
+
+  colourNames(tx: Tx, orgId: string): Promise<string[]> {
+    return picker.colourNames(tx, orgId);
   }
 }
 

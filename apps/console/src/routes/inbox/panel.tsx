@@ -13,13 +13,12 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ImageOff, Plus, ShoppingCart, Trash2 } from 'lucide-react';
+import { Plus, ShoppingCart, Trash2 } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useLocale } from '../../i18n/locale.js';
-import { imageUrl } from '../catalog/api.js';
 import { listAreas } from '../orders/api.js';
 import { ordersPath } from '../orders/paths.js';
 import {
@@ -39,6 +38,8 @@ import {
 import { displayPhone, districtsOf, parseTags, priceRange, stageTone, thanasOf } from './logic.js';
 import { useInboxT } from './messages.js';
 import { useOwnerGuard } from './owner-guard.js';
+import { ProductThumb } from './product-thumb.js';
+import { SellPanel } from './sell-panel.js';
 
 /**
  * The customer panel beside a thread (M42, D-738 to D-742): phones in the chat saved in one
@@ -148,6 +149,10 @@ function PanelBody({
           {error}
         </p>
       )}
+      {/* M44b: the side card, the draft order and its picker, at the top where the eye is. */}
+      {ability.can('create', 'Order') ? (
+        <SellPanel conversation={conversation} me={me} view={view} />
+      ) : null}
       <ContactBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
       <PhonesBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
       <AddressBlock
@@ -639,24 +644,5 @@ function InterestsBlock({ view, mayWrite, busy, run, id }: BlockProps) {
         </ul>
       )}
     </Block>
-  );
-}
-
-/** A product photo through a short-lived signed address, as the catalog's own screens show it. */
-function ProductThumb({ fileId, alt }: { readonly fileId: string | null; readonly alt: string }) {
-  const url = useQuery({
-    queryKey: ['files', 'url', fileId],
-    queryFn: () => imageUrl(fileId ?? ''),
-    enabled: fileId !== null,
-    staleTime: 4 * 60_000,
-  });
-  return (
-    <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-      {url.data === undefined ? (
-        <ImageOff aria-hidden className="size-4 text-muted-foreground" />
-      ) : (
-        <img src={url.data.url} alt={alt} className="size-full object-cover" />
-      )}
-    </div>
   );
 }

@@ -655,6 +655,17 @@ export const OPERATIONS = {
     path: '/v1/inbox/offers/mine',
     ability: 'read:Conversation',
   },
+  getV1InboxProducts: { method: 'GET', path: '/v1/inbox/products', ability: 'read:Conversation' },
+  getV1InboxSellingContext: {
+    method: 'GET',
+    path: '/v1/inbox/selling-context',
+    ability: 'read:Conversation',
+  },
+  getV1InboxSizeChartsById: {
+    method: 'GET',
+    path: '/v1/inbox/size-charts/{id}',
+    ability: 'read:Conversation',
+  },
   getV1IntakeSiteKeys: { method: 'GET', path: '/v1/intake/site-keys', ability: 'read:LandingPage' },
   getV1InventoryAdjustments: {
     method: 'GET',
@@ -2998,6 +3009,17 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/inbox/offers/mine */
     getV1InboxOffersMine: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1InboxOffersMine, undefined, options),
+    /** GET /v1/inbox/products */
+    getV1InboxProducts: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InboxProducts, undefined, options),
+    /** GET /v1/inbox/selling-context */
+    getV1InboxSellingContext: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1InboxSellingContext, undefined, options),
+    /** GET /v1/inbox/size-charts/:id */
+    getV1InboxSizeChartsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1InboxSizeChartsById, input, options),
     /** GET /v1/intake/site-keys */
     getV1IntakeSiteKeys: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1IntakeSiteKeys, undefined, options),

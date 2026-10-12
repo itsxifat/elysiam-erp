@@ -57,6 +57,10 @@
       "types": "./dist/locales/sections/voice.en.d.ts",
       "default": "./dist/locales/sections/voice.en.js"
     },
+    "./locales/sections/inbox-sell.en": {
+      "types": "./dist/locales/sections/inbox-sell.en.d.ts",
+      "default": "./dist/locales/sections/inbox-sell.en.js"
+    },
     "./locales/sections/workflow.en": {
       "types": "./dist/locales/sections/workflow.en.d.ts",
       "default": "./dist/locales/sections/workflow.en.js"

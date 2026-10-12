@@ -208,7 +208,12 @@ export interface CreateOrderBody {
     readonly area?: string;
     readonly addressLine: string;
   };
-  readonly lines: readonly { readonly skuId: string; readonly qty: number }[];
+  readonly lines: readonly {
+    readonly skuId: string;
+    readonly qty: number;
+    /** M44b: a price the agent typed in the inbox's draft; left out, the list price. */
+    readonly unitPricePoisha?: string;
+  }[];
   readonly deliveryChargePoisha?: string;
   readonly discountPoisha?: string;
   /** The word the buyer gave. Never an id or an amount: the server prices it (D-204). */
@@ -226,7 +231,9 @@ export interface CreatedOrder {
   readonly codAmountPoisha: string;
 }
 
-export const createOrder = (body: CreateOrderBody) => api.post<CreatedOrder>('/v1/orders', body);
+/** M44b: the inbox's draft sends an `Idempotency-Key` (§23), so a retried save is one order. */
+export const createOrder = (body: CreateOrderBody, headers?: Readonly<Record<string, string>>) =>
+  api.post<CreatedOrder>('/v1/orders', body, headers);
 
 /** What the live check says about a code, for this basket. Claims no use. */
 export type PromoCheck =
