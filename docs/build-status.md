@@ -1,18 +1,20 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-11** (the mother ERP is live at elyerp.enfinito.cloud and reads both brands; IP camera recording with a live view, and super admin removal, live on both brands). This is the short, plain-language view. The
+Last updated: **2026-10-12** (order ownership and auto-assign, the unified inbox and the new English-only slips are live on both brands; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Everything     [###################-]  97%   (about 34.8 of 36 milestones)
+Everything     [###################-]  97%   (about 38.8 of 40 milestones)
 First plan     [###################-]  98%   (M00 to M30)
 Wave 3         [##################--]  93%   (M31 to M39)
+Wave 4         [####################] 100%   (M40 to M43; broad tests deferred, D-758)
 ```
 
 - The first plan had 33 milestones; six are out on the owner's instruction (M13, M21, M22, M27,
-  M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620), so **36 count** in all.
+  M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620) and **wave 4 adds 4**
+  (M40 to M43, 2026-10-11), so **40 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits; a part-built one counts
   for the share that is done.
 - Today: **33 done** (M32 and M38 on 2026-10-08), **3 part-built**: M14b and M30 (wait for a
@@ -45,7 +47,7 @@ Wave 3         [##################--]  93%   (M31 to M39)
 | The mother ERP (wave 3)                                                     |  100% | A separate site for the owner: every brand's numbers side by side and added up, and one button to open any brand's ERP. Built and tested; it goes online when the owner names its server and domain (M37).                                                                                                                                                               |
 | The website run from the ERP (wave 3)                                       |  100% | The new website at `demo.elysium-lifestyle.bd` gets everything from Elysiam's ERP; the ERP is its admin panel: products, banners, menu, size charts, checkout, accounts, payment, emails, discounts, flash sales, campaign links, tracking and ncom (M33 to M36).                                                                                                        |
 | Barcode stickers and packing (wave 3)                                       |  100% | Products with stock in hand and cost, one barcode sticker per piece, scanning anywhere, and the packing station: every piece checked against the order, a video kept until 7 days after delivery. Live on both brands (M38). An IP camera over the packing table can now film it instead, from 2 seconds before the first correct piece (M38c, built, not yet deployed). |
-| Fraud check, Chatwoot inbox, staff activity extension, landing page builder |     - | Removed by the owner on 2026-10-02. Not counted. The fraud check code was deleted.                                                                                                                                                                                                                                                                                       |
+| Fraud check, Chatwoot inbox, staff activity extension, landing page builder |     - | Removed by the owner on 2026-10-02. Not counted. The ERP's own inbox (M42) and a manual Fraud mark replaced them on 2026-10-12.                                                                                                                                                                                                                                          |
 | Reseller platform (Beownz)                                                  |     - | Set aside by the owner. Not counted.                                                                                                                                                                                                                                                                                                                                     |
 
 ## By milestone
@@ -94,6 +96,10 @@ Wave 3         [##################--]  93%   (M31 to M39)
 | M37  | Servers, addresses, go-live                  |   60% | Elysiam's and Beownz's ERPs and the mother ERP (elyerp.enfinito.cloud) live; the final domains to come                                                                                 |
 | M38  | Barcode stickers, strict stock, scan-to-pack |  100% | Done 2026-10-08; stickers, stock in hand, scanner and the packing station with video, live                                                                                             |
 | M39  | Catalog management: delete, variant prices   |  100% | Done and live: delete or archive everywhere; prices by size or colour, bulk price changes, buying price per variant, margins, standard buying prices, duplicate product, regular price |
+| M40  | My account and two-step sign-in              |  100% | Done and live 2026-10-11: My account, a two-step rule per role, sign out everywhere; the mother's brands set on the server only                                                        |
+| M41  | Order ownership, calls, auto-assign          |  100% | Live 2026-10-12: take an order, warnings for everyone else, call log, Uber-style offers (off until turned on), hub queues, team board                                                  |
+| M42  | Unified inbox and customer panel             |  100% | Live 2026-10-12: Messenger, Instagram and WhatsApp in one inbox with the customer panel; receives nothing until the Meta app is connected                                              |
+| M43  | Premium slips, English only                  |  100% | Live 2026-10-12: new slip, invoice and labels; Bangla removed everywhere                                                                                                               |
 
 ## Being built now
 
