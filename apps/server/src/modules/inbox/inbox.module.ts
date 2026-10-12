@@ -18,9 +18,12 @@ import {
 import { InboxController } from './inbox.controller.js';
 import { InboxOrderListener } from './order-listener.service.js';
 import { ContactPanelService } from './panel.service.js';
+import { InboxProfileService } from './profile.service.js';
 import { CONVERSATION_OFFER } from './ports/conversation-offer.port.js';
 import { MESSAGING_GATEWAY } from './providers/meta-messaging.js';
 import { MetaWebhookRawBody } from './raw-body.js';
+import { SavedRepliesController } from './saved-replies.controller.js';
+import { SavedRepliesService } from './saved-replies.service.js';
 import { InboxSendService } from './send.service.js';
 import { MetaWebhookController } from './webhook.controller.js';
 import { InboxWebhookService } from './webhook.service.js';
@@ -48,7 +51,7 @@ const gatewayProvider: Provider = {
 
 @Module({
   imports: [OrdersModule, CatalogModule, IamDirectoryModule, TeamModule],
-  controllers: [InboxController, MetaWebhookController],
+  controllers: [InboxController, SavedRepliesController, MetaWebhookController],
   providers: [
     configProvider,
     gatewayProvider,
@@ -62,11 +65,16 @@ const gatewayProvider: Provider = {
     InboxWebhookService,
     InboxSendService,
     InboxOrderListener,
+    // M44a (D-761): senders' names and photos.
+    InboxProfileService,
+    // M44a (D-763): the saved replies.
+    SavedRepliesService,
     // D-621: a customer's interest keeps the product it names.
     InboxCatalogReferences,
   ],
   exports: [
     InboxWebhookService,
+    InboxProfileService,
     InboxSendService,
     InboxOrderListener,
     ConversationOffersService,

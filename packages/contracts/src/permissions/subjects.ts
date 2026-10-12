@@ -163,6 +163,12 @@ export const SUBJECTS = [
    */
   'InboxChannel',
   /**
+   * The inbox's saved replies (M44a, D-763): the brand's shared answers typed with `/`. Everyone
+   * who answers the inbox reads (and so uses) them; org_admin, the inbox's supervisor (the role
+   * that holds `update ConversationAssignment`), writes and removes them. Not a row in §6's grid.
+   */
+  'SavedReply',
+  /**
    * A person's own presence at the desk (M41, D-713, D-723): the console's heartbeat and the
    * "Not taking orders" switch. `own`: nobody reports or pauses for anybody else. Held by the
    * roles that work a desk (orders, messages, the hub) and their supervisors. Not a row in §6's

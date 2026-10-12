@@ -111,6 +111,13 @@ export class InboxController {
     return this.panel.orderDraft(requireContext(request), parse(idSchema, id));
   }
 
+  /** M44a (D-764): unread counts for the tab's title: the caller's own and nobody's. */
+  @RequireAbility('read', 'Conversation')
+  @Get('unread')
+  async unread(@Req() request: FastifyRequest) {
+    return this.conversations.unread(requireContext(request));
+  }
+
   /** Who a conversation can be handed to. */
   @RequireAbility('read', 'Conversation')
   @Get('team')

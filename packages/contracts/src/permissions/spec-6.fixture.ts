@@ -409,8 +409,13 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'org_admin|update|ConversationAssignment|org',
   'org_admin|read|InboxChannel|org',
   'org_admin|update|InboxChannel|org',
+  'org_admin|read|SavedReply|org',
+  'org_admin|create|SavedReply|org',
+  'org_admin|update|SavedReply|org',
+  'org_admin|delete|SavedReply|org',
   'sales|read|Conversation|org',
   'sales|update|Conversation|org',
+  'sales|read|SavedReply|org',
   // | (not a row in the grid) | presence at the desk and the order workflow (M41, D-713, D-715, D-720) |
   // Everyone who works a desk reports their own presence and sets "Not taking orders"; the
   // brand's auto-assign settings are org_admin's, and both supervisors read the team board.

@@ -669,6 +669,8 @@ export const ERROR_CODES = [
   'INBOX_CREDENTIALS_MISSING',
   /** D-748: the conversation offer was taken, declined, withdrawn or ran out before the answer. */
   'INBOX_OFFER_GONE',
+  /** M44a (D-763): another saved reply of this brand already has that shortcut. */
+  'INBOX_SHORTCUT_TAKEN',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

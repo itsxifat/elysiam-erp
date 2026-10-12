@@ -12,6 +12,7 @@ import { appSecretBinding, openSecret, verifyTokenBinding } from './inbox-secret
 import { INBOX_QUEUES } from './inbox.queues.js';
 import * as repo from './inbox.repository.js';
 import { CONVERSATION_OFFER, type ConversationOfferPort } from './ports/conversation-offer.port.js';
+import { InboxProfileService } from './profile.service.js';
 import { metaSignatureMatches } from './signature.js';
 import {
   parseMetaWebhook,
@@ -65,7 +66,11 @@ export class InboxWebhookService {
     return this.cachedLogger;
   }
 
-  constructor(@Inject(CONVERSATION_OFFER) private readonly offer: ConversationOfferPort) {}
+  constructor(
+    @Inject(CONVERSATION_OFFER) private readonly offer: ConversationOfferPort,
+    // M44a (D-761): a sender's name and photo, fetched by a job after the commit.
+    private readonly profiles: InboxProfileService,
+  ) {}
 
   /**
    * Graph API Webhooks › Getting started: Meta sends `hub.mode=subscribe`, the verify token
@@ -201,6 +206,16 @@ export class InboxWebhookService {
       event.userId,
       event.profileName,
     );
+    if (!event.echo) {
+      if (event.channel === 'whatsapp') {
+        // WhatsApp names the person in the webhook itself; a changed name follows (D-761).
+        if (!identity.created && event.profileName !== null) {
+          await this.profiles.applyWhatsAppName(tx, orgId, identity.id, event.profileName);
+        }
+      } else {
+        await this.profiles.queueIfDue(tx, orgId, identity.id, identity.contactId, new Date());
+      }
+    }
     const conversation = await repo.ensureConversation(tx, orgId, {
       channelId,
       contactId: identity.contactId,
@@ -244,6 +259,7 @@ export class InboxWebhookService {
         channel: event.channel,
         assignedTo,
         at: event.occurredAt.toISOString(),
+        direction: event.echo ? 'outbound' : 'inbound',
       },
       { orgId },
     );

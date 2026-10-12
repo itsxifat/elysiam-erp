@@ -14,6 +14,10 @@ import type { QueueDefinition } from '../../platform/jobs/queues.js';
  *   conversation (`conversationId`) or every waiting one (`null`); expire is one offer's
  *   deadline, starting once it has passed; the sweep runs every minute in every brand, lapsing
  *   what ran out and offering what waits. Every handler is idempotent. Nothing calls Meta.
+ * - `inbox.fetch_profile` (M44a, D-761): ask Meta's User Profile API for one Messenger or
+ *   Instagram sender's name and photo. Keyed by the identity, so a burst of messages asks once;
+ *   the handler checks the answer is still due. `inbox.profile_sweep` runs every six hours in
+ *   every brand and queues the people still writing whose photo may have expired.
  */
 export const INBOX_QUEUES = {
   processWebhook: {
@@ -47,6 +51,21 @@ export const INBOX_QUEUES = {
     retryLimit: 3,
     retryDelaySeconds: 2,
     expireInSeconds: 120,
+  },
+  fetchProfile: {
+    name: 'inbox.fetch_profile',
+    scope: 'org',
+    policy: 'exclusive',
+    retryLimit: 3,
+    retryDelaySeconds: 60,
+    expireInSeconds: 120,
+  },
+  profileSweep: {
+    name: 'inbox.profile_sweep',
+    scope: 'global',
+    cron: '17 */6 * * *',
+    retryLimit: 0,
+    expireInSeconds: 300,
   },
   offerSweep: {
     name: 'inbox.offer_sweep',

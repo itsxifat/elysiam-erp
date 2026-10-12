@@ -581,6 +581,14 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/inbox/channels',
   'PUT /v1/inbox/channels/:kind',
   'PUT /v1/inbox/meta-app',
+  // M44a: unread counts for the tab's title, and the saved replies (`read`/`create`/`update`/
+  // `delete SavedReply`).
+  'GET /v1/inbox/unread',
+  'GET /v1/inbox/saved-replies',
+  'POST /v1/inbox/saved-replies',
+  'PUT /v1/inbox/saved-replies/:id',
+  'DELETE /v1/inbox/saved-replies/:id',
+  'POST /v1/inbox/saved-replies/:id/use',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

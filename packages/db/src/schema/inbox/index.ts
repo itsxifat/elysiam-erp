@@ -137,6 +137,16 @@ export const inboxContacts = inbox.table(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    /**
+     * The person's photo as Meta's User Profile API gave it (M44a, D-761): an `https` URL on
+     * Meta's CDN that expires within days, so it is asked again now and then. Null when Meta gave
+     * none (WhatsApp never does).
+     */
+    avatarUrl: text('avatar_url'),
+    /** Instagram's username, shown as `@handle` beside the name (D-761). */
+    handle: text('handle'),
+    /** When Meta was last asked for the profile, answered or not (D-761). */
+    profileFetchedAt: timestamp('profile_fetched_at', { withTimezone: true, mode: 'date' }),
     ...timestamps,
   },
   (table) => [
@@ -161,6 +171,11 @@ export const inboxContacts = inbox.table(
     check('contacts_area', sql`char_length(${table.area}) <= 160`),
     check('contacts_address_line', sql`char_length(${table.addressLine}) <= 500`),
     check('contacts_tags', sql`cardinality(${table.tags}) <= 20`),
+    check(
+      'contacts_avatar_url',
+      sql`${table.avatarUrl} is null or (char_length(${table.avatarUrl}) <= 2048 and ${table.avatarUrl} like 'https://%')`,
+    ),
+    check('contacts_handle', sql`char_length(${table.handle}) <= 64`),
   ],
 );
 
@@ -478,5 +493,43 @@ export const inboxWebhookEvents = inbox.table(
       sql`${table.object} in ('page', 'instagram', 'whatsapp_business_account')`,
     ),
     check('webhook_events_sha', sql`${table.bodySha256} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
+/**
+ * Saved replies (M44a, D-763): the brand's shared library of answers an agent drops into the
+ * composer by typing `/` and the shortcut. The body is the brand's own words in any language
+ * (Bangla included) and may name `{name}`, `{order_number}`, `{total}` and `{phone}`, which the
+ * console fills from the conversation. `usage_count` orders the picker and the quick-reply row.
+ */
+export const inboxSavedReplies = inbox.table(
+  'saved_replies',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    title: text('title').notNull(),
+    /** Lower case, typed after `/`; unique per brand. */
+    shortcut: text('shortcut').notNull(),
+    body: text('body').notNull(),
+    category: text('category'),
+    usageCount: integer('usage_count').notNull().default(0),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true, mode: 'date' }),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    updatedBy: text('updated_by').notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    unique('saved_replies_org_id_id_key').on(table.orgId, table.id),
+    index('saved_replies_org_idx').on(table.orgId),
+    uniqueIndex('saved_replies_org_shortcut_idx').on(table.orgId, table.shortcut),
+    check('saved_replies_title', sql`char_length(${table.title}) between 1 and 80`),
+    check('saved_replies_shortcut', sql`${table.shortcut} ~ '^[a-z0-9][a-z0-9_-]{0,31}$'`),
+    check('saved_replies_body', sql`char_length(${table.body}) between 1 and 1000`),
+    check('saved_replies_category', sql`char_length(${table.category}) between 1 and 40`),
+    check('saved_replies_usage', sql`${table.usageCount} >= 0`),
   ],
 );

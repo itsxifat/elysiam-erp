@@ -356,6 +356,23 @@ export const inboxMessageReceivedPayload = z
     channel: z.enum(['messenger', 'instagram', 'whatsapp']),
     assignedTo: z.string().nullable(),
     at: z.string(),
+    /**
+     * M44a (D-764): `inbound` from the customer, `outbound` for the brand's own message echoed
+     * from Meta's inbox, so the console rings only for the customer. Optional: rows already in
+     * the outbox when this shipped have none.
+     */
+    direction: z.enum(['inbound', 'outbound']).optional(),
+  })
+  .strict();
+
+/**
+ * M44a (D-761): a contact's name or photo was refreshed from Meta. Ids only; the inbox refetches
+ * the conversations it shows.
+ */
+export const inboxContactUpdatedPayload = z
+  .object({
+    contactId: uuid,
+    conversationIds: z.array(uuid).max(10),
   })
   .strict();
 
@@ -563,6 +580,10 @@ export const EVENTS = {
           .map(userRoom),
     },
   ),
+  // M44a (D-761): a contact's name or photo came back from Meta.
+  'inbox.contact_updated': defineEvent('inbox.contact_updated', inboxContactUpdatedPayload, {
+    roles: ['sales', 'org_admin'],
+  }),
   'inbox.owner_overridden': defineEvent('inbox.owner_overridden', inboxOwnerOverriddenPayload, {
     extra: (payload) => [userRoom(payload.ownerUserId)],
   }),

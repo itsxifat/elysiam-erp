@@ -396,6 +396,9 @@ export interface ConversationRow extends Record<string, unknown> {
   readonly unread_count: number;
   readonly display_name: string | null;
   readonly profile_name: string | null;
+  /** M44a (D-761): Meta's photo and Instagram's username. */
+  readonly avatar_url: string | null;
+  readonly handle: string | null;
   readonly stage: ContactStage;
   readonly phone_e164: string | null;
   readonly customer_id: string | null;
@@ -406,7 +409,8 @@ const CONVERSATION_SELECT = sql`
   select v.id, v.channel_id, ch.kind as channel_kind, v.contact_id, v.identity_id,
          i.external_user_id, v.assigned_to, v.assigned_at, v.status, v.last_message_at,
          v.last_inbound_at, v.last_preview, v.last_direction, v.unread_count,
-         c.display_name, i.profile_name, c.stage, c.phone_e164, c.customer_id, v.created_at
+         c.display_name, i.profile_name, c.avatar_url, c.handle, c.stage, c.phone_e164,
+         c.customer_id, v.created_at
   from inbox.conversations v
   join inbox.channels ch on ch.org_id = v.org_id and ch.id = v.channel_id
   join inbox.contacts c on c.org_id = v.org_id and c.id = v.contact_id
@@ -470,6 +474,27 @@ export async function listConversations(
     limit ${filter.limit}
   `);
   return [...rows];
+}
+
+/**
+ * Unread messages for the tab's title and the desk's ears (M44a, D-764): in the caller's own
+ * open conversations, and in open ones nobody has.
+ */
+export async function unreadCounts(
+  tx: Tx,
+  orgId: string,
+  userId: string,
+): Promise<{ readonly mine: number; readonly unassigned: number }> {
+  const rows = await tx.execute<{
+    mine: number | string | null;
+    unassigned: number | string | null;
+  }>(sql`
+    select coalesce(sum(unread_count) filter (where assigned_to = ${userId}), 0) as mine,
+           coalesce(sum(unread_count) filter (where assigned_to is null), 0) as unassigned
+    from inbox.conversations
+    where org_id = ${orgId} and status = 'open' and unread_count > 0
+  `);
+  return { mine: Number(rows[0]?.mine ?? 0), unassigned: Number(rows[0]?.unassigned ?? 0) };
 }
 
 /** Take a conversation nobody has. Zero rows means someone else got there first. */
