@@ -5,6 +5,8 @@ import {
 } from '@elysium/contracts';
 
 import { api, request } from '../../api.js';
+// M45: a kept voice message or picture (`fileId`, `media`) and a call entry (`call`).
+import type { MediaAttachment } from './voice/api.js';
 
 /**
  * The inbox's endpoints (M42), typed to what the server returns. A write that may land on
@@ -45,7 +47,7 @@ export interface ConversationItem {
   readonly window: WindowView;
 }
 
-export interface AttachmentView {
+export interface AttachmentView extends MediaAttachment {
   readonly type: string;
   readonly url?: string;
   readonly mediaId?: string;

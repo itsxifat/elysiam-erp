@@ -19,7 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { AlertTriangle, ChevronDown, MessagesSquare, Paperclip, Send } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility, useSession } from '../../auth/session.js';
@@ -49,6 +49,9 @@ import {
 import { useInboxT } from './messages.js';
 import { useOwnerGuard } from './owner-guard.js';
 import { ContactPanel } from './panel.js';
+// M45: voice messages, kept pictures and calls in the thread, and the composer's recorder.
+import { InboxAttachment } from './voice/inbox-attachment.js';
+import { ComposerVoice } from './voice/voice-recorder.js';
 
 /**
  * The unified inbox (M42, D-730 to D-749): every channel in one list on the left, the thread in
@@ -64,6 +67,8 @@ const INBOX_EVENTS = [
   'inbox.message_status',
   'inbox.conversation_changed',
   'inbox.owner_overridden',
+  'inbox.media_ready',
+  'inbox.call_changed',
 ] as const;
 
 export function InboxPage() {
@@ -602,7 +607,13 @@ function Thread({ view, me }: { readonly view: ThreadView; readonly me: string |
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <ol aria-label={t('inbox.thread.label')} className="space-y-2">
           {view.messages.map((message) => (
-            <Bubble key={message.id} message={message} />
+            <Bubble
+              key={message.id}
+              message={message}
+              renderAttachment={(attachment) => (
+                <InboxAttachment attachment={attachment} guard={guard} onChanged={refresh} />
+              )}
+            />
           ))}
         </ol>
         <div ref={endRef} />
@@ -646,6 +657,13 @@ function Thread({ view, me }: { readonly view: ThreadView; readonly me: string |
               placeholder={t('inbox.thread.composePlaceholder')}
               aria-describedby={`${ids}-hint`}
               className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
+            />
+            <ComposerVoice
+              conversationId={conversation.id}
+              guard={guard}
+              disabled={!window.open || send.isPending}
+              onSent={refresh}
+              onError={setError}
             />
             <Button type="submit" disabled={!window.open || send.isPending || draft.trim() === ''}>
               <Send aria-hidden className="size-4" />
@@ -694,7 +712,14 @@ function HandOverMenu({ onPick }: { readonly onPick: (userId: string) => void })
   );
 }
 
-function Bubble({ message }: { readonly message: MessageView }) {
+function Bubble({
+  message,
+  renderAttachment,
+}: {
+  readonly message: MessageView;
+  /** M45: a voice message, a kept picture or a call; null keeps M42's attachment line. */
+  readonly renderAttachment?: (attachment: MessageView['attachments'][number]) => ReactNode;
+}) {
   const t = useInboxT();
   const inbound = message.direction === 'inbound';
   const failure = message.error === null ? null : failureKey(message.error.code);
@@ -709,22 +734,32 @@ function Bubble({ message }: { readonly message: MessageView }) {
         {message.text === null ? null : (
           <p className="break-words whitespace-pre-wrap">{message.text}</p>
         )}
-        {message.attachments.map((attachment, index) => (
-          <p key={index} className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Paperclip aria-hidden className="size-3.5" />
-            {t('inbox.thread.attachment', { type: attachment.type })}
-            {attachment.url === undefined ? null : (
-              <a
-                href={attachment.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                {t('inbox.thread.openAttachment')}
-              </a>
-            )}
-          </p>
-        ))}
+        {message.attachments.map((attachment, index) => {
+          const custom = renderAttachment?.(attachment) ?? null;
+          if (custom !== null) {
+            return (
+              <div key={index} className="mt-1">
+                {custom}
+              </div>
+            );
+          }
+          return (
+            <p key={index} className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Paperclip aria-hidden className="size-3.5" />
+              {t('inbox.thread.attachment', { type: attachment.type })}
+              {attachment.url === undefined ? null : (
+                <a
+                  href={attachment.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  {t('inbox.thread.openAttachment')}
+                </a>
+              )}
+            </p>
+          );
+        })}
         <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           <DateTime value={message.at} compact />
           {inbound ? null : (
