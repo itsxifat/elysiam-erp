@@ -1076,6 +1076,31 @@
         "required": ["code"],
         "additionalProperties": false
       },
+      "SavedReply": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "shortcut": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": ["title", "shortcut", "body"],
+        "additionalProperties": false
+      },
       "SetRoles": {
         "type": "object",
         "properties": {
@@ -22614,8 +22639,8 @@
     },
     "/v1/inbox/saved-replies": {
       "get": {
-        "operationId": "getV1InboxSavedReplies",
-        "summary": "GET /v1/inbox/saved-replies",
+        "operationId": "listSavedReplies",
+        "summary": "The brand's saved replies, the most used first.",
         "tags": ["inbox"],
         "x-ability": "read:SavedReply",
         "responses": {
@@ -22680,8 +22705,8 @@
         }
       },
       "post": {
-        "operationId": "postV1InboxSavedReplies",
-        "summary": "POST /v1/inbox/saved-replies",
+        "operationId": "createSavedReply",
+        "summary": "Add a saved reply: a title, a shortcut typed after /, a body in any language.",
         "tags": ["inbox"],
         "x-ability": "create:SavedReply",
         "parameters": [
@@ -22689,6 +22714,17 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedReply"
+              }
+            }
+          },
+          "x-body-type": "SavedReplyInput"
+        },
         "responses": {
           "201": {
             "description": "Success.",
@@ -22763,8 +22799,8 @@
     },
     "/v1/inbox/saved-replies/{id}": {
       "delete": {
-        "operationId": "deleteV1InboxSavedRepliesById",
-        "summary": "DELETE /v1/inbox/saved-replies/:id",
+        "operationId": "deleteSavedReply",
+        "summary": "Delete a saved reply.",
         "tags": ["inbox"],
         "x-ability": "delete:SavedReply",
         "parameters": [
@@ -22862,8 +22898,8 @@
         }
       },
       "put": {
-        "operationId": "putV1InboxSavedRepliesById",
-        "summary": "PUT /v1/inbox/saved-replies/:id",
+        "operationId": "updateSavedReply",
+        "summary": "Change a saved reply.",
         "tags": ["inbox"],
         "x-ability": "update:SavedReply",
         "parameters": [
@@ -22879,6 +22915,17 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedReply"
+              }
+            }
+          },
+          "x-body-type": "SavedReplyInput"
+        },
         "responses": {
           "200": {
             "description": "Success.",
@@ -22963,8 +23010,8 @@
     },
     "/v1/inbox/saved-replies/{id}/use": {
       "post": {
-        "operationId": "postV1InboxSavedRepliesByIdUse",
-        "summary": "POST /v1/inbox/saved-replies/:id/use",
+        "operationId": "countSavedReplyUse",
+        "summary": "Count one use of a saved reply (inserted into a reply).",
         "tags": ["inbox"],
         "x-ability": "read:SavedReply",
         "parameters": [
@@ -23132,8 +23179,8 @@
     },
     "/v1/inbox/unread": {
       "get": {
-        "operationId": "getV1InboxUnread",
-        "summary": "GET /v1/inbox/unread",
+        "operationId": "inboxUnreadCounts",
+        "summary": "Unread messages in the caller's open conversations and in open ones nobody has.",
         "tags": ["inbox"],
         "x-ability": "read:Conversation",
         "responses": {
