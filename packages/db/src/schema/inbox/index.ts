@@ -17,6 +17,7 @@ import {
 
 import { products, skus } from '../catalog/index.js';
 import { primaryId, timestamps } from '../columns.js';
+import { fileObjects } from '../files/index.js';
 import { users } from '../iam/index.js';
 import { customers } from '../orders/index.js';
 import { organizations } from '../org/index.js';
@@ -533,5 +534,163 @@ export const inboxSavedReplies = inbox.table(
     check('saved_replies_body', sql`char_length(${table.body}) between 1 and 1000`),
     check('saved_replies_category', sql`char_length(${table.category}) between 1 and 40`),
     check('saved_replies_usage', sql`${table.usageCount} >= 0`),
+  ],
+);
+
+/**
+ * Media the inbox keeps (M45, D-780 to D-783): one row per kept attachment of a message, the
+ * voice messages and pictures a customer sent (downloaded from Meta by a job, before Meta's link
+ * expires) and the voice messages staff recorded. `position` is the attachment's place in the
+ * message's `attachments`. The file is a private `inbox-media` object of the files module; a row
+ * whose file was deleted under the retention rule keeps its place as `expired`, its file cleared.
+ */
+export const inboxMedia = inbox.table(
+  'media',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    messageId: uuid('message_id').notNull(),
+    conversationId: uuid('conversation_id').notNull(),
+    position: integer('position').notNull(),
+    kind: text('kind').notNull(),
+    direction: text('direction').notNull(),
+    status: text('status').notNull().default('pending'),
+    fileId: uuid('file_id'),
+    mime: text('mime'),
+    sizeBytes: integer('size_bytes'),
+    /** A recording's length as the browser measured it (outbound only). */
+    durationMs: integer('duration_ms'),
+    attempts: integer('attempts').notNull().default(0),
+    /** Why it could not be kept: `too_large`, `unsupported`, `meta_refused`, `gone`. */
+    errorCode: text('error_code'),
+    /** When the message was said, which the retention rule counts from. */
+    occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    unique('media_org_id_id_key').on(table.orgId, table.id),
+    index('media_org_idx').on(table.orgId),
+    uniqueIndex('media_org_message_position_idx').on(table.orgId, table.messageId, table.position),
+    uniqueIndex('media_org_file_idx').on(table.orgId, table.fileId),
+    index('media_org_conversation_idx').on(table.orgId, table.conversationId),
+    index('media_org_occurred_idx').on(table.orgId, table.occurredAt),
+    foreignKey({
+      name: 'media_org_id_message_id_fk',
+      columns: [table.orgId, table.messageId],
+      foreignColumns: [inboxMessages.orgId, inboxMessages.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'media_org_id_conversation_id_fk',
+      columns: [table.orgId, table.conversationId],
+      foreignColumns: [inboxConversations.orgId, inboxConversations.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'media_org_id_file_id_fk',
+      columns: [table.orgId, table.fileId],
+      foreignColumns: [fileObjects.orgId, fileObjects.id],
+    }).onDelete('restrict'),
+    check('media_kind', sql`${table.kind} in ('audio', 'image')`),
+    check('media_direction', sql`${table.direction} in ('inbound', 'outbound')`),
+    check('media_status', sql`${table.status} in ('pending', 'stored', 'failed', 'expired')`),
+    check('media_position', sql`${table.position} between 0 and 9`),
+    check(
+      'media_stored_has_file',
+      sql`(${table.status} = 'stored') = (${table.fileId} is not null)`,
+    ),
+    check(
+      'media_duration',
+      sql`${table.durationMs} is null or ${table.durationMs} between 0 and 600000`,
+    ),
+    check('media_error_code', sql`char_length(${table.errorCode}) <= 40`),
+  ],
+);
+
+/**
+ * A call through Meta (M45, D-784 to D-788): WhatsApp's Calling API or Messenger's, announced by
+ * a `connect` webhook and ended by `terminate`. Unique per brand by Meta's call id, so a webhook
+ * delivered twice opens one call. `offer_sdp` is WhatsApp's SDP offer, kept only while the call
+ * can still be answered (it holds Meta's relay addresses, nothing about the caller) and cleared
+ * once the call is over. `rang_user_ids` are the people whose screens rang (D-785); any of them
+ * may answer. A missed call leaves `callback_needed` until someone deals with it.
+ */
+export const inboxCalls = inbox.table(
+  'calls',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    conversationId: uuid('conversation_id').notNull(),
+    channelId: uuid('channel_id').notNull(),
+    providerCallId: text('provider_call_id').notNull(),
+    direction: text('direction').notNull().default('inbound'),
+    status: text('status').notNull().default('ringing'),
+    offerSdp: text('offer_sdp'),
+    rangUserIds: text('rang_user_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** Who picked it up (claimed it, then connected). `iam.users.id`. */
+    answeredBy: text('answered_by').references(() => users.id, { onDelete: 'restrict' }),
+    declinedBy: text('declined_by').references(() => users.id, { onDelete: 'restrict' }),
+    /** When Meta announced it (its `timestamp`, else when we heard). */
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
+    claimedAt: timestamp('claimed_at', { withTimezone: true, mode: 'date' }),
+    connectedAt: timestamp('connected_at', { withTimezone: true, mode: 'date' }),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
+    /** Meta's own count, from when the business connected. */
+    durationSeconds: integer('duration_seconds'),
+    /** Meta's error code when the call failed (`meta:138021`), or ours (`timeout`). */
+    endReason: text('end_reason'),
+    callbackNeeded: boolean('callback_needed').notNull().default(false),
+    callbackDoneBy: text('callback_done_by').references(() => users.id, { onDelete: 'restrict' }),
+    callbackDoneAt: timestamp('callback_done_at', { withTimezone: true, mode: 'date' }),
+    /** The thread's entry for this call (a message whose attachment names the call). */
+    messageId: uuid('message_id'),
+    ...timestamps,
+  },
+  (table) => [
+    unique('calls_org_id_id_key').on(table.orgId, table.id),
+    index('calls_org_idx').on(table.orgId),
+    uniqueIndex('calls_org_provider_idx').on(table.orgId, table.providerCallId),
+    index('calls_org_conversation_idx').on(table.orgId, table.conversationId, table.startedAt),
+    index('calls_org_live_idx')
+      .on(table.orgId, table.status)
+      .where(sql`${table.status} in ('ringing', 'answering', 'connected')`),
+    foreignKey({
+      name: 'calls_org_id_conversation_id_fk',
+      columns: [table.orgId, table.conversationId],
+      foreignColumns: [inboxConversations.orgId, inboxConversations.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'calls_org_id_channel_id_fk',
+      columns: [table.orgId, table.channelId],
+      foreignColumns: [inboxChannels.orgId, inboxChannels.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'calls_org_id_message_id_fk',
+      columns: [table.orgId, table.messageId],
+      foreignColumns: [inboxMessages.orgId, inboxMessages.id],
+    }).onDelete('restrict'),
+    check('calls_direction', sql`${table.direction} in ('inbound', 'outbound')`),
+    check(
+      'calls_status',
+      sql`${table.status} in ('ringing', 'answering', 'connected', 'missed', 'declined', 'completed', 'failed')`,
+    ),
+    check('calls_provider_id', sql`char_length(${table.providerCallId}) between 1 and 256`),
+    check('calls_offer_sdp', sql`char_length(${table.offerSdp}) <= 16000`),
+    check('calls_rang', sql`cardinality(${table.rangUserIds}) <= 100`),
+    check('calls_duration', sql`${table.durationSeconds} is null or ${table.durationSeconds} >= 0`),
+    check('calls_end_reason', sql`char_length(${table.endReason}) <= 40`),
+    check(
+      'calls_answering_has_person',
+      sql`${table.status} not in ('answering', 'connected') or ${table.answeredBy} is not null`,
+    ),
+    check(
+      'calls_callback_done_whole',
+      sql`(${table.callbackDoneBy} is null) = (${table.callbackDoneAt} is null)`,
+    ),
   ],
 );

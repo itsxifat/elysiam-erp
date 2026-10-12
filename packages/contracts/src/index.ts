@@ -68,5 +68,7 @@ export * from './duplicates.js';
 export * from './inbox.js';
 // M44a: the inbox's saved replies.
 export * from './inbox-saved-replies.js';
+// M45: voice messages and calls in the inbox.
+export * from './inbox-voice.js';
 // M41: the order workflow: ownership, presence, desk profiles, calls and auto-assign.
 export * from './workflow.js';

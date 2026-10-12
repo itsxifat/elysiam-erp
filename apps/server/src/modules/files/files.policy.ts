@@ -76,6 +76,13 @@ export const FILE_PURPOSES = [
    * video, and a video is all it takes.
    */
   'packing-video',
+  /**
+   * The inbox's media (M45, D-780, D-783): a voice message or picture a customer sent through
+   * Messenger, Instagram or WhatsApp, downloaded before Meta's link expires, and a voice message
+   * recorded in the inbox. Private without exception, read through `Conversation` (the people who
+   * answer the inbox), and kept with the conversation for a year.
+   */
+  'inbox-media',
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -165,6 +172,26 @@ export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
     mayBePublic: false,
     createRequires: { action: 'update', subject: 'Order' },
     allowedMimes: ['video/webm', 'video/mp4'],
+  },
+  /*
+   * Uploaded by whoever answers the inbox (`update Conversation`: sales and org_admin), for a
+   * voice message they recorded; produced by the server for what a customer sent. Read through the
+   * inbox's own media route, which finds the message first (D-780).
+   */
+  'inbox-media': {
+    readRequires: { action: 'read', subject: 'Conversation' },
+    mayBePublic: false,
+    createRequires: { action: 'update', subject: 'Conversation' },
+    allowedMimes: [
+      'audio/webm',
+      'audio/ogg',
+      'audio/mp4',
+      'audio/mpeg',
+      'audio/aac',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ],
   },
 };
 

@@ -13,6 +13,7 @@ import {
   assertWithinLimit,
   buildStorageKey,
   mimeRuleFor,
+  sniffMatches,
   sniffMime,
   variantKey,
   type StorageDriver,
@@ -23,6 +24,7 @@ import { isProcessableImage, processImage, ImageRejected } from './image.js';
 import { PUBLIC_MEDIA_PURPOSES, PURPOSE_RULES, type FilePurpose } from './files.policy.js';
 import type { UploadTicketInput } from './files.schemas.js';
 import type { Tx } from '@elysium/db';
+import { sql } from 'drizzle-orm';
 
 import {
   findById,
@@ -247,7 +249,7 @@ export class FilesService {
       if (
         purposeRule.allowedMimes !== undefined
           ? !purposeRule.allowedMimes.includes(rule.mime)
-          : rule.isVideo === true
+          : rule.isVideo === true || rule.isAudio === true
       ) {
         throw new BadRequestException(`A ${input.purpose} file cannot be ${rule.mime}.`);
       }
@@ -313,8 +315,11 @@ export class FilesService {
    */
   async storeProduced(input: {
     readonly orgId: string;
-    /** Whose file it is: the person the recording is filed under. */
-    readonly ownerUserId: string;
+    /**
+     * Whose file it is: the person the recording is filed under, or null for bytes no person
+     * made (M45: a voice message a customer sent, downloaded from Meta).
+     */
+    readonly ownerUserId: string | null;
     readonly purpose: FilePurpose;
     readonly mime: string;
     readonly originalName: string;
@@ -326,12 +331,12 @@ export class FilesService {
     if (
       purposeRule.allowedMimes !== undefined
         ? !purposeRule.allowedMimes.includes(rule.mime)
-        : rule.isVideo === true
+        : rule.isVideo === true || rule.isAudio === true
     ) {
       throw new BadRequestException(`A ${input.purpose} file cannot be ${rule.mime}.`);
     }
-    const sniffed = sniffMime(input.bytes);
-    if (sniffed !== rule.mime) {
+    // M45 (D-780): an audio rule takes its container's video sniff (`sniffMatches`).
+    if (!sniffMatches(rule.mime, sniffMime(input.bytes))) {
       throw new BadRequestException(`The produced bytes are not ${rule.mime}.`);
     }
 
@@ -342,7 +347,7 @@ export class FilesService {
       fileId,
       extension: rule.extension,
     });
-    const actor = { orgId: input.orgId, userId: input.ownerUserId };
+    const actor = { orgId: input.orgId, userId: input.ownerUserId ?? 'system:files' };
     await insertPending(actor, {
       id: fileId,
       storageKey,
@@ -477,7 +482,7 @@ export class FilesService {
     if (sniffed === null && rule.mime !== 'text/csv') {
       throw new BadRequestException('The uploaded bytes are not a file of the declared type.');
     }
-    if (sniffed !== null && sniffed !== rule.mime) {
+    if (sniffed !== null && !sniffMatches(rule.mime, sniffed)) {
       throw new BadRequestException(
         `The uploaded bytes are ${sniffed}, not the ${rule.mime} the ticket was issued for.`,
       );
@@ -488,7 +493,8 @@ export class FilesService {
       stored: {
         sizeBytes: bytes.byteLength,
         sha256: createHash('sha256').update(bytes).digest('hex'),
-        mime: sniffed ?? rule.mime,
+        // The rule's type: equal to the sniff, or (M45) the audio type its container sniffs as.
+        mime: rule.mime,
       },
     };
   }
@@ -642,6 +648,32 @@ export class FilesService {
       // missing ability back at them turns a denial into a way of mapping the
       // matrix from outside.
       throw new ForbiddenException(`You cannot read ${row.purpose} files in this organization.`);
+    }
+  }
+
+  /**
+   * The bytes of a stored, private file of a purpose, for a module that has checked the row it
+   * belongs to and serves or sends them itself (M45, D-780): the inbox plays a voice message to
+   * staff through its own route, and its send job hands a recording to ffmpeg. Null when there is
+   * no such file in this brand, so a caller never learns about another purpose's file. Reads
+   * storage, so it runs with no transaction open (invariant 6).
+   */
+  async storedBytes(
+    orgId: string,
+    fileId: string,
+    purpose: FilePurpose,
+  ): Promise<{ readonly bytes: Uint8Array; readonly mime: string } | null> {
+    const row = await findById({ orgId, userId: 'system:files' }, fileId, sql`true`);
+    if (row?.purpose !== purpose || row.status !== 'stored' || row.visibility !== 'private') {
+      return null;
+    }
+    try {
+      const rule = mimeRuleFor(row.mime);
+      const bytes = await this.driver.get(row.storageKey, { maxBytes: rule.maxBytes });
+      return { bytes, mime: row.mime };
+    } catch (error) {
+      if (error instanceof StorageError && error.failure === 'not-found') return null;
+      return mapStorageError(error);
     }
   }
 

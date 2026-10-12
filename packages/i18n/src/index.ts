@@ -40,6 +40,7 @@ import { en as accountEn, type AccountKey } from './locales/sections/account.en.
 import { en as inboxEn, type InboxKey } from './locales/sections/inbox.en.js';
 import { en as workflowEn, type WorkflowKey } from './locales/sections/workflow.en.js';
 import { en as aliveEn, type AliveKey } from './locales/sections/alive.en.js';
+import { en as voiceEn, type VoiceKey } from './locales/sections/voice.en.js';
 
 export { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './locale.js';
 
@@ -79,12 +80,14 @@ export type MessageKey =
   | AccountKey
   | InboxKey
   | WorkflowKey
-  | AliveKey;
+  | AliveKey
+  | VoiceKey;
 export type {
   AccountKey,
   AliveKey,
   InboxKey,
   WorkflowKey,
+  VoiceKey,
   CatalogPricingKey,
   CoreMessageKey,
   ManageKey,
@@ -120,6 +123,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...inboxEn,
     ...workflowEn,
     ...aliveEn,
+    ...voiceEn,
   },
 };
 

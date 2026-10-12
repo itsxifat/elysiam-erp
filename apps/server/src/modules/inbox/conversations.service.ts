@@ -22,6 +22,7 @@ import * as repo from './inbox.repository.js';
 import { INBOX_ROLES } from './inbox-roles.js';
 import { ConversationOffersService } from './conversation-offers.service.js';
 import { ownershipFor, type Ownership } from './ownership.js';
+import { attachmentsForThread } from './thread-media.js';
 import { previewOf } from './webhook-payload.js';
 
 export { INBOX_ROLES } from './inbox-roles.js';
@@ -151,13 +152,17 @@ export class ConversationsService {
         const names = await this.names(tx, context.orgId);
         const hasMore = messages.length > query.limit;
         const shown = hasMore ? messages.slice(messages.length - query.limit) : messages;
+        // M45: kept voice messages and pictures, and calls as they stand now.
+        const enriched = await attachmentsForThread(tx, context.orgId, shown, names);
         return {
           conversation: this.listItem(row, names, new Date()),
           messages: shown.map((message) => ({
             id: message.id,
             direction: message.direction,
             text: message.body,
-            attachments: Array.isArray(message.attachments) ? message.attachments : [],
+            attachments:
+              enriched.get(message.id) ??
+              (Array.isArray(message.attachments) ? message.attachments : []),
             status: message.status,
             sentBy: this.person(names, message.sent_by),
             at: new Date(message.occurred_at).toISOString(),

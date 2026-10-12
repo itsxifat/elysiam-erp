@@ -8,7 +8,10 @@ import { maskPhonesInText } from '@elysium/domain';
 import { emit } from '../../platform/events/outbox.js';
 import { createLogger } from '../../platform/logging/logger.js';
 import { enqueue } from '../../platform/jobs/enqueue.js';
+import { parseCallWebhook } from './call-payload.js';
+import { InboxCallsService } from './calls.service.js';
 import { appSecretBinding, openSecret, verifyTokenBinding } from './inbox-secrets.js';
+import { isOwnVoiceEcho, queueInboundMedia } from './media.service.js';
 import { INBOX_QUEUES } from './inbox.queues.js';
 import * as repo from './inbox.repository.js';
 import { CONVERSATION_OFFER, type ConversationOfferPort } from './ports/conversation-offer.port.js';
@@ -36,6 +39,9 @@ export interface ProcessOutcome extends Record<string, number> {
   receipts: number;
   unknownChannel: number;
   skipped: number;
+  /** M45: calls opened or moved, and attachments queued for keeping. */
+  calls: number;
+  media: number;
 }
 
 function refused(): UnauthorizedException {
@@ -70,6 +76,8 @@ export class InboxWebhookService {
     @Inject(CONVERSATION_OFFER) private readonly offer: ConversationOfferPort,
     // M44a (D-761): a sender's name and photo, fetched by a job after the commit.
     private readonly profiles: InboxProfileService,
+    // M45 (D-784): Meta's call webhooks ring the console.
+    private readonly calls: InboxCallsService,
   ) {}
 
   /**
@@ -161,6 +169,8 @@ export class InboxWebhookService {
         receipts: 0,
         unknownChannel: 0,
         skipped: parsed.skipped,
+        calls: 0,
+        media: 0,
       };
 
       for (const event of parsed.events) {
@@ -176,6 +186,16 @@ export class InboxWebhookService {
         } else {
           outcome.receipts += await this.applyReceipt(tx, orgId, channel.id, event);
         }
+      }
+
+      // M45 (D-784): WhatsApp's `calls` field and Messenger's `entry[].calls`.
+      for (const call of parseCallWebhook(row.body).events) {
+        const channel = channels.get(call.channel);
+        if (channel === undefined || !channel.enabled || channel.external_id !== call.accountId) {
+          outcome.unknownChannel += 1;
+          continue;
+        }
+        outcome.calls += await this.calls.onWebhook(tx, orgId, channel.id, call);
       }
 
       await repo.markWebhookProcessed(tx, orgId, eventId, outcome);
@@ -223,7 +243,11 @@ export class InboxWebhookService {
       at: event.occurredAt,
     });
 
-    if (event.echo && (await this.isOwnReplyInFlight(tx, orgId, conversation.id, event.text))) {
+    if (
+      event.echo &&
+      ((await this.isOwnReplyInFlight(tx, orgId, conversation.id, event.text)) ||
+        (await isOwnVoiceEcho(tx, orgId, conversation.id, event)))
+    ) {
       // Our own reply, echoed back before the send job recorded Meta's id for it (D-745).
       outcome.duplicates += 1;
       return;
@@ -244,6 +268,13 @@ export class InboxWebhookService {
       outcome.duplicates += 1;
       return;
     }
+    // M45 (D-780): voice messages and pictures are kept before Meta's link expires.
+    outcome.media += await queueInboundMedia(tx, orgId, {
+      messageId,
+      conversationId: conversation.id,
+      attachments: event.attachments,
+      occurredAt: event.occurredAt,
+    });
 
     const touched = await repo.touchConversation(tx, orgId, conversation.id, {
       direction: event.echo ? 'outbound' : 'inbound',

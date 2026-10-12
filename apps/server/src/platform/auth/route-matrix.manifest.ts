@@ -589,6 +589,17 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'PUT /v1/inbox/saved-replies/:id',
   'DELETE /v1/inbox/saved-replies/:id',
   'POST /v1/inbox/saved-replies/:id/use',
+  // M45: voice messages and calls (`read`/`update Conversation`).
+  'GET /v1/inbox/media/:fileId',
+  'POST /v1/inbox/conversations/:id/voice',
+  'GET /v1/inbox/calls/live',
+  'GET /v1/inbox/calls/:id',
+  'POST /v1/inbox/calls/:id/claim',
+  'POST /v1/inbox/calls/:id/answer',
+  'POST /v1/inbox/calls/:id/release',
+  'POST /v1/inbox/calls/:id/decline',
+  'POST /v1/inbox/calls/:id/hang-up',
+  'POST /v1/inbox/calls/:id/callback-done',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

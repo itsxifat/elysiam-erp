@@ -59,6 +59,8 @@ const INBOX_EVENTS = [
   'inbox.conversation_changed',
   'inbox.owner_overridden',
   'inbox.contact_updated',
+  'inbox.media_ready',
+  'inbox.call_changed',
 ] as const;
 
 export function InboxPage() {

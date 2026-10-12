@@ -671,6 +671,15 @@ export const ERROR_CODES = [
   'INBOX_OFFER_GONE',
   /** M44a (D-763): another saved reply of this brand already has that shortcut. */
   'INBOX_SHORTCUT_TAKEN',
+  // M45: voice messages and calls in the inbox (D-780 to D-788)
+  /** The recording is not a stored voice message of the caller's (type, size, or someone else's). */
+  'INBOX_MEDIA_INVALID',
+  /** The call is over, or was never one of this brand's. */
+  'INBOX_CALL_GONE',
+  /** Someone else picked the call up first; the problem names who. */
+  'INBOX_CALL_TAKEN',
+  /** Meta refused the call action (answer, decline, hang up); the problem says what it said. */
+  'INBOX_CALL_FAILED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

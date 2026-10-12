@@ -25,6 +25,7 @@ export {
   MAX_UPLOAD_BYTES,
   assertWithinLimit,
   mimeRuleFor,
+  sniffMatches,
   sniffMime,
   type MimeRule,
 } from './limits.js';

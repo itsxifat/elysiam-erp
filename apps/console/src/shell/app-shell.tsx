@@ -58,6 +58,10 @@ const ScanListener = lazy(() =>
 const WorkDock = lazy(() =>
   import('./work-dock.js').then((module) => ({ default: module.WorkDock })),
 );
+// M45: a call ringing for you, on every screen, after the first paint (D-785).
+const CallBar = lazy(() =>
+  import('../routes/inbox/calls/call-bar.js').then((module) => ({ default: module.CallBar })),
+);
 
 function readRail(): boolean {
   return readStored(STORAGE_KEYS.sidebar) === 'rail';
@@ -161,6 +165,12 @@ export function AppShell() {
       {session.context === null ? null : (
         <Suspense fallback={null}>
           <WorkDock />
+        </Suspense>
+      )}
+
+      {session.context === null ? null : (
+        <Suspense fallback={null}>
+          <CallBar />
         </Suspense>
       )}
 

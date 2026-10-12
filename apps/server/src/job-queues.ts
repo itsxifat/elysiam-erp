@@ -12,6 +12,7 @@ import { MARKETPLACE_QUEUE_DEFINITIONS } from './modules/marketplace/marketplace
 import { FILES_QUEUE_DEFINITIONS } from './modules/files/files.queues.js';
 import { PACKING_QUEUE_DEFINITIONS } from './modules/packing/packing.queues.js';
 import { INBOX_QUEUE_DEFINITIONS } from './modules/inbox/inbox.queues.js';
+import { VOICE_CALLS_QUEUE_DEFINITIONS } from './modules/inbox/voice-calls.queues.js';
 import { OFFER_QUEUE_DEFINITIONS } from './modules/orders/offers.queues.js';
 
 /**
@@ -43,6 +44,8 @@ export const ALL_QUEUES: readonly QueueDefinition[] = [
   ...PACKING_QUEUE_DEFINITIONS,
   // M42: threading Meta's webhooks, and sending the inbox's replies.
   ...INBOX_QUEUE_DEFINITIONS,
+  // M45: keeping customers' voice messages and pictures, sending recorded ones, call deadlines.
+  ...VOICE_CALLS_QUEUE_DEFINITIONS,
   // M41: auto-assign's offers, their deadlines and the minute sweep.
   ...OFFER_QUEUE_DEFINITIONS,
 ];

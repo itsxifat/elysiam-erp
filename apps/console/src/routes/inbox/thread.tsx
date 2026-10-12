@@ -21,7 +21,15 @@ import {
   Paperclip,
   UserRound,
 } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import '../../alive/alive.css';
 import { prefersReducedMotion, useArrivals, useNow } from '../../alive/motion.js';
@@ -49,6 +57,9 @@ import { useOwnerGuard } from './owner-guard.js';
 import { ContactPanel } from './panel.js';
 import { clockTime, dayLabel, hasBangla, relativeTime, threadItems } from './thread-logic.js';
 import { dayText, timeText } from './time-text.js';
+// M45: voice messages, kept pictures and calls in the thread, and the composer's recorder.
+import { drawsAttachment, InboxAttachment } from './voice/inbox-attachment.js';
+import { ComposerVoice } from './voice/voice-recorder.js';
 
 /**
  * One conversation: the thread in the middle and the customer panel beside it (M42; M44a
@@ -58,6 +69,16 @@ import { dayText, timeText } from './time-text.js';
  */
 
 export type Pane = 'thread' | 'customer';
+
+/**
+ * What a thread's attachments may do (M45): a call-back goes through the owner check (D-737) and
+ * refreshes the thread, like the thread's own actions.
+ */
+interface ThreadActions {
+  readonly guard: (action: (acknowledged: boolean) => Promise<unknown>) => Promise<void>;
+  readonly onChanged: () => Promise<void>;
+}
+const ThreadActionsContext = createContext<ThreadActions | null>(null);
 
 export function Conversation({
   id,
@@ -315,7 +336,9 @@ function Thread({
         ) : null}
       </header>
 
-      <Messages view={view} me={me} now={now} />
+      <ThreadActionsContext.Provider value={{ guard, onChanged: refresh }}>
+        <Messages view={view} me={me} now={now} />
+      </ThreadActionsContext.Provider>
 
       <footer className="space-y-2 border-t border-border p-3">
         <p
@@ -339,6 +362,15 @@ function Thread({
             disabled={!replyWindow.open}
             onSend={sendReply}
             describedBy={`${ids}-hint`}
+            actions={
+              <ComposerVoice
+                conversationId={conversation.id}
+                guard={guard}
+                disabled={!replyWindow.open}
+                onSent={refresh}
+                onError={setError}
+              />
+            }
           />
         ) : null}
         <p id={`${ids}-hint`} className="text-xs text-muted-foreground">
@@ -528,9 +560,8 @@ function MessageRow({
 }
 
 /**
- * What a message holds, drawn by its kind: the render point for every kind of message.
- * M45 (voice messages and calls) adds its kinds here: the voice player for an `audio`
- * attachment in `Attachment`, and a call's record as a kind of its own.
+ * What a message holds, drawn by its kind: the render point for every kind of message. M45's
+ * kinds (a voice message's player, a kept picture, a call's record) are drawn in `Attachment`.
  */
 function MessageBody({ message }: { readonly message: MessageView }) {
   return (
@@ -553,6 +584,19 @@ function MessageBody({ message }: { readonly message: MessageView }) {
 function Attachment({ attachment }: { readonly attachment: AttachmentView }) {
   const t = useInboxT();
   const [broken, setBroken] = useState(false);
+  const actions = useContext(ThreadActionsContext);
+  // M45 (D-780, D-784): a voice message, a picture the inbox kept, or a call.
+  if (actions !== null && drawsAttachment(attachment)) {
+    return (
+      <div className="mt-1">
+        <InboxAttachment
+          attachment={attachment}
+          guard={actions.guard}
+          onChanged={actions.onChanged}
+        />
+      </div>
+    );
+  }
   switch (attachment.type) {
     case 'image':
       if (attachment.url !== undefined && !broken) {
@@ -575,7 +619,6 @@ function Attachment({ attachment }: { readonly attachment: AttachmentView }) {
         );
       }
       return <FileAttachment attachment={attachment} />;
-    // M45: case 'audio' draws the voice player here.
     default:
       return <FileAttachment attachment={attachment} />;
   }

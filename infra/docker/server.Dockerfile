@@ -58,7 +58,9 @@ WORKDIR /app
 # ffmpeg for the camera process (M38c, D-675): it copies each packing table's IP camera stream
 # into one-second segments and joins a packing's segments into an MP4, never re-encoding.
 # Debian's own package (signed, patched with the base image): about 470 MB uncompressed on top
-# of the node image, measured 2026-10-08 (ffmpeg 5.1.x). The API and the worker never run it.
+# of the node image, measured 2026-10-08 (ffmpeg 5.1.x). The worker runs it too (M45, D-781): a
+# voice message recorded in the inbox becomes Ogg/Opus for WhatsApp and M4A for Messenger and
+# Instagram (libopus and the native AAC encoder, both in Debian's build). The API never runs it.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*

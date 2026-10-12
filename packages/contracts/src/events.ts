@@ -421,6 +421,55 @@ export const inboxConversationOfferClosedPayload = z
   .strict();
 
 /**
+ * M45 (D-785): a call is ringing. To the people whose screens ring (`userIds`, the
+ * conversation's owner or the active messages desk) alone; ids and the channel only. The call
+ * bar fetches the caller's name from `GET /v1/inbox/calls/live`, where the serializer applies.
+ */
+export const inboxCallRingingPayload = z
+  .object({
+    callId: uuid,
+    conversationId: uuid,
+    channel: z.enum(['messenger', 'whatsapp']),
+    userIds: z.array(z.string()).max(100),
+    at: z.string(),
+  })
+  .strict();
+
+/**
+ * M45 (D-780): an attachment a customer sent was downloaded and kept (or could not be), so the
+ * thread shows its player. Ids only; to the inbox's roles.
+ */
+export const inboxMediaReadyPayload = z
+  .object({
+    conversationId: uuid,
+    messageId: uuid,
+    status: z.enum(['stored', 'failed']),
+  })
+  .strict();
+
+/**
+ * M45 (D-784): a call moved (picked up, connected, declined, missed, ended), so the screens that
+ * rang stop and the thread shows the outcome. To the people it rang and the inbox's roles.
+ */
+export const inboxCallChangedPayload = z
+  .object({
+    callId: uuid,
+    conversationId: uuid,
+    status: z.enum([
+      'ringing',
+      'answering',
+      'connected',
+      'missed',
+      'declined',
+      'completed',
+      'failed',
+    ]),
+    answeredBy: z.string().nullable(),
+    userIds: z.array(z.string()).max(100),
+  })
+  .strict();
+
+/**
  * M41 (D-717): an order is offered to one person, who has `expiresAt` to accept or decline it.
  *
  * To that person alone. Ids, the order number and the deadline: the offer card fetches the
@@ -586,6 +635,17 @@ export const EVENTS = {
   }),
   'inbox.owner_overridden': defineEvent('inbox.owner_overridden', inboxOwnerOverriddenPayload, {
     extra: (payload) => [userRoom(payload.ownerUserId)],
+  }),
+  // M45 (D-785): a call rings for the people it rings, and its changes reach them and the desk.
+  'inbox.call_ringing': defineEvent('inbox.call_ringing', inboxCallRingingPayload, {
+    extra: (payload) => payload.userIds.map(userRoom),
+  }),
+  'inbox.media_ready': defineEvent('inbox.media_ready', inboxMediaReadyPayload, {
+    roles: ['sales', 'org_admin'],
+  }),
+  'inbox.call_changed': defineEvent('inbox.call_changed', inboxCallChangedPayload, {
+    roles: ['sales', 'org_admin'],
+    extra: (payload) => payload.userIds.map(userRoom),
   }),
   // D-748: the inbox's auto-offer, to the person offered alone.
   'inbox.conversation_offered': defineEvent(

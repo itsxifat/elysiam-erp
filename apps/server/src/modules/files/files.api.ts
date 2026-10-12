@@ -81,12 +81,24 @@ export interface FilesApi {
    */
   storeProduced(input: {
     readonly orgId: string;
-    readonly ownerUserId: string;
+    /** Null for bytes no person made (M45: a customer's voice message from Meta). */
+    readonly ownerUserId: string | null;
     readonly purpose: FilePurpose;
     readonly mime: string;
     readonly originalName: string;
     readonly bytes: Uint8Array;
   }): Promise<{ readonly fileId: string; readonly sizeBytes: number; readonly sha256: string }>;
+
+  /**
+   * The bytes of a stored, private file of this purpose (M45, D-780), for a module that checked
+   * the row it belongs to: the inbox's media route and its voice send job. Null when there is no
+   * such file. Reads storage, so it runs with no transaction open (invariant 6).
+   */
+  storedBytes(
+    orgId: string,
+    fileId: string,
+    purpose: FilePurpose,
+  ): Promise<{ readonly bytes: Uint8Array; readonly mime: string } | null>;
 
   /**
    * The bytes of one size of a stored, public website image of this brand (M43: the brand's
@@ -161,13 +173,21 @@ export class FilesApiService implements FilesApi {
 
   storeProduced(input: {
     readonly orgId: string;
-    readonly ownerUserId: string;
+    readonly ownerUserId: string | null;
     readonly purpose: FilePurpose;
     readonly mime: string;
     readonly originalName: string;
     readonly bytes: Uint8Array;
   }): Promise<{ readonly fileId: string; readonly sizeBytes: number; readonly sha256: string }> {
     return this.files.storeProduced(input);
+  }
+
+  storedBytes(
+    orgId: string,
+    fileId: string,
+    purpose: FilePurpose,
+  ): Promise<{ readonly bytes: Uint8Array; readonly mime: string } | null> {
+    return this.files.storedBytes(orgId, fileId, purpose);
   }
 
   async publicImage(

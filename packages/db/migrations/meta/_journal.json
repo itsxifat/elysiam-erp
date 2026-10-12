@@ -1044,6 +1044,20 @@
       "when": 1791793726378,
       "tag": "0150_m44a_saved_replies_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1791794338668,
+      "tag": "0151_m45_voice_calls_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1791794352451,
+      "tag": "0152_m45_voice_calls_policies",
+      "breakpoints": true
     }
   ]
 }
