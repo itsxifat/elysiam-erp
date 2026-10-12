@@ -51,6 +51,9 @@ import { registerInboxJobs } from './modules/inbox/inbox.worker.js';
 import { InboxOrderListener } from './modules/inbox/order-listener.service.js';
 import { InboxSendService } from './modules/inbox/send.service.js';
 import { InboxWebhookService } from './modules/inbox/webhook.service.js';
+import { InboxCallsService } from './modules/inbox/calls.service.js';
+import { InboxMediaService } from './modules/inbox/media.service.js';
+import { registerVoiceCallsJobs } from './modules/inbox/voice-calls.worker.js';
 import type { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import type { JobsRuntime } from './platform/jobs/jobs.runtime.js';
@@ -174,6 +177,13 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     orders: context.get(InboxOrderListener),
     // D-748: the conversation auto-offer's dispatch, deadlines and minute sweep.
     offers: context.get(ConversationOffersService),
+    report,
+  });
+  // M45: customers' media kept, recorded voice messages sent, calls that rang out, retention.
+  await registerVoiceCallsJobs({
+    jobs,
+    media: context.get(InboxMediaService),
+    calls: context.get(InboxCallsService),
     report,
   });
 

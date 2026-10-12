@@ -485,6 +485,13 @@ export const NO_DELETE_TABLES: readonly string[] = [
   'team.desk_profiles',
   // D-748: the inbox's conversation offers, answered once and kept, as the order offers are.
   'inbox.conversation_offers',
+  /*
+   * M45. A kept attachment is expired with its file cleared, never removed (D-783); a call is
+   * the record of who answered, who declined and who called back (D-784). Both are confined by
+   * the M45 policies migration's triggers.
+   */
+  'inbox.media',
+  'inbox.calls',
 ];
 
 /** Schemas `erp_analytics` may read wholesale. Reference data only. */

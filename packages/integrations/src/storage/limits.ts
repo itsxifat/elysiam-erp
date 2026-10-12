@@ -30,6 +30,11 @@ export interface MimeRule {
    * "receipt" would carry it past every other limit.
    */
   readonly isVideo?: true;
+  /**
+   * A sound recording (M45, D-780): a voice message a customer sent, or one recorded in the
+   * inbox. Like a video, accepted only for a purpose that names its type (`inbox-media`).
+   */
+  readonly isAudio?: true;
 }
 
 export const ALLOWED_MIME_TYPES: readonly MimeRule[] = [
@@ -62,6 +67,17 @@ export const ALLOWED_MIME_TYPES: readonly MimeRule[] = [
    */
   { mime: 'video/webm', maxBytes: 90 * MiB, extension: 'webm', isImage: false, isVideo: true },
   { mime: 'video/mp4', maxBytes: 90 * MiB, extension: 'mp4', isImage: false, isVideo: true },
+  /*
+   * Voice messages (M45, D-780, D-782): what a browser's MediaRecorder writes (WebM/Opus in
+   * Chrome and Firefox, MP4/AAC in Safari) and what Meta delivers (WhatsApp's Ogg/Opus voice
+   * notes, Messenger's and Instagram's MP4/AAC clips, MP3 and AAC files). 16 MiB is WhatsApp's own
+   * ceiling for audio; a two-minute voice note is a few hundred kilobytes.
+   */
+  { mime: 'audio/webm', maxBytes: 16 * MiB, extension: 'webm', isImage: false, isAudio: true },
+  { mime: 'audio/ogg', maxBytes: 16 * MiB, extension: 'ogg', isImage: false, isAudio: true },
+  { mime: 'audio/mp4', maxBytes: 16 * MiB, extension: 'm4a', isImage: false, isAudio: true },
+  { mime: 'audio/mpeg', maxBytes: 16 * MiB, extension: 'mp3', isImage: false, isAudio: true },
+  { mime: 'audio/aac', maxBytes: 16 * MiB, extension: 'aac', isImage: false, isAudio: true },
 ];
 
 const BY_MIME = new Map(ALLOWED_MIME_TYPES.map((rule) => [rule.mime, rule]));
@@ -135,7 +151,18 @@ export function sniffMime(bytes: Uint8Array): string | null {
     const brand = String.fromCharCode(...bytes.subarray(8, 12));
     if (brand === 'avif' || brand === 'avis') return 'image/avif';
     if (HEIF_BRANDS.has(brand)) return null;
+    // M45: an MP4 that says it is audio only (iTunes' `M4A `, ffmpeg's `ipod` muxer).
+    if (brand === 'M4A ' || brand === 'M4B ') return 'audio/mp4';
     return 'video/mp4';
+  }
+  // M45 (D-780): Ogg (WhatsApp's voice notes), MP3 with or without its ID3 tag, and AAC in ADTS.
+  if (starts(0x4f, 0x67, 0x67, 0x53)) return 'audio/ogg';
+  if (starts(0x49, 0x44, 0x33)) return 'audio/mpeg';
+  if (bytes.length >= 2 && bytes[0] === 0xff) {
+    const second = bytes[1] ?? 0;
+    // ADTS: the sync word and layer `00`. MPEG audio layer III: the sync and layer `01`.
+    if ((second & 0xf6) === 0xf0) return 'audio/aac';
+    if ((second & 0xe0) === 0xe0 && (second & 0x06) === 0x02) return 'audio/mpeg';
   }
   // EBML (Matroska and WebM): a recorder's WebM names its doctype in the first bytes.
   if (starts(0x1a, 0x45, 0xdf, 0xa3)) {
@@ -148,4 +175,19 @@ export function sniffMime(bytes: Uint8Array): string | null {
     return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   }
   return null;
+}
+
+/**
+ * Whether sniffed bytes are what a rule's type says (M45, D-780).
+ *
+ * Equal types match. Two containers cannot be told apart by their first bytes: a WebM or an MP4
+ * holding only sound sniffs as the video type (a recorder's MP4 names `isom` or `mp42`, as a
+ * video's does), so an audio rule accepts its container's video sniff. The reverse never holds:
+ * a packing video must still sniff as a video.
+ */
+export function sniffMatches(ruleMime: string, sniffed: string | null): boolean {
+  if (sniffed === ruleMime) return true;
+  if (ruleMime === 'audio/webm') return sniffed === 'video/webm';
+  if (ruleMime === 'audio/mp4') return sniffed === 'video/mp4';
+  return false;
 }

@@ -2,9 +2,11 @@ import { Module, type Provider } from '@nestjs/common';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
+import { FilesModule } from '../files/files.module.js';
 import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { TeamModule } from '../team/team.module.js';
+import { InboxCallsService } from './calls.service.js';
 import { InboxCatalogReferences } from './catalog-references.binding.js';
 import { InboxChannelsService } from './channels.service.js';
 import { ConversationOffersService } from './conversation-offers.service.js';
@@ -16,12 +18,16 @@ import {
   type InboxConfig,
 } from './inbox.config.js';
 import { InboxController } from './inbox.controller.js';
+import { InboxMediaService } from './media.service.js';
 import { InboxOrderListener } from './order-listener.service.js';
 import { ContactPanelService } from './panel.service.js';
 import { CONVERSATION_OFFER } from './ports/conversation-offer.port.js';
 import { MESSAGING_GATEWAY } from './providers/meta-messaging.js';
+import { META_MEDIA_GATEWAY } from './providers/meta-media.js';
 import { MetaWebhookRawBody } from './raw-body.js';
 import { InboxSendService } from './send.service.js';
+import { VOICE_CALLS_CONFIG, mediaGatewayFor, voiceCallsConfig } from './voice-calls.config.js';
+import { VoiceCallsController } from './voice-calls.controller.js';
 import { MetaWebhookController } from './webhook.controller.js';
 import { InboxWebhookService } from './webhook.service.js';
 
@@ -46,12 +52,27 @@ const gatewayProvider: Provider = {
   inject: [INBOX_CONFIG],
 };
 
+/** M45 (D-780 to D-788): media and calls through Meta, under M42's two keys (D-731). */
+const mediaGatewayProvider: Provider = {
+  provide: META_MEDIA_GATEWAY,
+  useFactory: (config: InboxConfig) => mediaGatewayFor(config),
+  inject: [INBOX_CONFIG],
+};
+const voiceCallsConfigProvider: Provider = {
+  provide: VOICE_CALLS_CONFIG,
+  useFactory: () => voiceCallsConfig(),
+};
+
 @Module({
-  imports: [OrdersModule, CatalogModule, IamDirectoryModule, TeamModule],
-  controllers: [InboxController, MetaWebhookController],
+  imports: [OrdersModule, CatalogModule, IamDirectoryModule, TeamModule, FilesModule],
+  controllers: [InboxController, MetaWebhookController, VoiceCallsController],
   providers: [
     configProvider,
     gatewayProvider,
+    mediaGatewayProvider,
+    voiceCallsConfigProvider,
+    InboxMediaService,
+    InboxCallsService,
     AuditService,
     MetaWebhookRawBody,
     ConversationOffersService,
@@ -71,6 +92,9 @@ const gatewayProvider: Provider = {
     InboxOrderListener,
     ConversationOffersService,
     MESSAGING_GATEWAY,
+    InboxMediaService,
+    InboxCallsService,
+    META_MEDIA_GATEWAY,
   ],
 })
 export class InboxModule {}
