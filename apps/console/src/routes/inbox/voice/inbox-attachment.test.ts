@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { drawsAttachment } from './inbox-attachment.js';
+
+// The component reaches `api.ts`, which reads the console's env; the repo-root run has none.
+vi.mock('../../../env.js', () => ({ env: { VITE_API_URL: 'http://api.test' } }));
 
 describe('which attachments the voice and call views draw (D-780, D-784)', () => {
   it('draws calls, voice messages in every state, and kept or arriving pictures', () => {
