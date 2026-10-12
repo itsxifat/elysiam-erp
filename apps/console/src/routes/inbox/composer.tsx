@@ -32,6 +32,7 @@ import {
   type ConversationItem,
   type SavedReply,
 } from './api.js';
+import { useComposerFill } from './composer-bridge.js';
 import { readDraft, writeDraft } from './drafts.js';
 import { useInboxT } from './messages.js';
 import { hasBangla, placeholderValues, utf8Length } from './thread-logic.js';
@@ -119,6 +120,19 @@ export function Composer({ conversation, disabled, onSend, actions, describedBy 
     setText(next);
     writeDraft(conversation.id, next);
   };
+
+  // M44b (D-775): the panel's order summary lands here, after anything already typed.
+  useComposerFill(conversation.id, (summary) => {
+    if (disabled) return false;
+    const next = text.trim() === '' ? summary : `${text.trimEnd()}\n${summary}`;
+    update(next);
+    setPicker(null);
+    window.requestAnimationFrame(() => {
+      box.current?.focus();
+      box.current?.setSelectionRange(next.length, next.length);
+    });
+    return true;
+  });
 
   /** The `/` token at the caret opens, moves or closes the picker. */
   const follow = (value: string, caret: number) => {

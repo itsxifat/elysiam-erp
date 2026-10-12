@@ -29,9 +29,13 @@ export function fillComposer(conversationId: string, text: string): boolean {
 
 /**
  * For the composer: take text sent to this conversation. `apply` receives it (replace the draft,
- * or append to it, as the composer prefers) and should focus the reply box.
+ * or append to it, as the composer prefers) and should focus the reply box; it returns `false`
+ * to decline (a reply box that takes nothing now), and the caller copies the text instead.
  */
-export function useComposerFill(conversationId: string, apply: (text: string) => void): void {
+export function useComposerFill(
+  conversationId: string,
+  apply: (text: string) => boolean | void,
+): void {
   const latest = useRef(apply);
   useLayoutEffect(() => {
     latest.current = apply;
@@ -40,8 +44,8 @@ export function useComposerFill(conversationId: string, apply: (text: string) =>
     const listener = (event: Event) => {
       const request = (event as CustomEvent<ComposeRequest>).detail;
       if (request.conversationId !== conversationId || request.handled) return;
+      if (latest.current(request.text) === false) return;
       request.handled = true;
-      latest.current(request.text);
     };
     window.addEventListener(COMPOSE_EVENT, listener);
     return () => window.removeEventListener(COMPOSE_EVENT, listener);
