@@ -1333,3 +1333,31 @@ Phase 7 · Effort MAX · Depends on: M42 · Decisions D-780 to D-799
 
 1. A voice message from each channel plays in the thread; a recorded one is sent and its delivery recorded.
 2. An incoming call rings for the conversation's owner (or everyone on the desk when unassigned), can be answered or declined, and is logged.
+
+## M46: Labels and Packaging, with terminals, printers and lots
+
+Phase 7 · Effort MAX · Depends on: M38b, M38c, M41, M43 · Decisions D-800 to D-829
+
+The owner's brief of 2026-10-17. Label printing and packing become their own areas. Each has several terminals, with people assigned to them. A parcel label prints by itself once the courier gives the order its consignment. An order that needs several bags gets one slip and label per lot.
+
+**Build**
+
+- **Labels** (its own tab):
+  - label terminals and printers (network printers reached from the brand server on the hub's LAN, and a browser print station as the fallback);
+  - automatic printing the moment an order has its consignment;
+  - a print queue, and reprints with a reason;
+  - a log of every print: what, which lot, which printer and terminal, who or automatic, when, and how many times.
+- **Packaging** (its own tab; the pack station moves here):
+  - packing terminals, each with one or more IP cameras;
+  - people assigned to terminals, and a computer bound to its terminal;
+  - the packing queue, packing by lot, and handover that needs every lot scanned;
+  - a live view of each terminal (who is on it, camera and printer state, orders per hour).
+- **Lots:** the label printer or the packer sets how many bags an order needs. Each lot gets its own slip and label ("Lot 2 of 3") with its own barcode. The order is packed only when every lot is packed, and handed over only when every lot is scanned.
+
+**Acceptance checks**
+
+1. An order that gets its consignment is queued and printed on its terminal's printer without a click, and the print is logged.
+2. A reprint is logged with its reason and count; the log answers "how many times, when, by whom, where".
+3. An order split into 3 lots prints 3 slips and labels; packing and handover refuse until every lot is done.
+4. People are assigned to terminals; a terminal's cameras record its packing; the terminal view shows who is working there.
+5. Printers are reachable only on private LAN addresses; printing never runs inside a database transaction.
