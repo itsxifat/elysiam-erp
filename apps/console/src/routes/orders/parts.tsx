@@ -62,16 +62,6 @@ export function OrdersNav() {
       <Link to={ordersPath('/orders/returns')} className={TAB} activeProps={ACTIVE}>
         {t('orders.nav.returns')}
       </Link>
-      {ability.can('update', 'Order') ? (
-        <Link to={ordersPath('/orders/hub')} className={TAB} activeProps={ACTIVE}>
-          {tr('wf.hubPage.title')}
-        </Link>
-      ) : null}
-      {ability.can('update', 'Order') ? (
-        <Link to={ordersPath('/orders/packing')} className={TAB} activeProps={ACTIVE}>
-          {tr('pk.nav.pack')}
-        </Link>
-      ) : null}
       {ability.can('read', 'OrderWorkflow') ? (
         <Link to={ordersPath('/orders/team')} className={TAB} activeProps={ACTIVE}>
           {tr('wf.team.title')}

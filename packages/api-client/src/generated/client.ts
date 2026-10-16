@@ -166,6 +166,11 @@ export const OPERATIONS = {
     path: '/v1/inventory/stock-in-hand/drafts/{id}',
     ability: 'update:Supply',
   },
+  deleteV1LabelsPrintersById: {
+    method: 'DELETE',
+    path: '/v1/labels/printers/{id}',
+    ability: 'update:PackingTerminal',
+  },
   deleteV1MarketingCampaignsById: {
     method: 'DELETE',
     path: '/v1/marketing/campaigns/{id}',
@@ -773,6 +778,34 @@ export const OPERATIONS = {
     ability: 'read:Investor',
   },
   getV1JobsFailed: { method: 'GET', path: '/v1/jobs/failed', ability: 'read:AuditLog' },
+  getV1LabelsJobs: { method: 'GET', path: '/v1/labels/jobs', ability: 'update:Order' },
+  getV1LabelsJobsExport: { method: 'GET', path: '/v1/labels/jobs/export', ability: 'update:Order' },
+  getV1LabelsOrdersByOrderId: {
+    method: 'GET',
+    path: '/v1/labels/orders/{orderId}',
+    ability: 'read:Order',
+  },
+  getV1LabelsPrinters: {
+    method: 'GET',
+    path: '/v1/labels/printers',
+    ability: 'read:PackingTerminal',
+  },
+  getV1LabelsReady: { method: 'GET', path: '/v1/labels/ready', ability: 'update:Order' },
+  getV1LabelsSettings: {
+    method: 'GET',
+    path: '/v1/labels/settings',
+    ability: 'read:PackingTerminal',
+  },
+  getV1LabelsStationJobs: {
+    method: 'GET',
+    path: '/v1/labels/station/jobs',
+    ability: 'update:Order',
+  },
+  getV1LabelsStationJobsByIdDocument: {
+    method: 'GET',
+    path: '/v1/labels/station/jobs/{id}/document',
+    ability: 'update:Order',
+  },
   getV1Loans: { method: 'GET', path: '/v1/loans', ability: 'read:CompanyLoan' },
   getV1LoansById: { method: 'GET', path: '/v1/loans/{id}', ability: 'read:CompanyLoan' },
   getV1LoansLenders: { method: 'GET', path: '/v1/loans/lenders', ability: 'read:CompanyLoan' },
@@ -862,6 +895,7 @@ export const OPERATIONS = {
     path: '/v1/orders/return-reasons',
     ability: 'read:Order',
   },
+  getV1PackingHandover: { method: 'GET', path: '/v1/packing/handover', ability: 'update:Order' },
   getV1PackingOrdersByOrderId: {
     method: 'GET',
     path: '/v1/packing/orders/{orderId}',
@@ -1060,6 +1094,7 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}/usage',
     ability: 'update:Supply',
   },
+  getV1Terminals: { method: 'GET', path: '/v1/terminals', ability: 'read:PackingTerminal' },
   getWebhooksMetaByOrgId: { method: 'GET', path: '/webhooks/meta/{orgId}', ability: 'public' },
   getWorkflowSettings: {
     method: 'GET',
@@ -1726,6 +1761,32 @@ export const OPERATIONS = {
     path: '/v1/investors/withdrawals/{id}/review',
     ability: 'update:Investor',
   },
+  postV1LabelsJobsByIdCancel: {
+    method: 'POST',
+    path: '/v1/labels/jobs/{id}/cancel',
+    ability: 'update:Order',
+  },
+  postV1LabelsJobsByIdRetry: {
+    method: 'POST',
+    path: '/v1/labels/jobs/{id}/retry',
+    ability: 'update:Order',
+  },
+  postV1LabelsPrint: { method: 'POST', path: '/v1/labels/print', ability: 'update:Order' },
+  postV1LabelsPrinters: {
+    method: 'POST',
+    path: '/v1/labels/printers',
+    ability: 'create:PackingTerminal',
+  },
+  postV1LabelsPrintersByIdTest: {
+    method: 'POST',
+    path: '/v1/labels/printers/{id}/test',
+    ability: 'update:PackingTerminal',
+  },
+  postV1LabelsStationJobsByIdResult: {
+    method: 'POST',
+    path: '/v1/labels/station/jobs/{id}/result',
+    ability: 'update:Order',
+  },
   postV1Loans: { method: 'POST', path: '/v1/loans', ability: 'create:CompanyLoan' },
   postV1LoansByIdPayments: {
     method: 'POST',
@@ -1846,11 +1907,22 @@ export const OPERATIONS = {
     path: '/v1/orders/{id}/start-return',
     ability: 'update:Order',
   },
+  postV1PackingHandover: { method: 'POST', path: '/v1/packing/handover', ability: 'update:Order' },
+  postV1PackingHandoverScans: {
+    method: 'POST',
+    path: '/v1/packing/handover/scans',
+    ability: 'update:Order',
+  },
   postV1PackingLabels: { method: 'POST', path: '/v1/packing/labels', ability: 'read:Order' },
   postV1PackingSessions: { method: 'POST', path: '/v1/packing/sessions', ability: 'update:Order' },
   postV1PackingSessionsByIdComplete: {
     method: 'POST',
     path: '/v1/packing/sessions/{id}/complete',
+    ability: 'update:Order',
+  },
+  postV1PackingSessionsByIdLotsClose: {
+    method: 'POST',
+    path: '/v1/packing/sessions/{id}/lots/close',
     ability: 'update:Order',
   },
   postV1PackingSessionsByIdRemovals: {
@@ -2011,6 +2083,22 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}/notes',
     ability: 'update:Supply',
   },
+  postV1Terminals: { method: 'POST', path: '/v1/terminals', ability: 'create:PackingTerminal' },
+  postV1TerminalsByIdBind: {
+    method: 'POST',
+    path: '/v1/terminals/{id}/bind',
+    ability: 'update:PackingTerminal',
+  },
+  postV1TerminalsCheckIn: {
+    method: 'POST',
+    path: '/v1/terminals/check-in',
+    ability: 'read:PackingTerminal',
+  },
+  postV1TerminalsDevicesByIdRevoke: {
+    method: 'POST',
+    path: '/v1/terminals/devices/{id}/revoke',
+    ability: 'update:PackingTerminal',
+  },
   postV1Track: { method: 'POST', path: '/v1/track', ability: 'public' },
   postWebhooksMetaByOrgId: { method: 'POST', path: '/webhooks/meta/{orgId}', ability: 'public' },
   putV1CatalogAttributesByIdValuesOrder: {
@@ -2057,6 +2145,16 @@ export const OPERATIONS = {
     path: '/v1/inventory/reorder-levels',
     ability: 'update:Catalog',
   },
+  putV1LabelsPrintersById: {
+    method: 'PUT',
+    path: '/v1/labels/printers/{id}',
+    ability: 'update:PackingTerminal',
+  },
+  putV1LabelsSettings: {
+    method: 'PUT',
+    path: '/v1/labels/settings',
+    ability: 'update:PackingTerminal',
+  },
   putV1MarketingMetaConnection: {
     method: 'PUT',
     path: '/v1/marketing/meta-connection',
@@ -2073,6 +2171,11 @@ export const OPERATIONS = {
     ability: 'update:WebsiteCredentials',
   },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
+  putV1PackingOrdersByOrderIdLots: {
+    method: 'PUT',
+    path: '/v1/packing/orders/{orderId}/lots',
+    ability: 'update:Order',
+  },
   putV1PackingSettings: {
     method: 'PUT',
     path: '/v1/packing/settings',
@@ -2144,6 +2247,21 @@ export const OPERATIONS = {
     ability: 'update:Storefront',
   },
   putV1SupplySkuCosts: { method: 'PUT', path: '/v1/supply/sku-costs', ability: 'read:Cost' },
+  putV1TerminalsById: {
+    method: 'PUT',
+    path: '/v1/terminals/{id}',
+    ability: 'update:PackingTerminal',
+  },
+  putV1TerminalsByIdCameras: {
+    method: 'PUT',
+    path: '/v1/terminals/{id}/cameras',
+    ability: 'update:PackingTerminal',
+  },
+  putV1TerminalsByIdMembers: {
+    method: 'PUT',
+    path: '/v1/terminals/{id}/members',
+    ability: 'update:PackingTerminal',
+  },
   readInboxConversation: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/read',
@@ -2465,6 +2583,11 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1InventoryStockInHandDraftsById, input, options),
+    /** DELETE /v1/labels/printers/:id */
+    deleteV1LabelsPrintersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1LabelsPrintersById, input, options),
     /** DELETE /v1/marketing/campaigns/:id */
     deleteV1MarketingCampaignsById: (
       input: { readonly path: { readonly id: string } },
@@ -3119,6 +3242,35 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/jobs/failed */
     getV1JobsFailed: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1JobsFailed, undefined, options),
+    /** GET /v1/labels/jobs */
+    getV1LabelsJobs: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsJobs, undefined, options),
+    /** GET /v1/labels/jobs/export */
+    getV1LabelsJobsExport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsJobsExport, undefined, options),
+    /** GET /v1/labels/orders/:orderId */
+    getV1LabelsOrdersByOrderId: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1LabelsOrdersByOrderId, input, options),
+    /** GET /v1/labels/printers */
+    getV1LabelsPrinters: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsPrinters, undefined, options),
+    /** GET /v1/labels/ready */
+    getV1LabelsReady: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsReady, undefined, options),
+    /** GET /v1/labels/settings */
+    getV1LabelsSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsSettings, undefined, options),
+    /** GET /v1/labels/station/jobs */
+    getV1LabelsStationJobs: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsStationJobs, undefined, options),
+    /** GET /v1/labels/station/jobs/:id/document */
+    getV1LabelsStationJobsByIdDocument: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsStationJobsByIdDocument, input, options),
     /** GET /v1/loans */
     getV1Loans: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Loans, undefined, options),
@@ -3220,6 +3372,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/orders/return-reasons */
     getV1OrdersReturnReasons: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1OrdersReturnReasons, undefined, options),
+    /** GET /v1/packing/handover */
+    getV1PackingHandover: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PackingHandover, undefined, options),
     /** GET /v1/packing/orders/:orderId */
     getV1PackingOrdersByOrderId: (
       input: { readonly path: { readonly orderId: string } },
@@ -3439,6 +3594,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplySuppliersByIdUsage, input, options),
+    /** GET /v1/terminals */
+    getV1Terminals: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1Terminals, undefined, options),
     /** GET /webhooks/meta/:orgId */
     getWebhooksMetaByOrgId: (
       input: { readonly path: { readonly orgId: string } },
@@ -4217,6 +4375,34 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InvestorsWithdrawalsByIdReview, input, options),
+    /** POST /v1/labels/jobs/:id/cancel */
+    postV1LabelsJobsByIdCancel: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1LabelsJobsByIdCancel, input, options),
+    /** POST /v1/labels/jobs/:id/retry */
+    postV1LabelsJobsByIdRetry: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1LabelsJobsByIdRetry, input, options),
+    /** POST /v1/labels/print */
+    postV1LabelsPrint: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LabelsPrint, undefined, options),
+    /** POST /v1/labels/printers */
+    postV1LabelsPrinters: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LabelsPrinters, undefined, options),
+    /** POST /v1/labels/printers/:id/test */
+    postV1LabelsPrintersByIdTest: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LabelsPrintersByIdTest, input, options),
+    /** POST /v1/labels/station/jobs/:id/result */
+    postV1LabelsStationJobsByIdResult: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LabelsStationJobsByIdResult, input, options),
     /** POST /v1/loans */
     postV1Loans: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Loans, undefined, options),
@@ -4364,6 +4550,12 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdStartReturn, input, options),
+    /** POST /v1/packing/handover */
+    postV1PackingHandover: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingHandover, undefined, options),
+    /** POST /v1/packing/handover/scans */
+    postV1PackingHandoverScans: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingHandoverScans, undefined, options),
     /** POST /v1/packing/labels */
     postV1PackingLabels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PackingLabels, undefined, options),
@@ -4376,6 +4568,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PackingSessionsByIdComplete, input, options),
+    /** POST /v1/packing/sessions/:id/lots/close */
+    postV1PackingSessionsByIdLotsClose: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingSessionsByIdLotsClose, input, options),
     /** POST /v1/packing/sessions/:id/removals */
     postV1PackingSessionsByIdRemovals: (
       input: { readonly path: { readonly id: string } },
@@ -4553,6 +4751,23 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplySuppliersByIdNotes, input, options),
+    /** POST /v1/terminals */
+    postV1Terminals: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1Terminals, undefined, options),
+    /** POST /v1/terminals/:id/bind */
+    postV1TerminalsByIdBind: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1TerminalsByIdBind, input, options),
+    /** POST /v1/terminals/check-in */
+    postV1TerminalsCheckIn: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1TerminalsCheckIn, undefined, options),
+    /** POST /v1/terminals/devices/:id/revoke */
+    postV1TerminalsDevicesByIdRevoke: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1TerminalsDevicesByIdRevoke, input, options),
     /** POST /v1/track */
     postV1Track: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Track, undefined, options),
@@ -4613,6 +4828,14 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/inventory/reorder-levels */
     putV1InventoryReorderLevels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1InventoryReorderLevels, undefined, options),
+    /** PUT /v1/labels/printers/:id */
+    putV1LabelsPrintersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1LabelsPrintersById, input, options),
+    /** PUT /v1/labels/settings */
+    putV1LabelsSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1LabelsSettings, undefined, options),
     /** PUT /v1/marketing/meta-connection */
     putV1MarketingMetaConnection: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1MarketingMetaConnection, undefined, options),
@@ -4625,6 +4848,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
+    /** PUT /v1/packing/orders/:orderId/lots */
+    putV1PackingOrdersByOrderIdLots: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1PackingOrdersByOrderIdLots, input, options),
     /** PUT /v1/packing/settings */
     putV1PackingSettings: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1PackingSettings, undefined, options),
@@ -4688,6 +4917,21 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/supply/sku-costs */
     putV1SupplySkuCosts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1SupplySkuCosts, undefined, options),
+    /** PUT /v1/terminals/:id */
+    putV1TerminalsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1TerminalsById, input, options),
+    /** PUT /v1/terminals/:id/cameras */
+    putV1TerminalsByIdCameras: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1TerminalsByIdCameras, input, options),
+    /** PUT /v1/terminals/:id/members */
+    putV1TerminalsByIdMembers: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1TerminalsByIdMembers, input, options),
     /** The owner has read it: the unread count goes to zero. */
     readInboxConversation: (
       input: { readonly path: { readonly id: string } },

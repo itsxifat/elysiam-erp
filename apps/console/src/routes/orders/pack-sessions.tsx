@@ -6,7 +6,6 @@ import { useId, useState } from 'react';
 import { ApiError } from '../../api.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/pack-station.js';
-import { IpCamerasSettings } from './pack-cameras.js';
 import { VIDEO_TONE, formatElapsed } from './pack-logic.js';
 import { recentPacking, savePackingSettings, type PackingSettings } from './pack-station-api.js';
 import { ordersPath } from './paths.js';
@@ -163,7 +162,6 @@ export function PackSettingsDialog({
             {save.error instanceof ApiError ? save.error.message : t('ps.failed')}
           </p>
         )}
-        <IpCamerasSettings />
       </div>
     </Dialog>
   );

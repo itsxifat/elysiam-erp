@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   FileText,
   ImageOff,
+  Layers,
   Minus,
   PackageCheck,
   Settings,
@@ -27,7 +28,10 @@ import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useLocale, useT, type ConsoleT } from '../../i18n/locale.js';
 import '../../i18n/pack-station.js';
+import '../../i18n/labels.js';
 import { ScanField } from '../catalog/scan-field.js';
+import { LotsDialog } from '../labels/parts.js';
+import { useTerminalBinding } from '../labels/terminal-binding.js';
 import { documentUrl } from './api.js';
 import {
   IpCameraCard,
@@ -46,6 +50,7 @@ import {
 import { PackSettingsDialog, RecentPacking } from './pack-sessions.js';
 import { playScanSound } from './pack-sound.js';
 import {
+  closeLot,
   finishPacking,
   openPacking,
   packingSettings,
@@ -92,43 +97,85 @@ function outcomeText(t: (key: ConsoleT) => string, outcome: string): string {
 }
 
 export function PackStationPage() {
+  const [search, setSearch] = useSchemaSearch(stationSearchSchema);
+  return (
+    <PackStation
+      order={search.order}
+      onOrder={(order) => setSearch(order === undefined ? {} : { order })}
+      header={(actions) => <PageHeaderFor actions={actions} />}
+    />
+  );
+}
+
+function PageHeaderFor({ actions }: { readonly actions: React.ReactNode }) {
+  const t = useT();
+  return (
+    <PageHeader
+      title={t('ps.title')}
+      description={t('ps.description')}
+      tabs={<OrdersNav />}
+      actions={actions}
+    />
+  );
+}
+
+/**
+ * The station itself (M46: Packaging → Packing embeds it, D-800). The open order is the
+ * parent's (`order`); at a computer bound to a packing terminal the terminal's cameras film it
+ * (D-804), so the desk's own choice of source is not offered.
+ */
+export function PackStation({
+  order,
+  onOrder,
+  header,
+}: {
+  readonly order: string | undefined;
+  readonly onOrder: (order: string | undefined) => void;
+  readonly header?: (actions: React.ReactNode) => React.ReactNode;
+}) {
   const t = useT();
   const ability = useAbility();
-  const [search, setSearch] = useSchemaSearch(stationSearchSchema);
+  const search = { order };
+  const setSearch = (next: { readonly order?: string }) => onOrder(next.order);
   const queue = useUploadQueue();
   const source = usePackSource();
   const settings = useQuery({ queryKey: ['packing', 'settings'], queryFn: packingSettings });
   const [editing, setEditing] = useState(false);
 
+  const binding = useTerminalBinding();
+  const atTerminal = binding?.kind === 'packing';
+
   if (!ability.can('update', 'Order')) {
     return (
       <div className="space-y-6">
-        <PageHeader title={t('ps.title')} tabs={<OrdersNav />} />
+        {header?.(undefined)}
         <PermissionDeniedState title={t('ps.find.denied')} />
       </div>
     );
   }
 
+  const settingsButton =
+    settings.data?.canEdit === true ? (
+      <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+        <Settings aria-hidden />
+        {t('ps.settings.open')}
+      </Button>
+    ) : undefined;
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={t('ps.title')}
-        description={t('ps.description')}
-        tabs={<OrdersNav />}
-        actions={
-          settings.data?.canEdit === true ? (
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-              <Settings aria-hidden />
-              {t('ps.settings.open')}
-            </Button>
-          ) : undefined
-        }
-      />
+      {header === undefined ? (
+        settingsButton === undefined ? null : (
+          <div className="flex justify-end">{settingsButton}</div>
+        )
+      ) : (
+        header(settingsButton)
+      )}
       <UploadQueueBar queue={queue} />
       {search.order === undefined ? (
-        source.cameras.length === 0 && source.source.kind === 'browser' ? (
+        atTerminal || (source.cameras.length === 0 && source.source.kind === 'browser') ? (
           <FindOrder
-            cameraId={source.cameraId}
+            cameraId={atTerminal ? undefined : source.cameraId}
             onOpened={(view) => setSearch({ order: view.session.orderId })}
           />
         ) : (
@@ -153,6 +200,7 @@ export function PackStationPage() {
           orderId={search.order}
           queue={queue}
           source={source}
+          atTerminal={atTerminal}
           onClose={() => setSearch({})}
           onOpened={(view) => setSearch({ order: view.session.orderId })}
         />
@@ -172,15 +220,19 @@ function FindOrder({
   compact = false,
 }: {
   readonly onOpened: (view: PackView) => void;
-  /** This desk's IP camera, or null for its own camera (M38c, D-670). */
-  readonly cameraId: string | null;
+  /**
+   * This desk's IP camera, or null for its own camera (M38c, D-670); undefined at a packing
+   * terminal, whose cameras the server chooses (M46, D-804).
+   */
+  readonly cameraId: string | null | undefined;
   readonly compact?: boolean;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
   const [failure, setFailure] = useState<string | null>(null);
   const open = useMutation({
-    mutationFn: (code: string) => openPacking({ code, cameraId }),
+    mutationFn: (code: string) =>
+      openPacking(cameraId === undefined ? { code } : { code, cameraId }),
     onSuccess: (view) => {
       setFailure(null);
       queryClient.setQueryData(['packing', 'order', view.session.orderId], view);
@@ -218,22 +270,25 @@ function Station({
   orderId,
   queue,
   source,
+  atTerminal,
   onClose,
   onOpened,
 }: {
   readonly orderId: string;
   readonly queue: UploadQueue;
   readonly source: PackSourceChoice;
+  readonly atTerminal: boolean;
   readonly onClose: () => void;
   readonly onOpened: (view: PackView) => void;
 }) {
   const t = useT();
   const queryClient = useQueryClient();
   const key = ['packing', 'order', orderId];
-  const deskCamera = source.cameraId;
+  // At a packing terminal its cameras film the order (D-804): no desk choice is sent.
+  const deskCamera = atTerminal ? null : source.cameraId;
   const session = useQuery({
     queryKey: key,
-    queryFn: () => openPacking({ orderId, cameraId: deskCamera }),
+    queryFn: () => openPacking(atTerminal ? { orderId } : { orderId, cameraId: deskCamera }),
     staleTime: Infinity,
     retry: false,
   });
@@ -256,10 +311,10 @@ function Station({
   const askedCamera = useRef(deskCamera);
   const { mutate: reopenWith } = reopen;
   useEffect(() => {
-    if (view === undefined || askedCamera.current === deskCamera) return;
+    if (atTerminal || view === undefined || askedCamera.current === deskCamera) return;
     askedCamera.current = deskCamera;
     if (view.session.status === 'open') reopenWith(deskCamera);
-  }, [deskCamera, view, reopenWith]);
+  }, [atTerminal, deskCamera, view, reopenWith]);
 
   const finish = useMutation({
     mutationFn: (sessionId: string) => finishPacking(sessionId),
@@ -309,6 +364,28 @@ function Station({
     },
   });
 
+  const [lotsOpen, setLotsOpen] = useState(false);
+  const close = useMutation({
+    mutationFn: (sessionId: string) => closeLot(sessionId),
+    onSuccess: (next) => {
+      keep(next);
+      playScanSound('accepted');
+      setAnswer({
+        kind: 'outcome',
+        tone: 'success',
+        text: `${t('lb.lots.closed')}: ${t('lb.lot')} ${String(next.lots?.closed.length ?? 1)}`,
+      });
+    },
+    onError: (error) => {
+      playScanSound('refused');
+      setAnswer({
+        kind: 'outcome',
+        tone: 'danger',
+        text: error instanceof ApiError ? error.message : t('ps.failed'),
+      });
+    },
+  });
+
   const remove = useMutation({
     mutationFn: ({ sessionId, skuId }: { sessionId: string; skuId: string }) =>
       takeOut(sessionId, crypto.randomUUID(), skuId),
@@ -344,12 +421,15 @@ function Station({
         <p role="alert" className="text-sm text-destructive-text">
           {message}
         </p>
-        <FindOrder onOpened={onOpened} cameraId={deskCamera} />
+        <FindOrder onOpened={onOpened} cameraId={atTerminal ? undefined : deskCamera} />
       </div>
     );
   }
 
   const open = view.session.status === 'open';
+  const lots = view.lots ?? { count: 1, open: 1, closed: [], pieces: [] };
+  // D-807: with several lots, Finish closes the last one only.
+  const lastLotOpen = lots.count <= 1 || lots.open === lots.count;
   // A full box says so, unless the last thing that happened was a refusal to deal with.
   const shown: Answer =
     open && view.progress.complete && answer?.tone !== 'danger'
@@ -357,7 +437,7 @@ function Station({
       : answer;
   const onCode = (code: string) => {
     if (isOrderSlip(code, view.order)) {
-      if (view.progress.complete) {
+      if (view.progress.complete && lastLotOpen) {
         finish.mutate(view.session.id);
       } else {
         playScanSound('refused');
@@ -389,10 +469,16 @@ function Station({
               className="max-w-xl"
             />
             <AnswerBanner answer={shown} />
+            <LotsBar
+              lots={lots}
+              busy={close.isPending}
+              onClose={() => close.mutate(view.session.id)}
+              onChange={() => setLotsOpen(true)}
+            />
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 size="lg"
-                disabled={!view.progress.complete || finish.isPending}
+                disabled={!view.progress.complete || !lastLotOpen || finish.isPending}
                 onClick={() => finish.mutate(view.session.id)}
               >
                 <PackageCheck aria-hidden />
@@ -407,7 +493,7 @@ function Station({
           <Finished
             view={view}
             fresh={justFinished}
-            cameraId={deskCamera}
+            cameraId={atTerminal ? undefined : deskCamera}
             onNext={onClose}
             onOpened={onOpened}
           />
@@ -420,12 +506,19 @@ function Station({
         />
       </div>
       <aside className="space-y-4">
-        <SourceChoice
-          choice={source}
-          locked={
-            open && (view.session.cameraLocked ?? (view.session.recordingFrom ?? null) !== null)
-          }
-        />
+        {view.terminal === undefined || view.terminal === null ? null : (
+          <p className="text-sm text-muted-foreground" data-testid="pack-terminal">
+            {`${t('lb.thisComputer')}: ${view.terminal.name}`}
+          </p>
+        )}
+        {atTerminal ? null : (
+          <SourceChoice
+            choice={source}
+            locked={
+              open && (view.session.cameraLocked ?? (view.session.recordingFrom ?? null) !== null)
+            }
+          />
+        )}
         {ipCamera === null ? (
           <CameraCard recorder={recorder} />
         ) : (
@@ -433,6 +526,71 @@ function Station({
         )}
         <ScanLog view={view} />
       </aside>
+      {lotsOpen ? (
+        <LotsDialog
+          order={{ orderId: view.order.id, orderNo: view.order.orderNumber, lotCount: lots.count }}
+          onClose={() => {
+            setLotsOpen(false);
+            void queryClient
+              .fetchQuery({
+                queryKey: key,
+                queryFn: () =>
+                  openPacking(atTerminal ? { orderId } : { orderId, cameraId: deskCamera }),
+              })
+              .then(keep);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The order's lots at the station (M46, D-807): each bag's pieces, the one being filled, and
+ * closing it so the next scans fill the next. One lot shows only the "Lots" button.
+ */
+function LotsBar({
+  lots,
+  busy,
+  onClose,
+  onChange,
+}: {
+  readonly lots: NonNullable<PackView['lots']>;
+  readonly busy: boolean;
+  readonly onClose: () => void;
+  readonly onChange: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="pack-lots">
+      <Button size="sm" variant="outline" onClick={onChange}>
+        <Layers aria-hidden />
+        {`${t('lb.lots.title')}: ${String(lots.count)}`}
+      </Button>
+      {lots.count <= 1
+        ? null
+        : lots.pieces.map((entry) => (
+            <StatusBadge
+              key={entry.lot}
+              tone={
+                entry.lot === lots.open
+                  ? 'info'
+                  : entry.lot < (lots.open ?? lots.count + 1)
+                    ? 'success'
+                    : 'neutral'
+              }
+            >
+              {`${t('lb.lot')} ${String(entry.lot)} · ${String(entry.pieces)} ${t('lb.lots.pieces')}`}
+            </StatusBadge>
+          ))}
+      {lots.count > 1 && lots.open !== null && lots.open < lots.count ? (
+        <Button size="sm" disabled={busy} onClick={onClose} data-testid="close-lot">
+          {`${t('lb.lots.closeLot')} ${String(lots.open)}`}
+        </Button>
+      ) : null}
+      {lots.count > 1 ? (
+        <p className="w-full text-xs text-muted-foreground">{t('lb.lots.closeHint')}</p>
+      ) : null}
     </div>
   );
 }
@@ -636,7 +794,7 @@ function Finished({
 }: {
   readonly view: PackView;
   readonly fresh: boolean;
-  readonly cameraId: string | null;
+  readonly cameraId: string | null | undefined;
   readonly onNext: () => void;
   readonly onOpened: (view: PackView) => void;
 }) {

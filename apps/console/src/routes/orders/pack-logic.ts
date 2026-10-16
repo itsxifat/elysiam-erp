@@ -118,11 +118,13 @@ export function isOrderSlip(
     readonly consignmentId: string | null;
   },
 ): boolean {
-  const scanned = code.trim().toUpperCase();
-  if (scanned === '') return false;
+  const typed = code.trim().toUpperCase();
+  if (typed === '') return false;
+  // M46 (D-806): one lot's slip carries the order number with its lot, `…-L2`.
+  const scanned = /^(.+)-L[1-9]\d?$/.exec(typed)?.[1] ?? typed;
   return [order.orderNumber, order.trackingCode, order.consignmentId ?? '']
     .map((value) => value.trim().toUpperCase())
-    .some((value) => value !== '' && value === scanned);
+    .some((value) => value !== '' && (value === scanned || value === typed));
 }
 
 export type ScanTone = 'success' | 'danger' | 'neutral';

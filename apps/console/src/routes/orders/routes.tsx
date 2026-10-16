@@ -60,18 +60,18 @@ export function ordersRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./scan.js'), 'OrderScanPage'),
   });
 
-  // M38b: the packing station (D-610). Its `?order=` is read by the page itself.
+  // M38b's packing station and M41's hub moved to their own areas (M46, D-800): an old
+  // link lands on Packaging, the open order with it.
   const packing = createRoute({
     getParentRoute: () => rootRoute,
     path: '/orders/packing',
-    component: lazyRouteComponent(() => import('./pack-station.js'), 'PackStationPage'),
+    component: lazyRouteComponent(() => import('../labels/redirects.js'), 'ToPackaging'),
   });
 
-  // M41: the fulfilment hub's stages and the supervisors' team board (D-719, D-720).
   const hub = createRoute({
     getParentRoute: () => rootRoute,
     path: '/orders/hub',
-    component: lazyRouteComponent(() => import('./hub.js'), 'HubPage'),
+    component: lazyRouteComponent(() => import('../labels/redirects.js'), 'ToPackaging'),
   });
 
   const team = createRoute({

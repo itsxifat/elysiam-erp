@@ -1,5 +1,6 @@
-import { api } from '../../api.js';
+import { api, request } from '../../api.js';
 import { env } from '../../env.js';
+import { terminalHeaders } from '../labels/api.js';
 
 /**
  * The packing station's and the packing video's endpoints (M38b, D-610 to D-615), and the
@@ -40,6 +41,8 @@ export interface PackScan {
   readonly outcome: PackScanOutcome;
   readonly at: string;
   readonly by: PersonRef;
+  /** M46 (D-807): the lot the piece went into. */
+  readonly lot?: number;
 }
 
 export interface PackVideoPart {
@@ -59,7 +62,19 @@ export interface PackVideoPart {
   readonly cameraId?: string | null;
 }
 
+export interface PackLots {
+  readonly count: number;
+  /** The lot being filled, or null once the order is packed. */
+  readonly open: number | null;
+  readonly closed: readonly { readonly lot: number; readonly at: string; readonly by: PersonRef }[];
+  readonly pieces: readonly { readonly lot: number; readonly pieces: number }[];
+}
+
 export interface PackView {
+  /** M46 (D-807, D-802, D-804): the lots, the terminal and every camera filming it. */
+  readonly lots?: PackLots;
+  readonly terminal?: { readonly id: string; readonly name: string } | null;
+  readonly cameraIds?: readonly string[];
   readonly you: PersonRef;
   readonly session: {
     readonly id: string;
@@ -126,7 +141,17 @@ export interface ScanAnswer {
 export function openPacking(
   input: ({ code: string } | { orderId: string }) & { cameraId?: string | null },
 ): Promise<PackView> {
-  return api.post('/v1/packing/sessions', input);
+  // M46 (D-802): a computer bound to a packing terminal opens the order there.
+  return request('/v1/packing/sessions', {
+    method: 'POST',
+    body: input,
+    headers: terminalHeaders(),
+  });
+}
+
+/** Close the lot being filled (M46, D-807): the next scans go into the next one. */
+export function closeLot(sessionId: string): Promise<PackView> {
+  return api.post(`/v1/packing/sessions/${sessionId}/lots/close`);
 }
 
 export function packingSession(id: string): Promise<PackView> {

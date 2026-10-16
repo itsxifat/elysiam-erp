@@ -26,6 +26,7 @@ import { supplyRoutes } from './supply/routes.js';
 import { usersRoutes } from './users/routes.js';
 import { websiteRoutes } from './website/routes.js';
 import { inboxRoutes } from './inbox/routes.js';
+import { labelsRoutes } from './labels/routes.js';
 import { AppShell } from '../shell/app-shell.js';
 import { useT } from '../i18n/locale.js';
 import { tableSearchSchema } from '../lib/table-search.js';
@@ -153,6 +154,8 @@ const website = websiteRoutes(rootRoute);
 const account = accountRoutes(rootRoute);
 /** M42 owns `/inbox`: Messenger, Instagram and WhatsApp in one list, with the customer panel. */
 const inbox = inboxRoutes(rootRoute);
+/** M46 owns `/labels` and `/packaging`: the label desks and the packing terminals (D-800). */
+const labels = labelsRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -181,6 +184,8 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/users',
         '/website',
         '/inbox',
+        '/labels',
+        '/packaging',
       ].includes(item.to),
   )
   .map((item) =>
@@ -214,6 +219,7 @@ const routeTree = rootRoute.addChildren([
   ...website,
   ...account,
   ...inbox,
+  ...labels,
   ...placeholderRoutes,
 ]);
 

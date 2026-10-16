@@ -19,7 +19,9 @@ import {
   Package,
   PackageCheck,
   PackagePlus,
+  PackageOpen,
   PackageSearch,
+  Printer,
   ScrollText,
   Shapes,
   ShoppingCart,
@@ -127,6 +129,22 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.orders',
         icon: ShoppingCart,
         required: { action: 'read', subject: 'Order' },
+      },
+      /*
+       * M46 (D-800, D-820). The label desks and the packing terminals, each its own area:
+       * `read PackingTerminal`, the hub's people (warehouse) and its supervisors.
+       */
+      {
+        to: '/labels',
+        labelKey: 'nav.labels',
+        icon: Printer,
+        required: { action: 'read', subject: 'PackingTerminal' },
+      },
+      {
+        to: '/packaging',
+        labelKey: 'nav.packaging',
+        icon: PackageOpen,
+        required: { action: 'read', subject: 'PackingTerminal' },
       },
       {
         to: '/customers',

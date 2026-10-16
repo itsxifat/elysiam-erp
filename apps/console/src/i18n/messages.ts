@@ -21,6 +21,8 @@ import { catalogueFor } from './catalogue.js';
 const CONSOLE_KEYS = [
   'nav.overview',
   'nav.orders',
+  'nav.labels',
+  'nav.packaging',
   'nav.customers',
   'nav.catalog',
   'nav.stock',

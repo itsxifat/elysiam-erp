@@ -42,6 +42,8 @@ import { en as inboxSellEn, type InboxSellKey } from './locales/sections/inbox-s
 import { en as workflowEn, type WorkflowKey } from './locales/sections/workflow.en.js';
 import { en as aliveEn, type AliveKey } from './locales/sections/alive.en.js';
 import { en as voiceEn, type VoiceKey } from './locales/sections/voice.en.js';
+import { en as labelsEn, type LabelsKey } from './locales/sections/labels.en.js';
+import { en as posEn, type PosKey } from './locales/sections/pos.en.js';
 
 export { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './locale.js';
 
@@ -83,11 +85,15 @@ export type MessageKey =
   | InboxSellKey
   | WorkflowKey
   | AliveKey
-  | VoiceKey;
+  | VoiceKey
+  | LabelsKey
+  | PosKey;
 export type {
   AccountKey,
   AliveKey,
   InboxKey,
+  LabelsKey,
+  PosKey,
   InboxSellKey,
   WorkflowKey,
   VoiceKey,
@@ -128,6 +134,8 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...workflowEn,
     ...aliveEn,
     ...voiceEn,
+    ...labelsEn,
+    ...posEn,
   },
 };
 
