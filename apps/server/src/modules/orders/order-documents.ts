@@ -634,7 +634,11 @@ export function renderPackingSlipHtml(input: {
       <tbody>${rows}
       </tbody>
     </table>
-    <div class="pieces">${String(units(data))} ${units(data) === 1 ? 'piece' : 'pieces'} in this parcel</div>
+    <div class="pieces">${String(units(data))} ${units(data) === 1 ? 'piece' : 'pieces'} ${
+      lotOf(data) === null
+        ? 'in this parcel'
+        : `in this order, packed in ${String(lotOf(data)?.count ?? 1)} lots`
+    }</div>
 
     ${data.notes === null || data.notes.trim() === '' ? '' : `<section class="close" style="grid-template-columns: 1fr">${noteBlock(data)}</section>`}
 

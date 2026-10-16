@@ -16,10 +16,11 @@ export interface MonoBitmap {
 
 /**
  * Below this brightness (0 black to 255 white) a dot is printed. The page is black ink on
- * white already (M43, D-752: nothing grey), so the threshold only decides the antialiased
- * edges of type; halfway keeps strokes their drawn weight.
+ * white already (M43, D-752), so the threshold decides the antialiased edges of type: set above
+ * halfway, so a slip shrunk onto a 4 × 6 label keeps its small, softer grey captions whole
+ * instead of breaking their thin strokes into gaps (seen at 203 dpi, D-811).
  */
-export const BLACK_BELOW = 128;
+export const BLACK_BELOW = 176;
 
 /**
  * The image as dots: composited on white, luma by Rec. 601, thresholded, and cut or padded
