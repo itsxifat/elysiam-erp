@@ -201,7 +201,11 @@ beforeAll(async () => {
     role: 'worker',
     connectionString: harness.database.ownerUrl,
     appRole: 'erp_app',
-    queues: [...FILES_QUEUE_DEFINITIONS, ...PACKING_QUEUE_DEFINITIONS, ...COURIER_QUEUE_DEFINITIONS],
+    queues: [
+      ...FILES_QUEUE_DEFINITIONS,
+      ...PACKING_QUEUE_DEFINITIONS,
+      ...COURIER_QUEUE_DEFINITIONS,
+    ],
     logger: pino({ level: 'silent' }),
     pollingIntervalSeconds: 0.5,
   });
@@ -360,7 +364,10 @@ describe('reprints and the log (M46 check 2, D-818)', () => {
 
 describe('lots (M46 check 3, D-805 to D-808)', () => {
   it('prints three slips and labels, and refuses packing and handover until every lot is done', async () => {
-    const off = await call(admin, 'PUT', '/v1/labels/settings', { autoPrint: false, autoSlip: false });
+    const off = await call(admin, 'PUT', '/v1/labels/settings', {
+      autoPrint: false,
+      autoSlip: false,
+    });
     expect(off.status, off.text).toBe(200);
     const order = await confirmedOrder(3);
     const lots = await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: 3 });
@@ -388,9 +395,7 @@ describe('lots (M46 check 3, D-805 to D-808)', () => {
     await until(async () => (await jobsOf(order.id)).every((job) => job.state === 'printed'));
     const log = await jobsOf(order.id);
     expect(
-      log
-        .map((job) => `${job.document}:${String(job.lot)}/${String(job.lotCount)}`)
-        .sort(),
+      log.map((job) => `${job.document}:${String(job.lot)}/${String(job.lotCount)}`).sort(),
     ).toEqual([
       'label:1/3',
       'label:2/3',
@@ -529,7 +534,13 @@ describe('terminals (M46 check 4, D-801 to D-804)', () => {
 
     const packerIn = await call(packer, 'POST', '/v1/terminals/check-in', undefined, device);
     expect(packerIn.body).toMatchObject({ assigned: true });
-    const opened = await call(packer, 'POST', '/v1/packing/sessions', { orderId: order.id }, device);
+    const opened = await call(
+      packer,
+      'POST',
+      '/v1/packing/sessions',
+      { orderId: order.id },
+      device,
+    );
     expect(opened.status, opened.text).toBe(200);
     const sessionId = String((opened.body.session as Json).id);
     expect(opened.body.terminal).toMatchObject({ id: terminalId, name: 'Packing 1' });

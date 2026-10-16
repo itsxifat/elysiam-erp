@@ -41,7 +41,10 @@ function bitmapOfTspl(bytes: Uint8Array): MonoBitmap {
   const widthBytes = Number(match[1]);
   const heightDots = Number(match[2]);
   const start = (match.index ?? 0) + match[0].length;
-  const rows = Uint8Array.from(buffer.subarray(start, start + widthBytes * heightDots), (byte) => ~byte & 0xff);
+  const rows = Uint8Array.from(
+    buffer.subarray(start, start + widthBytes * heightDots),
+    (byte) => ~byte & 0xff,
+  );
   return { widthBytes, widthDots: widthBytes * 8, heightDots, rows };
 }
 

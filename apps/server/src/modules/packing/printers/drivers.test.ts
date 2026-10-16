@@ -27,7 +27,11 @@ import { NetworkPrinterTransport } from './transport.js';
  * rule with the server's own networks, and a raw socket that delivers every byte.
  */
 
-function image(width: number, height: number, pixel: (x: number, y: number) => number): DecodedImage {
+function image(
+  width: number,
+  height: number,
+  pixel: (x: number, y: number) => number,
+): DecodedImage {
   const data = new Uint8Array(width * height);
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) data[y * width + x] = pixel(x, y);
@@ -115,7 +119,12 @@ describe('the raster (D-811)', () => {
     expect(bitmap.widthBytes).toBe(2);
     expect(bitmap.widthDots).toBe(16);
     expect([...bitmap.rows]).toEqual([0xf8, 0x00, 0x07, 0xc0, 0x00, 0x00]);
-    const clear: DecodedImage = { width: 1, height: 1, channels: 4, data: new Uint8Array([0, 0, 0, 0]) };
+    const clear: DecodedImage = {
+      width: 1,
+      height: 1,
+      channels: 4,
+      data: new Uint8Array([0, 0, 0, 0]),
+    };
     expect([...toMonochrome(clear, { widthDots: 8, heightDots: 1 }).rows]).toEqual([0x00]);
   });
 
@@ -130,7 +139,10 @@ describe('the raster (D-811)', () => {
     const paper = { language: 'pdf' as const, dpi: 203, copies: 1 };
     expect(fitScale(page, { ...paper, widthUm: 101_600, heightUm: 152_400 })).toBe(1);
     expect(fitScale(page, { ...paper, widthUm: 210_000, heightUm: 297_000 })).toBe(1);
-    expect(fitScale(page, { ...paper, widthUm: 100_000, heightUm: 150_000 })).toBeCloseTo(0.9843, 3);
+    expect(fitScale(page, { ...paper, widthUm: 100_000, heightUm: 150_000 })).toBeCloseTo(
+      0.9843,
+      3,
+    );
   });
 });
 
@@ -172,7 +184,9 @@ describe('TSPL, ZPL and ESC/POS (D-810)', () => {
     expect([...bytes.subarray(2, 10)]).toEqual([0x1d, 0x76, 0x30, 0x00, 1, 0, ESCPOS_BAND_ROWS, 0]);
     const second = 10 + ESCPOS_BAND_ROWS;
     expect([...bytes.subarray(second, second + 8)]).toEqual([0x1d, 0x76, 0x30, 0x00, 1, 0, 45, 0]);
-    expect([...bytes.subarray(bytes.length - 7)]).toEqual([0x1b, 0x64, 0x04, 0x1d, 0x56, 0x42, 0x00]);
+    expect([...bytes.subarray(bytes.length - 7)]).toEqual([
+      0x1b, 0x64, 0x04, 0x1d, 0x56, 0x42, 0x00,
+    ]);
     expect(bytes.length).toBe(2 + 8 + 255 + 8 + 45 + 7);
     expect(Buffer.from(escposJob(tall, { copies: 2 })).length).toBe(bytes.length * 2);
   });
@@ -274,13 +288,34 @@ describe('where a print may go (D-812)', () => {
   it('refuses the server’s own networks: a container’s every network, a host’s bridges only', () => {
     const interfaces = {
       eth0: [
-        { address: '172.18.0.5', netmask: '255.255.0.0', family: 'IPv4' as const, mac: '', internal: false, cidr: null },
+        {
+          address: '172.18.0.5',
+          netmask: '255.255.0.0',
+          family: 'IPv4' as const,
+          mac: '',
+          internal: false,
+          cidr: null,
+        },
       ],
       'Ethernet 2': [
-        { address: '192.168.20.7', netmask: '255.255.255.0', family: 'IPv4' as const, mac: '', internal: false, cidr: null },
+        {
+          address: '192.168.20.7',
+          netmask: '255.255.255.0',
+          family: 'IPv4' as const,
+          mac: '',
+          internal: false,
+          cidr: null,
+        },
       ],
       'br-1a2b3c': [
-        { address: '172.19.0.1', netmask: '255.255.0.0', family: 'IPv4' as const, mac: '', internal: false, cidr: null },
+        {
+          address: '172.19.0.1',
+          netmask: '255.255.0.0',
+          family: 'IPv4' as const,
+          mac: '',
+          internal: false,
+          cidr: null,
+        },
       ],
     };
     const container = ownNetworks({ interfaces, inContainer: true, refused: '' });
