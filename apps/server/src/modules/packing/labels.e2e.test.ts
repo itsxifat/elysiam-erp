@@ -125,10 +125,11 @@ async function call(
     ...(body === undefined ? {} : { body }),
     ...(headers === undefined ? {} : { headers }),
   });
-  let parsed: Json = {};
+  let parsed: Json;
   try {
     parsed = response.body === '' ? {} : (JSON.parse(response.body) as Json);
   } catch {
+    // A CSV or a PDF answers text, not JSON.
     parsed = {};
   }
   return { status: response.statusCode, body: parsed, text: response.body };
