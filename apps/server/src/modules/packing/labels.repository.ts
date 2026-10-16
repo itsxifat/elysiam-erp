@@ -747,12 +747,15 @@ export interface JobFilters {
   readonly offset: number;
   /** The orders module's condition on `j.order_id` (the caller's scope), or test pages. */
   readonly orderInScope: SQL;
+  /** Test pages (no order) show only to who reads the printers (`read PackingTerminal`). */
+  readonly testPages: boolean;
 }
 
 function jobWhere(orgId: string, filters: JobFilters): SQL {
   const pattern = filters.q === undefined ? undefined : `%${filters.q.replace(/[\\%_]/g, '\\$&')}%`;
   return sql`j.org_id = ${orgId}
-    and (j.order_id is null or ${filters.orderInScope})
+    and (${filters.testPages ? sql`j.order_id is null` : sql`false`}
+         or (j.order_id is not null and ${filters.orderInScope}))
     and ${filters.view === 'queue' ? sql`j.state in ('queued', 'sending', 'failed')` : sql`true`}
     and ${filters.state === undefined ? sql`true` : sql`j.state = ${filters.state}`}
     and ${filters.source === undefined ? sql`true` : sql`j.source = ${filters.source}`}

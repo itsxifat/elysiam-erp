@@ -419,6 +419,7 @@ export class PrintingService {
       const page = await repo.jobsPage(tx, context.orgId, {
         ...query,
         orderInScope: this.orders.orderInScopeSql(context.orgId, sql`j.order_id`, request),
+        testPages: defineAbilityFor(context).can('read', 'PackingTerminal'),
       });
       const [names, printers, terminals] = await Promise.all([
         this.names(tx, context.orgId),
