@@ -346,6 +346,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // M41 (D-713, D-715, D-720): their own presence; the order workflow and the team board.
     { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
     { action: ['read', 'update'], subject: 'OrderWorkflow', scope: 'org' },
+    // M46 (D-820): the hub's terminals, printers and auto-print rule.
+    { action: ['read', 'create', 'update'], subject: 'PackingTerminal', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *
@@ -526,6 +528,9 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
     // D-726: the team board lists the people of their own branches; the settings have no rows.
     { action: 'read', subject: 'OrderWorkflow', scope: 'branch' },
+    // M46 (D-820): the hub's supervisor sets up its terminals and printers, brand-wide (no row
+    // dimension: a terminal is the hub's, not a branch's).
+    { action: ['read', 'create', 'update'], subject: 'PackingTerminal', scope: 'org' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Wallet', scope: 'branch' },
     // §6: branch P&L without cost detail. The scope grants the report; the
@@ -562,6 +567,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'PackingVideo', scope: 'org' },
     // M41 (D-713): their own presence at the hub.
     { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
+    // M46 (D-820): the terminals they work at.
+    { action: 'read', subject: 'PackingTerminal', scope: 'org' },
     { action: 'read', subject: 'Employee', scope: 'own' },
     { action: 'request', subject: 'ApprovalRequest', scope: 'org' },
     /*

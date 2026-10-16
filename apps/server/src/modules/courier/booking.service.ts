@@ -24,6 +24,7 @@ import {
 } from './courier.queues.js';
 import { openCredentials } from './credentials.js';
 import { CourierBookingRegistry } from '../orders/ports/courier-booking.port.js';
+import { ParcelObserverRegistry } from '../orders/ports/parcel-observer.port.js';
 import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
 
 /**
@@ -68,6 +69,8 @@ export class BookingService implements OnModuleInit {
     @Inject(ORDERS_PORT) private readonly orders: OrdersPort,
     private readonly audit: AuditService,
     private readonly bookings: CourierBookingRegistry,
+    // M46 (D-817): the packing module hears of each consignment, to print its labels.
+    private readonly parcels: ParcelObserverRegistry,
   ) {}
 
   /**
@@ -536,6 +539,15 @@ export class BookingService implements OnModuleInit {
         appliedTrigger: null,
         orderFromStatus: null,
         orderToStatus: null,
+      });
+
+      // M46 (D-817): in this same transaction, so the label's print commits with the
+      // consignment it carries and is never a call from inside it (invariant 6).
+      await this.parcels.notify(tx, {
+        orgId,
+        orderId: consignment.order_id,
+        consignmentNo: result.consignmentNo,
+        at,
       });
 
       await this.audit.record(tx, {

@@ -114,4 +114,100 @@ export const PACKING_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
     url: `/v1/packing/cameras/${randomUUID()}`,
     body: { name: 'Matrix', rtspUrl: 'rtsp://192.0.2.10:554/stream1', enabled: false },
   }),
+  // M46: terminals, printers, the print queue, lots and the handover (D-800 to D-826). A new
+  // terminal and the auto-print rule are written for real; everything else is asked about a
+  // terminal, printer, job, order or session that does not exist (404 for every admitted role),
+  // and a computer with no binding is refused as not bound.
+  'GET /v1/terminals': () => ({ url: '/v1/terminals' }),
+  'POST /v1/terminals': () => ({
+    url: '/v1/terminals',
+    body: { kind: 'label', name: `Matrix ${randomUUID().slice(0, 8)}` },
+  }),
+  'POST /v1/terminals/check-in': () => ({ url: '/v1/terminals/check-in' }),
+  'POST /v1/terminals/devices/:id/revoke': () => ({
+    url: `/v1/terminals/devices/${randomUUID()}/revoke`,
+  }),
+  'PUT /v1/terminals/:id': () => ({
+    url: `/v1/terminals/${randomUUID()}`,
+    body: { name: 'Matrix', locationId: null, active: true },
+  }),
+  'PUT /v1/terminals/:id/members': () => ({
+    url: `/v1/terminals/${randomUUID()}/members`,
+    body: { userIds: [] },
+  }),
+  'PUT /v1/terminals/:id/cameras': () => ({
+    url: `/v1/terminals/${randomUUID()}/cameras`,
+    body: { cameraIds: [] },
+  }),
+  'POST /v1/terminals/:id/bind': () => ({
+    url: `/v1/terminals/${randomUUID()}/bind`,
+    body: { label: 'Matrix computer' },
+  }),
+  'GET /v1/labels/settings': () => ({ url: '/v1/labels/settings' }),
+  'PUT /v1/labels/settings': () => ({
+    url: '/v1/labels/settings',
+    body: { autoPrint: true, autoSlip: false },
+  }),
+  'GET /v1/labels/printers': () => ({ url: '/v1/labels/printers' }),
+  'POST /v1/labels/printers': () => ({
+    url: '/v1/labels/printers',
+    body: {
+      terminalId: randomUUID(),
+      name: 'Matrix',
+      connection: 'browser',
+      language: 'pdf',
+      medium: '4x6',
+      documents: ['label'],
+    },
+  }),
+  'PUT /v1/labels/printers/:id': () => ({
+    url: `/v1/labels/printers/${randomUUID()}`,
+    body: {
+      terminalId: randomUUID(),
+      name: 'Matrix',
+      connection: 'browser',
+      language: 'pdf',
+      medium: '4x6',
+      documents: ['label'],
+      enabled: false,
+    },
+  }),
+  'DELETE /v1/labels/printers/:id': () => ({ url: `/v1/labels/printers/${randomUUID()}` }),
+  'POST /v1/labels/printers/:id/test': () => ({
+    url: `/v1/labels/printers/${randomUUID()}/test`,
+  }),
+  'GET /v1/labels/ready': () => ({ url: '/v1/labels/ready' }),
+  'POST /v1/labels/print': () => ({
+    url: '/v1/labels/print',
+    body: { orderIds: [randomUUID()], documents: ['label'] },
+  }),
+  'GET /v1/labels/jobs': () => ({ url: '/v1/labels/jobs' }),
+  'GET /v1/labels/jobs/export': () => ({ url: '/v1/labels/jobs/export' }),
+  'POST /v1/labels/jobs/:id/retry': () => ({ url: `/v1/labels/jobs/${randomUUID()}/retry` }),
+  'POST /v1/labels/jobs/:id/cancel': () => ({ url: `/v1/labels/jobs/${randomUUID()}/cancel` }),
+  'GET /v1/labels/orders/:orderId': () => ({ url: `/v1/labels/orders/${randomUUID()}` }),
+  'GET /v1/labels/station/jobs': () => ({ url: '/v1/labels/station/jobs' }),
+  'GET /v1/labels/station/jobs/:id/document': () => ({
+    url: `/v1/labels/station/jobs/${randomUUID()}/document`,
+  }),
+  'POST /v1/labels/station/jobs/:id/result': () => ({
+    url: `/v1/labels/station/jobs/${randomUUID()}/result`,
+    body: { result: 'printed' },
+  }),
+  'PUT /v1/packing/orders/:orderId/lots': () => ({
+    url: `/v1/packing/orders/${randomUUID()}/lots`,
+    body: { count: 2 },
+  }),
+  'POST /v1/packing/sessions/:id/lots/close': () => ({
+    url: `/v1/packing/sessions/${randomUUID()}/lots/close`,
+  }),
+  'GET /v1/packing/handover': () => ({ url: '/v1/packing/handover' }),
+  'POST /v1/packing/handover/scans': () => ({
+    url: '/v1/packing/handover/scans',
+    body: { code: 'NO-SUCH-PARCEL' },
+  }),
+  'POST /v1/packing/handover': () => ({
+    url: '/v1/packing/handover',
+    body: { orderIds: [randomUUID()] },
+  }),
 };

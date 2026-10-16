@@ -13,6 +13,7 @@ import {
   Res,
 } from '@nestjs/common';
 import {
+  TERMINAL_DEVICE_HEADER,
   defineAbilityFor,
   packingCameraCreateSchema,
   packingCameraUpdateSchema,
@@ -33,6 +34,7 @@ import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
 import { CameraSettingsService } from './camera-settings.service.js';
 import { PackStationService } from './station.service.js';
+import { terminalTokenOf } from './terminal-token.js';
 import { PackingVideoService } from './video.service.js';
 
 const idSchema = z.string().uuid('No such record.');
@@ -79,7 +81,13 @@ export class PackStationController {
   @HttpCode(200)
   async open(@Req() request: FastifyRequest, @Body() body: unknown) {
     const input = parse(packingOpenSchema, body);
-    return this.station.open(requireContext(request), auditable(request), input);
+    // M46 (D-802): a computer bound to a packing terminal sends its token.
+    return this.station.open(
+      requireContext(request),
+      auditable(request),
+      input,
+      terminalTokenOf(request.headers[TERMINAL_DEVICE_HEADER]),
+    );
   }
 
   /** The recent sessions, newest first, of orders the caller may see (D-617). */

@@ -525,6 +525,11 @@ export class CameraProcessService {
           if (!(await cameras.endRecording(tx, { orgId, sessionId: session.id, to }))) return false;
           const payload: CameraCutPayload = { sessionId: session.id };
           await enqueue(tx, PACKING_QUEUES.cameraCut.name, payload, { orgId, ref: session.id });
+          // M46 (D-804): each of the terminal's other cameras is cut from the same window.
+          for (const cameraId of await cameras.extraCamerasOf(tx, orgId, session.id)) {
+            const extra: CameraCutPayload = { sessionId: session.id, cameraId };
+            await enqueue(tx, PACKING_QUEUES.cameraCut.name, extra, { orgId, ref: session.id });
+          }
           await this.audit.record(tx, {
             orgId,
             actorUserId: null,
@@ -556,15 +561,23 @@ export class CameraProcessService {
    * then cuts what there is; with no footage at all, it says so in the audit and stops (the
    * order's video then reads "missing").
    */
-  async cut(orgId: string, sessionId: string): Promise<CutOutcome> {
-    const found = await withOrg({ orgId }, async (tx) => ({
-      session: await cameras.recordingOf(tx, orgId, sessionId),
-      parts: await cameras.cameraPartsOf(tx, orgId, sessionId),
-    }));
+  async cut(orgId: string, sessionId: string, extraCameraId?: string): Promise<CutOutcome> {
+    const found = await withOrg({ orgId }, async (tx) => {
+      const session = await cameras.recordingOf(tx, orgId, sessionId);
+      // M46 (D-804): one of the terminal's other cameras, or the session's first.
+      const cameraId = extraCameraId ?? session?.camera_id ?? null;
+      const extras =
+        extraCameraId === undefined ? [] : await cameras.extraCamerasOf(tx, orgId, sessionId);
+      return {
+        session,
+        cameraId: extraCameraId === undefined || extras.includes(extraCameraId) ? cameraId : null,
+        parts: cameraId === null ? [] : await cameras.cameraPartsOf(tx, orgId, sessionId, cameraId),
+      };
+    });
     const session = found.session;
     if (session === undefined) return 'nothing_to_cut';
     if (
-      session.camera_id === null ||
+      found.cameraId === null ||
       session.recording_from === null ||
       session.recording_to === null ||
       session.recording_by === null
@@ -572,7 +585,9 @@ export class CameraProcessService {
       return 'nothing_to_cut';
     }
     if (found.parts.length > 0) return 'already';
-    const cameraId = session.camera_id;
+    const cameraId = found.cameraId;
+    // The first camera's parts keep M38c's ids; another camera's are keyed by it too.
+    const partKey = extraCameraId === undefined ? sessionId : `${sessionId}:${cameraId}`;
     const recordedBy = session.recording_by;
     const window = {
       fromMs: new Date(session.recording_from).getTime(),
@@ -685,7 +700,7 @@ export class CameraProcessService {
     // File the parts in one short transaction, under the session's lock.
     const outcome = await withOrg({ orgId, userId: recordedBy }, async (tx) => {
       await cameras.recordingOf(tx, orgId, sessionId, { forUpdate: true });
-      if ((await cameras.cameraPartsOf(tx, orgId, sessionId)).length > 0) {
+      if ((await cameras.cameraPartsOf(tx, orgId, sessionId, cameraId)).length > 0) {
         // Another cut filed it first: these copies go, their bytes after the commit.
         for (const part of stored) {
           if (part.fileId !== null) {
@@ -699,7 +714,7 @@ export class CameraProcessService {
         filed.push(
           await cameras.insertCameraPart(tx, {
             orgId,
-            id: cameraPartId(sessionId, part.index),
+            id: cameraPartId(partKey, part.index),
             sessionId,
             cameraId,
             recordedBy,

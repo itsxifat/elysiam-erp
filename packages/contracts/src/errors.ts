@@ -680,6 +680,27 @@ export const ERROR_CODES = [
   'INBOX_CALL_TAKEN',
   /** Meta refused the call action (answer, decline, hang up); the problem says what it said. */
   'INBOX_CALL_FAILED',
+  // M46: Labels and Packaging (D-800 to D-826)
+  /** No such terminal, or it is switched off. */
+  'TERMINAL_NOT_FOUND',
+  /** This computer is not bound to a terminal, or its binding was revoked (D-803). */
+  'TERMINAL_DEVICE_INVALID',
+  /** You are not assigned to this terminal; a supervisor assigns people (D-802). */
+  'TERMINAL_NOT_ASSIGNED',
+  /** The printer's settings do not fit together, or its address is refused (D-812). */
+  'PRINTER_INVALID',
+  /** No printer prints that document there: add one, or choose another terminal (D-817). */
+  'PRINT_NO_PRINTER',
+  /** It was printed before: a reprint needs a reason (D-818). */
+  'PRINT_REASON_REQUIRED',
+  /** That print job is printed, cancelled or being sent now. */
+  'PRINT_JOB_STATE',
+  /** The lot count cannot change now: the handover started, or lots are already closed (D-805). */
+  'LOTS_LOCKED',
+  /** This lot cannot be closed yet: it is empty, or too few pieces are left for the other lots. */
+  'LOT_CLOSE_REFUSED',
+  /** Every lot's label must be scanned before the order goes to the courier (D-808). */
+  'ORDER_LOTS_NOT_HANDED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

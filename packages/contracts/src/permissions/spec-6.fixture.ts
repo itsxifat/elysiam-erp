@@ -433,4 +433,14 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'org_admin|update|OrderWorkflow|org',
   // D-726: a branch manager's team board is the people of their own branches.
   'branch_manager|read|OrderWorkflow|branch',
+  // | (not a row in the grid) | the hub's terminals and printers (M46, D-820) |
+  // The hub's supervisors (org_admin, branch_manager) set up its packing and label terminals,
+  // printers and auto-print rule, brand-wide: a terminal has no branch. Warehouse reads them.
+  'org_admin|read|PackingTerminal|org',
+  'org_admin|create|PackingTerminal|org',
+  'org_admin|update|PackingTerminal|org',
+  'branch_manager|read|PackingTerminal|org',
+  'branch_manager|create|PackingTerminal|org',
+  'branch_manager|update|PackingTerminal|org',
+  'warehouse|read|PackingTerminal|org',
 ];

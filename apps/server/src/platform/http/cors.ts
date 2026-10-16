@@ -1,4 +1,4 @@
-import { OWNER_ACK_HEADER } from '@elysium/contracts';
+import { OWNER_ACK_HEADER, TERMINAL_DEVICE_HEADER } from '@elysium/contracts';
 
 import { CSRF_HEADER } from './csrf.js';
 import { IDEMPOTENCY_HEADER } from './idempotency.js';
@@ -54,7 +54,14 @@ function credentialedOptions(policy: OriginPolicy) {
     // M41 (D-710) and M42 (D-737): "I know somebody else is handling this order or this
     // conversation", on every write the owner's name guards. One custom header for both, so it
     // is preflighted like the other two.
-    allowedHeaders: ['content-type', CSRF_HEADER, IDEMPOTENCY_HEADER, OWNER_ACK_HEADER],
+    // M46 (D-803): a computer bound to a terminal sends its token with the terminal's work.
+    allowedHeaders: [
+      'content-type',
+      CSRF_HEADER,
+      IDEMPOTENCY_HEADER,
+      OWNER_ACK_HEADER,
+      TERMINAL_DEVICE_HEADER,
+    ],
     maxAge: 600,
   };
 }

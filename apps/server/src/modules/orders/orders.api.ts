@@ -24,6 +24,8 @@ import { AdvancesService } from './advances.service.js';
 import { OffersService, type WorkflowSettings } from './offers.service.js';
 import { OrdersService, type CreateOrderOptions, type CreatedOrder } from './orders.service.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
+import { DocumentsService } from './documents.service.js';
+import type { DocumentPaper } from './order-documents.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import * as repo from './orders.repository.js';
@@ -416,6 +418,9 @@ export interface PackingFacts {
   readonly branchId: string | null;
   readonly createdBy: string;
   readonly assignedTo: string | null;
+  /** M46: the stock location it ships from (the hub's), and when its slip or label printed. */
+  readonly locationId: string | null;
+  readonly slipPrintedAt: Date | null;
   readonly itemsPoisha: bigint;
   readonly discountPoisha: bigint;
   readonly deliveryChargePoisha: bigint;
@@ -785,6 +790,40 @@ export interface OrdersApi {
    * same switch, with the same countdown and the same cap per kind (D-748).
    */
   workflowSettings(tx: Tx, orgId: string): Promise<WorkflowSettings>;
+
+  // --- M46: Labels and Packaging (D-811, D-819) ------------------------------------------
+
+  /**
+   * An order's slip or label for the print queue, for one lot of several or the whole order:
+   * the page's HTML, its fonts and logo, and the paper it is drawn on. Its own short transaction
+   * and then the logo, so the caller holds none (invariant 6); no person's scope (the brand's
+   * own queue). Refuses `ORDER_NOT_FOUND` for an order not of this brand.
+   */
+  documentForPrint(input: {
+    readonly orgId: string;
+    readonly orderId: string;
+    readonly kind: 'label' | 'packing_slip';
+    readonly lot: { readonly no: number; readonly count: number } | null;
+    readonly paper: DocumentPaper;
+  }): Promise<{
+    readonly html: string;
+    readonly assets: readonly {
+      readonly filename: string;
+      readonly bytes: Uint8Array;
+      readonly contentType: string;
+    }[];
+    readonly orderNo: string;
+    readonly widthMm: number;
+    readonly heightMm: number;
+    readonly marginMm: number;
+  }>;
+
+  /**
+   * The hub printed these confirmed orders' slip or label (D-819): they move from M41's "To
+   * print" to "Packing", as the hub's Print slips does. The first print counts; ids of other
+   * brands or other statuses change nothing. Returns the orders marked now.
+   */
+  markSlipsPrinted(tx: Tx, orgId: string, orderIds: readonly string[]): Promise<readonly string[]>;
 }
 
 /** M42 (D-740): the inbox panel's view of a buyer. */
@@ -854,10 +893,25 @@ export class OrdersApiService implements OrdersApi {
     private readonly courier: CourierBookingRegistry,
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
     private readonly offers: OffersService,
+    private readonly documents: DocumentsService,
   ) {}
 
   workflowSettings(tx: Tx, orgId: string): Promise<WorkflowSettings> {
     return this.offers.settingsIn(tx, orgId);
+  }
+
+  documentForPrint(input: Parameters<OrdersApi['documentForPrint']>[0]) {
+    return mapOrderErrors(() => this.documents.documentForPrint(input));
+  }
+
+  async markSlipsPrinted(
+    tx: Tx,
+    orgId: string,
+    orderIds: readonly string[],
+  ): Promise<readonly string[]> {
+    const ids = [...new Set(orderIds)].sort();
+    const marked = await repo.markSlipsPrinted(tx, orgId, ids, sql`true`);
+    return marked.map((row) => row.id);
   }
 
   ordersAttributedTo(tx: Tx, orgId: string, campaign: CampaignMatch) {
@@ -1498,6 +1552,8 @@ export class OrdersApiService implements OrdersApi {
         branchId: row.branch_id,
         createdBy: row.created_by,
         assignedTo: row.assigned_to,
+        locationId: row.location_id,
+        slipPrintedAt: instant(row.slip_printed_at),
         itemsPoisha: BigInt(row.items_poisha),
         discountPoisha: BigInt(row.discount_poisha),
         deliveryChargePoisha: BigInt(row.delivery_charge_poisha),

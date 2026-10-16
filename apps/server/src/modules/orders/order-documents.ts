@@ -9,6 +9,7 @@ import {
   takaText,
   type Poisha,
 } from '@elysium/domain';
+import { lotCode } from '@elysium/domain/packing';
 
 import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fonts.js';
 
@@ -121,6 +122,32 @@ export interface OrderDocumentData {
   readonly notes: string | null;
   /** The courier the parcel goes with, booked or planned; null when none is chosen. */
   readonly courier: DocumentCourier | null;
+  /**
+   * M46 (D-806): which bag this page is for, when the order goes in several. Absent or a count of
+   * one prints the page as before; otherwise "Lot 2 of 3" in bold and the lot's own barcode.
+   */
+  readonly lot?: { readonly no: number; readonly count: number } | null;
+}
+
+/** The order's lot when it has several, else null. */
+function lotOf(data: OrderDocumentData): { readonly no: number; readonly count: number } | null {
+  return data.lot === undefined || data.lot === null || data.lot.count <= 1 ? null : data.lot;
+}
+
+/**
+ * What the page's barcode carries (D-806): the order number, or for one lot of several its lot
+ * code (`ELY-2610-00042-L2`), which the packing station and the handover read back.
+ */
+export function documentBarcodeValue(data: OrderDocumentData): string {
+  const lot = lotOf(data);
+  return lot === null ? data.orderNo : lotCode(data.orderNo, lot.no);
+}
+
+/** "Lot 2 of 3", bold and boxed, or nothing for an order in one bag. */
+function lotBadge(data: OrderDocumentData): string {
+  const lot = lotOf(data);
+  if (lot === null) return '';
+  return `<div class="lot" data-field="lot">Lot ${String(lot.no)} of ${String(lot.count)}</div>`;
 }
 
 /**
@@ -269,6 +296,12 @@ function pageCss(): string {
         letter-spacing: -0.01em; white-space: nowrap;
       }
       .barcode { margin-top: 1.6mm; line-height: 0; color: #000; }
+      /* M46 (D-806): one bag of several, boxed and bold beside the order number. */
+      .lot {
+        display: inline-block; margin-top: 1.2mm; border: 2pt solid var(--ink); padding: 0.6mm 2.4mm;
+        font-size: calc(var(--s-order) * 0.55); font-weight: 800; letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
       .barcode svg { display: inline-block; }
 
       .hero { display: grid; gap: var(--gap); margin-top: var(--gap); align-items: start; }
@@ -361,13 +394,14 @@ function masthead(
   data: OrderDocumentData,
   paper: DocumentPaper,
 ): string {
-  const barcode =
-    paper === 'a4' ? orderBarcode(data.orderNo, 0.3, 12) : orderBarcode(data.orderNo, 0.25, 9);
+  const value = documentBarcodeValue(data);
+  const barcode = paper === 'a4' ? orderBarcode(value, 0.3, 12) : orderBarcode(value, 0.25, 9);
   return `<header class="masthead">
       ${brandBlock(brand, true)}
       <div class="doc-id">
         <div class="doc-title">${escapeHtml(title)}</div>
         <div class="order-no" data-field="order-no">${escapeHtml(data.orderNo)}</div>
+        ${lotBadge(data)}
         <div class="barcode">${barcode}</div>
       </div>
     </header>`;
@@ -637,8 +671,9 @@ export function renderLabelHtml(input: {
         <div class="from">${brand.logo === null ? '' : `<img class="logo" src="${escapeHtml(brand.logo)}" alt="" />`}<span>${escapeHtml(brand.displayName)}</span></div>
         <div class="courier">${escapeHtml(courier?.name ?? 'Courier')}</div>
       </div>
-      <div class="barcode">${orderBarcode(data.orderNo, 0.375, 17)}</div>
+      <div class="barcode">${orderBarcode(documentBarcodeValue(data), 0.375, 17)}</div>
       <div class="order-no" data-field="order-no">${escapeHtml(data.orderNo)}</div>
+      ${lotBadge(data)}
 
       <div class="to" data-field="recipient">
         <div class="caption">Deliver to</div>
@@ -684,6 +719,8 @@ function labelCss(fonts: readonly FontFile[]): string {
       .barcode { margin-top: 3mm; text-align: center; line-height: 0; }
       .barcode svg { display: inline-block; }
       .order-no { margin-top: 1.2mm; text-align: center; font-size: 16pt; font-weight: 700; letter-spacing: 0.06em; }
+      /* M46 (D-806): one bag of several, black on white so a thermal head prints it solid. */
+      .lot { margin: 1.4mm auto 0; width: fit-content; background: #000; color: #fff; padding: 1mm 3.2mm; font-size: 13pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
       .to { margin-top: 3mm; padding-top: 2.6mm; border-top: 1.5pt solid #000; }
       .name { margin-top: 1mm; font-size: 17pt; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
       .phone { margin-top: 0.6mm; font-size: 17pt; font-weight: 700; letter-spacing: 0.02em; }

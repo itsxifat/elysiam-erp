@@ -58,6 +58,8 @@ export * from './usage.js';
 export * from './storefront-marketing.js';
 // M38b: the packing station and the packing video.
 export * from './packing.js';
+// M46: Labels and Packaging: terminals, printers, the print queue, lots and the handover.
+export * from './labels.js';
 // M40: My account and the brand's two-step policy.
 export * from './account.js';
 // M38a: stickers of a custom size, and the extra line (D-650, D-651).

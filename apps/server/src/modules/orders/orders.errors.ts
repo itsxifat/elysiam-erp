@@ -63,6 +63,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   // The offer ended before the answer arrived; the queue shows what is left.
   ORDER_OFFER_GONE: 409,
   ORDER_CALL_INVALID: 400,
+  // M46 (D-808): scan every lot's label at the handover first.
+  ORDER_LOTS_NOT_HANDED: 409,
 };
 
 export class OrdersError extends Error {

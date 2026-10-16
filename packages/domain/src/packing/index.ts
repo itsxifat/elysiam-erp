@@ -74,3 +74,44 @@ export {
   type CameraSegment,
   type CameraState,
 } from './camera.js';
+
+// M46: lots (D-805 to D-808) and the print queue (D-813 to D-819).
+export {
+  LOT_COUNT_MAX,
+  handoverComplete,
+  handoverMissing,
+  judgeHandoverScan,
+  judgeLotClose,
+  judgeLotCount,
+  judgeLotFinish,
+  lotCode,
+  openLot,
+  parseLotCode,
+  piecesByLot,
+  type HandoverScanOutcome,
+  type LotCloseRefusal,
+  type LotCountRefusal,
+  type LotFinishRefusal,
+} from './lots.js';
+
+export {
+  PRINTER_STATUS_FRESH_MS,
+  PRINT_JOB_STATES,
+  PRINT_MAX_ATTEMPTS,
+  PRINT_SENDING_STALE_MS,
+  STATION_SEEN_MS,
+  autoPrintOn,
+  isOpenPrintJob,
+  isReprint,
+  ordersPerHour,
+  pickTerminal,
+  printJobAfter,
+  printSummary,
+  printerOnline,
+  printerShownState,
+  type PrintJobEvent,
+  type PrintJobState,
+  type PrintRecord,
+  type PrinterState,
+  type TerminalCandidate,
+} from './printing.js';

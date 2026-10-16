@@ -45,6 +45,7 @@ import { registerFilesJobs } from './modules/files/files.worker.js';
 import { PackingModule } from './modules/packing/packing.module.js';
 import { registerPackingJobs } from './modules/packing/packing.worker.js';
 import { PackingVideoService } from './modules/packing/video.service.js';
+import { PrintingService } from './modules/packing/printing.service.js';
 import { InboxModule } from './modules/inbox/inbox.module.js';
 import { ConversationOffersService } from './modules/inbox/conversation-offers.service.js';
 import { registerInboxJobs } from './modules/inbox/inbox.worker.js';
@@ -168,7 +169,13 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     report,
   });
   // M38b: packing videos seven days after the order ended, and the bytes of deleted files.
-  await registerPackingJobs({ jobs, videos: context.get(PackingVideoService), report });
+  // M46: the print queue's auto-print, network sends and printer probes (D-813 to D-817).
+  await registerPackingJobs({
+    jobs,
+    videos: context.get(PackingVideoService),
+    printing: context.get(PrintingService),
+    report,
+  });
   await registerFilesJobs({ jobs, files: context.get(FilesService), report });
   await registerInboxJobs({
     jobs,

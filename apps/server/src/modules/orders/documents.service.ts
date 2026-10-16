@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import { businessDate, formatBdPhoneForDisplay, poisha } from '@elysium/domain';
+import { sql, type SQL } from 'drizzle-orm';
 
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
@@ -8,6 +9,7 @@ import { FILES_API, type FilesApi } from '../files/files.api.js';
 import { loadFonts, type FontFile } from '../files/pdf/fonts.js';
 import { GotenbergClient, type GotenbergAsset } from '../files/pdf/gotenberg.client.js';
 import {
+  PAPER,
   paperFor,
   renderBatchHtml,
   renderOrderDocumentHtml,
@@ -169,15 +171,64 @@ export class DocumentsService {
     };
   }
 
+  /**
+   * One order's slip or label for the print queue (M46, D-811, D-822): the page's HTML with the
+   * lot it is for, the fonts and logo beside it, and the paper it was drawn on, for the packing
+   * module to print at its printer's size. The brand's own print queue: no person's scope (the
+   * job was queued by a person in scope, or by the auto-print rule). One short transaction, then
+   * the logo after it (invariant 6).
+   */
+  async documentForPrint(input: {
+    readonly orgId: string;
+    readonly orderId: string;
+    readonly kind: 'label' | 'packing_slip';
+    readonly lot: { readonly no: number; readonly count: number } | null;
+    readonly paper: DocumentPaper;
+  }): Promise<{
+    readonly html: string;
+    readonly assets: readonly GotenbergAsset[];
+    readonly orderNo: string;
+    readonly widthMm: number;
+    readonly heightMm: number;
+    readonly marginMm: number;
+  }> {
+    const gathered = await this.gatherIn(input.orgId, null, input.orderId, sql`true`);
+    const [fonts, logo] = await Promise.all([
+      loadFonts(),
+      this.logo(input.orgId, gathered.logoFileId),
+    ]);
+    const html = renderOrderDocumentHtml(
+      input.kind,
+      withLogo(gathered.brand, logo),
+      { ...gathered.data, lot: input.lot },
+      fonts,
+      input.paper,
+    );
+    const page = input.kind === 'label' ? PAPER.label : PAPER[input.paper];
+    return {
+      html,
+      assets: assetsFor(fonts, logo),
+      orderNo: gathered.data.orderNo,
+      widthMm: page.widthMm,
+      heightMm: page.heightMm,
+      marginMm: page.marginMm,
+    };
+  }
+
   /** Everything the page needs, in one transaction and inside the caller's scope. */
   async gather(context: ActiveContext, request: object, orderId: string): Promise<Gathered> {
-    return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const order = await repo.orderByIdInScope(
-        tx,
-        context.orgId,
-        orderId,
-        orderScopeSql(context, request),
-      );
+    return this.gatherIn(context.orgId, context.userId, orderId, orderScopeSql(context, request));
+  }
+
+  private async gatherIn(
+    orgId: string,
+    userId: string | null,
+    orderId: string,
+    scope: SQL,
+  ): Promise<Gathered> {
+    const context = { orgId };
+    return withOrg(userId === null ? { orgId } : { orgId, userId }, async (tx) => {
+      const order = await repo.orderByIdInScope(tx, context.orgId, orderId, scope);
       if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
 
       const [lines, orgBrand, area] = await Promise.all([

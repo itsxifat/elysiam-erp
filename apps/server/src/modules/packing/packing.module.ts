@@ -6,11 +6,18 @@ import { FilesModule } from '../files/files.module.js';
 import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { StorefrontModule } from '../storefront/storefront.module.js';
+import { TeamModule } from '../team/team.module.js';
 import { CameraSettingsService } from './camera-settings.service.js';
+import { LabelsController } from './labels.controller.js';
+import { LotsController } from './lots.controller.js';
+import { LotsService } from './lots.service.js';
 import { PackingCatalogReferences } from './catalog-references.binding.js';
 import { OrderLabelsService } from './order-labels.service.js';
 import { PACKING_API, PackingApiService } from './packing.api.js';
 import { PackingController } from './packing.controller.js';
+import { NetworkPrinterTransport, PRINTER_TRANSPORT } from './printers/transport.js';
+import { PrintersService } from './printers.service.js';
+import { PrintingService } from './printing.service.js';
 import {
   ScannerAppController,
   ScannerController,
@@ -20,6 +27,8 @@ import { ScannerService } from './scanner.service.js';
 import { PackStationController } from './station.controller.js';
 import { PackStationService } from './station.service.js';
 import { PackingVideoService } from './video.service.js';
+import { TerminalsController } from './terminals.controller.js';
+import { TerminalsService } from './terminals.service.js';
 
 /**
  * Packing (M35b, D-554, D-555): the scanner phones and the console's Scan page, and the order
@@ -30,8 +39,25 @@ import { PackingVideoService } from './video.service.js';
  * process (`main.camera.ts`) cuts.
  */
 @Module({
-  imports: [OrdersModule, CatalogModule, StorefrontModule, FilesModule, IamDirectoryModule],
-  controllers: [ScannerController, ScannerAppController, PackingController, PackStationController],
+  // M46: the team's presence, for who is working at each terminal (D-803).
+  imports: [
+    OrdersModule,
+    CatalogModule,
+    StorefrontModule,
+    FilesModule,
+    IamDirectoryModule,
+    TeamModule,
+  ],
+  controllers: [
+    ScannerController,
+    ScannerAppController,
+    PackingController,
+    PackStationController,
+    // M46: Labels and Packaging (D-800 to D-826).
+    TerminalsController,
+    LabelsController,
+    LotsController,
+  ],
   providers: [
     AuditService,
     ScannerService,
@@ -44,7 +70,13 @@ import { PackingVideoService } from './video.service.js';
     // A packing scan keeps the SKU it names (D-621).
     PackingCatalogReferences,
     { provide: PACKING_API, useClass: PackingApiService },
+    // M46: terminals, printers, the print queue, lots and the handover (D-800 to D-826).
+    TerminalsService,
+    PrintersService,
+    PrintingService,
+    LotsService,
+    { provide: PRINTER_TRANSPORT, useClass: NetworkPrinterTransport },
   ],
-  exports: [PACKING_API, PackingVideoService],
+  exports: [PACKING_API, PackingVideoService, PrintingService],
 })
 export class PackingModule {}

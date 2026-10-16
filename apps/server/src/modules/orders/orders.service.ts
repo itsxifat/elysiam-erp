@@ -51,6 +51,7 @@ import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
+import { HandoverGuardRegistry } from './ports/handover-guard.port.js';
 import { PROMO_PORT, type PricedPromo, type PromoPort } from './ports/promo.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import { TEAM_API, type TeamApi } from '../team/team.api.js';
@@ -389,6 +390,8 @@ export class OrdersService {
     private readonly gate: OwnershipGate,
     private readonly offers: OffersService,
     @Inject(TEAM_API) private readonly team: TeamApi,
+    // M46 (D-808): an order in several lots is shipped by hand only once every lot is scanned.
+    private readonly handover: HandoverGuardRegistry,
   ) {}
 
   // --- reads --------------------------------------------------------------------
@@ -1298,6 +1301,13 @@ export class OrdersService {
         const occurredAt = this.postingInstant(options.occurredAt);
         if (PARCEL_RECORDED.includes(trigger)) {
           await this.transitions.assertNoLiveParcel(tx, context.orgId, order.id);
+        }
+        if (trigger === 'ship') {
+          await this.handover.assertShippable(tx, {
+            orgId: context.orgId,
+            orderId: order.id,
+            orderNo: order.order_no,
+          });
         }
         if (trigger === 'ship' && options.courierId != null) {
           await this.transitions.assertCourierChangeAllowed(

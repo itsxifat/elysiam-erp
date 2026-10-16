@@ -66,9 +66,14 @@ export async function cameraRecordingOpen(
 ): Promise<boolean> {
   const [row] = await tx.execute<{ found: boolean }>(sql`
     select exists (
-      select 1 from packing.sessions
-      where org_id = ${orgId} and camera_id = ${cameraId}
-        and recording_from is not null and recording_to is null
+      select 1 from packing.sessions s
+      where s.org_id = ${orgId}
+        and (s.camera_id = ${cameraId}
+             -- M46 (D-804): one of a terminal's other cameras filming it.
+             or exists (select 1 from packing.session_cameras c
+                         where c.org_id = s.org_id and c.session_id = s.id
+                           and c.camera_id = ${cameraId}))
+        and s.recording_from is not null and s.recording_to is null
     ) as found
   `);
   return row?.found === true;
@@ -436,11 +441,17 @@ export async function pendingWindowStarts(
 ): Promise<Date[]> {
   const rows = await tx.execute<{ recording_from: Date | string }>(sql`
     select s.recording_from from packing.sessions s
-    where s.org_id = ${orgId} and s.camera_id = ${cameraId}
+    where s.org_id = ${orgId}
+      and (s.camera_id = ${cameraId}
+           -- M46 (D-804): a terminal's other cameras keep the same window.
+           or exists (select 1 from packing.session_cameras c
+                       where c.org_id = s.org_id and c.session_id = s.id
+                         and c.camera_id = ${cameraId}))
       and s.recording_from >= ${since.toISOString()}::timestamptz
       and not exists (
         select 1 from packing.videos v
         where v.org_id = s.org_id and v.session_id = s.id and v.source = 'camera'
+          and v.camera_id = ${cameraId}
       )
   `);
   return rows.map((row) => new Date(row.recording_from));
@@ -462,13 +473,25 @@ export async function cameraPartsOf(
   tx: Tx,
   orgId: string,
   sessionId: string,
+  cameraId?: string,
 ): Promise<{ readonly id: string; readonly part: number }[]> {
   const rows = await tx.execute<{ id: string; part: number }>(sql`
     select id, part from packing.videos
     where org_id = ${orgId} and session_id = ${sessionId} and source = 'camera'
+      ${cameraId === undefined ? sql`` : sql`and camera_id = ${cameraId}`}
     order by part
   `);
   return [...rows];
+}
+
+/** M46 (D-804): a session's other cameras (its terminal's, beside its first). */
+export async function extraCamerasOf(tx: Tx, orgId: string, sessionId: string): Promise<string[]> {
+  const rows = await tx.execute<{ camera_id: string }>(sql`
+    select camera_id from packing.session_cameras
+    where org_id = ${orgId} and session_id = ${sessionId}
+    order by camera_id
+  `);
+  return rows.map((row) => row.camera_id);
 }
 
 /**

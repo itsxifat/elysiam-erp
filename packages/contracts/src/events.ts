@@ -539,6 +539,24 @@ export const teamPresenceChangedPayload = z
   })
   .strict();
 
+/**
+ * M46 (D-813, D-816): a print job was queued, printed or failed. To the label team (warehouse)
+ * and its supervisors: ids, the order's number, the state, and for a failure its short reason.
+ * The browser print station listens for its own terminal's `queued` jobs; the queue screen and
+ * its sounds for the rest.
+ */
+export const labelsJobChangedPayload = z
+  .object({
+    jobId: uuid,
+    terminalId: uuid,
+    printerId: uuid,
+    orderNo: z.string().max(64),
+    state: z.enum(['queued', 'sending', 'printed', 'failed', 'cancelled']),
+    /** Set on a failure: a short sentence a packer can act on, never a printer's raw reply. */
+    reason: z.string().max(200).nullable(),
+  })
+  .strict();
+
 export const EVENTS = {
   'approval.requested': defineEvent('approval.requested', approvalRequestedPayload, {
     // §19: to every eligible checker. The dispatcher narrows that from
@@ -673,6 +691,10 @@ export const EVENTS = {
   }),
   'team.presence_changed': defineEvent('team.presence_changed', teamPresenceChangedPayload, {
     roles: ['org_admin', 'branch_manager'],
+  }),
+  // M46: the print queue (D-813, D-816).
+  'labels.job_changed': defineEvent('labels.job_changed', labelsJobChangedPayload, {
+    roles: ['warehouse', 'org_admin', 'branch_manager'],
   }),
 } as const;
 

@@ -22,10 +22,12 @@ export interface SessionRow extends Record<string, unknown> {
   readonly recording_from: Date | string | null;
   readonly recording_to: Date | string | null;
   readonly recording_by: string | null;
+  /** M46 (D-802): the packing terminal it was opened at. */
+  readonly terminal_id: string | null;
 }
 
 const SESSION_COLUMNS = sql`id, order_id, order_no, status, video_required, started_by, started_at,
-  completed_by, completed_at, camera_id, recording_from, recording_to, recording_by`;
+  completed_by, completed_at, camera_id, recording_from, recording_to, recording_by, terminal_id`;
 
 export async function sessionById(
   tx: Tx,
@@ -60,12 +62,13 @@ export async function openSession(
     readonly orderNo: string;
     readonly videoRequired: boolean;
     readonly startedBy: string;
+    readonly terminalId?: string | null;
   },
 ): Promise<{ readonly row: SessionRow; readonly created: boolean }> {
   const inserted = await tx.execute<SessionRow>(sql`
-    insert into packing.sessions (org_id, order_id, order_no, video_required, started_by)
+    insert into packing.sessions (org_id, order_id, order_no, video_required, started_by, terminal_id)
     values (${input.orgId}, ${input.orderId}, ${input.orderNo}, ${input.videoRequired},
-            ${input.startedBy})
+            ${input.startedBy}, ${input.terminalId ?? null}::uuid)
     on conflict (org_id, order_id) do nothing
     returning ${SESSION_COLUMNS}
   `);
@@ -99,9 +102,11 @@ export interface ScanRow extends Record<string, unknown> {
   readonly outcome: string;
   readonly scanned_by: string;
   readonly scanned_at: Date | string;
+  /** M46 (D-807): the lot the piece went into. */
+  readonly lot_no: number;
 }
 
-const SCAN_COLUMNS = sql`id, scan_id, code, sku_id, outcome, scanned_by, scanned_at`;
+const SCAN_COLUMNS = sql`id, scan_id, code, sku_id, outcome, scanned_by, scanned_at, lot_no`;
 
 /** Every scan of a session, oldest first. */
 export async function scansOf(tx: Tx, orgId: string, sessionId: string): Promise<ScanRow[]> {
@@ -136,12 +141,14 @@ export async function insertScan(
     readonly skuId: string | null;
     readonly outcome: string;
     readonly scannedBy: string;
+    readonly lotNo?: number;
   },
 ): Promise<ScanRow> {
   const rows = await tx.execute<ScanRow>(sql`
-    insert into packing.scans (org_id, session_id, scan_id, code, sku_id, outcome, scanned_by)
+    insert into packing.scans
+      (org_id, session_id, scan_id, code, sku_id, outcome, scanned_by, lot_no)
     values (${input.orgId}, ${input.sessionId}, ${input.scanId}, ${input.code}, ${input.skuId},
-            ${input.outcome}, ${input.scannedBy})
+            ${input.outcome}, ${input.scannedBy}, ${input.lotNo ?? 1})
     returning ${SCAN_COLUMNS}
   `);
   const row = rows[0];
@@ -345,7 +352,7 @@ export async function recentSessions(
   const rows = await tx.execute<SessionSummaryRow>(sql`
     select s.id, s.order_id, s.order_no, s.status, s.video_required, s.started_by, s.started_at,
            s.completed_by, s.completed_at, s.camera_id, s.recording_from, s.recording_to,
-           s.recording_by,
+           s.recording_by, s.terminal_id,
            count(c.id)::int as scans,
            count(c.id) filter (where c.outcome = 'accepted')::int as accepted,
            count(c.id) filter (where c.outcome = 'removed')::int as removed,

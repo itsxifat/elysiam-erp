@@ -37,6 +37,8 @@ import { NOTIFY_PORT } from './ports/notify.port.js';
 import { BrandLogoRegistry } from './ports/brand-logo.port.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { DeliveryObserverRegistry } from './ports/delivery-observer.port.js';
+import { HandoverGuardRegistry } from './ports/handover-guard.port.js';
+import { ParcelObserverRegistry } from './ports/parcel-observer.port.js';
 import { PROMO_PORT } from './ports/promo.port.js';
 import { TeamModule } from '../team/team.module.js';
 import { OffersService } from './offers.service.js';
@@ -117,6 +119,9 @@ import { OwnershipGate } from './ownership.gate.js';
     BrandLogoRegistry,
     // M18: the marketing module registers here to hear of deliveries (D-262).
     DeliveryObserverRegistry,
+    // M46 (D-817, D-808): packing hears of booked parcels and guards a multi-lot Ship.
+    ParcelObserverRegistry,
+    HandoverGuardRegistry,
     // M17: advances end inside the order's own transitions (D-232, D-233).
     AdvancesService,
     ReturnReasonsService,
@@ -150,6 +155,9 @@ import { OwnershipGate } from './ownership.gate.js';
     CustomersService,
     CourierBookingRegistry,
     DeliveryObserverRegistry,
+    // M46: the courier notifies booked parcels; packing listens and guards Ship.
+    ParcelObserverRegistry,
+    HandoverGuardRegistry,
     // M43 (D-754): the storefront registers the website's logo for the order documents.
     BrandLogoRegistry,
     CrmService,

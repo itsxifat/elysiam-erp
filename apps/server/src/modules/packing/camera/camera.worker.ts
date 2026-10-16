@@ -60,7 +60,7 @@ export async function registerCameraJobs(deps: {
     PACKING_QUEUES.cameraCut.name,
     async (job) => {
       if (job.orgId === null) throw new Error('a camera cut names its brand');
-      await deps.camera.cut(job.orgId, job.payload.sessionId);
+      await deps.camera.cut(job.orgId, job.payload.sessionId, job.payload.cameraId);
     },
     deps.report,
   );

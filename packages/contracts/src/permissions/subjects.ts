@@ -181,6 +181,14 @@ export const SUBJECTS = [
    * branch_manager reads it (the team board). Not a row in §6's grid.
    */
   'OrderWorkflow',
+  /**
+   * The hub's terminals and printers (M46, D-820): the packing and label desks, who is assigned
+   * to each, the computers bound to them, their cameras and printers, and the brand's auto-print
+   * rule. org_admin and branch_manager, the hub's supervisors, read and change them; warehouse
+   * reads them (to work at them). No row dimension: a terminal is the hub's, not an order's or a
+   * branch's. Printing an order and packing it stay `update Order`, scoped by the order.
+   */
+  'PackingTerminal',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];

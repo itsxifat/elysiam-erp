@@ -30,6 +30,18 @@ const STATUS: Partial<Record<ErrorCode, number>> = {
   WEBSITE_CREDENTIALS_MISSING: 409,
   CONFLICT: 409,
   FORBIDDEN: 403,
+  // M46: Labels and Packaging (D-800 to D-826).
+  TERMINAL_NOT_FOUND: 404,
+  TERMINAL_DEVICE_INVALID: 404,
+  TERMINAL_NOT_ASSIGNED: 403,
+  PRINTER_INVALID: 400,
+  PRINT_NO_PRINTER: 409,
+  PRINT_REASON_REQUIRED: 400,
+  PRINT_JOB_STATE: 409,
+  LOTS_LOCKED: 409,
+  LOT_CLOSE_REFUSED: 409,
+  ORDER_LOTS_NOT_HANDED: 409,
+  ORDER_NOT_FOUND: 404,
 };
 
 export class PackingError extends Error {
@@ -80,6 +92,24 @@ function toPackingHttpError(error: unknown): unknown {
         'PACKING_VIDEO_INVALID',
         'That video is already attached to another recording.',
       );
+    }
+    // M46: two terminals or printers of a brand never share a name.
+    if ((current as { code?: unknown }).code === '23505') {
+      const constraint = (current as { constraint_name?: unknown }).constraint_name;
+      if (constraint === 'packing_terminals_org_name_idx') {
+        return packingHttpError('CONFLICT', 'Another terminal already has that name.');
+      }
+      if (constraint === 'printers_org_name_live_idx') {
+        return packingHttpError('CONFLICT', 'Another printer already has that name.');
+      }
+    }
+    // M46: a terminal's location that is not one of this brand's.
+    if (
+      (current as { code?: unknown }).code === '23503' &&
+      (current as { constraint_name?: unknown }).constraint_name ===
+        'packing_terminals_org_id_location_id_fk'
+    ) {
+      return packingHttpError('NOT_FOUND', 'No such stock location.');
     }
     // The tables' triggers (migrations 0130 and 0133) raise `CONFLICT: <sentence>`.
     const prefixed = /^CONFLICT: (.*)$/s.exec(current.message);

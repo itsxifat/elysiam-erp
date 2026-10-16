@@ -1058,6 +1058,20 @@
       "when": 1791794352451,
       "tag": "0152_m45_voice_calls_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792190617677,
+      "tag": "0153_m46_labels_packaging_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1792190641770,
+      "tag": "0154_m46_labels_packaging_policies",
+      "breakpoints": true
     }
   ]
 }

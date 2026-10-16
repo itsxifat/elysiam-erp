@@ -1804,6 +1804,9 @@ export interface PackingOrderRow extends ShopperOrderRow {
   readonly branch_id: string | null;
   readonly created_by: string;
   readonly assigned_to: string | null;
+  /** M46: the stock location it ships from, and when the hub printed its slip or label. */
+  readonly location_id: string | null;
+  readonly slip_printed_at: Date | string | null;
 }
 
 export async function packingOrderRows(
@@ -1822,6 +1825,7 @@ export async function packingOrderRows(
            o.cod_amount_poisha::text as cod_amount_poisha, o.courier_id,
            o.created_at, o.confirmed_at, o.handed_over_at, o.delivered_at, o.returned_at,
            o.cancelled_at, o.notes, o.branch_id, o.created_by, o.assigned_to,
+           o.location_id, o.slip_printed_at,
            (select count(*)::int from sales.order_lines l
              where l.org_id = o.org_id and l.order_id = o.id) as line_count,
            (select coalesce(sum(l.qty), 0)::int from sales.order_lines l
