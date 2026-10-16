@@ -34,6 +34,7 @@ import { OrderActions } from './order-actions.js';
 import { ParcelPanel } from './parcel-panel.js';
 import { WebsitePanel } from './website-panel.js';
 import { PackingPanel } from './packing-panel.js';
+import { OrderPrintsPanel } from '../labels/order-prints-panel.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrderStatusBadge } from './parts.js';
 import { DEFAULT_ORDER_SEARCH } from './search.js';
@@ -357,6 +358,7 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             <WebsitePanel orderId={order.id} channel={order.channel} />
 
             <PackingPanel orderId={order.id} />
+            <OrderPrintsPanel orderId={order.id} />
 
             {order.notes === null && sourceEntries.length === 0 ? null : (
               <section className="space-y-3 rounded-lg border border-border bg-card p-5 text-sm">

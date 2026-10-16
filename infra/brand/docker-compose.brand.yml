@@ -153,6 +153,11 @@ services:
       <<: *server-env
       # The worker, and only the worker, holds the owner role (§5, D-340).
       DATABASE_OWNER_URL: postgres://erp_owner:${BRAND_DB_OWNER_PASSWORD:?}@postgres:5432/erp
+      # M46 (D-812): the worker sends prints to the label desks' network printers on the shop's
+      # LAN (IPP 631, raw 9100) through this bridge, as the camera service reaches its cameras.
+      # Only private LAN addresses are taken, never this container's own Docker networks, nor
+      # these (Docker's default bridge unless the brand's .env.brand says otherwise).
+      PRINTER_REFUSED_CIDRS: ${BRAND_PRINTER_REFUSED_CIDRS:-172.17.0.0/16}
     volumes:
       - files:/data/files
     depends_on:
