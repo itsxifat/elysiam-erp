@@ -17,6 +17,7 @@ import { Link } from '@tanstack/react-router';
 import { Download, Printer, RotateCcw, Tag, X } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 
+import { useArrivals } from '../../alive/motion.js';
 import { useLocale, useT } from '../../i18n/locale.js';
 import { ordersPath } from '../orders/paths.js';
 import {
@@ -218,6 +219,8 @@ function JobsTable({
   readonly actions: (job: PrintJob) => ReactNode;
 }) {
   const t = useT();
+  // A job that arrived while the list was open settles in (M44a's motion, D-765).
+  const arrivals = useArrivals(jobs.map((job) => job.id));
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full border-collapse text-sm" data-testid="jobs-table">
@@ -236,7 +239,7 @@ function JobsTable({
           {jobs.map((job) => (
             <tr
               key={job.id}
-              className="border-b border-border align-top last:border-b-0"
+              className={`border-b border-border align-top last:border-b-0${arrivals.has(job.id) ? 'alive-in' : ''}`}
               data-state={job.state}
             >
               <td className="px-3 py-2 tabular-nums">

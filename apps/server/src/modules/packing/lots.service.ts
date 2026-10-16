@@ -206,7 +206,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
   ) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const here = await this.terminals.resolve(tx, context, token, 'packing');
+        const here = await this.terminals.resolve(tx, context, token, 'any');
         const code = normaliseScannedCode(input.code);
         const lotted = parseLotCode(code);
         const orderId = await this.findOrder(tx, context.orgId, request, lotted?.orderCode ?? code);

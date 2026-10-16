@@ -5,6 +5,7 @@ import { useId, useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import { playTone } from '../../alive/tones.js';
+import { useArrivals } from '../../alive/motion.js';
 import { useT } from '../../i18n/locale.js';
 import { ScanField } from '../catalog/scan-field.js';
 import { listQueue } from '../orders/workflow-api.js';
@@ -32,6 +33,7 @@ export function HandoverPanel({ locationId }: { readonly locationId: string | un
   for (const item of pending.data?.items ?? []) list.set(item.orderId, item);
   for (const [orderId, item] of scanned) list.set(orderId, item);
   for (const orderId of gone) list.delete(orderId);
+  const arrivals = useArrivals([...list.keys()]);
 
   const scan = useMutation({
     mutationFn: handoverScan,
@@ -109,7 +111,7 @@ export function HandoverPanel({ locationId }: { readonly locationId: string | un
             {[...list.values()].map((entry) => (
               <li
                 key={entry.orderId}
-                className="flex h-row items-center justify-between gap-3 px-3"
+                className={`flex h-row items-center justify-between gap-3 px-3${arrivals.has(entry.orderId) ? 'alive-in' : ''}`}
                 data-complete={entry.complete}
               >
                 <span className="font-medium tabular-nums">{entry.orderNo}</span>

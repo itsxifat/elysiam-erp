@@ -20,6 +20,7 @@ import { FakeCourierAdapter } from './adapters/fake.adapter.js';
 import { BookingService } from './booking.service.js';
 import { resetCourierEnv } from './courier.config.js';
 import { COURIER_QUEUE_DEFINITIONS } from './courier.queues.js';
+import { PACKING_QUEUE_DEFINITIONS } from '../packing/packing.queues.js';
 import * as repo from './courier.repository.js';
 import { ORDERS_PORT } from './ports/orders.port.js';
 import {
@@ -148,7 +149,8 @@ beforeAll(async () => {
     role: 'worker',
     connectionString: harness.database.ownerUrl,
     appRole: 'erp_app',
-    queues: COURIER_QUEUE_DEFINITIONS,
+    // M46 (D-817): a booked parcel queues its labels' auto-print in the booking transaction.
+    queues: [...COURIER_QUEUE_DEFINITIONS, ...PACKING_QUEUE_DEFINITIONS],
     logger: pino({ level: 'silent' }),
     pollingIntervalSeconds: 0.5,
   });

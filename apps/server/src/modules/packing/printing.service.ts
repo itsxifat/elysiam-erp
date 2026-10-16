@@ -170,7 +170,9 @@ export class PrintingService {
   ) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const here = await this.terminals.resolve(tx, context, token, 'label');
+        // A label desk prints on its own printers; a packing desk on its own when it has one for
+        // the document (its slip printer), else where the order's labels print (D-802).
+        const here = await this.terminals.resolve(tx, context, token, 'any');
         const ids = [...new Set(input.orderIds)];
         const visible = await this.orders.visibleOrderIds(tx, context.orgId, ids, request);
         if (ids.some((id) => !visible.has(id))) {
@@ -244,7 +246,19 @@ export class PrintingService {
             stationSeen,
             document: entry.document,
             printerId: input.printerId,
-            terminalId: input.terminalId ?? here?.terminal.id,
+            terminalId:
+              input.terminalId ??
+              (here === null
+                ? undefined
+                : here.terminal.kind === 'label' ||
+                    printers.some(
+                      (printer) =>
+                        printer.terminal_id === here.terminal.id &&
+                        printer.enabled &&
+                        printer.documents.includes(entry.document),
+                    )
+                  ? here.terminal.id
+                  : undefined),
             locationId: entry.order.locationId,
           });
           const job = await repo.insertJob(tx, {

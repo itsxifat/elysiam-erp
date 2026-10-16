@@ -1935,3 +1935,36 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   after the last look; the recording never depends on it). `DELETE /v1/packing/cameras/:id`
   (org_admin) marks a camera deleted (migration 0137), off and without its password, gone from
   every list; refused while it records; past videos keep playing.
+
+### Labels and Packaging: terminals, printers and lots (M46, D-800 to D-825)
+
+- **Two areas, one module.** Labels (`/labels`) and Packaging (`/packaging`) are console areas
+  under `read PackingTerminal`; the server side is the packing module (schema `packing`).
+  Orders → Hub and Orders → Pack moved into Packaging; the IP cameras into Packaging → Cameras.
+- **Terminals** (`packing.terminals`, kind `packing` or `label`, a hub location or every
+  location): people assigned (`terminal_members`), a packing terminal's cameras
+  (`cameras.terminal_id`), a terminal's printers, and the computers bound to it
+  (`terminal_devices`: a `tdt_…` token kept as its SHA-256, sent as `x-terminal-device`,
+  confirmed by a check-in every 30 s that records who is signed in there). At a bound computer
+  only an assigned person or a supervisor works (`TERMINAL_NOT_ASSIGNED`). The live card joins
+  the computers seen in the last 90 s with M41's presence.
+- **Printers** (`packing.printers`): IPP/IPPS (a PDF by Print-Job), raw TCP 9100–9109 (TSPL,
+  ZPL or ESC/POS, the page as one 1-bit bitmap rendered by Gotenberg's screenshot at the
+  printer's dots) or a browser print station; paper, dpi, documents, copies; an IPPS password
+  sealed with the brand's credentials key. Addresses are IPv4 on the private LAN ranges only and
+  refused again at send time on the worker's own networks (D-812). Probed every minute.
+- **The print queue and log** (`packing.print_jobs`): queued → sending → printed or failed, each
+  job written in the transaction that asks for it with its delivery queued there (`labels.send`
+  for a network printer, `labels.job_changed` for a print station); the worker renders and sends
+  with no transaction open and tries three times. A reprint needs a reason; the rows are the log
+  (a trigger keeps what was printed, where and why fixed).
+- **Auto-print** (D-817): the courier's booking transaction tells the orders module's
+  `ParcelObserverRegistry`; packing records the order in `label_orders` (Ready for label) and
+  enqueues `labels.auto_print`, which prints each lot's label on the online label terminal with
+  the shortest queue at the order's location, once per order, consignment, document and lot.
+- **Lots** (D-805 to D-808): `order_lots` (1–20), the lot code `<order no>-L<n>` on each lot's
+  slip and label ("LOT 2 OF 3"); packing fills one lot at a time (`scans.lot_no`,
+  `lot_closures`) and Finish needs every lot closed; the handover (`handover_scans`) ships an
+  order through the state machine only once every lot is scanned, and a person's Ship of a
+  multi-lot order is refused through the orders module's `HandoverGuardRegistry`. One
+  consignment per order; no courier is sent a lot count (none documents one, D-809).

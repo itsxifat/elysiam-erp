@@ -450,7 +450,8 @@ export class TerminalsService {
     tx: Tx,
     context: ActiveContext,
     token: string | null,
-    kind: TerminalKind,
+    /** The kind of work asked for; `any` for work either kind of desk does (printing, handover). */
+    kind: TerminalKind | 'any',
   ): Promise<AtTerminal | null> {
     if (token === null) return null;
     const found = await this.device(tx, context.orgId, token);
@@ -461,7 +462,7 @@ export class TerminalsService {
         'This computer’s terminal is switched off.',
       );
     }
-    if (terminal.kind !== kind) {
+    if (kind !== 'any' && terminal.kind !== kind) {
       throw new PackingError(
         'TERMINAL_DEVICE_INVALID',
         kind === 'packing'
