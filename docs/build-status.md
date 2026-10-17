@@ -1,6 +1,6 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-17** (Labels and Packaging, with terminals, printers and lots (M46), built on its branch, not merged or deployed; order ownership and auto-assign, the unified inbox and the new English-only slips are live on both brands; the alive inbox, selling from the chat and voice messages and calls (M44, M45) are built and merged on `integration-wave2`, not yet deployed; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
+Last updated: **2026-10-17** (Labels and Packaging, with terminals, printers and lots (M46), live on both brands; order ownership and auto-assign, the unified inbox, the English-only slips, the alive inbox, selling from the chat and voice messages and calls (M41 to M45) are live too; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
@@ -102,9 +102,7 @@ Wave 4         [####################] 100%   (M40 to M46; broad tests deferred, 
 | M43  | Premium slips, English only                     |  100% | Live 2026-10-12: new slip, invoice and labels; Bangla removed everywhere                                                                                                                                                                                    |
 | M44  | A fast, alive inbox; selling from the chat      |  100% | Live 2026-10-12: full-window inbox, names and photos, motion and sounds, saved replies, size and quantity spotting in English and Bangla, product picker, order placed from the chat                                                                        |
 | M45  | Voice messages and calls                        |  100% | Live 2026-10-12: voice messages both ways, calls ringing in the browser; untested against Meta until the owner tries them (Messenger calling is not offered in Bangladesh)                                                                                  |
-| M44  | A fast, alive inbox, selling from the chat      |  100% | Built 2026-10-12, merged on integration-wave2, not deployed: full-window inbox, photos, sounds, saved replies; size hints, product picker, draft order from the chat                                                                                        |
-| M45  | Voice messages and calls in the inbox           |  100% | Built 2026-10-12, merged on integration-wave2, not deployed: voice notes kept, played and recorded; calls answered in the browser once Meta's calling is on (D-789)                                                                                         |
-| M46  | Labels and Packaging, terminals, printers, lots |  100% | Built 2026-10-17 on its branch, not merged or deployed: label and packing terminals with people and cameras, network and browser printers, automatic labels on booking, a print log with reprint reasons, orders in several lots; untested on real printers |
+| M46  | Labels and Packaging, terminals, printers, lots |  100% | Live 2026-10-17: label and packing terminals with people and cameras, network and browser printers, automatic labels on booking, a print log with reprint reasons, orders in several lots; untested on real printers                                       |
 
 ## Being built now
 

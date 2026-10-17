@@ -3446,3 +3446,9 @@ dry-run|commit --file <users.json>`.
   (`order-workflow.stack.ts`, `packing.stack.ts`) move to Packaging; try every printer model with
   Test print (unverified integration); owner questions D-805 and D-817.
 - **New dependencies:** none (the PNG reader, the raster and the IPP encoding are our own).
+- **Deployed 2026-10-17** at 1670358c: both brands (153 migrations, 0153 and 0154 applied, the
+  `labels.printer_status` schedule registered), then the mother. The brands server is not a VPS on
+  a provider network: its card is on the hub's office LAN (192.168.20.0/24, behind NAT), where the
+  cameras and printers are, so that subnet stays allowed. Both `.env.brand` files gained
+  `BRAND_PRINTER_REFUSED_CIDRS=172.16.0.0/12,192.168.20.237/32` (every Docker bridge on the host,
+  and the server's own address), backups `.env.brand.bak-m46`.
