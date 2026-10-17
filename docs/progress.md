@@ -3390,7 +3390,7 @@ dry-run|commit --file <users.json>`.
 ## 2026-10-17 · M46 · Labels and Packaging, with terminals, printers and lots (not merged or deployed)
 
 - **Branch and worktree:** `m46-labels-packaging` from `integration-wave2` (ce807df5), in
-  `D:/Projects/elysium-erp-m46`. Decisions D-800 to D-825; plan `docs/plans/M46.md`.
+  `D:/Projects/elysium-erp-m46`. Decisions D-800 to D-826; plan `docs/plans/M46.md`.
 - **What was built:** two console areas, Labels (Ready for label, Queue, Print log with CSV,
   Printers and the auto-print rule, label Terminals, the browser Print station) and Packaging (To
   pack, the packing station by lot at a bound terminal, Packed, Handover lot by lot, packing
