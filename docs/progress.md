@@ -3448,7 +3448,7 @@ dry-run|commit --file <users.json>`.
 - **New dependencies:** none (the PNG reader, the raster and the IPP encoding are our own).
 - **Deployed 2026-10-17** at 1670358c: both brands (153 migrations, 0153 and 0154 applied, the
   `labels.printer_status` schedule registered), then the mother. The brands server is not a VPS on
-  a provider network: its card is on the hub's office LAN (192.168.20.0/24, behind NAT), where the
-  cameras and printers are, so that subnet stays allowed. Both `.env.brand` files gained
+  a provider network: its card is on a private LAN (192.168.20.0/24, behind NAT), so a printer on
+  that LAN is reachable and that subnet stays allowed; printers elsewhere use the print station. Both `.env.brand` files gained
   `BRAND_PRINTER_REFUSED_CIDRS=172.16.0.0/12,192.168.20.237/32` (every Docker bridge on the host,
   and the server's own address), backups `.env.brand.bak-m46`.
