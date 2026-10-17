@@ -64,6 +64,16 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
     this.guards.register(this);
   }
 
+  /**
+   * One change to an order's lots at a time, in the one lock order every path takes (M46 ledger
+   * audit, W1): the order's own row, then the order's lots. The orders module's Ship locks the
+   * row before it asks the guard, so the two never wait on each other the other way round.
+   */
+  private async lockOrder(tx: Tx, orgId: string, orderId: string): Promise<void> {
+    await this.orders.bookingSnapshot(tx, orgId, orderId, { forUpdate: true });
+    await labels.lockOrderLots(tx, orgId, orderId);
+  }
+
   // --- the orders module's hooks -----------------------------------------------------------
 
   /** D-817: inside the courier's booking transaction. Writes its own row and enqueues; no call. */
@@ -87,7 +97,10 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
     });
   }
 
-  /** D-808: a person's Ship of an order in several lots needs every lot scanned first. */
+  /**
+   * D-808: a person's Ship of an order in several lots needs every lot scanned first. Asked by
+   * the orders module with the order's row already locked, so only the lots' lock is taken.
+   */
   async assertShippable(
     tx: Tx,
     input: { readonly orgId: string; readonly orderId: string; readonly orderNo: string },
@@ -121,17 +134,20 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         if (!(await this.orders.orderVisibleTo(tx, context.orgId, orderId, request))) {
           throw new PackingError('NOT_FOUND', 'No such order.');
         }
-        await labels.lockOrderLots(tx, context.orgId, orderId);
-        // The station's session waits, so a scan is judged against the count it read.
+        // The station's session first, as a scan takes it (session, then order, then lots), so
+        // a scan is judged against the count it read and the two never deadlock (W1).
         const session = await station.sessionByOrder(tx, context.orgId, orderId);
         if (session !== undefined) {
           await station.sessionById(tx, context.orgId, session.id, { forUpdate: true });
         }
+        await this.lockOrder(tx, context.orgId, orderId);
         const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
         if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
         const before = await labels.lotCountOf(tx, context.orgId, orderId);
+        // The bags closed: while packing, the open session's; once packed, the finished one's
+        // (W4: a packed order never goes in fewer lots than it was packed in).
         const closedLots =
-          session?.status !== 'open'
+          session === undefined
             ? 0
             : (await labels.closuresOf(tx, context.orgId, session.id)).length;
         const handedLots = (await labels.handoverScansOf(tx, context.orgId, [orderId])).length;
@@ -156,7 +172,9 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         if (verdict === 'below_closed') {
           throw new PackingError(
             'LOTS_LOCKED',
-            `${String(closedLots)} lots of order ${facts.orderNo} are already closed at the packing station.`,
+            facts.status === 'packed'
+              ? `Order ${facts.orderNo} was packed in ${String(closedLots)} lots: it cannot go in fewer.`
+              : `${String(closedLots)} lots of order ${facts.orderNo} are already closed at the packing station: keep at least one more open.`,
           );
         }
         if (verdict === 'out_of_range') {
@@ -210,7 +228,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         const code = normaliseScannedCode(input.code);
         const lotted = parseLotCode(code);
         const orderId = await this.findOrder(tx, context.orgId, request, lotted?.orderCode ?? code);
-        await labels.lockOrderLots(tx, context.orgId, orderId);
+        await this.lockOrder(tx, context.orgId, orderId);
         const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
         if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
         if (facts.status !== 'packed') {
@@ -322,7 +340,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
             if (!(await this.orders.orderVisibleTo(tx, context.orgId, orderId, request))) {
               throw new PackingError('NOT_FOUND', 'No such order.');
             }
-            await labels.lockOrderLots(tx, context.orgId, orderId);
+            await this.lockOrder(tx, context.orgId, orderId);
             const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
             if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
             const lotCount = await labels.lotCountOf(tx, context.orgId, orderId);

@@ -14,7 +14,9 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { seal, sealedBoxConfigured } from '../../platform/crypto/sealed-box.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { enqueue } from '../../platform/jobs/enqueue.js';
 import * as repo from './labels.repository.js';
+import { PACKING_QUEUES, type SendPrintPayload } from './packing.queues.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 
 const iso = (value: Date | string | null): string | null =>
@@ -188,6 +190,17 @@ export class PrintersService {
               : this.sealed(context.orgId, id, input.password),
         });
         if (after === undefined) throw new PackingError('NOT_FOUND', 'No such printer.');
+        // A browser station that becomes a network printer sends what waited for the station
+        // (ledger audit N3); the other way, the station picks its waiting jobs up itself.
+        if (before.connection === 'browser' && after.connection !== 'browser') {
+          for (const job of await repo.queuedJobsOfPrinter(tx, context.orgId, id)) {
+            const payload: SendPrintPayload = { jobId: job.id };
+            await enqueue(tx, PACKING_QUEUES.send.name, payload, {
+              orgId: context.orgId,
+              ref: job.id,
+            });
+          }
+        }
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,

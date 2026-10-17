@@ -631,6 +631,31 @@ export async function markSending(
   return rows[0];
 }
 
+/**
+ * A browser station claims a job to print it (M46 ledger audit, W2, W3): a queued job, or one it
+ * claimed itself and is printing again after a reload. Another computer of the same terminal
+ * never takes a job one has claimed, so no label prints twice by accident.
+ */
+export async function claimForStation(
+  tx: Tx,
+  input: { readonly orgId: string; readonly id: string; readonly deviceId: string },
+): Promise<JobRow | undefined> {
+  const rows = await tx.execute<JobRow>(sql`
+    update packing.print_jobs
+       set state = 'sending', attempts = attempts + 1, sending_at = now(),
+           device_id = ${input.deviceId}::uuid, updated_at = now()
+     where org_id = ${input.orgId} and id = ${input.id}
+       and (state = 'queued' or (state = 'sending' and device_id = ${input.deviceId}::uuid))
+       and attempts < 20
+    returning ${JOB_COLUMNS}
+  `);
+  return rows[0];
+}
+
+/**
+ * A job printed. The worker's send passes no device: its job is the one it marked sending. A
+ * browser station passes its device and may finish only a job it claimed (W2).
+ */
 export async function markPrinted(
   tx: Tx,
   input: {
@@ -640,12 +665,15 @@ export async function markPrinted(
     readonly confirmedBy?: string | null;
   },
 ): Promise<JobRow | undefined> {
+  const claimed =
+    input.deviceId === undefined || input.deviceId === null
+      ? sql`state in ('sending', 'queued')`
+      : sql`state = 'sending' and device_id = ${input.deviceId}::uuid`;
   const rows = await tx.execute<JobRow>(sql`
     update packing.print_jobs
        set state = 'printed', printed_at = now(), last_error = null,
-           device_id = coalesce(${input.deviceId ?? null}::uuid, device_id),
            confirmed_by = coalesce(${input.confirmedBy ?? null}, confirmed_by), updated_at = now()
-     where org_id = ${input.orgId} and id = ${input.id} and state in ('sending', 'queued')
+     where org_id = ${input.orgId} and id = ${input.id} and ${claimed}
     returning ${JOB_COLUMNS}
   `);
   return rows[0];
@@ -663,14 +691,17 @@ export async function markAttemptFailed(
     readonly confirmedBy?: string | null;
   },
 ): Promise<JobRow | undefined> {
+  const claimed =
+    input.deviceId === undefined || input.deviceId === null
+      ? sql`state in ('sending', 'queued')`
+      : sql`state = 'sending' and device_id = ${input.deviceId}::uuid`;
   const rows = await tx.execute<JobRow>(sql`
     update packing.print_jobs
        set state = ${input.final ? 'failed' : 'queued'},
            failed_at = case when ${input.final} then now() else failed_at end,
            last_error = ${input.error.slice(0, 300)},
-           device_id = coalesce(${input.deviceId ?? null}::uuid, device_id),
            confirmed_by = coalesce(${input.confirmedBy ?? null}, confirmed_by), updated_at = now()
-     where org_id = ${input.orgId} and id = ${input.id} and state in ('sending', 'queued')
+     where org_id = ${input.orgId} and id = ${input.id} and ${claimed}
     returning ${JOB_COLUMNS}
   `);
   return rows[0];
@@ -690,13 +721,36 @@ export async function requeueFailed(
   return rows[0];
 }
 
-export async function cancelJob(tx: Tx, orgId: string, id: string): Promise<JobRow | undefined> {
+/** Cancel a waiting or failed job, or one left `sending` for good (ledger audit N3). */
+export async function cancelJob(
+  tx: Tx,
+  orgId: string,
+  id: string,
+  staleBefore: Date,
+): Promise<JobRow | undefined> {
   const rows = await tx.execute<JobRow>(sql`
     update packing.print_jobs set state = 'cancelled', cancelled_at = now(), updated_at = now()
-     where org_id = ${orgId} and id = ${id} and state in ('queued', 'failed')
+     where org_id = ${orgId} and id = ${id}
+       and (state in ('queued', 'failed')
+            or (state = 'sending' and sending_at < ${staleBefore.toISOString()}::timestamptz))
     returning ${JOB_COLUMNS}
   `);
   return rows[0];
+}
+
+/** A printer's waiting jobs, oldest first: sent again when it stops being a browser station. */
+export async function queuedJobsOfPrinter(
+  tx: Tx,
+  orgId: string,
+  printerId: string,
+): Promise<JobRow[]> {
+  const rows = await tx.execute<JobRow>(sql`
+    select ${JOB_COLUMNS} from packing.print_jobs
+    where org_id = ${orgId} and printer_id = ${printerId} and state = 'queued'
+    order by created_at
+    limit 500
+  `);
+  return [...rows];
 }
 
 /** Jobs queued or sending on each terminal: the queue the auto-print rule balances (D-817). */
@@ -745,6 +799,8 @@ export interface JobFilters {
   readonly to?: string | undefined;
   readonly limit: number;
   readonly offset: number;
+  /** Keyset paging for the CSV (ledger audit N6): only jobs older than this one. */
+  readonly before?: { readonly createdAt: string; readonly id: string } | undefined;
   /** The orders module's condition on `j.order_id` (the caller's scope), or test pages. */
   readonly orderInScope: SQL;
   /** Test pages (no order) show only to who reads the printers (`read PackingTerminal`). */
@@ -763,6 +819,11 @@ function jobWhere(orgId: string, filters: JobFilters): SQL {
     and ${filters.terminalId === undefined ? sql`true` : sql`j.terminal_id = ${filters.terminalId}::uuid`}
     and ${filters.printerId === undefined ? sql`true` : sql`j.printer_id = ${filters.printerId}::uuid`}
     and ${pattern === undefined ? sql`true` : sql`j.order_no ilike ${pattern}`}
+    and ${
+      filters.before === undefined
+        ? sql`true`
+        : sql`(j.created_at, j.id) < (${filters.before.createdAt}::timestamptz, ${filters.before.id}::uuid)`
+    }
     and ${
       filters.from === undefined
         ? sql`true`
@@ -788,7 +849,7 @@ export async function jobsPage(
            j.cancelled_at, j.device_id, j.confirmed_by
     from packing.print_jobs j
     where ${where}
-    order by j.created_at desc, j.id
+    order by j.created_at desc, j.id desc
     limit ${filters.limit} offset ${filters.offset}
   `);
   const [count] = await tx.execute<{ n: number }>(sql`
@@ -812,11 +873,16 @@ export async function jobsOfOrders(
   return [...rows];
 }
 
-/** How many times each order's document and lot has printed. */
+/**
+ * How many times each order's document and lot has printed, or with `pending` also is waiting
+ * or being sent: what a new print must count, so pressing Print twice, or printing while the
+ * automatic label waits, is a reprint and needs its reason (ledger audit W3).
+ */
 export async function printedCounts(
   tx: Tx,
   orgId: string,
   orderIds: readonly string[],
+  options: { readonly pending?: boolean } = {},
 ): Promise<Map<string, number>> {
   if (orderIds.length === 0) return new Map();
   // A page printed for another lot count ("Lot 1 of 2" when there are now 3) is not this
@@ -830,7 +896,8 @@ export async function printedCounts(
     select j.order_id, j.document, j.lot_no, count(*)::int as n from packing.print_jobs j
     left join packing.order_lots ol on ol.org_id = j.org_id and ol.order_id = j.order_id
     where j.org_id = ${orgId} and j.order_id = any (${sql.param([...orderIds])}::uuid[])
-      and j.state = 'printed' and j.lot_count = coalesce(ol.lot_count, 1)
+      and ${options.pending === true ? sql`j.state in ('queued', 'sending', 'printed')` : sql`j.state = 'printed'`}
+      and j.lot_count = coalesce(ol.lot_count, 1)
     group by j.order_id, j.document, j.lot_no
   `);
   return new Map(

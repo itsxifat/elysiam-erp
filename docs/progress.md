@@ -3386,3 +3386,63 @@ dry-run|commit --file <users.json>`.
   that failed to load passed after the fix, with the console's inbox tests, 37). Not run: the full
   verify, stack specs, the cost sweep, a real browser call.
 - **New dependencies:** none.
+
+## 2026-10-17 · M46 · Labels and Packaging, with terminals, printers and lots (not merged or deployed)
+
+- **Branch and worktree:** `m46-labels-packaging` from `integration-wave2` (ce807df5), in
+  `D:/Projects/elysium-erp-m46`. Decisions D-800 to D-825; plan `docs/plans/M46.md`.
+- **What was built:** two console areas, Labels (Ready for label, Queue, Print log with CSV,
+  Printers and the auto-print rule, label Terminals, the browser Print station) and Packaging (To
+  pack, the packing station by lot at a bound terminal, Packed, Handover lot by lot, packing
+  Terminals with live cards, Cameras). Terminals with assigned people, bound computers (token,
+  30-second check-in, who is working there with M41's presence), a packing terminal's cameras
+  (every camera cuts the same window); printers over IPP/IPPS (PDF), raw TCP 9100 (TSPL, ZPL,
+  ESC/POS raster rendered by Gotenberg's screenshot at the printer's dots) or a browser station;
+  the print queue and log (`packing.print_jobs`), reprints with a reason, auto-print in the
+  courier's booking transaction (through the orders module's new `ParcelObserverRegistry`), lots
+  with their own slips, labels and barcodes ("LOT 2 OF 3", `…-L2`), packing by lot, and a
+  handover that ships only when every lot is scanned (a person's Ship of a multi-lot order is
+  refused through the new `HandoverGuardRegistry`). The order page shows each lot's print record.
+  Orders loses Hub and Pack (old links land on Packaging).
+- **Migrations:** `0153_m46_labels_packaging_schema` (drizzle-kit: eleven tables, three columns)
+  and `0154_m46_labels_packaging_policies` (hand-written: RLS ENABLE and FORCE and grants on each
+  new table, the identity and print-log triggers, M38c's camera-part rule widened, and the
+  backfill of booked orders still at the hub into Ready for label with FORCE lifted for that one
+  statement, as 0057).
+- **Bundle:** the first download was 249.7 KB of 250 and M46's nav entries took it over; the
+  till's `pos.*` strings (only the POS app renders them) moved from the core catalogue to
+  `sections/pos.en.ts`. `check:bundle` 248.7 KB (D-821).
+- **Evidence (minimal tests, D-758):** domain property tests (`lots.test.ts`, 12: lot codes read
+  back, Finish only with every lot closed and non-empty over random packing, the handover
+  complete exactly when every lot is scanned, the terminal choice); the drivers byte for byte
+  (`drivers.test.ts`, 14: PNG through every row filter, the threshold, TSPL with its inverted
+  bitmap, ZPL `^GFA`, ESC/POS bands and cut, IPP Print-Job and Get-Printer-Attributes and a
+  printer's answer, the private-LAN rule and the server's own networks, a raw socket against a
+  local server); the real Gotenberg (`render.gotenberg.test.ts`, 3: a lot's 4 × 6 label at 203 dpi
+  is 812 × 1218 dots and its lot barcode decodes off the dots; the slip shrunk onto 4 × 6; a
+  100 × 150 mm PDF; the bitmaps in `docs/review/M46/`); real Postgres (`labels.e2e.test.ts`, 10: the
+  five acceptance checks and one test for each audit warning and the scope notes, with the worker's sender running for real against a recording printer);
+  regressions green: `pack-station.e2e`, `camera.e2e`, `packing.e2e`, `handover.e2e`,
+  `route-matrix.e2e` (every new route as every role), `courier.db`, `courier.m15.db`,
+  `workflow.e2e`, `desk.e2e`, `audit-exempt`, `module-boundaries`, the console's orders, shell
+  and i18n tests, the i18n and permissions packages. `check:routes` (627 routes, PASS),
+  `check:schema` (153 migrations agree), `check:migrations`, `check:i18n`, `check:api-client`
+  (regenerated) PASS; typecheck of contracts, domain, db, i18n, server, console, pos and portal;
+  eslint and prettier on every touched file; console build and `check:bundle` PASS. Not run: the
+  full verify, the stack specs, the cost sweep, the acceptance-auditor, a real printer.
+- **Ledger audit:** 0 critical, 4 warnings, 7 notes, by the `ledger-auditor`; all fixed (D-826):
+  W1 (the order page's Ship and the handover's ship took the order's row and the lots' lock in
+  opposite orders: one order now, session then row then lots, with a racing test), W2 (a print
+  station could mark any job of its terminal printed: now only a browser job it claimed), W3 (a
+  second press of Print, or one beside the automatic label, printed twice with no reason: pages
+  waiting or being sent now count, under the order's lock; the automatic rule skips them; two
+  computers of one terminal never take the same job), W4 (a packed order could be set to fewer
+  lots and leave bags at the hub: refused), N1 (a count leaving no open lot while packing:
+  refused), N2 (no order number on `labels.job_changed`), N3 (stale jobs cancellable, jobs
+  re-sent when a browser station becomes a network printer), N5 (the booking's listeners in a
+  savepoint), N6 (CSV by keyset), N7 (scope and cross-brand tests). N4 is documented (D-812: on a
+  VPS, add the host's private subnet to `BRAND_PRINTER_REFUSED_CIDRS`).
+- **Follow-ups:** the stack specs that walk Orders → Hub and Orders → Pack
+  (`order-workflow.stack.ts`, `packing.stack.ts`) move to Packaging; try every printer model with
+  Test print (unverified integration); owner questions D-805 and D-817.
+- **New dependencies:** none (the PNG reader, the raster and the IPP encoding are our own).

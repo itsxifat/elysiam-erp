@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import { businessDate, poisha } from '@elysium/domain';
 import { normalizeStatus, statusDedupeKey, type ParcelInput } from '@elysium/domain/courier';
@@ -64,6 +64,8 @@ export interface BookingOutcome {
 
 @Injectable()
 export class BookingService implements OnModuleInit {
+  private readonly logger = new Logger(BookingService.name);
+
   constructor(
     @Inject(COURIER_ADAPTERS) private readonly adapters: CourierAdapterRegistry,
     @Inject(ORDERS_PORT) private readonly orders: OrdersPort,
@@ -542,13 +544,23 @@ export class BookingService implements OnModuleInit {
       });
 
       // M46 (D-817): in this same transaction, so the label's print commits with the
-      // consignment it carries and is never a call from inside it (invariant 6).
-      await this.parcels.notify(tx, {
-        orgId,
-        orderId: consignment.order_id,
-        consignmentNo: result.consignmentNo,
-        at,
-      });
+      // consignment it carries and is never a call from inside it (invariant 6). In a savepoint
+      // (ledger audit N5): the courier has already taken the parcel, so a failing listener
+      // loses its own rows (the labels are then printed by hand), never the booking.
+      try {
+        await tx.transaction((savepoint) =>
+          this.parcels.notify(savepoint, {
+            orgId,
+            orderId: consignment.order_id,
+            consignmentNo: result.consignmentNo,
+            at,
+          }),
+        );
+      } catch (error) {
+        this.logger.warn(
+          `a booked parcel's listeners failed for consignment ${consignment.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
 
       await this.audit.record(tx, {
         orgId,

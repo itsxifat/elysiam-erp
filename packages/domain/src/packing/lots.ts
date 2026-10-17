@@ -50,11 +50,16 @@ export function parseLotCode(
 
 export type LotCountRefusal = 'out_of_range' | 'not_open' | 'handover_started' | 'below_closed';
 
-/** Whether an order's lot count may become `count` now. */
+/**
+ * Whether an order's lot count may become `count` now. While it is being packed the count must
+ * leave a lot open after the closed ones (a scan always has a bag to go in); once it is packed
+ * the count may grow (a bag split at the dispatch table) but never fall below the bags packed,
+ * or the handover would let an order go with bags left at the hub (M46 ledger audit, W4).
+ */
 export function judgeLotCount(input: {
   readonly count: number;
   readonly orderStatus: string;
-  /** Lots closed at the packing station (only counted while the order is being packed). */
+  /** Lots closed at the packing station: of the open session, or of the finished one. */
   readonly closedLots: number;
   /** Lots already scanned at the courier's handover. */
   readonly handedLots: number;
@@ -64,7 +69,11 @@ export function judgeLotCount(input: {
   }
   if (!LOT_OPEN_STATUSES.includes(input.orderStatus)) return 'not_open';
   if (input.handedLots > 0) return 'handover_started';
-  if (input.orderStatus === 'confirmed' && input.count < input.closedLots) return 'below_closed';
+  const below =
+    input.orderStatus === 'packed'
+      ? input.count < input.closedLots
+      : input.closedLots > 0 && input.count <= input.closedLots;
+  if (below) return 'below_closed';
   return 'ok';
 }
 

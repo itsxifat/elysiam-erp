@@ -11,6 +11,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import {
   ORG_A,
+  ORG_B,
   startHttpHarness,
   type HttpHarness,
   type RoleClient,
@@ -619,5 +620,212 @@ describe('where prints go (M46 check 5, D-812, D-813)', () => {
       { orgId: ORG_A },
     );
     expect(events[0]?.n).toBe(1);
+  });
+});
+
+/** An order taken, confirmed, put in `lots` lots, packed lot by lot and every lot scanned out. */
+async function packedAndScanned(lots: number): Promise<{ id: string; orderNo: string }> {
+  const order = await confirmedOrder(lots);
+  expect(
+    (await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: lots })).status,
+  ).toBe(200);
+  const opened = await call(packer, 'POST', '/v1/packing/sessions', { orderId: order.id });
+  const sessionId = String((opened.body.session as Json).id);
+  for (let lot = 1; lot <= lots; lot += 1) {
+    const scanned = await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/scans`, {
+      scanId: randomUUID(),
+      code: skuCode,
+    });
+    expect(scanned.body.outcome).toBe('accepted');
+    if (lot < lots) {
+      expect(
+        (await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/lots/close`)).status,
+      ).toBe(200);
+    }
+  }
+  const done = await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/complete`);
+  expect(done.status, done.text).toBe(200);
+  for (let lot = 1; lot <= lots; lot += 1) {
+    const scan = await call(packer, 'POST', '/v1/packing/handover/scans', {
+      code: lotCode(order.orderNo, lot),
+    });
+    expect(scan.status, scan.text).toBe(200);
+  }
+  return order;
+}
+
+describe('after the ledger audit (W1 to W4, N7)', () => {
+  it('W1: the order page’s Ship and the handover racing on one order never deadlock', async () => {
+    const order = await packedAndScanned(2);
+    const [page, desk] = await Promise.all([
+      call(admin, 'POST', `/v1/orders/${order.id}/ship`, {}),
+      call(packer, 'POST', '/v1/packing/handover', { orderIds: [order.id] }),
+    ]);
+    expect(page.status, page.text).toBeLessThan(500);
+    expect(desk.status, desk.text).toBe(200);
+    const shippedByPage = page.status < 300;
+    const shippedByDesk = (desk.body.results as { ok: boolean }[])[0]?.ok === true;
+    // Exactly one of them moved it; the other was told it already moved.
+    expect(Number(shippedByPage) + Number(shippedByDesk)).toBe(1);
+    expect((await call(admin, 'GET', `/v1/orders/${order.id}`)).body.status).toBe('shipped');
+  });
+
+  it('W3: a second press of Print before the first prints is a reprint and needs a reason', async () => {
+    await call(admin, 'PUT', '/v1/labels/settings', { autoPrint: false, autoSlip: false });
+    const order = await confirmedOrder();
+    const first = await call(packer, 'POST', '/v1/labels/print', {
+      orderIds: [order.id],
+      documents: ['label'],
+    });
+    expect(first.status, first.text).toBe(200);
+    const second = await call(packer, 'POST', '/v1/labels/print', {
+      orderIds: [order.id],
+      documents: ['label'],
+    });
+    expect(second.status, second.text).toBe(400);
+    expect(second.body.code).toBe('PRINT_REASON_REQUIRED');
+  });
+
+  it('W4: a packed order never goes in fewer lots than it was packed in', async () => {
+    const order = await confirmedOrder(3);
+    await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: 3 });
+    const opened = await call(packer, 'POST', '/v1/packing/sessions', { orderId: order.id });
+    const sessionId = String((opened.body.session as Json).id);
+    for (let lot = 1; lot <= 3; lot += 1) {
+      await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/scans`, {
+        scanId: randomUUID(),
+        code: skuCode,
+      });
+      // N1: while packing, the count must leave a lot open after the closed ones.
+      if (lot === 2) {
+        const closeAll = await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, {
+          count: 1,
+        });
+        expect(closeAll.status).toBe(409);
+        expect(closeAll.body.code).toBe('LOTS_LOCKED');
+      }
+      if (lot < 3) await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/lots/close`);
+    }
+    expect((await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/complete`)).status).toBe(
+      200,
+    );
+    const fewer = await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: 1 });
+    expect(fewer.status, fewer.text).toBe(409);
+    expect(fewer.body.code).toBe('LOTS_LOCKED');
+    // Splitting a packed order into one bag more is still allowed (it then needs four scans).
+    const more = await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: 4 });
+    expect(more.status, more.text).toBe(200);
+  });
+
+  it('W2: a print station finishes only a browser job it claimed itself', async () => {
+    const terminal = await call(admin, 'POST', '/v1/terminals', {
+      kind: 'label',
+      name: `Station ${randomUUID().slice(0, 4)}`,
+    });
+    const terminalId = String(terminal.body.id);
+    const browser = await call(admin, 'POST', '/v1/labels/printers', {
+      terminalId,
+      name: `Browser ${randomUUID().slice(0, 4)}`,
+      connection: 'browser',
+      language: 'pdf',
+      medium: '4x6',
+      documents: ['label'],
+    });
+    expect(browser.status, browser.text).toBe(201);
+    const raw = await call(admin, 'POST', '/v1/labels/printers', {
+      terminalId,
+      name: `Raw ${randomUUID().slice(0, 4)}`,
+      connection: 'raw',
+      language: 'zpl',
+      host: '172.17.0.9',
+      medium: '4x6',
+      documents: ['label'],
+    });
+    const bound = await call(admin, 'POST', `/v1/terminals/${terminalId}/bind`, {
+      label: 'Station PC',
+    });
+    const device = { [TERMINAL_DEVICE_HEADER]: String(bound.body.token) };
+    const order = await confirmedOrder();
+    const onBrowser = await call(admin, 'POST', '/v1/labels/print', {
+      orderIds: [order.id],
+      documents: ['label'],
+      printerId: String(browser.body.id),
+    });
+    const browserJob = String((onBrowser.body.jobs as { id: string }[])[0]?.id);
+    const listed = await call(admin, 'GET', '/v1/labels/station/jobs', undefined, device);
+    expect((listed.body.items as { id: string }[]).map((job) => job.id)).toContain(browserJob);
+    // Not claimed (its page never fetched): no result is taken for it.
+    const unclaimed = await call(
+      admin,
+      'POST',
+      `/v1/labels/station/jobs/${browserJob}/result`,
+      { result: 'printed' },
+      device,
+    );
+    expect(unclaimed.status, unclaimed.text).toBe(409);
+    expect(unclaimed.body.code).toBe('PRINT_JOB_STATE');
+    // A network printer's job is never the station's to finish.
+    const other = await confirmedOrder();
+    const onRaw = await call(admin, 'POST', '/v1/labels/print', {
+      orderIds: [other.id],
+      documents: ['label'],
+      printerId: String(raw.body.id),
+    });
+    const rawJob = String((onRaw.body.jobs as { id: string }[])[0]?.id);
+    const refused = await call(
+      admin,
+      'POST',
+      `/v1/labels/station/jobs/${rawJob}/result`,
+      { result: 'printed' },
+      device,
+    );
+    expect(refused.status, refused.text).toBe(404);
+  });
+
+  it('N7: a sales agent reaches no other agent’s order’s prints or lots; a token of another brand is no binding', async () => {
+    const sales = await harness.asRole('sales', ORG_A);
+    const order = await confirmedOrder();
+    for (const [method, url, body] of [
+      ['POST', '/v1/labels/print', { orderIds: [order.id], documents: ['label'] }],
+      ['PUT', `/v1/packing/orders/${order.id}/lots`, { count: 2 }],
+      ['POST', '/v1/packing/handover', { orderIds: [order.id] }],
+    ] as const) {
+      const answer = await call(sales, method, url, body);
+      if (url === '/v1/packing/handover') {
+        expect(answer.body).toMatchObject({
+          moved: 0,
+          results: [{ ok: false, code: 'NOT_FOUND' }],
+        });
+      } else {
+        expect(answer.status, `${method} ${url}`).toBe(404);
+      }
+    }
+    // The order page's print record follows the order's own visibility (an unassigned order is
+    // in the sales queue, D-725): the same answer as the order itself.
+    const record = await call(sales, 'GET', `/v1/labels/orders/${order.id}`);
+    const itself = await call(sales, 'GET', `/v1/orders/${order.id}`);
+    expect(record.status).toBe(itself.status);
+    const log = await call(sales, 'GET', `/v1/labels/jobs?orderId=${order.id}`);
+    expect(log.body.items).toEqual([]);
+
+    const otherAdmin = await harness.asRole('org_admin', ORG_B);
+    const theirs = await call(otherAdmin, 'POST', '/v1/terminals', {
+      kind: 'label',
+      name: 'Their label desk',
+    });
+    expect(theirs.status, theirs.text).toBe(201);
+    const theirToken = await call(
+      otherAdmin,
+      'POST',
+      `/v1/terminals/${String(theirs.body.id)}/bind`,
+      {
+        label: 'Their PC',
+      },
+    );
+    const crossed = await call(admin, 'POST', '/v1/terminals/check-in', undefined, {
+      [TERMINAL_DEVICE_HEADER]: String(theirToken.body.token),
+    });
+    expect(crossed.status).toBe(404);
+    expect(crossed.body.code).toBe('TERMINAL_DEVICE_INVALID');
   });
 });

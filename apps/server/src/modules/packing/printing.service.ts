@@ -178,6 +178,10 @@ export class PrintingService {
         if (ids.some((id) => !visible.has(id))) {
           throw new PackingError('NOT_FOUND', 'No such order.');
         }
+        // One print of an order's pages at a time, in the lock order every path takes (the
+        // order's row, then its lots; ledger audit W1, W3), so two presses of Print, or a print
+        // beside the automatic one, see each other and the second needs a reason.
+        for (const id of [...ids].sort()) await this.lockOrder(tx, context.orgId, id);
         const facts = await this.orders.packingFacts(tx, context.orgId, ids);
         for (const order of facts) {
           if (!PRINTABLE_STATUSES.includes(order.status)) {
@@ -189,7 +193,7 @@ export class PrintingService {
         }
         const [lots, printed, labelOrders, printers, terminals, openJobs] = await Promise.all([
           repo.lotCounts(tx, context.orgId, ids),
-          repo.printedCounts(tx, context.orgId, ids),
+          repo.printedCounts(tx, context.orgId, ids, { pending: true }),
           repo.labelOrderOf(tx, context.orgId, ids),
           repo.printersOf(tx, context.orgId),
           repo.terminalsOf(tx, context.orgId),
@@ -388,7 +392,12 @@ export class PrintingService {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const job = await this.jobInScope(tx, context, request, jobId, true);
-        const cancelled = await repo.cancelJob(tx, context.orgId, jobId);
+        const cancelled = await repo.cancelJob(
+          tx,
+          context.orgId,
+          jobId,
+          new Date(Date.now() - PRINT_SENDING_STALE_MS),
+        );
         if (cancelled === undefined) {
           throw new PackingError(
             'PRINT_JOB_STATE',
@@ -414,10 +423,16 @@ export class PrintingService {
 
   // --- the queue and the log (D-818) ------------------------------------------------------
 
-  async jobs(context: ActiveContext, request: object, query: PrintJobsQuery) {
+  async jobs(
+    context: ActiveContext,
+    request: object,
+    query: PrintJobsQuery,
+    before?: { readonly createdAt: string; readonly id: string },
+  ) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const page = await repo.jobsPage(tx, context.orgId, {
         ...query,
+        before,
         orderInScope: this.orders.orderInScopeSql(context.orgId, sql`j.order_id`, request),
         testPages: defineAbilityFor(context).can('read', 'PackingTerminal'),
       });
@@ -462,8 +477,12 @@ export class PrintingService {
         'error',
       ].join(','),
     ];
-    for (let offset = 0; offset < 10_000; offset += 200) {
-      const page = await this.jobs(context, request, { ...query, limit: 200, offset });
+    let before: { createdAt: string; id: string } | undefined;
+    for (let read = 0; read < 10_000; read += 200) {
+      const page = await this.jobs(context, request, { ...query, limit: 200, offset: 0 }, before);
+      const lastItem = page.items.at(-1);
+      before =
+        lastItem === undefined ? undefined : { createdAt: lastItem.createdAt, id: lastItem.id };
       for (const item of page.items) {
         rows.push(
           [
@@ -608,6 +627,7 @@ export class PrintingService {
   /** An order got its consignment: print each lot's label (and slip) on its label terminal. */
   async autoPrint(orgId: string, payload: AutoPrintPayload): Promise<void> {
     await withOrg({ orgId }, async (tx) => {
+      await this.lockOrder(tx, orgId, payload.orderId);
       const [facts] = await this.orders.packingFacts(tx, orgId, [payload.orderId]);
       if (facts === undefined) return;
       await repo.fillLabelOrder(tx, {
@@ -617,12 +637,13 @@ export class PrintingService {
         locationId: facts.locationId,
       });
       if (facts.status !== 'confirmed') return;
-      const [settings, printers, terminals, openJobs, lotCount] = await Promise.all([
+      const [settings, printers, terminals, openJobs, lotCount, already] = await Promise.all([
         repo.labelSettingsOf(tx, orgId),
         repo.printersOf(tx, orgId),
         repo.terminalsOf(tx, orgId),
         repo.openJobsByTerminal(tx, orgId),
         repo.lotCountOf(tx, orgId, facts.id),
+        repo.printedCounts(tx, orgId, [facts.id], { pending: true }),
       ]);
       const live = printers.filter((printer) => printer.enabled);
       if (!autoPrintOn(settings?.auto_print ?? null, live.length)) return;
@@ -657,6 +678,8 @@ export class PrintingService {
                     candidate.documents.includes('packing_slip'),
                 );
           if (printer === undefined) continue;
+          // Printed by hand already (or on its way): the rule does not print it again.
+          if ((already.get(`${facts.id}:${document}:${String(lot)}`) ?? 0) > 0) continue;
           const job = await repo.insertJob(tx, {
             orgId,
             orderId: facts.id,
@@ -706,6 +729,10 @@ export class PrintingService {
    */
   async send(orgId: string, payload: SendPrintPayload): Promise<void> {
     const prepared = await withOrg({ orgId }, async (tx) => {
+      const waiting = await repo.jobById(tx, orgId, payload.jobId);
+      if (waiting === undefined) return null;
+      const current = await repo.printerById(tx, orgId, waiting.printer_id);
+      if (current?.connection === 'browser') return null;
       const job = await repo.markSending(tx, {
         orgId,
         id: payload.jobId,
@@ -926,11 +953,11 @@ export class PrintingService {
           if (printer?.connection !== 'browser') {
             throw new PackingError('NOT_FOUND', 'No such print job at this terminal.');
           }
-          const sending = await repo.markSending(tx, {
+          // Claimed for this computer: queued, or its own claim again after a reload (W2, W3).
+          const sending = await repo.claimForStation(tx, {
             orgId: context.orgId,
             id: jobId,
-            // A station that asks again for a job it is printing gets it again.
-            staleBefore: new Date(Date.now() + 1000),
+            deviceId: here.deviceId,
           });
           if (sending === undefined) {
             throw new PackingError('PRINT_JOB_STATE', 'This print is finished or cancelled.');
@@ -972,7 +999,9 @@ export class PrintingService {
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const here = await this.atLabelTerminal(tx, context, token);
         const job = await this.jobInScope(tx, context, request, jobId, true);
-        if (job.terminal_id !== here.terminal.id) {
+        const printer = await repo.printerById(tx, context.orgId, job.printer_id);
+        // Only a browser printer's job, and only the one this computer claimed (W2).
+        if (job.terminal_id !== here.terminal.id || printer?.connection !== 'browser') {
           throw new PackingError('NOT_FOUND', 'No such print job at this terminal.');
         }
         if (job.state === 'printed' && input.result === 'printed') {
@@ -1016,6 +1045,12 @@ export class PrintingService {
   }
 
   // --- the parts ---------------------------------------------------------------------------
+
+  /** The order's row, then its lots: the lock order every lots and print path takes (W1). */
+  private async lockOrder(tx: Tx, orgId: string, orderId: string): Promise<void> {
+    await this.orders.bookingSnapshot(tx, orgId, orderId, { forUpdate: true });
+    await repo.lockOrderLots(tx, orgId, orderId);
+  }
 
   private async atLabelTerminal(tx: Tx, context: ActiveContext, token: string | null) {
     const here = await this.terminals.resolve(tx, context, token, 'label');
@@ -1186,7 +1221,6 @@ export class PrintingService {
         jobId: job.id,
         terminalId: job.terminal_id,
         printerId: job.printer_id,
-        orderNo: job.order_no.slice(0, 64),
         state: job.state,
         reason: reason?.slice(0, 200) ?? null,
       },

@@ -75,7 +75,11 @@ describe('the lot count (D-805)', () => {
           expect(count).toBeLessThanOrEqual(LOT_COUNT_MAX);
           expect(['confirmed', 'packed']).toContain(orderStatus);
           expect(handedLots).toBe(0);
-          if (orderStatus === 'confirmed') expect(count).toBeGreaterThanOrEqual(closedLots);
+          // Packing leaves a lot open; packed never drops below the bags packed (W4, N1).
+          if (orderStatus === 'confirmed' && closedLots > 0) {
+            expect(count).toBeGreaterThan(closedLots);
+          }
+          if (orderStatus === 'packed') expect(count).toBeGreaterThanOrEqual(closedLots);
         },
       ),
     );
@@ -88,6 +92,15 @@ describe('the lot count (D-805)', () => {
     expect(
       judgeLotCount({ count: 1, orderStatus: 'confirmed', closedLots: 2, handedLots: 0 }),
     ).toBe('below_closed');
+    expect(
+      judgeLotCount({ count: 2, orderStatus: 'confirmed', closedLots: 2, handedLots: 0 }),
+    ).toBe('below_closed');
+    expect(judgeLotCount({ count: 1, orderStatus: 'packed', closedLots: 3, handedLots: 0 })).toBe(
+      'below_closed',
+    );
+    expect(judgeLotCount({ count: 4, orderStatus: 'packed', closedLots: 3, handedLots: 0 })).toBe(
+      'ok',
+    );
   });
 });
 

@@ -541,7 +541,9 @@ export const teamPresenceChangedPayload = z
 
 /**
  * M46 (D-813, D-816): a print job was queued, printed or failed. To the label team (warehouse)
- * and its supervisors: ids, the order's number, the state, and for a failure its short reason.
+ * and its supervisors: ids, the state, and for a failure its short reason. No order number: a
+ * branch manager's room hears every branch's jobs, so the screens refetch their scoped lists
+ * (ledger audit N2).
  * The browser print station listens for its own terminal's `queued` jobs; the queue screen and
  * its sounds for the rest.
  */
@@ -550,7 +552,6 @@ export const labelsJobChangedPayload = z
     jobId: uuid,
     terminalId: uuid,
     printerId: uuid,
-    orderNo: z.string().max(64),
     state: z.enum(['queued', 'sending', 'printed', 'failed', 'cancelled']),
     /** Set on a failure: a short sentence a packer can act on, never a printer's raw reply. */
     reason: z.string().max(200).nullable(),
