@@ -7,6 +7,7 @@ import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ALL_QUEUES } from '../../job-queues.js';
+import { attachScope } from '../../platform/auth/scope.js';
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import {
   APP_DOMAIN,
@@ -19,6 +20,7 @@ import {
 } from '../../testing/http-harness.js';
 import { FILES_API, type FilesApi } from '../files/files.api.js';
 import { seedCustomer, seedOrder } from '../orders/orders.testing.js';
+import { TelephonyCallsService } from './calls.service.js';
 import { TELEPHONY_SYSTEM_USER } from './ingest.service.js';
 import { silentWav } from './providers/envo-gateway.js';
 import { RECORDING_TRIES, TelephonyRecordingsService } from './recordings.service.js';
@@ -68,6 +70,29 @@ const envoRequests: EnvoRequest[] = [];
 let history: (Readonly<Record<string, unknown>> & { readonly startedAt: string })[] = [];
 /** What the stand-in's `/api/v1/calls/live` answers, as Envo's `liveCalls` shapes it. */
 let live: unknown[] = [];
+/** The history page the stand-in refuses once with Envo's 429, then serves again. */
+let historyRefusesPage: number | null = null;
+/** Envo's extensions, as `/api/v1/extensions` lists them. */
+const envoExtensions: Record<string, unknown>[] = [
+  {
+    extension: '101',
+    name: 'Desk 1',
+    enabled: true,
+    dnd: false,
+    webPhone: true,
+    online: true,
+    status: 'idle',
+  },
+  {
+    extension: '102',
+    name: 'Desk 2',
+    enabled: true,
+    dnd: false,
+    webPhone: true,
+    online: false,
+    status: 'unavailable',
+  },
+];
 let envo: Server;
 let envoBase = '';
 let harness: HttpHarness;
@@ -208,26 +233,7 @@ beforeAll(async () => {
           key: 'erp',
         });
       } else if (url === '/api/v1/extensions') {
-        send(200, [
-          {
-            extension: '101',
-            name: 'Desk 1',
-            enabled: true,
-            dnd: false,
-            webPhone: true,
-            online: true,
-            status: 'idle',
-          },
-          {
-            extension: '102',
-            name: 'Desk 2',
-            enabled: true,
-            dnd: false,
-            webPhone: true,
-            online: false,
-            status: 'unavailable',
-          },
-        ]);
+        send(200, envoExtensions);
       } else if (url === '/api/v1/numbers') {
         send(200, [
           {
@@ -263,6 +269,11 @@ beforeAll(async () => {
         const to = query.has('to') ? Date.parse(query.get('to') ?? '') : Infinity;
         const limit = Number(query.get('limit') ?? 50);
         const page = Number(query.get('page') ?? 1);
+        if (historyRefusesPage === page) {
+          historyRefusesPage = null;
+          send(429, { error: 'Too many requests' });
+          return;
+        }
         const listed = history
           .filter((call) => Date.parse(call.startedAt) >= from && Date.parse(call.startedAt) < to)
           .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
@@ -300,10 +311,15 @@ beforeAll(async () => {
     logger: pino({ level: 'silent' }),
     pollingIntervalSeconds: 0.5,
   });
+  // The five-minute sweep is left out here: the sync cases drive `syncConnection` themselves,
+  // and a sweep landing mid-case would read the stand-in's pages first.
+  const sync = harness.app.get(TelephonySyncService);
   await registerTelephonyJobs({
     jobs,
     webhooks: harness.app.get(TelephonyWebhookService),
-    sync: harness.app.get(TelephonySyncService),
+    sync: Object.assign(Object.create(sync) as TelephonySyncService, {
+      sweep: () => Promise.resolve({ queued: 0 }),
+    }),
     recordings: harness.app.get(TelephonyRecordingsService),
     report: () => Promise.resolve(),
   });
@@ -1274,4 +1290,319 @@ describe('the review: scope, reach, claims and retention', () => {
     const gone = await salesA.client.request('GET', `/v1/telephony/calls/${click}/recording`);
     expect(json<{ code: string }>(gone).code).toBe('TELEPHONY_RECORDING_UNAVAILABLE');
   });
+});
+
+/**
+ * The sync's windows and cursor, its stale clicks and a key that no longer opens (D-839), each
+ * on a connection of its own to the stand-in, with a small request and page budget.
+ */
+describe('the review: the sync', () => {
+  const LIMITS = { maxRequests: 3, pageSize: 5 };
+  const connection = async (name: string) => {
+    const created = await admin.client.request('POST', '/v1/telephony/connections', {
+      body: { name, baseUrl: envoBase, apiKey: KEY, webhookSecret: SECRET },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    return json<{ id: string }>(created).id;
+  };
+  const state = async (id: string) =>
+    withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ sync_cursor: Date | string | null; last_sync_error: string | null }>(
+            sql`select sync_cursor, last_sync_error from telephony.connections where id = ${id}`,
+          )
+        )[0],
+      { orgId: ORG_A },
+    );
+  const stored = async (id: string, prefix: string) =>
+    withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ n: number }>(sql`
+            select count(*)::int as n from telephony.calls
+            where connection_id = ${id} and envo_call_id like ${`${prefix}.%`}
+          `)
+        )[0]?.n ?? 0,
+      { orgId: ORG_A },
+    );
+  /** Finished inbound calls from strangers, started `hoursAgo` before `now`. */
+  const finished = (prefix: string, now: Date, hoursAgo: readonly number[]) =>
+    hoursAgo.map((hours, index) => ({
+      id: `${prefix}.${String(index + 1)}`,
+      startedAt: new Date(now.getTime() - hours * 3600_000).toISOString(),
+      direction: 'inbound',
+      from: `0177${String(1_000_000 + index).slice(-7)}`,
+      to: '09644342036',
+      answered: false,
+      disposition: 'no answer',
+      durationSec: 20,
+      talkSec: 0,
+      recordingUrl: null,
+      legs: 1,
+    }));
+  const syncOnce = (id: string, now: Date) =>
+    harness.app.get(TelephonySyncService).syncConnection(ORG_A, id, now, LIMITS);
+
+  it('keeps the cursor before a window Envo refused part of, and reads it all the next time', async () => {
+    const id = await connection('Sync 429');
+    const now = new Date();
+    history = finished('1789470001', now, [20, 18, 16, 14, 12, 10, 8, 6]);
+    historyRefusesPage = 2;
+    try {
+      const first = await syncOnce(id, now);
+      expect(first.listed).toBe(LIMITS.pageSize);
+      const after = await state(id);
+      expect(after?.sync_cursor).toBeNull();
+      expect(after?.last_sync_error).toContain('120 requests a minute');
+      const second = await syncOnce(id, now);
+      expect(second.listed).toBe(8);
+      expect(await stored(id, '1789470001')).toBe(8);
+      const read = await state(id);
+      expect(read?.last_sync_error).toBeNull();
+      // Never closer to now than the longest call.
+      expect(new Date(read?.sync_cursor ?? 0).getTime()).toBe(now.getTime() - 2 * 3600_000);
+    } finally {
+      historyRefusesPage = null;
+      history = [];
+    }
+  });
+
+  it('reads a backlog bigger than one sync’s budget over two, the cursor only past what it read', async () => {
+    const id = await connection('Sync backlog');
+    const now = new Date();
+    // Sixteen calls from 23 hours ago to 1 hour ago: four pages of five, a budget of three.
+    history = finished(
+      '1789470002',
+      now,
+      Array.from({ length: 16 }, (_, index) => 23 - (index * 22) / 15),
+    );
+    try {
+      const first = await syncOnce(id, now);
+      expect(first.listed).toBeGreaterThan(0);
+      expect(first.listed).toBeLessThan(16);
+      const halfway = new Date((await state(id))?.sync_cursor ?? 0).getTime();
+      expect(halfway).toBeGreaterThan(now.getTime() - 24 * 3600_000);
+      expect(halfway).toBeLessThan(now.getTime() - 2 * 3600_000);
+      expect(await stored(id, '1789470002')).toBe(first.listed);
+      await syncOnce(id, now);
+      expect(await stored(id, '1789470002')).toBe(16);
+      expect(new Date((await state(id))?.sync_cursor ?? 0).getTime()).toBe(
+        now.getTime() - 2 * 3600_000,
+      );
+    } finally {
+      history = [];
+    }
+  });
+
+  /** A click Envo took and never described, `minutesAgo` old, on extension `extension`. */
+  const click = async (id: string, extension: string, minutesAgo: number) =>
+    withOrg({ orgId: ORG_A, userId: TELEPHONY_SYSTEM_USER }, async (tx) => {
+      const at = new Date(Date.now() - minutesAgo * 60_000);
+      const row = await repo.insertCall(tx, {
+        orgId: ORG_A,
+        connectionId: id,
+        envoCallId: null,
+        firstSeen: 'click',
+        direction: 'outbound',
+        status: 'dialing',
+        fromNumber: extension,
+        toNumber: '+8801766666666',
+        customerPhoneE164: '+8801766666666',
+        extension,
+        userId: null,
+        customerId: null,
+        customerName: null,
+        orderId: null,
+        orderNo: null,
+        orderOwnerUserId: null,
+        occurredAt: at,
+        requestedAt: at,
+      });
+      return row.id;
+    });
+  const clickState = async (id: string) =>
+    withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ status: string; error_code: string | null }>(
+            sql`select status, error_code from telephony.calls where id = ${id}`,
+          )
+        )[0],
+      { orgId: ORG_A },
+    );
+
+  it('keeps a stale click open while Envo shows its extension on a call, and closes it after', async () => {
+    const id = await connection('Sync stale');
+    const busy = await click(id, '105', 20);
+    live = [{ id: '1789471000.1', state: 'talking', channels: [{ endpoint: '105_brand' }] }];
+    try {
+      expect((await syncOnce(id, new Date())).closed).toBe(0);
+      expect(await clickState(busy)).toMatchObject({ status: 'dialing', error_code: null });
+    } finally {
+      live = [];
+    }
+    expect((await syncOnce(id, new Date())).closed).toBe(1);
+    expect(await clickState(busy)).toMatchObject({ status: 'ended', error_code: 'not_connected' });
+  });
+
+  it('says so when the key no longer opens, and closes only clicks older than the longest call', async () => {
+    const id = await connection('Sync sealed');
+    const young = await click(id, '106', 20);
+    const old = await click(id, '107', 3 * 60);
+    await withSystem(
+      async (tx) =>
+        tx.execute(sql`
+          update telephony.connections set api_key_sealed = ${Buffer.from('not a sealed key')}
+          where id = ${id}
+        `),
+      { orgId: ORG_A },
+    );
+    const before = envoRequests.length;
+    const result = await syncOnce(id, new Date());
+    expect(result).toEqual({ listed: 0, closed: 1 });
+    expect(envoRequests.length).toBe(before);
+    expect((await state(id))?.last_sync_error).toContain('no API key that opens');
+    expect(await clickState(young)).toMatchObject({ status: 'dialing' });
+    expect(await clickState(old)).toMatchObject({ status: 'ended', error_code: 'not_connected' });
+  });
+});
+
+/**
+ * Who a call names (D-846) and whether the console's phone can start (D-843): a holder who no
+ * longer places calls, a call that began before the extension was given, and Envo's own word on
+ * the extension.
+ */
+describe('the review: attribution and the phone’s readiness', () => {
+  const context = (userId: string) => ({
+    orgId: ORG_A,
+    userId,
+    isSuperAdmin: false,
+    roles: ['sales' as const],
+    branchIds: [],
+    branchIdsByRole: {},
+    requestId: 'm47-attribution',
+  });
+  /** A request the route guard has scoped, as the controller's would be. */
+  const scoped = (action: 'read' | 'create') => {
+    const request = {};
+    attachScope(request, action, 'PhoneCall', { kind: 'all' });
+    return request;
+  };
+  const give = async (extension: string, userId: string) => {
+    const given = await manager.client.request(
+      'PUT',
+      `/v1/telephony/connections/${connectionId}/extensions/${extension}`,
+      { body: { userId } },
+    );
+    expect(given.statusCode, given.body).toBe(200);
+  };
+  const byEnvoId = async (envoCallId: string) =>
+    withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ user_id: string | null; extension: string | null }>(sql`
+            select user_id, extension from telephony.calls
+            where connection_id = ${connectionId} and envo_call_id = ${envoCallId}
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+  const outbound = (id: string, from: string, startedAt: Date) =>
+    deliver({
+      event: 'call.started',
+      id,
+      sipServer: { id: 7 },
+      direction: 'outbound',
+      from,
+      to: '01799999999',
+      startedAt: startedAt.toISOString(),
+      durationSec: 0,
+      talkSec: 0,
+    });
+
+  it('names nobody for a holder whose calling role was taken away', async () => {
+    const left = await harness.asRole('sales', ORG_A);
+    await give('104', left.userId);
+    const calls = harness.app.get(TelephonyCallsService);
+    expect((await calls.me(context(left.userId), scoped('read'))).phone).toMatchObject({
+      extension: '104',
+    });
+    await withSystem(
+      async (tx) =>
+        tx.execute(sql`
+          update iam.memberships set is_active = false
+          where org_id = ${ORG_A} and user_id = ${left.userId}
+        `),
+      { orgId: ORG_A },
+    );
+    // A session still carrying the role: the extension is no longer theirs to use.
+    expect(await calls.me(context(left.userId), scoped('read'))).toEqual({ phone: null });
+    await expect(calls.phoneToken(context(left.userId), scoped('create'))).rejects.toThrow(
+      'You have no extension yet',
+    );
+    const started = await outbound('1789472000.1', '104', new Date());
+    expect(started.statusCode, started.body).toBe(200);
+    await processed();
+    expect(await byEnvoId('1789472000.1')).toMatchObject({ extension: '104', user_id: null });
+    const listed = json<{
+      extensions: { extension: string; assignee: { id: string; current: boolean } | null }[];
+    }>(await manager.client.request('GET', `/v1/telephony/connections/${connectionId}/extensions`));
+    expect(listed.extensions.find((row) => row.extension === '104')?.assignee).toMatchObject({
+      id: left.userId,
+      current: false,
+    });
+  });
+
+  it('names nobody for a call that began before the extension was given', async () => {
+    const holder = await harness.asRole('sales', ORG_A);
+    await give('105', holder.userId);
+    const before = await outbound('1789472100.1', '105', new Date(Date.now() - 3600_000));
+    expect(before.statusCode, before.body).toBe(200);
+    const after = await outbound('1789472100.2', '105', new Date(Date.now() + 1_000));
+    expect(after.statusCode, after.body).toBe(200);
+    await processed();
+    expect(await byEnvoId('1789472100.1')).toMatchObject({ extension: '105', user_id: null });
+    expect(await byEnvoId('1789472100.2')).toMatchObject({
+      extension: '105',
+      user_id: holder.userId,
+    });
+  });
+
+  it('says why the phone cannot start: no web phone, or the extension off in Envo', async () => {
+    envoExtensions.push(
+      {
+        extension: '106',
+        name: 'Desk phone',
+        enabled: true,
+        dnd: false,
+        webPhone: false,
+        online: true,
+        status: 'idle',
+      },
+      {
+        extension: '107',
+        name: 'Off',
+        enabled: false,
+        dnd: false,
+        webPhone: true,
+        online: false,
+        status: 'unavailable',
+      },
+    );
+    const deskPhone = await harness.asRole('sales', ORG_A);
+    const switchedOff = await harness.asRole('sales', ORG_A);
+    await give('106', deskPhone.userId);
+    await give('107', switchedOff.userId);
+    // Envo's extension list is cached ten seconds: asked until it is read afresh.
+    const readiness = (viewer: RoleClient, reason: string) =>
+      until(async () => {
+        const mine = json<{ phone: { ready: boolean; notReady: string | null } | null }>(
+          await viewer.client.request('GET', '/v1/telephony/me'),
+        );
+        return mine.phone?.notReady === reason ? mine.phone : undefined;
+      }, `the phone: ${reason}`);
+    expect(await readiness(deskPhone, 'no_web_phone')).toMatchObject({ ready: false });
+    expect(await readiness(switchedOff, 'extension_off')).toMatchObject({ ready: false });
+  }, 30_000);
 });

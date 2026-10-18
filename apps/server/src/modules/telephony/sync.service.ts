@@ -32,9 +32,15 @@ const FIRST_SYNC_MS = 24 * 3600_000;
 export const LONGEST_CALL_MS = 2 * 3600_000;
 /** And each sync re-reads this much before its cursor, for the clocks of Envo and the ERP. */
 const OVERLAP_MS = 5 * 60_000;
-const PAGE_SIZE = 200;
-/** Requests one sync may make: Envo allows a key 120 a minute, shared with the brand's calls. */
-const MAX_REQUESTS = 20;
+/**
+ * How much one sync reads: requests (Envo allows a key 120 a minute, shared with the brand's
+ * calls) and rows a page. A test reads with smaller ones.
+ */
+export interface SyncLimits {
+  readonly maxRequests: number;
+  readonly pageSize: number;
+}
+const LIMITS: SyncLimits = { maxRequests: 20, pageSize: 200 };
 /** A window is not halved below this, however busy it was. */
 const MIN_WINDOW_MS = 60_000;
 
@@ -100,6 +106,7 @@ export class TelephonySyncService {
     orgId: string,
     connectionId: string,
     now: Date = new Date(),
+    limits: SyncLimits = LIMITS,
   ): Promise<{ readonly listed: number; readonly closed: number }> {
     const actor = { orgId, userId: TELEPHONY_SYSTEM_USER };
     const row = await withOrg(actor, (tx) => repo.connectionById(tx, orgId, connectionId));
@@ -125,7 +132,7 @@ export class TelephonySyncService {
 
     const cursor = row.sync_cursor === null ? null : new Date(row.sync_cursor);
     const from = new Date((cursor?.getTime() ?? now.getTime() - FIRST_SYNC_MS) - OVERLAP_MS);
-    const read = await this.readHistory(orgId, row, envo, from, now);
+    const read = await this.readHistory(orgId, row, envo, from, now, limits);
 
     let live: readonly EnvoLiveCall[] | null;
     try {
@@ -159,7 +166,9 @@ export class TelephonySyncService {
     envo: EnvoConnection,
     from: Date,
     now: Date,
+    limits: SyncLimits,
   ): Promise<{ readonly listed: number; readonly reached: Date; readonly error: string | null }> {
+    const { maxRequests, pageSize } = limits;
     let requests = 0;
     let listed = 0;
     let start = from.getTime();
@@ -170,18 +179,18 @@ export class TelephonySyncService {
         from: new Date(windowStart),
         to: new Date(windowEnd),
         page,
-        limit: PAGE_SIZE,
+        limit: pageSize,
       });
     };
     try {
-      while (start < now.getTime() && requests < MAX_REQUESTS) {
+      while (start < now.getTime() && requests < maxRequests) {
         let end = now.getTime();
         let answer: EnvoCallHistoryPage = await ask(start, end, 1);
         // More calls than the requests left can read: a shorter window first.
         while (
-          Math.ceil(answer.total / PAGE_SIZE) > MAX_REQUESTS - requests + 1 &&
+          Math.ceil(answer.total / pageSize) > maxRequests - requests + 1 &&
           end - start > MIN_WINDOW_MS &&
-          requests < MAX_REQUESTS
+          requests < maxRequests
         ) {
           end = start + Math.floor((end - start) / 2);
           answer = await ask(start, end, 1);
@@ -192,11 +201,11 @@ export class TelephonySyncService {
         for (;;) {
           listed += await this.apply(orgId, row, answer.calls, now);
           fetched += answer.calls.length;
-          if (answer.calls.length < PAGE_SIZE || (answer.total > 0 && fetched >= answer.total)) {
+          if (answer.calls.length < pageSize || (answer.total > 0 && fetched >= answer.total)) {
             complete = true;
             break;
           }
-          if (requests >= MAX_REQUESTS) break;
+          if (requests >= maxRequests) break;
           page += 1;
           answer = await ask(start, end, page);
         }
