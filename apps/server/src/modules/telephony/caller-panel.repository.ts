@@ -104,15 +104,17 @@ export async function callsWith(
 /**
  * Whether the viewer is on a call with the party now, or was within `endedSince` (D-860): their
  * own call (a Call they placed, an inbound call they answered), or an inbound call still ringing
- * on their connection that nobody has yet. A placement that never rang anyone does not count,
- * nor a call still open from before `liveSince` (one whose end Envo never sent).
+ * on their connection that nobody has yet. A placement that never rang anyone does not count: a
+ * Call button call whose ring-back the person never picked up (Envo had not dialled the customer,
+ * `wrapUpAsked`'s rule). Nor a call still open from before `liveSince` (one whose end Envo never
+ * sent), or an unanswered one from before `ringingSince` (Envo's trunk dial gives up long before).
  */
 export async function onCallWith(
   tx: Tx,
   orgId: string,
   viewer: { readonly userId: string; readonly connectionId: string | null },
   party: Party,
-  window: { readonly liveSince: Date; readonly endedSince: Date },
+  window: { readonly liveSince: Date; readonly ringingSince: Date; readonly endedSince: Date },
 ): Promise<boolean> {
   const match = partyMatch(party);
   if (match === null) return false;
@@ -127,9 +129,13 @@ export async function onCallWith(
     where c.org_id = ${orgId}
       and (c.user_id = ${viewer.userId} or ${ringingHere})
       and c.status <> 'failed' and c.error_code is null
+      and (c.first_seen <> 'click' or c.answered)
       and ${match}
       and (
-        (c.ended_at is null and c.occurred_at >= ${window.liveSince.toISOString()}::timestamptz)
+        (c.ended_at is null and c.answered
+          and c.occurred_at >= ${window.liveSince.toISOString()}::timestamptz)
+        or (c.ended_at is null and not c.answered
+          and c.occurred_at >= ${window.ringingSince.toISOString()}::timestamptz)
         or c.ended_at >= ${window.endedSince.toISOString()}::timestamptz
       )
     limit 1

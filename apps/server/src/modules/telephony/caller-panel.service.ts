@@ -8,10 +8,13 @@ import type {
   CallerPanelOrder,
   CallerPanelPhone,
   CallerPanelQuery,
+  CustomerPinnedNoteAnswer,
 } from '@elysium/contracts/telephony';
 import { withOrg, type Tx } from '@elysium/db';
 import { customerPhoneFrom } from '@elysium/domain/telephony';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { INBOX_API, type InboxApi } from '../inbox/inbox.api.js';
@@ -33,6 +36,9 @@ const ENDED_WINDOW_MS = 30 * 60_000;
 
 /** A call with no end from longer ago than this is one whose end Envo never sent. */
 const LIVE_WINDOW_MS = 2 * 3600_000;
+
+/** An unanswered call still ringing after this long is one Envo gave up on (its dial: 120 s). */
+const RINGING_WINDOW_MS = 5 * 60_000;
 
 /** The orders the minimal answer lists: the ones a call could still be about. */
 const OPEN_STATUSES = new Set([
@@ -122,7 +128,9 @@ export class CallerPanelService {
         const party = { customerId, phoneE164: phone };
 
         if (!(await this.fullPanel(tx, context, party))) {
-          if (customer === undefined || !namedByCall) return minimal(phone, null, []);
+          // Only a number the viewer gave, or their own call's: never a buyer's, by their id.
+          const echoed = query.customerId === undefined ? phone : null;
+          if (customer === undefined || !namedByCall) return minimal(echoed, null, []);
           const page = await this.orders.customerOrdersPage(tx, orgId, customer.id, context, {
             limit: ORDERS_PAGE,
             cursor: null,
@@ -154,7 +162,6 @@ export class CallerPanelService {
                 this.orders.customerAddresses(tx, orgId, customer.id),
                 this.orders.customerOtherPhones(tx, orgId, customer.id),
                 this.storefront.accountsOfCustomer(tx, orgId, customer.id),
-                this.orders.pinnedNoteAllowed(tx, orgId, customer.id, context),
               ]);
 
         // The order's recipients first, then the phones saved on their inbox contacts.
@@ -194,7 +201,8 @@ export class CallerPanelService {
                           byName: nameOf.get(customer.pinnedNote.byUserId) ?? null,
                           at: customer.pinnedNote.at.toISOString(),
                         },
-                  canPin: facts[4],
+                  // Whoever sees the whole panel may write its note (D-863).
+                  canPin: true,
                   stats: {
                     orders: customer.orders,
                     delivered: customer.delivered,
@@ -247,6 +255,43 @@ export class CallerPanelService {
     );
   }
 
+  /**
+   * Pin `body` on top of the buyer's panel, or clear it with an empty body (D-860). The rule is
+   * the whole panel's own (D-863): a supervisor, a person who may open the buyer, or one on a call
+   * with them now or in the last half hour, so the agent who answers a colleague's buyer can
+   * leave a note. Anyone else, or no such buyer, `CUSTOMER_NOT_FOUND`, with no oracle.
+   */
+  async pin(
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    body: string,
+  ): Promise<CustomerPinnedNoteAnswer> {
+    scopeHasNoRowDimension(request, 'the caller panel’s own rule, checked here (fullPanel)');
+    return mapTelephonyErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const customer = await this.orders.callerCustomer(tx, context.orgId, customerId);
+        if (
+          customer === undefined ||
+          !(await this.fullPanel(tx, context, { customerId, phoneE164: customer.phoneE164 }))
+        ) {
+          throw new TelephonyError('CUSTOMER_NOT_FOUND', 'No such buyer.');
+        }
+        const note = await this.orders.setPinnedNote(tx, context, request, customerId, body);
+        if (note === null) return { pinnedNote: null };
+        const members = await this.iam.activeMembers(tx, context.orgId);
+        return {
+          pinnedNote: {
+            body: note.body,
+            byUserId: note.byUserId,
+            byName: members.find((member) => member.userId === note.byUserId)?.name ?? null,
+            at: note.at.toISOString(),
+          },
+        };
+      }),
+    );
+  }
+
   /** Whether the viewer sees the whole panel for this buyer or number (D-860). */
   private async fullPanel(
     tx: Tx,
@@ -268,7 +313,11 @@ export class CallerPanelService {
       context.orgId,
       { userId: context.userId, connectionId: assignment?.connection_id ?? null },
       party,
-      { liveSince: new Date(now - LIVE_WINDOW_MS), endedSince: new Date(now - ENDED_WINDOW_MS) },
+      {
+        liveSince: new Date(now - LIVE_WINDOW_MS),
+        ringingSince: new Date(now - RINGING_WINDOW_MS),
+        endedSince: new Date(now - ENDED_WINDOW_MS),
+      },
     );
   }
 }

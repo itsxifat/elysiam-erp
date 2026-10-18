@@ -15500,7 +15500,7 @@
         "operationId": "pinCustomerNote",
         "summary": "Pin a note on top of a buyer's caller panel, or clear it with an empty body.",
         "tags": ["customers"],
-        "x-ability": "update:Customer",
+        "x-ability": "read:PhoneCall",
         "parameters": [
           {
             "name": "id",

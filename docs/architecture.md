@@ -2015,7 +2015,8 @@ inside a transaction (invariant 6).
 - **The caller panel** (D-860): the buyer's pinned note (`sales.customers.pinned_note`, `PUT
 /v1/customers/:id/pinned-note`), facts, all orders (paged), addresses, phones, emails, socials,
   conversations and calls with their wrap-ups; full to supervisors and to sales who reach the
-  buyer or are on a call with the phone, minimal otherwise. Platform logos are `ChannelMark`'s
+  buyer or are on a call with the phone, minimal otherwise; whoever sees the full panel may
+  write its note (D-863, telephony's `CallerPanelService.pin`). Platform logos are `ChannelMark`'s
   inline SVGs (D-861).
 - **The inbox's go-ahead** (D-862): a Call with a conversation runs `INBOX_API.guardCall` in the
   Call's transaction (409 `INBOX_OWNER_ACK_REQUIRED` until `x-acknowledge-owner: 1`).

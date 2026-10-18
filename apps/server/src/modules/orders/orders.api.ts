@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { scopeFilterFor, type CallAttemptInput } from '@elysium/contracts';
+import type { CallAttemptInput } from '@elysium/contracts';
 import type { RequestContext, Tx } from '@elysium/db';
 import { sql, type SQL } from 'drizzle-orm';
 import {
@@ -36,12 +36,7 @@ import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
 import * as references from './references.repository.js';
-import {
-  buyerReachScopeFor,
-  buyerWriteScopeFor,
-  buyerWriteScopeSql,
-  orderReadScopeFor,
-} from './orders.scope.js';
+import { buyerReachScopeFor, orderReadScopeFor } from './orders.scope.js';
 
 /** How many of a buyer's newest orders the caller panel reads addresses from (D-860). */
 const CALLER_PANEL_RECENT_ORDERS = 20;
@@ -927,23 +922,10 @@ export interface OrdersApi {
   customerOtherPhones(tx: Tx, orgId: string, customerId: string): Promise<readonly string[]>;
 
   /**
-   * Whether the viewer may change the buyer's pinned note (D-860, `buyerWriteScopeFor`): `update
-   * Customer` from their own context over the buyer's orders with the sales queue, or a buyer with
-   * no orders yet. False for a role without `update Customer`.
-   */
-  pinnedNoteAllowed(
-    tx: Tx,
-    orgId: string,
-    customerId: string,
-    viewer: RequestContext,
-  ): Promise<boolean>;
-
-  /**
    * Pin `body` (trimmed; empty clears) on the buyer, stamped with the caller and the time, and
    * audit `customer.note_pinned` with the lengths only (invariant 10), in the caller's
-   * transaction. For `PUT /v1/customers/:id/pinned-note`, which declares `update Customer`: that
-   * scope with the sales queue is the rule (`buyerWriteScopeSql`, marks it applied), and outside
-   * it `CUSTOMER_NOT_FOUND` (problem+json). The note now pinned, or null.
+   * transaction. The caller has already decided who may (telephony's caller panel rule, D-863);
+   * no such buyer is `CUSTOMER_NOT_FOUND` (problem+json). The note now pinned, or null.
    */
   setPinnedNote(
     tx: Tx,
@@ -1246,16 +1228,6 @@ export class OrdersApiService implements OrdersApi {
     return repo.otherShipPhonesOf(tx, orgId, customerId, row.phone_e164, CALLER_PANEL_OTHER_PHONES);
   }
 
-  async pinnedNoteAllowed(
-    tx: Tx,
-    orgId: string,
-    customerId: string,
-    viewer: RequestContext,
-  ): Promise<boolean> {
-    if (scopeFilterFor(viewer, 'update', 'Customer').kind === 'none') return false;
-    return repo.customerReachableIn(tx, orgId, customerId, buyerWriteScopeFor(viewer));
-  }
-
   async setPinnedNote(
     tx: Tx,
     context: ActiveContext,
@@ -1264,10 +1236,6 @@ export class OrdersApiService implements OrdersApi {
     body: string,
   ): Promise<PinnedNoteFact | null> {
     return mapOrderErrors(async () => {
-      const scope = buyerWriteScopeSql(context, request);
-      if (!(await repo.customerReachableIn(tx, context.orgId, customerId, scope))) {
-        throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
-      }
       const note = body.trim();
       const written = await repo.setPinnedNote(
         tx,

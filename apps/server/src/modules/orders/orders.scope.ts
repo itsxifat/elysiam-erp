@@ -119,28 +119,6 @@ export function buyerReachScopeFor(context: RequestContext): SQL {
   );
 }
 
-/**
- * The buyers whose pinned note a caller may change (M47, D-860): `update Customer` from the
- * caller's own context, mapped onto the buyer's orders as `buyerReachScopeFor` maps `read`, with
- * the sales queue. For sales, read and update Customer are both `own`, so it is the buyers they
- * reach; a supervisor reaches theirs by their grant; a role with no `update Customer` none. No
- * role's grant is widened. The caller panel's `canPin`.
- */
-export function buyerWriteScopeFor(context: RequestContext): SQL {
-  return withQueue(
-    context,
-    filterWhere(scopeFilterFor(context, 'update', 'Customer'), COLUMNS, 'Customer'),
-  );
-}
-
-/**
- * The same, for a route that declares `update Customer` itself (`PUT /v1/customers/:id/
- * pinned-note`): the guard's filter for it, with the sales queue. Marks the scope applied.
- */
-export function buyerWriteScopeSql(context: ActiveContext, request: object): SQL {
-  return withQueue(context, scopeWhere(request, COLUMNS));
-}
-
 function withQueue(context: RequestContext, base: SQL): SQL {
   return context.roles.includes('sales') ? sql`(${base} or o.assigned_to is null)` : base;
 }

@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   callerPanelQuerySchema,
+  customerPinnedNoteSchema,
   phoneCallAnsweredSchema,
   phoneCallListQuerySchema,
   phoneCallPlaceSchema,
@@ -386,6 +387,27 @@ export class TelephonyController {
       auditable(request),
       parse(idSchema, id),
       parse(phoneCallWrapUpSchema, body),
+    );
+  }
+}
+
+/**
+ * The note pinned on top of a buyer's caller panel (M47, D-860): what to do with them, or who was
+ * handling them. `read PhoneCall`, the panel's own ability, and the panel's own rule for who sees
+ * the whole of it (D-863, `CallerPanelService.pin`); an empty body clears it.
+ */
+@Controller('v1/customers')
+export class CustomerPinnedNoteController {
+  constructor(private readonly callerPanels: CallerPanelService) {}
+
+  @RequireAbility('read', 'PhoneCall')
+  @Put(':id/pinned-note')
+  async pinNote(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.callerPanels.pin(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(customerPinnedNoteSchema, body).body,
     );
   }
 }

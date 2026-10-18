@@ -1332,7 +1332,7 @@ export const OPERATIONS = {
   pinCustomerNote: {
     method: 'PUT',
     path: '/v1/customers/{id}/pinned-note',
-    ability: 'update:Customer',
+    ability: 'read:PhoneCall',
   },
   placePhoneCall: { method: 'POST', path: '/v1/telephony/calls', ability: 'create:PhoneCall' },
   postApiAdminScannerLogin: { method: 'POST', path: '/api/admin/scanner/login', ability: 'public' },

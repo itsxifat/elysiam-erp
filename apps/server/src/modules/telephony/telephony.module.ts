@@ -17,7 +17,7 @@ import {
   telephonyConfig,
   type TelephonyConfig,
 } from './telephony.config.js';
-import { TelephonyController } from './telephony.controller.js';
+import { CustomerPinnedNoteController, TelephonyController } from './telephony.controller.js';
 import { ENVO_GATEWAY } from './telephony.tokens.js';
 import { EnvoWebhookController } from './webhook.controller.js';
 import { TelephonyWebhookService } from './webhook.service.js';
@@ -46,7 +46,7 @@ const gatewayProvider: Provider = {
 @Module({
   // M47 (D-860, D-862): INBOX_API and STOREFRONT_API for the caller panel and an inbox Call.
   imports: [OrdersModule, IamDirectoryModule, InboxModule, StorefrontModule],
-  controllers: [TelephonyController, EnvoWebhookController],
+  controllers: [TelephonyController, CustomerPinnedNoteController, EnvoWebhookController],
   providers: [
     configProvider,
     gatewayProvider,

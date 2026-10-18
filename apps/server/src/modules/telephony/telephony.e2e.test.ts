@@ -1858,13 +1858,54 @@ describe('the owner’s answers: wrap-up, the caller panel and the inbox’s go-
     );
     expect(own.full).toBe(true);
     expect(own.calls.map((row) => row.person?.id)).toContain(salesB.userId);
+    // Whoever sees the whole panel may write its note: the branch manager too (D-863).
+    const managers = await manager.client.request(
+      'PUT',
+      `/v1/customers/${customerId}/pinned-note`,
+      {
+        body: { body: 'Call her after six' },
+      },
+    );
+    expect(managers.statusCode, managers.body).toBe(200);
+    expect(json<{ pinnedNote: { byUserId: string } | null }>(managers).pinnedNote?.byUserId).toBe(
+      manager.userId,
+    );
   });
 
   it('gives an agent who cannot reach the buyer and is on no call with them the minimal answer', async () => {
-    const minimal = json<{ full: boolean; customer: unknown }>(
+    // A Call whose ring-back they never picked up rang nobody: it opens nothing (D-860).
+    await withOrg({ orgId: ORG_A, userId: TELEPHONY_SYSTEM_USER }, async (tx) => {
+      const at = new Date();
+      await repo.insertCall(tx, {
+        orgId: ORG_A,
+        connectionId,
+        envoCallId: null,
+        firstSeen: 'click',
+        direction: 'outbound',
+        status: 'dialing',
+        fromNumber: '103',
+        toNumber: CUSTOMER_PHONE,
+        customerPhoneE164: CUSTOMER_PHONE,
+        extension: '103',
+        userId: salesC.userId,
+        customerId,
+        customerName: null,
+        orderId: null,
+        orderNo: null,
+        orderOwnerUserId: null,
+        occurredAt: at,
+        requestedAt: at,
+      });
+    });
+    const minimal = json<{ full: boolean; phone: string | null; customer: unknown }>(
       await salesC.client.request('POST', '/v1/telephony/caller-panel', { body: { customerId } }),
     );
-    expect(minimal).toMatchObject({ full: false, customer: null });
+    // Asked by the buyer's id, the number is not given back: the route is no phone lookup.
+    expect(minimal).toMatchObject({ full: false, phone: null, customer: null });
+    const pin = await salesC.client.request('PUT', `/v1/customers/${customerId}/pinned-note`, {
+      body: { body: 'Not mine to write' },
+    });
+    expect(pin.statusCode, pin.body).toBe(404);
     const byPhone = json<{ full: boolean; customer: unknown }>(
       await salesC.client.request('POST', '/v1/telephony/caller-panel', {
         body: { phone: '01812345678' },
