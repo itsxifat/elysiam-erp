@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { withOrg } from '@elysium/db';
+import { withGlobal, withOrg } from '@elysium/db';
 import { parseEnvoCall } from '@elysium/domain/telephony';
 
 import { enqueue } from '../../platform/jobs/enqueue.js';
@@ -12,6 +12,7 @@ import * as repo from './telephony.repository.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DELIVERY = /^[0-9a-zA-Z-]{1,64}$/;
+const DAY_MS = 86_400_000;
 
 function refused(): UnauthorizedException {
   // One answer for every refusal, as M42's webhook gives: a stranger learns nothing about which
@@ -145,5 +146,34 @@ export class TelephonyWebhookService {
       await repo.markWebhookProcessed(tx, orgId, eventId, applied.outcome);
       return applied.outcome;
     });
+  }
+
+  /**
+   * Every night (`telephony.webhook_retention`, D-851): each brand's stored Envo bodies thirty
+   * days after they were processed, deleted (the call rows keep what they said). Every brand,
+   * switched off or not, as the packing videos' purge walks every brand (D-612). A brand that
+   * fails is logged, the next is done.
+   */
+  async prune(now: Date = new Date()): Promise<{ readonly pruned: number }> {
+    const orgIds = await withGlobal((tx) => repo.everyOrgId(tx));
+    const before = new Date(now.getTime() - 30 * DAY_MS);
+    let pruned = 0;
+    for (const orgId of orgIds) {
+      try {
+        for (;;) {
+          const done = await withOrg({ orgId, userId: TELEPHONY_SYSTEM_USER }, (tx) =>
+            repo.deleteProcessedWebhooks(tx, orgId, before, 500),
+          );
+          pruned += done;
+          if (done < 500) break;
+        }
+      } catch (error) {
+        this.logger.error(
+          { orgId, reason: error instanceof Error ? error.message : String(error) },
+          'Envo webhook bodies could not be pruned for a brand',
+        );
+      }
+    }
+    return { pruned };
   }
 }

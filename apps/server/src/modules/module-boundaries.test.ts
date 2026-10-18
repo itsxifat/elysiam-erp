@@ -80,7 +80,7 @@ const OWNER: Readonly<Record<string, string>> = {
   // `TeamApi`, so no debt either way.
   team: 'team',
   // M47: Envo connections, extensions, calls and webhook bodies. Buyers and orders through
-  // `ORDERS_API`, people through `IAM_API`, recordings through `FILES_API`, so no debt.
+  // `ORDERS_API`, people through `IAM_API`, the inbox through `INBOX_API`, so no debt.
   telephony: 'telephony',
   wallets: 'wallets',
 };

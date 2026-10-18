@@ -146,18 +146,53 @@ export interface EnvoGateway {
     connection: EnvoConnection,
     input: { readonly extension: string; readonly ttlSeconds: number },
   ): Promise<EnvoWebphoneToken>;
-  /** `GET /api/v1/recordings/:id?download=1`, refusing (never truncating) past `maxBytes`. */
-  downloadRecording(
+  /**
+   * `GET /api/v1/recordings/:id`, streamed as Envo sends it (D-858): the range asked for passed
+   * on, Envo's 200, 206 or 416 handed back with the bytes still coming. Envo serves the file with
+   * `res.sendFile`, so a single range gets 206 and `Content-Range`, one past the end 416.
+   */
+  streamRecording(
     connection: EnvoConnection,
     recordingId: string,
-    maxBytes: number,
-  ): Promise<{ readonly bytes: Uint8Array; readonly mime: string | null }>;
+    request: EnvoRecordingRequest,
+  ): Promise<EnvoRecordingStream>;
 }
+
+export interface EnvoRecordingRequest {
+  /** The listener's `Range` and `If-Range`, or null. Only a `bytes=` range is passed on. */
+  readonly range: string | null;
+  readonly ifRange: string | null;
+  /** Aborted when the listener goes away: Envo's request is dropped with it. */
+  readonly signal: AbortSignal;
+}
+
+export interface EnvoRecordingStream {
+  /** The whole file, the part asked for, or a range Envo could not give. */
+  readonly status: 200 | 206 | 416;
+  /** One of `RECORDING_TYPES` for a 200 or 206; null for a 416. */
+  readonly contentType: string | null;
+  readonly contentLength: string | null;
+  readonly contentRange: string | null;
+  readonly acceptRanges: string | null;
+  /** The bytes as they come (null for a 416); abort the request's signal to stop them. */
+  readonly body: ReadableStream<Uint8Array> | null;
+}
+
+/** The audio a recording is passed on as (D-858); anything else Envo answers is refused. */
+export const RECORDING_TYPES: ReadonlySet<string> = new Set([
+  'audio/wav',
+  'audio/x-wav',
+  'audio/mpeg',
+  'audio/ogg',
+]);
+const RECORDING_ID = /^[1-9][0-9]{0,17}$/;
+const BYTE_RANGE = /^bytes=[0-9, -]{1,100}$/;
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export interface HttpEnvoOptions {
   readonly timeoutMs: number;
+  /** The wait for a recording's headers; the bytes themselves take as long as they take. */
   readonly recordingTimeoutMs: number;
   readonly fetch?: Fetch;
   /**
@@ -257,7 +292,7 @@ function failureFor(
 async function readCapped(
   response: Response,
   maxBytes: number,
-  tooLarge = 'The recording is larger than the ERP keeps.',
+  tooLarge = 'Envo answered with more than the ERP reads.',
 ): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length') ?? NaN);
   if (Number.isFinite(declared) && declared > maxBytes) {
@@ -312,13 +347,8 @@ export class HttpEnvoGateway implements EnvoGateway {
     this.fetch = options.fetch ?? ((url, init) => fetch(url, init));
   }
 
-  private async send(
-    connection: EnvoConnection,
-    method: 'GET' | 'POST',
-    path: string,
-    body?: unknown,
-    timeoutMs = this.options.timeoutMs,
-  ): Promise<Response> {
+  /** The connection's URL for `path`, once its host's addresses pass the check (D-830). */
+  private async urlFor(connection: EnvoConnection, path: string): Promise<string> {
     const url = `${connection.baseUrl.replace(/\/+$/, '')}${path}`;
     if (this.options.checkHost !== undefined) {
       const why = await this.options.checkHost(new URL(url).hostname);
@@ -330,6 +360,17 @@ export class HttpEnvoGateway implements EnvoGateway {
         );
       }
     }
+    return url;
+  }
+
+  private async send(
+    connection: EnvoConnection,
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    timeoutMs = this.options.timeoutMs,
+  ): Promise<Response> {
+    const url = await this.urlFor(connection, path);
     let response: Response;
     try {
       response = await this.fetch(url, {
@@ -545,32 +586,131 @@ export class HttpEnvoGateway implements EnvoGateway {
     };
   }
 
-  async downloadRecording(
+  async streamRecording(
     connection: EnvoConnection,
     recordingId: string,
-    maxBytes: number,
-  ): Promise<{ readonly bytes: Uint8Array; readonly mime: string | null }> {
-    if (!/^[1-9][0-9]{0,17}$/.test(recordingId)) {
+    request: EnvoRecordingRequest,
+  ): Promise<EnvoRecordingStream> {
+    if (!RECORDING_ID.test(recordingId)) {
       throw new EnvoError('refused', 'That is not an Envo recording id.', null);
     }
-    const response = await this.send(
-      connection,
-      'GET',
-      `/api/v1/recordings/${recordingId}?download=1`,
-      undefined,
-      this.options.recordingTimeoutMs,
-    );
-    if (!response.ok) {
+    // No `?download`: Envo then names no attachment, and the audio plays inline.
+    const url = await this.urlFor(connection, `/api/v1/recordings/${recordingId}`);
+    const range = request.range !== null && BYTE_RANGE.test(request.range) ? request.range : null;
+    const ifRange =
+      range !== null && request.ifRange !== null && /^[\x20-\x7e]{1,200}$/.test(request.ifRange)
+        ? request.ifRange
+        : null;
+    // Only the wait for Envo's headers is timed: a long call's audio may take longer than any
+    // timeout to arrive, and the listener's going away aborts it anyway.
+    const headersWait = new AbortController();
+    const timer = setTimeout(() => {
+      headersWait.abort();
+    }, this.options.recordingTimeoutMs);
+    let response: Response;
+    try {
+      response = await this.fetch(url, {
+        method: 'GET',
+        redirect: 'manual',
+        headers: {
+          authorization: `Bearer ${connection.apiKey}`,
+          accept: `${[...RECORDING_TYPES].join(', ')}, application/json;q=0.5`,
+          ...(range === null ? {} : { range }),
+          ...(ifRange === null ? {} : { 'if-range': ifRange }),
+        },
+        signal: AbortSignal.any([request.signal, headersWait.signal]),
+      });
+    } catch {
+      throw new EnvoError(
+        'unreachable',
+        `Could not reach ${hostOf(connection.baseUrl)} in time.`,
+        null,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+    const header = (name: string) => text(response.headers.get(name), 200);
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new EnvoError(
+        'unexpected',
+        `${hostOf(connection.baseUrl)} redirected the request; the ERP does not follow it.`,
+        response.status,
+      );
+    }
+    if (response.status === 416) {
+      await response.body?.cancel().catch(() => undefined);
+      return {
+        status: 416,
+        contentType: null,
+        contentLength: null,
+        contentRange: header('content-range'),
+        acceptRanges: header('accept-ranges'),
+        body: null,
+      };
+    }
+    if (response.status !== 200 && response.status !== 206) {
       const raw = await readCapped(response, JSON_MAX_BYTES)
         .then((bytes) => new TextDecoder().decode(bytes))
         .catch(() => '');
       throw failureFor(response.status, parseJson(raw), connection, response.headers);
     }
+    const contentType = bareMime(response.headers.get('content-type'));
+    if (contentType === null || !RECORDING_TYPES.has(contentType)) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new EnvoError(
+        'unexpected',
+        `${hostOf(connection.baseUrl)} answered with something that is not a recording.`,
+        response.status,
+      );
+    }
     return {
-      bytes: await readCapped(response, maxBytes),
-      mime: bareMime(response.headers.get('content-type')),
+      status: response.status === 206 ? 206 : 200,
+      contentType,
+      contentLength: header('content-length'),
+      contentRange: header('content-range'),
+      acceptRanges: header('accept-ranges'),
+      body: response.body,
     };
   }
+}
+
+/**
+ * Envo's `res.sendFile` answer to a range over `bytes` (D-858), for the fake and the tests'
+ * stand-in: one `bytes=a-b`, `bytes=a-` or `bytes=-n` range gets 206 and its part, one past the
+ * end 416 with `bytes *\/<length>`, anything else (none, several, unreadable) the whole file.
+ */
+export function rangeOf(
+  bytes: Uint8Array,
+  range: string | null,
+): {
+  readonly status: 200 | 206 | 416;
+  readonly body: Uint8Array;
+  readonly contentRange: string | null;
+} {
+  const whole = { status: 200 as const, body: bytes, contentRange: null };
+  const match = range === null ? null : /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+  if (match === null) return whole;
+  const length = bytes.byteLength;
+  const [, from = '', to = ''] = match;
+  if (from === '' && to === '') return whole;
+  let start: number;
+  let end: number;
+  if (from === '') {
+    start = Math.max(0, length - Number(to));
+    end = length - 1;
+  } else {
+    start = Number(from);
+    end = to === '' ? length - 1 : Math.min(Number(to), length - 1);
+  }
+  if (start >= length || start > end) {
+    return { status: 416, body: new Uint8Array(), contentRange: `bytes */${String(length)}` };
+  }
+  return {
+    status: 206,
+    body: bytes.slice(start, end + 1),
+    contentRange: `bytes ${String(start)}-${String(end)}/${String(length)}`,
+  };
 }
 
 /** A 44-byte WAV header and a little silence: what the fake hands over as a recording. */
@@ -676,7 +816,27 @@ export class FakeEnvoGateway implements EnvoGateway {
     });
   }
 
-  downloadRecording(): Promise<{ readonly bytes: Uint8Array; readonly mime: string | null }> {
-    return Promise.resolve({ bytes: silentWav(), mime: 'audio/wav' });
+  streamRecording(
+    _connection: EnvoConnection,
+    _recordingId: string,
+    request: EnvoRecordingRequest,
+  ): Promise<EnvoRecordingStream> {
+    const part = rangeOf(silentWav(), request.range);
+    return Promise.resolve({
+      status: part.status,
+      contentType: part.status === 416 ? null : 'audio/wav',
+      contentLength: part.status === 416 ? null : String(part.body.byteLength),
+      contentRange: part.contentRange,
+      acceptRanges: 'bytes',
+      body:
+        part.status === 416
+          ? null
+          : new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(part.body);
+                controller.close();
+              },
+            }),
+    });
   }
 }

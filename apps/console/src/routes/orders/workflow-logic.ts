@@ -62,6 +62,28 @@ export function actKey(act: unknown): WorkflowKey {
   return typeof act === 'string' ? (ACT_KEYS[act] ?? 'wf.act.other') : 'wf.act.other';
 }
 
+const INBOX_ACT_KEYS: Readonly<Record<string, WorkflowKey>> = {
+  call: 'wf.inboxAct.call',
+  call_back: 'wf.inboxAct.call_back',
+  reply: 'wf.inboxAct.reply',
+  voice: 'wf.inboxAct.voice',
+  note: 'wf.inboxAct.note',
+  take: 'wf.inboxAct.take',
+  hand_over: 'wf.inboxAct.hand_over',
+  release: 'wf.inboxAct.release',
+};
+
+/**
+ * The words for what somebody did in your conversation (`inbox.owner_overridden`'s action,
+ * D-737, D-862): `contact.*` and `interest.*` by their family; anything unknown reads "acted".
+ */
+export function inboxActKey(action: unknown): WorkflowKey {
+  if (typeof action !== 'string') return 'wf.inboxAct.other';
+  if (action.startsWith('contact.')) return 'wf.inboxAct.contact';
+  if (action.startsWith('interest.')) return 'wf.inboxAct.interest';
+  return INBOX_ACT_KEYS[action] ?? 'wf.inboxAct.other';
+}
+
 export interface HandoverEntry {
   readonly id: string;
   readonly orderNo: string;

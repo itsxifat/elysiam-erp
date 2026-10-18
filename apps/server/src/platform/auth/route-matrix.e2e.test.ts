@@ -331,6 +331,7 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
 const READS_SENT_AS_POSTS: ReadonlySet<string> = new Set([
   // M47 (D-843, D-845): the screen pop and the call log's search.
   'POST /v1/telephony/lookup',
+  'POST /v1/telephony/caller-panel',
   'POST /v1/telephony/calls/search',
 ]);
 

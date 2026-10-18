@@ -49,6 +49,6 @@ export const ALL_QUEUES: readonly QueueDefinition[] = [
   ...VOICE_CALLS_QUEUE_DEFINITIONS,
   // M41: auto-assign's offers, their deadlines and the minute sweep.
   ...OFFER_QUEUE_DEFINITIONS,
-  // M47: Envo's webhooks applied, recordings kept, the call history synced, retention.
+  // M47: Envo's webhooks applied, the call history synced, old webhook bodies pruned.
   ...TELEPHONY_QUEUE_DEFINITIONS,
 ];

@@ -13,6 +13,7 @@ import { CustomersService } from './customers.service.js';
 import { DeskService } from './desk.service.js';
 import { DocumentsService } from './documents.service.js';
 import { ORDERS_API, OrdersApiService } from './orders.api.js';
+import { PinnedNoteService } from './pinned-note.service.js';
 import {
   BuyersController,
   CustomersController,
@@ -114,6 +115,8 @@ import { OwnershipGate } from './ownership.gate.js';
   ],
   providers: [
     CustomersService,
+    // M47 (D-860): the note pinned on a buyer's caller panel.
+    PinnedNoteService,
     CourierBookingRegistry,
     // M43 (D-754): the website's logo for the order documents, registered by the storefront.
     BrandLogoRegistry,

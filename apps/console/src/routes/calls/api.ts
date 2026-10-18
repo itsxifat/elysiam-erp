@@ -1,4 +1,12 @@
 import { OWNER_ACK_HEADER } from '@elysium/contracts';
+import type {
+  CallerPanelAnswer,
+  CallerPanelCall,
+  CallerPanelFull,
+  CallerPanelOrder,
+  CallerPanelPinnedNote,
+  CustomerPinnedNoteAnswer,
+} from '@elysium/contracts/telephony';
 
 import { api, request, ApiError, NetworkError } from '../../api.js';
 import { env } from '../../env.js';
@@ -11,6 +19,8 @@ import { env } from '../../env.js';
 export const TELEPHONY_KEY = ['telephony'] as const;
 export const CALLS_KEY = ['telephony', 'calls'] as const;
 export const MY_PHONE_KEY = ['telephony', 'me'] as const;
+/** The viewer's own calls that wait for their wrap-up (D-859). */
+export const WRAP_UPS_KEY = ['telephony', 'wrap-ups'] as const;
 
 export interface PersonRef {
   readonly id: string;
@@ -18,8 +28,19 @@ export interface PersonRef {
 }
 
 export type CallDirection = 'inbound' | 'outbound' | 'internal' | 'unknown';
+/** A call's result after it (D-859): M41's five. */
+export type CallResult = 'reached' | 'no_answer' | 'busy' | 'wrong_number' | 'call_back';
+
+/** The person's wrap-up of a call (D-859), as written once. */
+export interface CallWrapUp {
+  readonly result: CallResult;
+  readonly note: string | null;
+  readonly callBackAt: string | null;
+  readonly byUserId: string;
+  readonly byName: string | null;
+  readonly at: string;
+}
 export type CallStatus = 'requested' | 'dialing' | 'failed' | 'ringing' | 'answered' | 'ended';
-export type RecordingStatus = 'none' | 'pending' | 'stored' | 'failed' | 'expired';
 
 export interface PhoneCallView {
   readonly id: string;
@@ -45,12 +66,14 @@ export interface PhoneCallView {
   readonly startedAt: string | null;
   readonly answeredAt: string | null;
   readonly endedAt: string | null;
-  readonly recording: {
-    readonly status: RecordingStatus;
-    readonly playable: boolean;
-    readonly error: string | null;
-  };
+  /** Whether Envo named a recording of it (D-858); it plays while Envo still has it. */
+  readonly recording: { readonly playable: boolean };
   readonly outcome: string | null;
+  readonly wrapUp: CallWrapUp | null;
+  /** What the ERP suggests the result was, or null when it cannot tell. */
+  readonly suggestedResult: CallResult | null;
+  /** The viewer's own ended call, not yet wrapped up. */
+  readonly canWrapUp: boolean;
   readonly error: { readonly code: string; readonly detail: string | null } | null;
 }
 
@@ -79,53 +102,84 @@ export const listCalls = (filters: CallFilters) =>
 
 export const getCall = (id: string) => api.get<PhoneCallView>(`/v1/telephony/calls/${id}`);
 
-/** Call a customer from your own extension; a colleague's order needs the acknowledgement. */
-export const placeCall = (
-  target: { readonly orderId?: string; readonly customerId?: string; readonly phone?: string },
-  acknowledge = false,
-) =>
+/** Whom a Call rings: an order, a customer, a conversation (D-862) or a phone. */
+export interface CallTarget {
+  readonly orderId?: string;
+  readonly customerId?: string;
+  readonly conversationId?: string;
+  readonly phone?: string;
+}
+
+/**
+ * Call a customer from your own extension; a colleague's order or conversation needs the
+ * acknowledgement.
+ */
+export const placeCall = (target: CallTarget, acknowledge = false) =>
   api.post<{ readonly call: PhoneCallView; readonly repeated: boolean }>(
     '/v1/telephony/calls',
     target,
     acknowledge ? { [OWNER_ACK_HEADER]: '1' } : undefined,
   );
 
-export const recordOutcome = (
-  id: string,
-  input: { readonly outcome: string; readonly callBackAt?: string; readonly note?: string },
-  acknowledge = false,
-) =>
-  api.post<PhoneCallView>(
-    `/v1/telephony/calls/${id}/outcome`,
+export interface WrapUpInput {
+  readonly result: CallResult;
+  readonly note?: string;
+  readonly callBackAt?: string;
+}
+
+/**
+ * Wrap up the viewer's own call, once (D-859). On a callable order it is also M41's attempt, so a
+ * colleague's order needs the acknowledgement.
+ */
+export const wrapUpCall = (id: string, input: WrapUpInput, acknowledge = false) =>
+  api.post<{ readonly call: PhoneCallView; readonly orderAttempt: boolean }>(
+    `/v1/telephony/calls/${id}/wrap-up`,
     input,
     acknowledge ? { [OWNER_ACK_HEADER]: '1' } : undefined,
   );
 
+/** The viewer's own calls that ended in the last day and wait for their wrap-up. */
+export const listWrapUps = () =>
+  api.get<{ readonly items: readonly PhoneCallView[] }>('/v1/telephony/calls/wrap-ups');
+
 export const answeredHere = (from: string) =>
   api.post<PhoneCallView>('/v1/telephony/calls/answered', { from });
 
-/** A call's recording, as a blob the page can play (signed in, never a public link). */
-export async function recordingBlob(id: string): Promise<Blob> {
+/**
+ * Where the player streams a call's recording from (D-858): the API, which passes it on from Envo
+ * with the listener's range. The session cookie goes with the audio element's request as with
+ * every other (same site); it is never a public link.
+ */
+export const recordingUrl = (id: string) =>
+  new URL(`/v1/telephony/calls/${id}/recording`, env.VITE_API_URL).toString();
+
+/**
+ * Why a recording did not play, read from a one-byte request (an audio element hears only that it
+ * failed): the API's refusal, the network's, or null when it plays after all.
+ */
+export async function recordingProblem(id: string): Promise<ApiError | NetworkError | null> {
   let response: Response;
   try {
-    response = await fetch(new URL(`/v1/telephony/calls/${id}/recording`, env.VITE_API_URL), {
+    response = await fetch(recordingUrl(id), {
       credentials: 'include',
+      headers: { range: 'bytes=0-0' },
     });
   } catch (cause) {
-    throw new NetworkError(cause);
+    return new NetworkError(cause);
   }
-  if (!response.ok) {
-    const problem = (await response.json().catch(() => ({}))) as {
-      code?: unknown;
-      detail?: unknown;
-    };
-    throw new ApiError(
-      response.status,
-      typeof problem.code === 'string' ? problem.code : null,
-      typeof problem.detail === 'string' ? problem.detail : response.statusText,
-    );
+  if (response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
   }
-  return response.blob();
+  const problem = (await response.json().catch(() => ({}))) as {
+    code?: unknown;
+    detail?: unknown;
+  };
+  return new ApiError(
+    response.status,
+    typeof problem.code === 'string' ? problem.code : null,
+    typeof problem.detail === 'string' ? problem.detail : response.statusText,
+  );
 }
 
 // --- the caller's own phone -------------------------------------------------------------------
@@ -180,6 +234,35 @@ export interface CallerLookup {
 export const lookupCaller = (phone: string) =>
   api.post<CallerLookup>('/v1/telephony/lookup', { phone });
 
+// --- the caller panel (D-860) ---------------------------------------------------------------------
+
+/** Whose caller panel: an incoming or placed call's number, a buyer, or a call in the log. */
+export type CallerPanelTarget =
+  { readonly phone: string } | { readonly customerId: string } | { readonly callId: string };
+
+/**
+ * The panel, as the server shapes it (`@elysium/contracts/telephony`, types only). A POST, so a
+ * number stays out of URLs; `ordersCursor` asks for the next page of the buyer's orders.
+ */
+export const fetchCallerPanel = (target: CallerPanelTarget, ordersCursor?: string) =>
+  api.post<CallerPanelAnswer>('/v1/telephony/caller-panel', {
+    ...target,
+    ...(ordersCursor === undefined ? {} : { ordersCursor }),
+  });
+
+/** Pin a note on the buyer's panel; an empty body clears it. */
+export const pinCustomerNote = (customerId: string, body: string) =>
+  api.put<CustomerPinnedNoteAnswer>(`/v1/customers/${customerId}/pinned-note`, { body });
+
+export type {
+  CallerPanelAnswer,
+  CallerPanelCall,
+  CallerPanelFull,
+  CallerPanelOrder,
+  CallerPanelPinnedNote,
+  CustomerPinnedNoteAnswer,
+};
+
 // --- Settings → Calls ---------------------------------------------------------------------------
 
 export interface ConnectionView {
@@ -191,7 +274,6 @@ export interface ConnectionView {
   readonly apiKeyFingerprint: string | null;
   readonly webhookSecretSet: boolean;
   readonly webhookSecretFingerprint: string | null;
-  readonly recordingRetentionDays: number;
   readonly webhookPath: string;
   readonly envoServer: { readonly id: number; readonly name: string } | null;
   readonly lastTest: {
@@ -220,7 +302,6 @@ export interface ConnectionInput {
   readonly apiKey?: string;
   readonly webhookSecret?: string;
   readonly enabled: boolean;
-  readonly recordingRetentionDays: number;
 }
 
 export const createConnection = (input: ConnectionInput) =>

@@ -55,7 +55,6 @@ export function connectionView(row: repo.ConnectionRow, orgId: string) {
     apiKeyFingerprint: row.api_key_fingerprint,
     webhookSecretSet: row.webhook_secret_fingerprint !== null,
     webhookSecretFingerprint: row.webhook_secret_fingerprint,
-    recordingRetentionDays: row.recording_retention_days,
     /** Where Envo's webhook points: this API's address plus this path. */
     webhookPath: `${ENVO_WEBHOOK_PREFIX}${orgId}/${row.id}`,
     envoServer:
@@ -178,7 +177,6 @@ export class TelephonyConnectionsService {
           enabled: input.enabled,
           apiKey,
           webhookSecret,
-          retentionDays: input.recordingRetentionDays,
           by: context.userId,
         });
         // `keyPrint`, not `apiKeyFingerprint`: the audit's redactor masks keys naming a key, a
@@ -194,7 +192,6 @@ export class TelephonyConnectionsService {
             name: input.name,
             baseUrl,
             enabled: input.enabled,
-            retentionDays: input.recordingRetentionDays,
             keyPrint: apiKey.fingerprint,
             hookPrint: webhookSecret?.fingerprint ?? null,
           },
@@ -259,7 +256,6 @@ export class TelephonyConnectionsService {
           name: input.name,
           baseUrl,
           enabled: input.enabled,
-          retentionDays: input.recordingRetentionDays,
           ...(apiKey === undefined ? {} : { apiKey }),
           ...(webhookSecret === undefined ? {} : { webhookSecret }),
           forgetServer: baseUrl !== before.base_url || apiKey !== undefined,
@@ -278,7 +274,6 @@ export class TelephonyConnectionsService {
             name: before.name,
             baseUrl: before.base_url,
             enabled: before.enabled,
-            retentionDays: before.recording_retention_days,
             keyPrint: before.api_key_fingerprint,
             hookPrint: before.webhook_secret_fingerprint,
           },
@@ -286,7 +281,6 @@ export class TelephonyConnectionsService {
             name: input.name,
             baseUrl,
             enabled: input.enabled,
-            retentionDays: input.recordingRetentionDays,
             keyPrint: apiKey?.fingerprint ?? before.api_key_fingerprint,
             hookPrint: webhookSecret?.fingerprint ?? before.webhook_secret_fingerprint,
           },

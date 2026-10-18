@@ -70,6 +70,20 @@ const en = {
   'wf.act.hand_over': 'handed over',
   'wf.act.take': 'took',
   'wf.act.other': 'acted',
+  // M47 (D-862): a colleague acted in your conversation, told on every screen like an order.
+  'wf.notice.in': 'in',
+  'wf.notice.yourChat': 'your conversation',
+  'wf.inboxAct.call': 'called the customer',
+  'wf.inboxAct.call_back': 'called back',
+  'wf.inboxAct.reply': 'replied',
+  'wf.inboxAct.voice': 'sent a voice message',
+  'wf.inboxAct.note': 'added a note',
+  'wf.inboxAct.take': 'took over',
+  'wf.inboxAct.hand_over': 'handed over',
+  'wf.inboxAct.release': 'released',
+  'wf.inboxAct.contact': 'changed the contact',
+  'wf.inboxAct.interest': 'changed the products of interest',
+  'wf.inboxAct.other': 'acted',
 
   // Ownership on the order page.
   'wf.own.handledBy': 'Handled by',

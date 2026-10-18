@@ -1,84 +1,48 @@
-import { Button, StatusBadge } from '@elysium/ui';
-import { Play } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { StatusBadge } from '@elysium/ui';
+import { useState } from 'react';
 
 import { ApiError } from '../../api.js';
 import type { PhoneCallView } from './api.js';
-import { recordingBlob } from './api.js';
+import { recordingProblem, recordingUrl } from './api.js';
 import { useTelT } from './messages.js';
 
 /**
- * A call's recording (M47, D-841): fetched on request as a blob from the Calls route, signed in
- * (never a public link), and played in place with the browser's own controls. Only a person who
- * may see the call gets it; the server says why when there is none.
+ * A call's recording (M47, D-841, D-858): the browser's own player streaming it from the Calls
+ * route, which passes it on from Envo, so it can seek without loading the whole call first.
+ * Nothing loads until it is played (`preload="none"`). Only a person who may see the call gets it;
+ * when it does not play, a one-byte request asks the server why, and a recording Envo no longer
+ * has says so.
  */
 export function RecordingPlayer({ call }: { readonly call: PhoneCallView }) {
   const t = useTelT();
-  const [url, setUrl] = useState<string | null>(null);
-  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [problem, setProblem] = useState<string | null>(null);
-
-  useEffect(
-    () => () => {
-      if (url !== null) URL.revokeObjectURL(url);
-    },
-    [url],
-  );
+  const [problem, setProblem] = useState<{ readonly gone: boolean; readonly message: string }>();
 
   if (!call.recording.playable) {
-    const label =
-      call.recording.status === 'pending'
-        ? t('tel.rec.pending')
-        : call.recording.status === 'expired'
-          ? t('tel.rec.expired')
-          : call.recording.status === 'failed'
-            ? t('tel.rec.failed')
-            : t('tel.rec.none');
-    return (
-      <StatusBadge tone={call.recording.status === 'pending' ? 'info' : 'neutral'}>
-        {label}
-      </StatusBadge>
-    );
+    return <StatusBadge tone="neutral">{t('tel.rec.none')}</StatusBadge>;
   }
-  if (url !== null) {
-    return (
-      <audio
-        controls
-        autoPlay
-        src={url}
-        className="h-8 w-full max-w-xs"
-        aria-label={t('tel.rec.play')}
-      />
-    );
+  if (problem?.gone === true) {
+    return <StatusBadge tone="neutral">{t('tel.rec.gone')}</StatusBadge>;
   }
   return (
     <span className="inline-flex flex-col gap-1">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={state === 'loading'}
-        onClick={() => {
-          setState('loading');
-          setProblem(null);
-          void recordingBlob(call.id).then(
-            (blob) => {
-              setUrl(URL.createObjectURL(blob));
-              setState('idle');
-            },
-            (error: unknown) => {
-              setProblem(error instanceof ApiError ? error.message : t('tel.failed'));
-              setState('error');
-            },
-          );
+      <audio
+        controls
+        preload="none"
+        src={recordingUrl(call.id)}
+        className="h-8 w-full max-w-xs"
+        aria-label={t('tel.rec.play')}
+        onError={() => {
+          void recordingProblem(call.id).then((error) => {
+            setProblem({
+              gone: error instanceof ApiError && error.code === 'TELEPHONY_RECORDING_UNAVAILABLE',
+              message: error instanceof ApiError ? error.message : t('tel.failed'),
+            });
+          });
         }}
-      >
-        <Play aria-hidden="true" />
-        {state === 'loading' ? t('tel.rec.loading') : t('tel.rec.play')}
-      </Button>
-      {problem === null ? null : (
+      />
+      {problem === undefined ? null : (
         <span role="alert" className="text-xs text-destructive">
-          {problem}
+          {problem.message}
         </span>
       )}
     </span>

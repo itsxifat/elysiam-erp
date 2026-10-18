@@ -12,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { callAttemptSchema, markPrintedSchema, workflowSettingsSchema } from '@elysium/contracts';
+import { customerPinnedNoteSchema } from '@elysium/contracts/telephony';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
@@ -26,6 +27,7 @@ import { BuyerProfileService } from './profile.service.js';
 import { ReengagementService } from './reengagement.service.js';
 import { OffersService } from './offers.service.js';
 import { OrdersService } from './orders.service.js';
+import { PinnedNoteService } from './pinned-note.service.js';
 import { mapOrderErrors } from './orders.errors.js';
 import {
   assignOrderSchema,
@@ -563,6 +565,7 @@ export class CustomersController {
     private readonly customers: CustomersService,
     private readonly desk: DeskService,
     private readonly profiles: BuyerProfileService,
+    private readonly pinnedNotes: PinnedNoteService,
   ) {}
 
   @RequireAbility('read', 'Customer')
@@ -619,6 +622,22 @@ export class CustomersController {
       auditable(request),
       parse(orderIdSchema, id),
       patch,
+    );
+  }
+
+  /**
+   * The note pinned on top of the buyer's caller panel (M47, D-860); an empty body clears it.
+   * `update Customer` within its scope, for a role that also sees the panel (`read PhoneCall`).
+   */
+  @RequireAbility('update', 'Customer')
+  @Put(':id/pinned-note')
+  async pinNote(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(customerPinnedNoteSchema, body);
+    return this.pinnedNotes.pin(
+      requireContext(request),
+      auditable(request),
+      parse(orderIdSchema, id),
+      input.body,
     );
   }
 }

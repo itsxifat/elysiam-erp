@@ -15,12 +15,10 @@ import {
 } from '@elysium/domain/telephony';
 
 import { emit } from '../../platform/events/outbox.js';
-import { enqueue } from '../../platform/jobs/enqueue.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { CALLING_ROLES } from './telephony.roles.js';
-import { TELEPHONY_QUEUES } from './telephony.queues.js';
 import * as repo from './telephony.repository.js';
 
 /** Who the database sees acting when Envo's word is applied. Not a person. */
@@ -44,7 +42,7 @@ export type IngestOutcome = 'created' | 'matched' | 'updated' | 'unchanged';
  * place calls and already held it when the call started, D-846), its customer by the phone on
  * the customer's side (`ORDERS_API.buyerIdByPhone`), and its order the customer's newest open one.
  * Then its progress moves forward only (`phoneCallProgress`; the trigger holds the same rule), and
- * a recording on the connection's own host is queued for download. Runs in the caller's
+ * a recording on the connection's own host is kept as its link (D-858). Runs in the caller's
  * transaction, under a lock on the Envo call, and never calls Envo (invariant 6).
  */
 @Injectable()
@@ -127,19 +125,11 @@ export class TelephonyIngestService {
     const after =
       Object.keys(change).length === 0 ? call : await repo.updateCall(tx, orgId, call.id, change);
 
-    if (after.recording_status === 'pending' && before.recording_status !== 'pending') {
-      await enqueue(
-        tx,
-        TELEPHONY_QUEUES.fetchRecording.name,
-        { callId: after.id },
-        { orgId, ref: after.id, singletonKey: `recording:${after.id}` },
-      );
-    }
     const moved =
       outcome !== 'updated' ||
       after.status !== before.status ||
       after.answered !== before.answered ||
-      after.recording_status !== before.recording_status ||
+      after.recording_url !== before.recording_url ||
       after.user_id !== before.user_id;
     if (moved) await announce(tx, orgId, after);
     return {
@@ -304,19 +294,14 @@ export class TelephonyIngestService {
       }
     }
 
-    // The recording, from the connection's own host only (D-840).
-    if (call.recording_url === null && facts.recordingUrl !== null) {
-      const origin = new URL(connection.base_url).origin;
-      if (recordingIdFrom(facts.recordingUrl, origin) !== null) {
-        change.recordingUrl = facts.recordingUrl;
-        if (call.recording_status === 'none' || call.recording_status === 'failed') {
-          change.recordingStatus = 'pending';
-          change.recordingError = null;
-        }
-      } else if (call.recording_status === 'none') {
-        change.recordingStatus = 'failed';
-        change.recordingError = 'not_connection_host';
-      }
+    // The recording's link, from the connection's own host only (D-840, D-858): the recording
+    // stays with Envo and is streamed from there when someone plays it; a link elsewhere is ignored.
+    if (
+      call.recording_url === null &&
+      facts.recordingUrl !== null &&
+      recordingIdFrom(facts.recordingUrl, new URL(connection.base_url).origin) !== null
+    ) {
+      change.recordingUrl = facts.recordingUrl;
     }
 
     if (Object.keys(change).length > 0) change.lastEvent = facts.event;
@@ -349,7 +334,7 @@ export async function announce(tx: Tx, orgId: string, call: repo.CallRow): Promi
       callId: call.id,
       orderId: call.order_id,
       status: call.status as PhoneCallStatus,
-      recording: call.recording_status as 'none' | 'pending' | 'stored' | 'failed' | 'expired',
+      recording: call.recording_url !== null,
       userIds,
     },
     { orgId },

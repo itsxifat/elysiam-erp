@@ -11,11 +11,13 @@ import type {
   ApprovalDecisionInput,
   ApprovalRequestInput,
   CallAttemptInput,
+  CallerPanelQuery,
   CashInInput,
   ClosePeriodInput,
   ConfirmWithCode,
   CreateUser,
   CredentialResetInput,
+  CustomerPinnedNoteInput,
   DeactivateUser,
   DeskProfileInput,
   InboxAddressInput,
@@ -33,6 +35,7 @@ import type {
   PackingCameraUpdateInput,
   PhoneCallAnsweredInput,
   PhoneCallPlaceInput,
+  PhoneCallWrapUpInput,
   PresenceBeat,
   PresencePause,
   ReopenPeriodInput,
@@ -1135,6 +1138,11 @@ export const OPERATIONS = {
     path: '/v1/telephony/calls/{id}/recording',
     ability: 'read:PhoneCall',
   },
+  getV1TelephonyCallsWrapUps: {
+    method: 'GET',
+    path: '/v1/telephony/calls/wrap-ups',
+    ability: 'create:PhoneCall',
+  },
   getV1TelephonyConnectionsByIdExtensions: {
     method: 'GET',
     path: '/v1/telephony/connections/{id}/extensions',
@@ -1315,6 +1323,16 @@ export const OPERATIONS = {
     method: 'PATCH',
     path: '/v1/supply/suppliers/{id}',
     ability: 'update:Supply',
+  },
+  phoneCallerPanel: {
+    method: 'POST',
+    path: '/v1/telephony/caller-panel',
+    ability: 'read:PhoneCall',
+  },
+  pinCustomerNote: {
+    method: 'PUT',
+    path: '/v1/customers/{id}/pinned-note',
+    ability: 'update:Customer',
   },
   placePhoneCall: { method: 'POST', path: '/v1/telephony/calls', ability: 'create:PhoneCall' },
   postApiAdminScannerLogin: { method: 'POST', path: '/api/admin/scanner/login', ability: 'public' },
@@ -2341,11 +2359,6 @@ export const OPERATIONS = {
     path: '/v1/inbox/conversations/{id}/read',
     ability: 'update:Conversation',
   },
-  recordPhoneCallOutcome: {
-    method: 'POST',
-    path: '/v1/telephony/calls/{id}/outcome',
-    ability: 'create:PhoneCall',
-  },
   releaseInboxConversation: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/release',
@@ -2504,6 +2517,11 @@ export const OPERATIONS = {
     ability: 'update:User',
   },
   withdrawUserTrust: { method: 'DELETE', path: '/v1/users/{id}/trust', ability: 'update:User' },
+  wrapUpPhoneCall: {
+    method: 'POST',
+    path: '/v1/telephony/calls/{id}/wrap-up',
+    ability: 'create:PhoneCall',
+  },
 } as const;
 
 export type OperationName = keyof typeof OPERATIONS;
@@ -3734,6 +3752,9 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1TelephonyCallsByIdRecording, input, options),
+    /** GET /v1/telephony/calls/wrap-ups */
+    getV1TelephonyCallsWrapUps: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyCallsWrapUps, undefined, options),
     /** GET /v1/telephony/connections/:id/extensions */
     getV1TelephonyConnectionsByIdExtensions: (
       input: { readonly path: { readonly id: string } },
@@ -4007,7 +4028,17 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1SupplySuppliersById, input, options),
-    /** Call a customer from your own extension; an order held by someone else needs x-acknowledge-owner: 1. */
+    /** A buyer's caller panel by phone, customer or call: their orders, contacts, inbox and every call with them (the whole panel only to a supervisor, a person who may open them or one on a call with them). */
+    phoneCallerPanel: (
+      input: { readonly body: CallerPanelQuery },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.phoneCallerPanel, input, options),
+    /** Pin a note on top of a buyer's caller panel, or clear it with an empty body. */
+    pinCustomerNote: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerPinnedNoteInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.pinCustomerNote, input, options),
+    /** Call a customer from your own extension; an order or a conversation held by someone else needs x-acknowledge-owner: 1. */
     placePhoneCall: (
       input: { readonly body: PhoneCallPlaceInput },
       options?: RequestOptions,
@@ -5120,11 +5151,6 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.readInboxConversation, input, options),
-    /** Record a call's verification outcome on its order, as M41's attempt, once. */
-    recordPhoneCallOutcome: (
-      input: { readonly path: { readonly id: string }; readonly body: CallAttemptInput },
-      options?: RequestOptions,
-    ): Promise<unknown> => request(runtime, OPERATIONS.recordPhoneCallOutcome, input, options),
     /** Release a conversation back to Unassigned. */
     releaseInboxConversation: (
       input: { readonly path: { readonly id: string } },
@@ -5333,6 +5359,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.withdrawUserTrust, input, options),
+    /** Wrap up your own call once: its result, what it was about, a call-back; on a callable order also M41's attempt (a colleague's order needs x-acknowledge-owner: 1). */
+    wrapUpPhoneCall: (
+      input: { readonly path: { readonly id: string }; readonly body: PhoneCallWrapUpInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.wrapUpPhoneCall, input, options),
   };
 }
 

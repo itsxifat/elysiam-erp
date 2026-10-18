@@ -18,6 +18,7 @@ import {
   messagingGatewayFor,
   type InboxConfig,
 } from './inbox.config.js';
+import { INBOX_API, InboxApiService } from './inbox.api.js';
 import { InboxController } from './inbox.controller.js';
 import { InboxMediaService } from './media.service.js';
 import { InboxOrderListener } from './order-listener.service.js';
@@ -110,6 +111,8 @@ const voiceCallsConfigProvider: Provider = {
     InboxSellingService,
     // D-621: a customer's interest keeps the product it names.
     InboxCatalogReferences,
+    // M47 (D-860, D-862): the caller panel's inbox facts and a Call's owner rule, for telephony.
+    { provide: INBOX_API, useClass: InboxApiService },
   ],
   exports: [
     InboxWebhookService,
@@ -121,6 +124,7 @@ const voiceCallsConfigProvider: Provider = {
     InboxMediaService,
     InboxCallsService,
     META_MEDIA_GATEWAY,
+    INBOX_API,
   ],
 })
 export class InboxModule {}

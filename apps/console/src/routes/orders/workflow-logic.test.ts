@@ -7,6 +7,7 @@ import {
   addToHandover,
   beatFor,
   callBackIsDue,
+  inboxActKey,
   localInputToIso,
   offerShareLeft,
   secondsLeft,
@@ -70,6 +71,19 @@ describe('what somebody did to your order', () => {
     }
     expect(actKey('something new')).toBe('wf.act.other');
     expect(actKey(42)).toBe('wf.act.other');
+  });
+});
+
+describe('what somebody did in your conversation (D-862)', () => {
+  it('names a call, the contact and product families, and falls back for anything else', () => {
+    for (const action of ['call', 'call_back', 'reply', 'voice', 'note', 'take', 'hand_over']) {
+      expect(en[inboxActKey(action)]).not.toBe(en['wf.inboxAct.other']);
+    }
+    expect(inboxActKey('call')).toBe('wf.inboxAct.call');
+    expect(inboxActKey('contact.phone')).toBe('wf.inboxAct.contact');
+    expect(inboxActKey('interest.add')).toBe('wf.inboxAct.interest');
+    expect(inboxActKey('something new')).toBe('wf.inboxAct.other');
+    expect(inboxActKey(undefined)).toBe('wf.inboxAct.other');
   });
 });
 

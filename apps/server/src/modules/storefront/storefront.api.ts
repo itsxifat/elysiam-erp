@@ -4,6 +4,7 @@ import { poisha } from '@elysium/domain';
 import type { ShippingRule } from '@elysium/domain/storefront';
 
 import { FilesService } from '../files/files.service.js';
+import * as buying from './buying.repository.js';
 import { StorefrontPublicService } from './storefront-public.service.js';
 import * as repo from './storefront.repository.js';
 import { StorefrontService } from './storefront.service.js';
@@ -100,6 +101,16 @@ export interface StorefrontApi {
       }
     | undefined
   >;
+
+  /**
+   * The website accounts linked to this buyer, newest first, as their email and whether it was
+   * verified (M47, D-860: the caller panel's emails). No password, no Google id, no addresses.
+   */
+  accountsOfCustomer(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+  ): Promise<readonly { readonly email: string; readonly verified: boolean }[]>;
 }
 
 export const STOREFRONT_API = Symbol('StorefrontApi');
@@ -196,5 +207,10 @@ export class StorefrontApiService implements StorefrontApi {
     return row === undefined
       ? undefined
       : { id: row.id, name: row.name, columns: row.columns, rows: row.rows };
+  }
+
+  async accountsOfCustomer(tx: Tx, orgId: string, customerId: string) {
+    const { rows } = await buying.listAccounts(tx, orgId, { customerId, limit: 10, offset: 0 });
+    return rows.map((row) => ({ email: row.email, verified: row.email_verified_at !== null }));
   }
 }

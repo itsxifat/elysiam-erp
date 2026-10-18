@@ -1,12 +1,13 @@
-import { Button, DateTime, Skeleton, StatusBadge } from '@elysium/ui';
+import { Button, DateTime, Skeleton } from '@elysium/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { PanelRightOpen } from 'lucide-react';
 
 import { useAbility } from '../../auth/session.js';
 import { useRealtime } from '../../realtime/use-realtime.js';
 import { listCalls, TELEPHONY_KEY } from './api.js';
 import { CallButton } from './call-button.js';
-import { CallState, DirectionMark, OutcomeForm, outcomeLabel, talkText } from './call-parts.js';
+import { CallState, DirectionMark, talkText, WrapUpCell } from './call-parts.js';
+import { openCallerPanel } from './caller-panel-store.js';
 import { useTelT } from './messages.js';
 import { RecordingPlayer } from './recording-player.js';
 
@@ -15,8 +16,9 @@ const EVENTS = ['telephony.call_changed'] as const;
 /**
  * An order's phone calls through Envo (M47, D-838), inside M41's verification calls: a Call
  * button for the recipient (the number shown is the one dialled), and each call Envo reported
- * about the order (who, when, answered or missed, talk time, the recording) with "Record the
- * outcome", which logs M41's attempt for it, once. Lists only the calls the viewer may see
+ * about the order (who, when, answered or missed, talk time, the recording) with its wrap-up
+ * (D-859): what was written, or Wrap up for the viewer's own ended call, which also logs M41's
+ * attempt while the order can still be called about. Lists only the calls the viewer may see
  * (D-841). Loaded with the order page's chunk.
  */
 export function OrderPhoneCalls({
@@ -28,13 +30,12 @@ export function OrderPhoneCalls({
   readonly orderId: string;
   readonly orderNo: string;
   readonly phone: string;
-  /** Whether M41 still takes verification outcomes for this order (pending, on hold, confirmed). */
+  /** Whether M41 still takes verification attempts for this order (pending, on hold, confirmed). */
   readonly callable: boolean;
 }) {
   const t = useTelT();
   const ability = useAbility();
   const queryClient = useQueryClient();
-  const [recording, setRecording] = useState<string | null>(null);
   const mayRead = ability.can('read', 'PhoneCall');
   const calls = useQuery({
     queryKey: [...TELEPHONY_KEY, 'order', orderId],
@@ -81,24 +82,17 @@ export function OrderPhoneCalls({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <RecordingPlayer call={call} />
-                {call.outcome !== null ? (
-                  <StatusBadge tone="neutral">{outcomeLabel(t, call.outcome)}</StatusBadge>
-                ) : callable && call.status === 'ended' && ability.can('create', 'PhoneCall') ? (
-                  recording === call.id ? null : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setRecording(call.id)}
-                    >
-                      {t('tel.order.record')}
-                    </Button>
-                  )
-                ) : null}
+                {/* M47 (D-860): everything about whom the call was with. */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => openCallerPanel({ callId: call.id })}
+                >
+                  <PanelRightOpen aria-hidden="true" />
+                  {t('tel.panel.details')}
+                </Button>
               </div>
-              {recording === call.id ? (
-                <OutcomeForm call={call} onDone={() => setRecording(null)} />
-              ) : null}
+              <WrapUpCell call={call} orderCallable={callable} />
             </li>
           ))}
         </ul>

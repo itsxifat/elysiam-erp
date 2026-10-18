@@ -18,7 +18,7 @@ import {
 } from '@elysium/ui';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { PhoneOff } from 'lucide-react';
+import { PanelRightOpen, PhoneOff } from 'lucide-react';
 import { useId, useState } from 'react';
 import { z } from 'zod';
 
@@ -32,12 +32,15 @@ import {
   listCalls,
   listConnections,
   listExtensions,
+  listWrapUps,
   liveCalls,
   TELEPHONY_KEY,
+  WRAP_UPS_KEY,
   type CallFilters,
   type LiveCall,
 } from './api.js';
-import { CallState, DirectionMark, outcomeLabel, partyNumber, talkText } from './call-parts.js';
+import { CallState, DirectionMark, partyNumber, talkText, WrapUpCell } from './call-parts.js';
+import { openCallerPanel } from './caller-panel-store.js';
 import { useTelT, type TelephonyKey, type TelT } from './messages.js';
 import { RecordingPlayer } from './recording-player.js';
 
@@ -161,12 +164,20 @@ function History({
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
+  // D-859: the viewer's own calls that wait for their wrap-up, shown instead of the log on demand.
+  const mayWrapUp = ability.can('create', 'PhoneCall');
+  const wrapUps = useQuery({ queryKey: WRAP_UPS_KEY, queryFn: listWrapUps, enabled: mayWrapUp });
+  const [needsWrapUp, setNeedsWrapUp] = useState(false);
   useRealtime({
     events: EVENTS,
-    onEvent: () => void queryClient.invalidateQueries({ queryKey: [...TELEPHONY_KEY, 'calls'] }),
+    onEvent: () => {
+      void queryClient.invalidateQueries({ queryKey: [...TELEPHONY_KEY, 'calls'] });
+      void queryClient.invalidateQueries({ queryKey: WRAP_UPS_KEY });
+    },
   });
   const set = (patch: Partial<Search>) => setSearch({ ...search, ...patch });
-  const items = calls.data?.pages.flatMap((page) => page.items) ?? [];
+  const waiting = (wrapUps.data?.items ?? []).filter((call) => call.canWrapUp);
+  const items = needsWrapUp ? waiting : (calls.data?.pages.flatMap((page) => page.items) ?? []);
   const [orderNo, setOrderNo] = useState(search.orderNo ?? '');
   const [phone, setPhone] = useState(search.phone ?? '');
 
@@ -286,15 +297,26 @@ function History({
         >
           {t('tel.filter.clear')}
         </Button>
+        {mayWrapUp && (needsWrapUp || waiting.length > 0) ? (
+          <Button
+            type="button"
+            size="sm"
+            variant={needsWrapUp ? 'secondary' : 'outline'}
+            aria-pressed={needsWrapUp}
+            onClick={() => setNeedsWrapUp(!needsWrapUp)}
+          >
+            {t('tel.wrap.needs', { count: waiting.length })}
+          </Button>
+        ) : null}
       </form>
 
-      {calls.isPending ? (
+      {calls.isPending && !needsWrapUp ? (
         <div className="space-y-2" aria-busy="true" aria-label={t('tel.loading')}>
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-full" />
         </div>
-      ) : calls.isError ? (
+      ) : calls.isError && !needsWrapUp ? (
         <ErrorState
           title={t('tel.failed')}
           detail={errorText(calls.error, t('tel.failed'))}
@@ -305,7 +327,11 @@ function History({
           }
         />
       ) : items.length === 0 ? (
-        <EmptyState title={t('tel.page.empty')} detail={t('tel.page.emptyDetail')} />
+        needsWrapUp ? (
+          <EmptyState title={t('tel.wrap.allDone')} />
+        ) : (
+          <EmptyState title={t('tel.page.empty')} detail={t('tel.page.emptyDetail')} />
+        )
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
@@ -319,7 +345,11 @@ function History({
                 <th className="px-3 font-medium">{t('tel.col.person')}</th>
                 <th className="px-3 text-right font-medium">{t('tel.col.talk')}</th>
                 <th className="px-3 font-medium">{t('tel.col.status')}</th>
+                <th className="px-3 font-medium">{t('tel.wrap.col')}</th>
                 <th className="px-3 font-medium">{t('tel.col.recording')}</th>
+                <th className="px-3">
+                  <span className="sr-only">{t('tel.panel.details')}</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -355,9 +385,6 @@ function History({
                         >
                           {call.order.orderNo}
                         </Link>
-                        {call.outcome === null ? null : (
-                          <StatusBadge tone="neutral">{outcomeLabel(t, call.outcome)}</StatusBadge>
-                        )}
                       </span>
                     )}
                   </td>
@@ -367,7 +394,21 @@ function History({
                     <CallState call={call} />
                   </td>
                   <td className="px-3 py-1">
+                    <WrapUpCell call={call} dash />
+                  </td>
+                  <td className="px-3 py-1">
                     <RecordingPlayer call={call} />
+                  </td>
+                  <td className="px-3 py-1">
+                    {/* M47 (D-860): the caller panel for whoever this call was with. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openCallerPanel({ callId: call.id })}
+                    >
+                      <PanelRightOpen aria-hidden="true" />
+                      {t('tel.panel.details')}
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -375,7 +416,7 @@ function History({
           </table>
         </div>
       )}
-      {calls.hasNextPage ? (
+      {!needsWrapUp && calls.hasNextPage ? (
         <Button
           size="sm"
           variant="outline"

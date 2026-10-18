@@ -57,7 +57,6 @@ import { InboxCallsService } from './modules/inbox/calls.service.js';
 import { InboxMediaService } from './modules/inbox/media.service.js';
 import { registerVoiceCallsJobs } from './modules/inbox/voice-calls.worker.js';
 import { TelephonyModule } from './modules/telephony/telephony.module.js';
-import { TelephonyRecordingsService } from './modules/telephony/recordings.service.js';
 import { TelephonySyncService } from './modules/telephony/sync.service.js';
 import { registerTelephonyJobs } from './modules/telephony/telephony.worker.js';
 import { TelephonyWebhookService } from './modules/telephony/webhook.service.js';
@@ -102,7 +101,7 @@ export const WORKER_MODULES = [
   PackingModule,
   // M42: Meta's webhooks threaded, replies sent, and contacts made customers by their orders.
   InboxModule,
-  // M47: Envo's webhooks applied, recordings kept, the call history synced.
+  // M47: Envo's webhooks applied, the call history synced, old webhook bodies pruned.
   TelephonyModule,
 ] as const;
 
@@ -204,12 +203,11 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     report,
   });
 
-  // M47: Envo's webhooks, recordings, the five-minute sync and the nightly retention.
+  // M47: Envo's webhooks, the five-minute sync and the nightly webhook-body retention.
   await registerTelephonyJobs({
     jobs,
     webhooks: context.get(TelephonyWebhookService),
     sync: context.get(TelephonySyncService),
-    recordings: context.get(TelephonyRecordingsService),
     report,
   });
 

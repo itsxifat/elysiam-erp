@@ -83,13 +83,6 @@ export const FILE_PURPOSES = [
    * answer the inbox), and kept with the conversation for a year.
    */
   'inbox-media',
-  /**
-   * A phone call's recording (M47, D-840, D-841): downloaded from the brand's Envo connection by
-   * a job, never uploaded. Private without exception, read through `PhoneCall` (supervisors every
-   * call, sales their own and their orders'), always through the Calls route, which finds the
-   * call in the caller's scope first, and kept for the connection's retention (365 days).
-   */
-  'call-recording',
 ] as const;
 
 export type FilePurpose = (typeof FILE_PURPOSES)[number];
@@ -199,17 +192,6 @@ export const PURPOSE_RULES: Readonly<Record<FilePurpose, PurposeRule>> = {
       'image/png',
       'image/webp',
     ],
-  },
-  /*
-   * Produced by the server from Envo's download (D-840); no screen uploads one. An upload through
-   * the files route would need `update Telephony` (org_admin), so a desk role cannot put a file of
-   * its own under this purpose. Read through the Calls route, which checks the call (D-841).
-   */
-  'call-recording': {
-    readRequires: { action: 'read', subject: 'PhoneCall' },
-    mayBePublic: false,
-    createRequires: { action: 'update', subject: 'Telephony' },
-    allowedMimes: ['audio/wav', 'audio/mpeg', 'audio/ogg'],
   },
 };
 

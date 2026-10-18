@@ -12,8 +12,9 @@ import { envoHostCheck, parseCidr } from './providers/envo-host.js';
  *   supervisor saves a connection with its API key, so the real adapter is the default.
  * - `TELEPHONY_ALLOW_PLAIN_HTTP`: lets a base URL be `http://` on any host, for the tests' stand-in
  *   on 127.0.0.1. Refused when `NODE_ENV=production`.
- * - `TELEPHONY_ENVO_TIMEOUT_MS`: each request to Envo (8 s). A recording's download gets 60 s.
- * - `TELEPHONY_RECORDING_MAX_BYTES`: the largest recording kept (64 MiB, the storage rule's).
+ * - `TELEPHONY_ENVO_TIMEOUT_MS`: each request to Envo (8 s).
+ * - `TELEPHONY_RECORDING_TIMEOUT_MS`: the wait for a streamed recording's headers from Envo
+ *   (15 s); the audio itself is never timed, and stops when the listener goes away (D-858).
  * - `TELEPHONY_PHONE_TOKEN_TTL_SECONDS`: the web phone's token (120 s; Envo allows 60 to 3600).
  * - `TELEPHONY_ENVO_PRIVATE_CIDRS`: private IPv4 ranges a base URL's name may resolve to,
  *   space- or comma-separated (`192.168.20.237/32`), for a brand whose own Envo its DNS answers
@@ -27,13 +28,7 @@ const schema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
   TELEPHONY_ENVO_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(8_000),
-  TELEPHONY_RECORDING_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
-  TELEPHONY_RECORDING_MAX_BYTES: z.coerce
-    .number()
-    .int()
-    .min(1024)
-    .max(64 * 1024 * 1024)
-    .default(64 * 1024 * 1024),
+  TELEPHONY_RECORDING_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
   TELEPHONY_PHONE_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(120),
   TELEPHONY_ENVO_PRIVATE_CIDRS: z
     .string()

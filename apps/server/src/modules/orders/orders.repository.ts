@@ -2007,6 +2007,183 @@ export async function customerReachableIn(
   return rows[0]?.reachable === true;
 }
 
+// --- M47: the caller panel (D-860) --------------------------------------------------------------
+
+export interface CallerCustomerRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly phone_e164: string;
+  readonly name: string;
+  readonly tags: unknown;
+  readonly orders_total: number;
+  readonly delivered_count: number;
+  readonly returned_count: number;
+  readonly cancelled_count: number;
+  readonly ltv_poisha: string;
+  readonly first_order_at: string | null;
+  readonly last_order_at: string | null;
+  readonly pinned_note: string | null;
+  readonly pinned_note_by_user_id: string | null;
+  readonly pinned_note_at: string | null;
+  readonly segment: string | null;
+}
+
+/** A buyer's counters, tags, pinned note and RFM segment, for the caller panel. */
+export async function callerCustomerById(
+  tx: Tx,
+  orgId: string,
+  id: string,
+): Promise<CallerCustomerRow | undefined> {
+  const rows = await tx.execute<CallerCustomerRow>(sql`
+    select c.id, c.phone_e164, c.name, c.tags, c.orders_total, c.delivered_count,
+           c.returned_count, c.cancelled_count, c.ltv_poisha::text as ltv_poisha,
+           c.first_order_at, c.last_order_at, c.pinned_note, c.pinned_note_by_user_id,
+           c.pinned_note_at, s.segment
+    from sales.customers c
+    left join sales.customer_segments s on s.org_id = c.org_id and s.customer_id = c.id
+    where c.org_id = ${orgId} and c.id = ${id}
+  `);
+  return rows[0];
+}
+
+/**
+ * One page of a buyer's orders within a viewer's order scope, newest first: after `cursor` (the
+ * last row of the previous page), `limit` rows.
+ */
+export async function customerOrdersPage(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  scope: SQL,
+  page: {
+    readonly limit: number;
+    readonly cursor: { readonly createdAt: string; readonly id: string } | null;
+  },
+): Promise<RecentOrderRow[]> {
+  const rows = await tx.execute<RecentOrderRow>(sql`
+    select o.id, o.order_no, o.status::text as status, o.channel::text as channel,
+           o.cod_amount_poisha::text as cod_amount_poisha, o.created_at
+    from sales.orders o
+    where o.org_id = ${orgId} and o.customer_id = ${customerId} and ${scope}
+      ${
+        page.cursor === null
+          ? sql``
+          : sql`and (o.created_at, o.id) < (${page.cursor.createdAt}::timestamptz, ${page.cursor.id}::uuid)`
+      }
+    order by o.created_at desc, o.id desc
+    limit ${page.limit}
+  `);
+  return [...rows];
+}
+
+export interface NamedAddressRow extends Record<string, unknown> {
+  readonly source: 'saved' | 'order';
+  readonly label: string | null;
+  readonly district_name: string | null;
+  readonly thana_name: string | null;
+  readonly area: string | null;
+  readonly address_line: string;
+  readonly is_default: boolean;
+}
+
+/**
+ * A buyer's saved addresses (the default first), then the distinct addresses their newest
+ * `recentOrders` orders were sent to, each with its district's and thana's English names (`ref`
+ * is global reference data). An order's address already saved is not repeated.
+ */
+export async function namedAddressesOf(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  recentOrders: number,
+): Promise<NamedAddressRow[]> {
+  const rows = await tx.execute<NamedAddressRow>(sql`
+    with saved as (
+      select a.label, a.district_id, a.thana_id, a.area, a.address_line, a.is_default,
+             a.created_at
+      from sales.customer_addresses a
+      where a.org_id = ${orgId} and a.customer_id = ${customerId}
+    ),
+    shipped as (
+      select o.ship_district_id as district_id, o.ship_thana_id as thana_id,
+             o.ship_area as area, o.ship_address_line as address_line, max(o.created_at) as last_at
+      from (
+        select ship_district_id, ship_thana_id, ship_area, ship_address_line, created_at
+        from sales.orders
+        where org_id = ${orgId} and customer_id = ${customerId}
+        order by created_at desc
+        limit ${recentOrders}
+      ) o
+      group by 1, 2, 3, 4
+    )
+    select * from (
+      select 'saved' as source, s.label, d.name_en as district_name, t.name_en as thana_name,
+             s.area, s.address_line, s.is_default, 0 as rank, s.created_at as at
+      from saved s
+      left join ref.districts d on d.id = s.district_id
+      left join ref.thanas t on t.id = s.thana_id
+      union all
+      select 'order' as source, null as label, d.name_en, t.name_en, h.area, h.address_line,
+             false as is_default, 1 as rank, h.last_at as at
+      from shipped h
+      left join ref.districts d on d.id = h.district_id
+      left join ref.thanas t on t.id = h.thana_id
+      where not exists (
+        select 1 from saved s
+        where s.district_id = h.district_id and s.thana_id = h.thana_id
+          and lower(btrim(s.address_line)) = lower(btrim(h.address_line))
+          and coalesce(lower(btrim(s.area)), '') = coalesce(lower(btrim(h.area)), '')
+      )
+    ) addresses
+    order by rank, is_default desc, at desc
+  `);
+  return [...rows];
+}
+
+/** The distinct recipient phones on a buyer's orders other than `ownPhone`, newest first. */
+export async function otherShipPhonesOf(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  ownPhone: string,
+  limit: number,
+): Promise<string[]> {
+  const rows = await tx.execute<{ phone: string }>(sql`
+    select o.ship_phone_e164 as phone
+    from sales.orders o
+    where o.org_id = ${orgId} and o.customer_id = ${customerId}
+      and o.ship_phone_e164 <> ${ownPhone}
+    group by o.ship_phone_e164
+    order by max(o.created_at) desc
+    limit ${limit}
+  `);
+  return rows.map((row) => row.phone);
+}
+
+/** Pin a buyer's note (or clear it, with null): who and when come with it. The old note's. */
+export async function setPinnedNote(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  note: { readonly body: string; readonly byUserId: string } | null,
+): Promise<{ readonly before: string | null; readonly row: CallerCustomerRow } | undefined> {
+  const before = await tx.execute<{ pinned_note: string | null }>(sql`
+    select pinned_note from sales.customers
+    where org_id = ${orgId} and id = ${customerId}
+    for update
+  `);
+  if (before[0] === undefined) return undefined;
+  await tx.execute(sql`
+    update sales.customers
+    set pinned_note = ${note?.body ?? null},
+        pinned_note_by_user_id = ${note?.byUserId ?? null},
+        pinned_note_at = ${note === null ? null : sql`now()`},
+        updated_at = now()
+    where org_id = ${orgId} and id = ${customerId}
+  `);
+  const row = await callerCustomerById(tx, orgId, customerId);
+  return row === undefined ? undefined : { before: before[0].pinned_note, row };
+}
+
 /** The buyer of an order and the inbox conversation its `source` names, if any (D-742). */
 export async function inboxOriginOf(
   tx: Tx,

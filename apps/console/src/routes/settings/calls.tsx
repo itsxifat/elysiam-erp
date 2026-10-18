@@ -290,10 +290,6 @@ function ConnectionCard({
             )}
           </dd>
         </div>
-        <div className="space-y-0.5">
-          <dt className="text-xs text-muted-foreground">{t('tel.settings.retention')}</dt>
-          <dd className="tabular-nums">{connection.recordingRetentionDays}</dd>
-        </div>
       </dl>
 
       <div className="space-y-1.5">
@@ -371,7 +367,6 @@ function ConnectionDialog({
   const [apiKey, setApiKey] = useState('');
   const [secret, setSecret] = useState('');
   const [enabled, setEnabled] = useState(connection?.enabled ?? true);
-  const [retention, setRetention] = useState(String(connection?.recordingRetentionDays ?? 365));
   const [problem, setProblem] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: () => {
@@ -379,7 +374,6 @@ function ConnectionDialog({
         name: name.trim(),
         baseUrl: baseUrl.trim(),
         enabled,
-        recordingRetentionDays: Number(retention),
         ...(apiKey.trim() === '' ? {} : { apiKey: apiKey.trim() }),
         ...(secret.trim() === '' ? {} : { webhookSecret: secret.trim() }),
       };
@@ -480,18 +474,6 @@ function ConnectionDialog({
             {t('tel.settings.webhookSecretHint')}{' '}
             {connection === null ? '' : t('tel.settings.keepBlank')}
           </p>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${ids}-days`}>{t('tel.settings.retention')}</Label>
-          <Input
-            id={`${ids}-days`}
-            type="number"
-            min={30}
-            max={3650}
-            value={retention}
-            className="w-32 tabular-nums"
-            onChange={(event) => setRetention(event.target.value)}
-          />
         </div>
         <label className="flex items-center gap-2 text-sm" htmlFor={`${ids}-on`}>
           <Checkbox

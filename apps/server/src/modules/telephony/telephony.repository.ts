@@ -21,7 +21,6 @@ export interface ConnectionRow extends Record<string, unknown> {
   readonly api_key_fingerprint: string | null;
   readonly webhook_secret_sealed: Buffer | null;
   readonly webhook_secret_fingerprint: string | null;
-  readonly recording_retention_days: number;
   readonly envo_server_id: number | null;
   readonly envo_server_name: string | null;
   readonly last_tested_at: Date | string | null;
@@ -39,7 +38,7 @@ export interface ConnectionRow extends Record<string, unknown> {
 
 const CONNECTION_COLUMNS = sql`
   id, org_id, name, base_url, enabled, api_key_sealed, api_key_fingerprint,
-  webhook_secret_sealed, webhook_secret_fingerprint, recording_retention_days, envo_server_id,
+  webhook_secret_sealed, webhook_secret_fingerprint, envo_server_id,
   envo_server_name, last_tested_at, last_test_ok, last_test_error, last_webhook_at,
   last_webhook_event, last_signature_failure_at, last_signature_failure_reason, sync_cursor,
   last_synced_at, last_sync_error, updated_at
@@ -92,7 +91,6 @@ export async function insertConnection(
     readonly enabled: boolean;
     readonly apiKey: SealedSecret;
     readonly webhookSecret: SealedSecret | null;
-    readonly retentionDays: number;
     readonly by: string;
   },
 ): Promise<void> {
@@ -100,11 +98,11 @@ export async function insertConnection(
     insert into telephony.connections
       (id, org_id, name, base_url, enabled, api_key_sealed, api_key_key_id, api_key_fingerprint,
        webhook_secret_sealed, webhook_secret_key_id, webhook_secret_fingerprint,
-       recording_retention_days, created_by, updated_by)
+       created_by, updated_by)
     values (${input.id}, ${input.orgId}, ${input.name}, ${input.baseUrl}, ${input.enabled},
             ${input.apiKey.ciphertext}, ${input.apiKey.keyId}, ${input.apiKey.fingerprint},
             ${input.webhookSecret?.ciphertext ?? null}, ${input.webhookSecret?.keyId ?? null},
-            ${input.webhookSecret?.fingerprint ?? null}, ${input.retentionDays},
+            ${input.webhookSecret?.fingerprint ?? null},
             ${input.by}, ${input.by})
   `);
 }
@@ -117,7 +115,6 @@ export async function updateConnection(
     readonly name: string;
     readonly baseUrl: string;
     readonly enabled: boolean;
-    readonly retentionDays: number;
     readonly apiKey?: SealedSecret;
     readonly webhookSecret?: SealedSecret;
     /** A new base URL or key means another SIP server, perhaps: forget what the last Test learned. */
@@ -130,7 +127,6 @@ export async function updateConnection(
       name = ${input.name},
       base_url = ${input.baseUrl},
       enabled = ${input.enabled},
-      recording_retention_days = ${input.retentionDays},
       ${
         input.apiKey === undefined
           ? sql``
@@ -234,8 +230,8 @@ export async function allOrgIds(tx: Tx): Promise<string[]> {
 
 /**
  * Every brand's id, switched off or not, for a sweep that deletes personal data: a brand that
- * was switched off still owes its customers the recordings' retention (D-842), as the packing
- * videos' purge walks every brand (D-612).
+ * was switched off still owes its customers the webhook bodies' retention (D-851), as the
+ * packing videos' purge walks every brand (D-612).
  */
 export async function everyOrgId(tx: Tx): Promise<string[]> {
   const rows = await tx.execute<{ id: string }>(
@@ -366,14 +362,14 @@ export interface CallRow extends Record<string, unknown> {
   readonly ended_at: Date | string | null;
   readonly error_code: string | null;
   readonly error_detail: string | null;
-  readonly recording_status: string;
   readonly recording_url: string | null;
-  readonly recording_file_id: string | null;
-  readonly recording_bytes: number | null;
-  readonly recording_attempts: number;
-  readonly recording_error: string | null;
   readonly outcome_attempt_id: string | null;
   readonly outcome: string | null;
+  readonly wrap_up_result: string | null;
+  readonly wrap_up_note: string | null;
+  readonly wrap_up_call_back_at: Date | string | null;
+  readonly wrapped_up_by_user_id: string | null;
+  readonly wrapped_up_at: Date | string | null;
   readonly last_event: string | null;
 }
 
@@ -382,9 +378,9 @@ const CALL_COLUMNS = sql`
   c.to_number, c.customer_phone_e164, c.extension, c.user_id, c.customer_id, c.customer_name,
   c.order_id, c.order_no, c.order_owner_user_id, c.answered, c.disposition, c.talk_seconds,
   c.duration_seconds, c.occurred_at, c.requested_at, c.started_at, c.answered_at, c.ended_at,
-  c.error_code, c.error_detail, c.recording_status, c.recording_url, c.recording_file_id,
-  c.recording_bytes, c.recording_attempts, c.recording_error, c.outcome_attempt_id, c.outcome,
-  c.last_event
+  c.error_code, c.error_detail, c.recording_url, c.outcome_attempt_id, c.outcome,
+  c.wrap_up_result, c.wrap_up_note, c.wrap_up_call_back_at, c.wrapped_up_by_user_id,
+  c.wrapped_up_at, c.last_event
 `;
 
 export async function callById(
@@ -560,14 +556,14 @@ export interface CallChange {
   readonly endedAt?: Date;
   readonly errorCode?: string;
   readonly errorDetail?: string | null;
-  readonly recordingStatus?: string;
   readonly recordingUrl?: string;
-  readonly recordingFileId?: string | null;
-  readonly recordingBytes?: number | null;
-  readonly recordingAttempts?: number;
-  readonly recordingError?: string | null;
   readonly outcomeAttemptId?: string;
   readonly outcome?: string;
+  readonly wrapUpResult?: string;
+  readonly wrapUpNote?: string | null;
+  readonly wrapUpCallBackAt?: Date | null;
+  readonly wrappedUpByUserId?: string;
+  readonly wrappedUpAt?: Date;
   readonly lastEvent?: string;
 }
 
@@ -594,14 +590,14 @@ const CHANGE_COLUMNS: Readonly<Record<keyof CallChange, string>> = {
   endedAt: 'ended_at',
   errorCode: 'error_code',
   errorDetail: 'error_detail',
-  recordingStatus: 'recording_status',
   recordingUrl: 'recording_url',
-  recordingFileId: 'recording_file_id',
-  recordingBytes: 'recording_bytes',
-  recordingAttempts: 'recording_attempts',
-  recordingError: 'recording_error',
   outcomeAttemptId: 'outcome_attempt_id',
   outcome: 'outcome',
+  wrapUpResult: 'wrap_up_result',
+  wrapUpNote: 'wrap_up_note',
+  wrapUpCallBackAt: 'wrap_up_call_back_at',
+  wrappedUpByUserId: 'wrapped_up_by_user_id',
+  wrappedUpAt: 'wrapped_up_at',
   lastEvent: 'last_event',
 };
 
@@ -647,6 +643,31 @@ export async function staleClicks(
     order by c.requested_at
     limit 200
     for update
+  `);
+  return [...rows];
+}
+
+/**
+ * The person's own calls that wait for their wrap-up (D-859): ended since `since`, not yet wrapped
+ * up, and asking for one (`wrapUpAsked` in SQL: no error, not internal, and a Call button call
+ * only once its ring-back was answered). Newest first.
+ */
+export async function wrapUpsOf(
+  tx: Tx,
+  orgId: string,
+  userId: string,
+  since: Date,
+  limit: number,
+): Promise<CallRow[]> {
+  const rows = await tx.execute<CallRow>(sql`
+    select ${CALL_COLUMNS} from telephony.calls c
+    where c.org_id = ${orgId} and c.user_id = ${userId}
+      and c.status = 'ended' and c.wrapped_up_at is null
+      and c.ended_at >= ${since.toISOString()}::timestamptz
+      and c.error_code is null and c.direction <> 'internal'
+      and (c.first_seen <> 'click' or c.answered)
+    order by c.ended_at desc, c.id desc
+    limit ${limit}
   `);
   return [...rows];
 }
@@ -760,97 +781,6 @@ export async function liveInboundFrom(
     limit 1
   `);
   return rows[0];
-}
-
-// --- recordings -------------------------------------------------------------------------------------
-
-export async function storedRecordingsPast(
-  tx: Tx,
-  orgId: string,
-  now: Date,
-  limit: number,
-): Promise<{ id: string; recording_file_id: string }[]> {
-  const rows = await tx.execute<{ id: string; recording_file_id: string }>(sql`
-    select c.id, c.recording_file_id
-    from telephony.calls c
-    join telephony.connections k on k.org_id = c.org_id and k.id = c.connection_id
-    where c.org_id = ${orgId} and c.recording_status = 'stored'
-      and coalesce(c.ended_at, c.occurred_at)
-          < ${now.toISOString()}::timestamptz - make_interval(days => k.recording_retention_days)
-    order by c.ended_at
-    limit ${limit}
-    for update of c
-  `);
-  return [...rows];
-}
-
-/**
- * Recordings worth another round of tries (D-840), within a day of the call: `pending` and
- * untouched for half an hour, or `failed` for a reason that may pass (`unreachable`, `storage`)
- * an hour after the last round.
- */
-export async function recordingsToRetry(
-  tx: Tx,
-  orgId: string,
-  now: Date,
-  limit: number,
-): Promise<{ id: string; recording_status: string }[]> {
-  const at = now.toISOString();
-  const rows = await tx.execute<{ id: string; recording_status: string }>(sql`
-    select c.id, c.recording_status from telephony.calls c
-    where c.org_id = ${orgId} and c.recording_url is not null
-      and (
-        (c.recording_status = 'pending'
-          and c.updated_at < ${at}::timestamptz - interval '30 minutes')
-        or (c.recording_status = 'failed' and c.recording_error in ('unreachable', 'storage')
-          and c.updated_at < ${at}::timestamptz - interval '1 hour')
-      )
-      and coalesce(c.ended_at, c.occurred_at) > ${at}::timestamptz - interval '1 day'
-    order by c.updated_at
-    limit ${limit}
-    for update of c skip locked
-  `);
-  return [...rows];
-}
-
-/**
- * Recordings still `pending` a day after the call with no job alive for half an hour (each round
- * of tries died on an error no try caught): given up, not retried for ever on the key's budget.
- */
-export async function stuckRecordingsPast(
-  tx: Tx,
-  orgId: string,
-  now: Date,
-  limit: number,
-): Promise<{ id: string }[]> {
-  const at = now.toISOString();
-  const rows = await tx.execute<{ id: string }>(sql`
-    select c.id from telephony.calls c
-    where c.org_id = ${orgId} and c.recording_status = 'pending'
-      and c.updated_at < ${at}::timestamptz - interval '30 minutes'
-      and coalesce(c.ended_at, c.occurred_at) <= ${at}::timestamptz - interval '1 day'
-    order by c.updated_at
-    limit ${limit}
-    for update of c skip locked
-  `);
-  return [...rows];
-}
-
-export async function referencedRecordingFiles(
-  tx: Tx,
-  orgId: string,
-  fileIds: readonly string[],
-): Promise<Set<string>> {
-  if (fileIds.length === 0) return new Set();
-  const rows = await tx.execute<{ recording_file_id: string }>(sql`
-    select recording_file_id from telephony.calls
-    where org_id = ${orgId}
-      and recording_file_id in (${sql.join(
-        fileIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
-  `);
-  return new Set([...rows].map((row) => row.recording_file_id));
 }
 
 // --- webhook bodies -------------------------------------------------------------------------------

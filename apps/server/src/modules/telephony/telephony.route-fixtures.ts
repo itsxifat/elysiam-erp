@@ -98,7 +98,6 @@ export const TELEPHONY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
       name: NAME,
       baseUrl: 'https://envo.enfinito.cloud',
       enabled: true,
-      recordingRetentionDays: 365,
     },
   }),
   'POST /v1/telephony/connections/:id/test': () => ({
@@ -139,6 +138,10 @@ export const TELEPHONY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
     url: '/v1/telephony/lookup',
     body: { phone: '01712345678' },
   }),
+  'POST /v1/telephony/caller-panel': () => ({
+    url: '/v1/telephony/caller-panel',
+    body: { phone: '01712345678' },
+  }),
   'POST /v1/telephony/calls': () => ({
     url: '/v1/telephony/calls',
     body: { phone: '01712345678' },
@@ -152,12 +155,13 @@ export const TELEPHONY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
     url: '/v1/telephony/calls/search',
     body: { limit: 5 },
   }),
+  'GET /v1/telephony/calls/wrap-ups': () => ({ url: '/v1/telephony/calls/wrap-ups' }),
   'GET /v1/telephony/calls/:id': async () => ({ url: `/v1/telephony/calls/${await freshCall()}` }),
   'GET /v1/telephony/calls/:id/recording': async () => ({
     url: `/v1/telephony/calls/${await freshCall()}/recording`,
   }),
-  'POST /v1/telephony/calls/:id/outcome': async () => ({
-    url: `/v1/telephony/calls/${await freshCall()}/outcome`,
-    body: { outcome: 'reached' },
+  'POST /v1/telephony/calls/:id/wrap-up': async () => ({
+    url: `/v1/telephony/calls/${await freshCall()}/wrap-up`,
+    body: { result: 'no_answer' },
   }),
 };

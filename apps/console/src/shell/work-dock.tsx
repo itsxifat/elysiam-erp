@@ -27,7 +27,13 @@ import {
   type ConversationOfferCard,
   type OfferCard,
 } from '../routes/orders/workflow-api.js';
-import { actKey, beatFor, offerShareLeft, secondsLeft } from '../routes/orders/workflow-logic.js';
+import {
+  actKey,
+  beatFor,
+  inboxActKey,
+  offerShareLeft,
+  secondsLeft,
+} from '../routes/orders/workflow-logic.js';
 
 /**
  * The work dock (M41, D-713, D-717, D-721): loaded after the shell paints, it
@@ -38,7 +44,8 @@ import { actKey, beatFor, offerShareLeft, secondsLeft } from '../routes/orders/w
  * 2. shows an order offered to them like a ride offer: number, area, pieces, cash to collect, a
  *    countdown, Accept and Decline. Announced politely and never stealing focus from what the
  *    person is typing; the card sits first in the tab order after the skip link;
- * 3. tells them when somebody else worked on their order;
+ * 3. tells them when somebody else worked on their order, or acted in their conversation (a
+ *    Call from its panel among others, D-862);
  * 4. shows a new inbox conversation offered to them the same way (D-748), when their desk takes
  *    messages: who wrote, on which channel, the last words, and the same countdown;
  * 5. (M44a, D-766) rings: an offer arrives with an urgent tone and a gentle ring around its card
@@ -58,17 +65,29 @@ const PhoneDock = lazy(() =>
   import('../routes/calls/phone-dock.js').then((module) => ({ default: module.PhoneDock })),
 );
 
+// M47 (D-859): the wrap-up after each call, for everyone who places calls (desk phones too, so
+// not inside the phone dock). Its own chunk, loaded from this lazy one.
+const WrapUpCard = lazy(() =>
+  import('../routes/calls/wrap-up.js').then((module) => ({ default: module.WrapUpCard })),
+);
+
 const BEAT_MS = 30_000;
 const NOTICE_MS = 15_000;
 const INPUT_EVENTS = ['keydown', 'pointerdown', 'touchstart', 'wheel'] as const;
 
-interface Notice {
+/** Somebody else acted on my order (`order.acted_over_owner`) or in my conversation (D-862). */
+type Notice = {
   readonly key: string;
-  readonly orderId: string;
-  readonly orderNo: string;
   readonly actorUserId: string;
-  readonly act: unknown;
-}
+} & (
+  | {
+      readonly kind: 'order';
+      readonly orderId: string;
+      readonly orderNo: string;
+      readonly act: unknown;
+    }
+  | { readonly kind: 'inbox'; readonly conversationId: string; readonly action: unknown }
+);
 
 export function WorkDock() {
   const ability = useAbility();
@@ -83,6 +102,11 @@ export function WorkDock() {
       {ability.can('create', 'PhoneCall') ? (
         <Suspense fallback={null}>
           <PhoneDock />
+        </Suspense>
+      ) : null}
+      {ability.can('create', 'PhoneCall') ? (
+        <Suspense fallback={null}>
+          <WrapUpCard />
         </Suspense>
       ) : null}
       {ability.can('update', 'Presence') ? <Dock /> : null}
@@ -189,6 +213,7 @@ function Dock() {
       'order.offered',
       'order.offer_closed',
       'order.acted_over_owner',
+      'inbox.owner_overridden',
       'inbox.conversation_offered',
       'inbox.conversation_offer_closed',
       'inbox.message_received',
@@ -207,6 +232,7 @@ function Dock() {
         const body = (payload ?? {}) as Record<string, unknown>;
         if (typeof body.id !== 'string' || typeof body.orderNo !== 'string') return;
         const notice: Notice = {
+          kind: 'order',
           key: `${body.id}:${String(Date.now())}`,
           orderId: body.id,
           orderNo: body.orderNo,
@@ -215,6 +241,20 @@ function Dock() {
         };
         setNotices((current) => [notice, ...current].slice(0, 3));
         void queryClient.invalidateQueries({ queryKey: ['orders'] });
+        return;
+      }
+      if (name === 'inbox.owner_overridden') {
+        // Ids only (the outbox's rule); the actor's name is read here, as for an order.
+        const body = (payload ?? {}) as Record<string, unknown>;
+        if (typeof body.conversationId !== 'string') return;
+        const notice: Notice = {
+          kind: 'inbox',
+          key: `${body.conversationId}:${String(Date.now())}`,
+          conversationId: body.conversationId,
+          actorUserId: typeof body.actorUserId === 'string' ? body.actorUserId : '',
+          action: body.action,
+        };
+        setNotices((current) => [notice, ...current].slice(0, 3));
         return;
       }
       void queryClient.invalidateQueries({ queryKey: ['orders', 'offers', 'mine'] });
@@ -253,17 +293,33 @@ function Dock() {
           data-testid="owner-notice"
         >
           <div className="flex items-start justify-between gap-2">
-            <p>
-              <span className="font-medium">{nameOf(notice.actorUserId)}</span>{' '}
-              {t(actKey(notice.act))} {t('wf.notice.on')}{' '}
-              <button
-                type="button"
-                className="font-medium tabular-nums underline underline-offset-4 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                onClick={() => void navigate({ to: `/orders/${notice.orderId}` as never })}
-              >
-                {notice.orderNo}
-              </button>
-            </p>
+            {notice.kind === 'order' ? (
+              <p>
+                <span className="font-medium">{nameOf(notice.actorUserId)}</span>{' '}
+                {t(actKey(notice.act))} {t('wf.notice.on')}{' '}
+                <button
+                  type="button"
+                  className="font-medium tabular-nums underline underline-offset-4 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  onClick={() => void navigate({ to: `/orders/${notice.orderId}` as never })}
+                >
+                  {notice.orderNo}
+                </button>
+              </p>
+            ) : (
+              <p data-testid="inbox-owner-notice">
+                <span className="font-medium">{nameOf(notice.actorUserId)}</span>{' '}
+                {t(inboxActKey(notice.action))} {t('wf.notice.in')}{' '}
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-4 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  onClick={() =>
+                    void navigate({ to: '/inbox', search: { c: notice.conversationId } as never })
+                  }
+                >
+                  {t('wf.notice.yourChat')}
+                </button>
+              </p>
+            )}
             <Button
               variant="ghost"
               size="icon-sm"

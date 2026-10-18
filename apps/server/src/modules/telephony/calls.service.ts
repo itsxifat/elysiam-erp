@@ -1,13 +1,29 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { CallAttemptInput } from '@elysium/contracts';
+import { OWNER_ACK_HEADER } from '@elysium/contracts';
 import type {
   PhoneCallAnsweredInput,
   PhoneCallListQuery,
   PhoneCallPlaceInput,
+  PhoneCallResult,
+  PhoneCallWrapUpInput,
 } from '@elysium/contracts/telephony';
 import { withOrg, type Tx } from '@elysium/db';
 import { isNormalizableBdPhone, maskPhone, normalizeBdPhone } from '@elysium/domain';
-import { customerPhoneFrom, envoDialNumber, storedNumber } from '@elysium/domain/telephony';
+import {
+  attemptNoteOf,
+  customerPhoneFrom,
+  envoDialNumber,
+  recordingIdFrom,
+  storedNumber,
+  suggestWrapUp,
+  WRAP_UP_ASK_HOURS,
+  WRAP_UP_REFUSALS,
+  WRAP_UPS_LISTED,
+  wrapUpInputProblem,
+  wrapUpNoteOf,
+  wrapUpRefusal,
+  type WrapUpCallFacts,
+} from '@elysium/domain/telephony';
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -15,15 +31,18 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeHasNoRowDimension, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { MemoryRateLimiter } from '../../platform/http/rate-limit.js';
-import { FILES_API, type FilesApi } from '../files/files.api.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
+import { INBOX_API, type InboxApi } from '../inbox/inbox.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { envoFailure, TelephonyConnectionsService } from './connections.service.js';
 import { announce } from './ingest.service.js';
 import {
+  EnvoError,
   liveCallOnPhoneOf,
   type EnvoGateway,
   type EnvoLiveCall,
+  type EnvoRecordingRequest,
+  type EnvoRecordingStream,
 } from './providers/envo-gateway.js';
 import { TELEPHONY_CONFIG, type TelephonyConfig } from './telephony.config.js';
 import { mapTelephonyErrors, TelephonyError } from './telephony.errors.js';
@@ -31,13 +50,18 @@ import * as repo from './telephony.repository.js';
 import { CALLING_ROLES } from './telephony.roles.js';
 import { ENVO_GATEWAY } from './telephony.tokens.js';
 
-export const RECORDING_PURPOSE = 'call-recording' as const;
-
 /** A call's own scope (D-841): `own` is the person on it, or the order's owner when linked. */
 const CALL_SCOPE = { createdBy: sql`c.user_id`, assignedTo: sql`c.order_owner_user_id` };
 
 /** A second press within this long, to the same number, is the same call (D-834). */
 const DOUBLE_PRESS_SECONDS = 20;
+
+/** The uniform go-ahead header (`x-acknowledge-owner: 1`, D-710, D-737), read off the request. */
+function ownerAcknowledged(request: AuditableRequest): boolean {
+  const headers = (request as { headers?: Record<string, unknown> }).headers;
+  const value = headers?.[OWNER_ACK_HEADER];
+  return value === '1' || value === 'true';
+}
 
 /** An inbound call answered in the browser is the newest from that number in these minutes. */
 const ANSWERED_WINDOW_MS = 3 * 60_000;
@@ -97,7 +121,37 @@ function dhakaDateOf(at: Date): string {
 
 type Names = ReadonlyMap<string, string>;
 
-export function callView(row: repo.CallRow, names: Names) {
+/** The call as `suggestWrapUp` and `wrapUpRefusal` read it (D-859). */
+function wrapUpFacts(row: repo.CallRow) {
+  return {
+    status: row.status as WrapUpCallFacts['status'],
+    direction: row.direction as WrapUpCallFacts['direction'],
+    callButton: row.first_seen === 'click',
+    answered: row.answered,
+    disposition: row.disposition as WrapUpCallFacts['disposition'],
+    talkSeconds: row.talk_seconds,
+    errorCode: row.error_code,
+    hasRecording: row.recording_url !== null,
+    personId: row.user_id,
+    wrappedUp: row.wrapped_up_at !== null,
+  };
+}
+
+function wrapUpView(row: repo.CallRow, names: Names) {
+  if (row.wrapped_up_at === null || row.wrap_up_result === null) return null;
+  if (row.wrapped_up_by_user_id === null) return null;
+  return {
+    result: row.wrap_up_result as PhoneCallResult,
+    note: row.wrap_up_note,
+    callBackAt: iso(row.wrap_up_call_back_at),
+    byUserId: row.wrapped_up_by_user_id,
+    byName: names.get(row.wrapped_up_by_user_id) ?? null,
+    at: new Date(row.wrapped_up_at).toISOString(),
+  };
+}
+
+/** One call as the API returns it; `viewerId` decides `canWrapUp` (false when not given). */
+export function callView(row: repo.CallRow, names: Names, viewerId: string | null = null) {
   const person = (id: string | null) => (id === null ? null : { id, name: names.get(id) ?? null });
   return {
     id: row.id,
@@ -124,11 +178,12 @@ export function callView(row: repo.CallRow, names: Names) {
     answeredAt: iso(row.answered_at),
     endedAt: iso(row.ended_at),
     recording: {
-      status: row.recording_status,
-      playable: row.recording_status === 'stored',
-      error: row.recording_error,
+      playable: row.recording_url !== null,
     },
     outcome: row.outcome,
+    wrapUp: wrapUpView(row, names),
+    suggestedResult: suggestWrapUp(wrapUpFacts(row)),
+    canWrapUp: viewerId !== null && wrapUpRefusal(wrapUpFacts(row), viewerId) === null,
     error: row.error_code === null ? null : { code: row.error_code, detail: row.error_detail },
   };
 }
@@ -152,7 +207,7 @@ export class TelephonyCallsService {
     @Inject(TELEPHONY_CONFIG) private readonly config: TelephonyConfig,
     @Inject(ORDERS_API) private readonly orders: OrdersApi,
     @Inject(IAM_API) private readonly iam: IamApi,
-    @Inject(FILES_API) private readonly files: FilesApi,
+    @Inject(INBOX_API) private readonly inbox: InboxApi,
   ) {}
 
   private async names(tx: Tx, orgId: string): Promise<Names> {
@@ -326,6 +381,7 @@ export class TelephonyCallsService {
               dialled: maskPhone(target.phone),
               orderId: target.order?.id ?? null,
               customerId: target.customerId,
+              conversationId: target.conversationId ?? null,
             },
             requestId: context.requestId,
             request,
@@ -376,7 +432,10 @@ export class TelephonyCallsService {
     });
   }
 
-  /** Whom a Call rings: an order's buyer (or its recipient), a customer, or a phone. */
+  /**
+   * Whom a Call rings: a conversation's contact, an order's buyer (or its recipient), a
+   * customer, or a phone.
+   */
   private async target(
     tx: Tx,
     context: ActiveContext,
@@ -391,8 +450,39 @@ export class TelephonyCallsService {
       readonly orderNo: string;
       readonly assignedTo: string | null;
     } | null;
+    readonly conversationId?: string;
   }> {
     const given = input.phone === undefined ? null : this.mobile(input.phone);
+    if (input.conversationId !== undefined) {
+      // The inbox's owner rule (D-862, D-737): someone else's conversation needs
+      // `x-acknowledge-owner: 1`; with it the `inbox.call` row is written and the owner told,
+      // both undone with this transaction (a second press within 20 s rolls back).
+      const chat = await this.inbox.guardCall(
+        tx,
+        context,
+        request,
+        input.conversationId,
+        ownerAcknowledged(request),
+      );
+      if (chat.phoneE164 === null) {
+        throw new TelephonyError('TELEPHONY_NUMBER_INVALID', 'This chat has no phone saved yet.');
+      }
+      if (given !== null && given !== chat.phoneE164) {
+        throw new TelephonyError('TELEPHONY_NUMBER_INVALID', 'That is not this chat’s number.');
+      }
+      // The conversation's buyer (D-739), as its panel shows them; never an order.
+      const panel =
+        chat.customerId === null
+          ? undefined
+          : await this.orders.customerPanel(tx, context.orgId, chat.customerId, 0, context);
+      return {
+        phone: chat.phoneE164,
+        customerId: panel === undefined ? null : chat.customerId,
+        customerName: panel?.name ?? null,
+        order: null,
+        conversationId: chat.conversationId,
+      };
+    }
     if (input.orderId !== undefined) {
       // M41's lock and owner gate (D-710): a colleague's order needs `x-acknowledge-owner: 1`.
       const order = await this.orders.phoneCallTarget(tx, context, request, input.orderId);
@@ -515,7 +605,7 @@ export class TelephonyCallsService {
         const page = rows.slice(0, query.limit);
         const last = page[page.length - 1];
         return {
-          items: page.map((row) => callView(row, names)),
+          items: page.map((row) => callView(row, names, context.userId)),
           nextCursor:
             rows.length > query.limit && last !== undefined
               ? `${new Date(last.occurred_at).toISOString()}|${last.id}`
@@ -532,56 +622,72 @@ export class TelephonyCallsService {
           scope: scopeWhere(request, CALL_SCOPE),
         });
         if (row === undefined) throw new TelephonyError('TELEPHONY_NOT_FOUND', 'No such call.');
-        return callView(row, await this.names(tx, context.orgId));
+        return callView(row, await this.names(tx, context.orgId), context.userId);
       }),
     );
   }
 
   /**
-   * A call's recording (D-841), to a person who may see the call: the bytes, read from the files
-   * storage with no transaction open (invariant 6).
+   * A call's recording (D-841, D-858), to a person who may see the call: streamed from Envo, which
+   * keeps it; the ERP never stores one. The call is read and its connection's key opened in a
+   * transaction that has ended before Envo is asked (invariant 6). The listener's range goes to
+   * Envo, and `asked.signal` drops Envo's request when the listener goes away.
    */
-  async recording(context: ActiveContext, request: object, id: string) {
+  async recording(
+    context: ActiveContext,
+    request: object,
+    id: string,
+    asked: EnvoRecordingRequest,
+  ): Promise<EnvoRecordingStream> {
     return mapTelephonyErrors(async () => {
-      const row = await withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
-        repo.callById(tx, context.orgId, id, { scope: scopeWhere(request, CALL_SCOPE) }),
-      );
-      if (row === undefined) throw new TelephonyError('TELEPHONY_NOT_FOUND', 'No such call.');
-      if (row.recording_status !== 'stored' || row.recording_file_id === null) {
+      const found = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const row = await repo.callById(tx, context.orgId, id, {
+          scope: scopeWhere(request, CALL_SCOPE),
+        });
+        if (row === undefined) return undefined;
+        return { row, connection: await repo.connectionById(tx, context.orgId, row.connection_id) };
+      });
+      if (found === undefined) throw new TelephonyError('TELEPHONY_NOT_FOUND', 'No such call.');
+      const { row, connection } = found;
+      // The link is on the connection's own host, or it was never kept (D-840): checked again so
+      // a connection moved to another host never sends its key there.
+      const recordingId =
+        connection === undefined
+          ? null
+          : recordingIdFrom(row.recording_url, new URL(connection.base_url).origin);
+      if (connection === undefined || recordingId === null) {
         throw new TelephonyError(
           'TELEPHONY_RECORDING_UNAVAILABLE',
-          row.recording_status === 'pending'
-            ? 'The recording is still coming from Envo.'
-            : row.recording_status === 'expired'
-              ? 'The recording was deleted when its retention ran out.'
-              : 'This call has no recording kept here.',
+          'Envo named no recording of this call.',
         );
       }
-      const bytes = await this.files.storedBytes(
-        context.orgId,
-        row.recording_file_id,
-        RECORDING_PURPOSE,
-      );
-      if (bytes === null) {
-        throw new TelephonyError(
-          'TELEPHONY_RECORDING_UNAVAILABLE',
-          'This call has no recording kept here.',
-        );
+      const envo = this.connections.open(connection, context.orgId, { requireEnabled: false });
+      try {
+        return await this.gateway.streamRecording(envo, recordingId, asked);
+      } catch (error) {
+        if (error instanceof EnvoError && error.kind === 'not_found') {
+          throw new TelephonyError(
+            'TELEPHONY_RECORDING_UNAVAILABLE',
+            'Envo no longer has this recording (or it is still being saved; try again in a minute).',
+          );
+        }
+        throw envoFailure(error);
       }
-      return { ...bytes, envoCallId: row.envo_call_id };
     });
   }
 
   /**
-   * The verification outcome of a call about an order (D-838): M41's attempt, through the orders
-   * module with its lock, its owner gate and its audit row, in the same transaction that marks
-   * the call's outcome. Once per call.
+   * The person's wrap-up after a call (D-859): the result they chose (the ERP only suggests one),
+   * what it was about or what was agreed, and when to call back. Written once, by the person on
+   * the call, once it has ended. A call about an order that can still be called about also records
+   * M41's attempt on it (D-838), through the orders module with its lock, its owner gate and its
+   * audit row, in the same transaction; an order past calling keeps the wrap-up alone.
    */
-  async outcome(
+  async wrapUp(
     context: ActiveContext,
     request: AuditableRequest,
     id: string,
-    input: CallAttemptInput,
+    input: PhoneCallWrapUpInput,
   ) {
     return mapTelephonyErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -590,42 +696,89 @@ export class TelephonyCallsService {
           scope: scopeWhere(request, CALL_SCOPE),
         });
         if (row === undefined) throw new TelephonyError('TELEPHONY_NOT_FOUND', 'No such call.');
-        if (row.order_id === null) {
-          throw new TelephonyError(
-            'TELEPHONY_OUTCOME_INVALID',
-            'This call is not about an order, so there is no verification to record.',
-          );
+        const refusal = wrapUpRefusal(wrapUpFacts(row), context.userId);
+        if (refusal !== null) {
+          throw new TelephonyError('TELEPHONY_WRAP_UP_INVALID', WRAP_UP_REFUSALS[refusal]);
         }
-        if (row.outcome !== null) {
-          throw new TelephonyError(
-            'TELEPHONY_OUTCOME_INVALID',
-            'This call’s outcome is already recorded.',
-          );
+        const note = wrapUpNoteOf(input.note);
+        const callBackAt = input.callBackAt === undefined ? null : new Date(input.callBackAt);
+        const problem = wrapUpInputProblem({
+          result: input.result,
+          note,
+          callBackAt,
+          now: new Date(),
+        });
+        if (problem !== null) throw new TelephonyError('TELEPHONY_WRAP_UP_INVALID', problem);
+
+        let attempt: { readonly attemptId: string; readonly outcome: string } | null = null;
+        if (
+          row.order_id !== null &&
+          row.outcome === null &&
+          (await this.orders.phoneCallOrderCallable(tx, context.orgId, row.order_id))
+        ) {
+          const attemptNote = attemptNoteOf(note);
+          attempt = await this.orders.recordPhoneCallOutcome(tx, context, request, row.order_id, {
+            outcome: input.result,
+            ...(input.callBackAt === undefined ? {} : { callBackAt: input.callBackAt }),
+            ...(attemptNote === undefined ? {} : { note: attemptNote }),
+          });
         }
-        const attempt = await this.orders.recordPhoneCallOutcome(
-          tx,
-          context,
-          request,
-          row.order_id,
-          input,
-        );
         const moved = await repo.updateCall(tx, context.orgId, row.id, {
-          outcomeAttemptId: attempt.attemptId,
-          outcome: attempt.outcome,
+          ...(attempt === null
+            ? {}
+            : { outcomeAttemptId: attempt.attemptId, outcome: attempt.outcome }),
+          wrapUpResult: input.result,
+          wrapUpNote: note,
+          wrapUpCallBackAt: callBackAt,
+          wrappedUpByUserId: context.userId,
+          wrappedUpAt: new Date(),
         });
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
           operation: 'update',
-          action: 'phone_call.outcome_recorded',
+          action: 'phone_call.wrapped_up',
           entityType: 'phone_call',
           entityId: row.id,
-          after: { orderId: row.order_id, attemptId: attempt.attemptId, outcome: attempt.outcome },
+          // What was said stays on the call; the audit row keeps only how long the note was.
+          after: {
+            result: input.result,
+            noteLength: note?.length ?? 0,
+            callBackAt: callBackAt?.toISOString() ?? null,
+            orderId: row.order_id,
+            attemptId: attempt?.attemptId ?? null,
+          },
           requestId: context.requestId,
           request,
         });
         await announce(tx, context.orgId, moved);
-        return callView(moved, await this.names(tx, context.orgId));
+        return {
+          call: callView(moved, await this.names(tx, context.orgId), context.userId),
+          orderAttempt: attempt !== null,
+        };
+      }),
+    );
+  }
+
+  /**
+   * The viewer's own calls that wait for their wrap-up (D-859): ended in the last day, not yet
+   * wrapped up, newest first, at most twenty. Placements that never rang anyone are left out.
+   */
+  async wrapUps(context: ActiveContext, request: object) {
+    return mapTelephonyErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        // Only the viewer's own calls are listed: the `create PhoneCall` scope is theirs.
+        assertInScope(request, { createdBy: context.userId });
+        const since = new Date(Date.now() - WRAP_UP_ASK_HOURS * 3600_000);
+        const rows = await repo.wrapUpsOf(
+          tx,
+          context.orgId,
+          context.userId,
+          since,
+          WRAP_UPS_LISTED,
+        );
+        const names = await this.names(tx, context.orgId);
+        return { items: rows.map((row) => callView(row, names, context.userId)) };
       }),
     );
   }

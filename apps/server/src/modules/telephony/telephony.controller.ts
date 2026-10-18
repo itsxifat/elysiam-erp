@@ -13,16 +13,18 @@ import {
   Res,
 } from '@nestjs/common';
 import {
+  callerPanelQuerySchema,
   phoneCallAnsweredSchema,
   phoneCallListQuerySchema,
-  phoneCallOutcomeSchema,
   phoneCallPlaceSchema,
+  phoneCallWrapUpSchema,
   phoneLookupQuerySchema,
   telephonyAssignSchema,
   telephonyConnectionCreateSchema,
   telephonyConnectionUpdateSchema,
 } from '@elysium/contracts/telephony';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { Readable } from 'node:stream';
 import { z } from 'zod';
 
 import {
@@ -32,6 +34,7 @@ import {
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
+import { CallerPanelService } from './caller-panel.service.js';
 import { TelephonyCallsService } from './calls.service.js';
 import { TelephonyConnectionsService } from './connections.service.js';
 import { TelephonyError, telephonyHttpError } from './telephony.errors.js';
@@ -66,7 +69,7 @@ const auditable = (request: FastifyRequest): AuditableRequest =>
  *   `read`/`update PhoneExtension` (org_admin, branch_manager) for the extensions and who has
  *   them.
  * - Calling: `create PhoneCall` (org_admin, branch_manager, and sales from their own extension)
- *   to call, to record a call's outcome, for the web phone's token and the caller's screen pop;
+ *   to call, to wrap up their own calls (D-859), for the web phone's token and the screen pop;
  *   `read PhoneCall` for the log and the recordings (sales: their own and their orders' calls,
  *   D-841); `update PhoneCall` (the supervisors) to hang up a call in progress.
  */
@@ -75,6 +78,7 @@ export class TelephonyController {
   constructor(
     private readonly connections: TelephonyConnectionsService,
     private readonly calls: TelephonyCallsService,
+    private readonly callerPanels: CallerPanelService,
   ) {}
 
   // --- Settings → Calls --------------------------------------------------------------------------
@@ -229,6 +233,31 @@ export class TelephonyController {
     );
   }
 
+  /**
+   * The caller panel (D-860): a buyer's orders, contacts, inbox and every call with them, by a
+   * phone, a customer or a call. A POST so the number stays out of URLs (invariant 10); a read,
+   * so no audit row. `no-store`: it names a buyer's addresses and phones.
+   */
+  @RequireAbility('read', 'PhoneCall')
+  @Post('caller-panel')
+  @HttpCode(200)
+  async callerPanel(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    auditNothingChanged(
+      auditable(request),
+      'the caller panel reads a buyer; a POST only to keep the number out of URLs',
+    );
+    void reply.header('cache-control', 'no-store');
+    return this.callerPanels.panel(
+      requireContext(request),
+      request,
+      parse(callerPanelQuerySchema, body ?? {}),
+    );
+  }
+
   /** Call a customer from your own extension; an order needs its owner acknowledged (D-710). */
   @RequireAbility('create', 'PhoneCall')
   @Post('calls')
@@ -286,6 +315,13 @@ export class TelephonyController {
     return this.calls.list(requireContext(request), request, parse(phoneCallListQuerySchema, body));
   }
 
+  /** The viewer's own calls that wait for their wrap-up (D-859): the work dock's card. */
+  @RequireAbility('create', 'PhoneCall')
+  @Get('calls/wrap-ups')
+  async wrapUps(@Req() request: FastifyRequest) {
+    return this.calls.wrapUps(requireContext(request), request);
+  }
+
   @RequireAbility('read', 'PhoneCall')
   @Get('calls/:id')
   async one(@Req() request: FastifyRequest, @Param('id') id: string) {
@@ -293,10 +329,12 @@ export class TelephonyController {
   }
 
   /**
-   * A call's recording, to a person who may see the call: the bytes, not JSON, so `@Res()` and a
-   * manual send (nothing in a recording is a cost). `no-store`: a customer's voice is not kept in
-   * the browser's cache, where another account on the same browser could be served it without
-   * the scope check (the console plays it from the fetched blob).
+   * A call's recording, to a person who may see the call (D-841), streamed from Envo as it comes
+   * (D-858): the bytes, not JSON, so `@Res()` and a manual send (nothing in a recording is a
+   * cost). The browser's `Range` goes to Envo and Envo's 200, 206 or 416 comes back, so the
+   * player can seek; the listener's going away drops Envo's request. `no-store`: a customer's
+   * voice is not kept in the browser's cache, where another account on the same browser could be
+   * served it without the scope check.
    */
   @RequireAbility('read', 'PhoneCall')
   @Get('calls/:id/recording')
@@ -305,29 +343,49 @@ export class TelephonyController {
     @Param('id') id: string,
     @Res() reply: FastifyReply,
   ) {
+    const gone = new AbortController();
+    reply.raw.on('close', () => {
+      if (!reply.raw.writableFinished) gone.abort();
+    });
+    const header = (name: string) => {
+      const value = request.headers[name];
+      return typeof value === 'string' ? value : null;
+    };
     const recording = await this.calls.recording(
       requireContext(request),
       request,
       parse(idSchema, id),
+      { range: header('range'), ifRange: header('if-range'), signal: gone.signal },
     );
-    await reply
-      .header('content-type', recording.mime)
-      .header('content-length', String(recording.bytes.byteLength))
+    reply
+      .status(recording.status)
       .header('cache-control', 'no-store')
       .header('x-content-type-options', 'nosniff')
-      .header('content-disposition', 'inline')
-      .send(Buffer.from(recording.bytes));
+      .header('content-disposition', 'inline');
+    if (recording.acceptRanges !== null) reply.header('accept-ranges', recording.acceptRanges);
+    if (recording.contentRange !== null) reply.header('content-range', recording.contentRange);
+    if (recording.body === null || recording.contentType === null) {
+      await reply.send();
+      return;
+    }
+    reply.header('content-type', recording.contentType);
+    if (recording.contentLength !== null) reply.header('content-length', recording.contentLength);
+    await reply.send(Readable.fromWeb(recording.body));
   }
 
-  /** M41's verification outcome for a call about an order (D-838). */
+  /**
+   * The person's wrap-up after their call (D-859), once; on a call about an order that can still
+   * be called about it is also M41's attempt (D-838), so a colleague's order needs
+   * `x-acknowledge-owner: 1`.
+   */
   @RequireAbility('create', 'PhoneCall')
-  @Post('calls/:id/outcome')
-  async outcome(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
-    return this.calls.outcome(
+  @Post('calls/:id/wrap-up')
+  async wrapUp(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.calls.wrapUp(
       requireContext(request),
       auditable(request),
       parse(idSchema, id),
-      parse(phoneCallOutcomeSchema, body),
+      parse(phoneCallWrapUpSchema, body),
     );
   }
 }

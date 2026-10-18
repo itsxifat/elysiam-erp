@@ -155,7 +155,14 @@ function PanelBody({
         <SellPanel conversation={conversation} me={me} view={view} />
       ) : null}
       <ContactBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
-      <PhonesBlock view={view} mayWrite={mayWrite} busy={save.isPending} run={run} id={id} />
+      <PhonesBlock
+        view={view}
+        mayWrite={mayWrite}
+        busy={save.isPending}
+        run={run}
+        id={id}
+        guard={guard}
+      />
       <AddressBlock
         // A saved address (one click from the chat, or typed) starts the form again from it.
         key={JSON.stringify(view.contact.address)}
@@ -256,7 +263,17 @@ function ContactBlock({ view, mayWrite, busy, run, id }: BlockProps) {
   );
 }
 
-function PhonesBlock({ view, mayWrite, busy, run, id }: BlockProps) {
+function PhonesBlock({
+  view,
+  mayWrite,
+  busy,
+  run,
+  id,
+  guard,
+}: BlockProps & {
+  /** The conversation's owner guard: a Call here is an act in the conversation (D-862). */
+  readonly guard: (action: (acknowledged: boolean) => Promise<unknown>) => Promise<void>;
+}) {
   const t = useInboxT();
   return (
     <Block title={t('inbox.panel.phonesFound')}>
@@ -264,14 +281,18 @@ function PhonesBlock({ view, mayWrite, busy, run, id }: BlockProps) {
         <p className="text-sm">
           <span className="text-muted-foreground">{t('inbox.panel.phone')}: </span>
           <span className="font-medium tabular-nums">{displayPhone(view.contact.phone)}</span>{' '}
-          {/* M47 (D-834): call the contact from your own extension. */}
-          <CallButton
-            target={{ phone: view.contact.phone }}
-            phone={view.contact.phone}
-            label={view.customer?.name ?? displayPhone(view.contact.phone)}
-            size="icon"
-            className="align-middle"
-          />
+          {/* M47 (D-834, D-862): call the contact from your own extension; someone else's
+              conversation asks for the go-ahead first, and its owner is told. */}
+          {mayWrite ? (
+            <CallButton
+              target={{ conversationId: id, phone: view.contact.phone }}
+              phone={view.contact.phone}
+              label={view.customer?.name ?? displayPhone(view.contact.phone)}
+              size="icon"
+              className="align-middle"
+              guard={guard}
+            />
+          ) : null}
         </p>
       )}
       {view.phonesFound.length === 0 ? (

@@ -41,10 +41,12 @@ import {
   updateProfileSchema,
 } from '@elysium/contracts';
 import {
+  callerPanelQuerySchema,
+  customerPinnedNoteSchema,
   phoneCallAnsweredSchema,
   phoneCallListQuerySchema,
-  phoneCallOutcomeSchema,
   phoneCallPlaceSchema,
+  phoneCallWrapUpSchema,
   phoneLookupQuerySchema,
   telephonyAssignSchema,
   telephonyConnectionCreateSchema,
@@ -610,7 +612,7 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
   'POST /v1/telephony/calls': {
     operationId: 'placePhoneCall',
     summary:
-      'Call a customer from your own extension; an order held by someone else needs x-acknowledge-owner: 1.',
+      'Call a customer from your own extension; an order or a conversation held by someone else needs x-acknowledge-owner: 1.',
     body: named('PhoneCallPlace', phoneCallPlaceSchema, 'PhoneCallPlaceInput'),
   },
   'POST /v1/telephony/lookup': {
@@ -618,6 +620,17 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     summary:
       "Who is calling: the buyer a number names (only one the caller may open, or whose call is on the caller's phone now) and their open orders.",
     body: named('PhoneLookup', phoneLookupQuerySchema),
+  },
+  'POST /v1/telephony/caller-panel': {
+    operationId: 'phoneCallerPanel',
+    summary:
+      "A buyer's caller panel by phone, customer or call: their orders, contacts, inbox and every call with them (the whole panel only to a supervisor, a person who may open them or one on a call with them).",
+    body: named('CallerPanelQuery', callerPanelQuerySchema, 'CallerPanelQuery'),
+  },
+  'PUT /v1/customers/:id/pinned-note': {
+    operationId: 'pinCustomerNote',
+    summary: "Pin a note on top of a buyer's caller panel, or clear it with an empty body.",
+    body: named('CustomerPinnedNote', customerPinnedNoteSchema, 'CustomerPinnedNoteInput'),
   },
   'POST /v1/telephony/calls/search': {
     operationId: 'searchPhoneCalls',
@@ -629,10 +642,11 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     summary: "The browser's phone answered an incoming call from this number.",
     body: named('PhoneCallAnswered', phoneCallAnsweredSchema, 'PhoneCallAnsweredInput'),
   },
-  'POST /v1/telephony/calls/:id/outcome': {
-    operationId: 'recordPhoneCallOutcome',
-    summary: "Record a call's verification outcome on its order, as M41's attempt, once.",
-    body: named('CallAttempt', phoneCallOutcomeSchema, 'CallAttemptInput'),
+  'POST /v1/telephony/calls/:id/wrap-up': {
+    operationId: 'wrapUpPhoneCall',
+    summary:
+      "Wrap up your own call once: its result, what it was about, a call-back; on a callable order also M41's attempt (a colleague's order needs x-acknowledge-owner: 1).",
+    body: named('PhoneCallWrapUp', phoneCallWrapUpSchema, 'PhoneCallWrapUpInput'),
   },
 
   'GET /v1/demo/costed-items': {

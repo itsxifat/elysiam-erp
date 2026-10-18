@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { CallAttemptInput } from '@elysium/contracts';
+import { scopeFilterFor, type CallAttemptInput } from '@elysium/contracts';
 import type { RequestContext, Tx } from '@elysium/db';
 import { sql, type SQL } from 'drizzle-orm';
 import {
+  CALLABLE_STATUSES,
   computePartialDelivery,
   parcelWeightGrams,
   poisha,
@@ -15,8 +16,10 @@ import {
   type PostingAccount,
   type ReturnReasonCode,
 } from '@elysium/domain';
+import { returnRateBps } from '@elysium/domain/analytics';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
 import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
@@ -33,7 +36,18 @@ import * as repo from './orders.repository.js';
 import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
 import * as references from './references.repository.js';
-import { buyerReachScopeFor, orderReadScopeFor } from './orders.scope.js';
+import {
+  buyerReachScopeFor,
+  buyerWriteScopeFor,
+  buyerWriteScopeSql,
+  orderReadScopeFor,
+} from './orders.scope.js';
+
+/** How many of a buyer's newest orders the caller panel reads addresses from (D-860). */
+const CALLER_PANEL_RECENT_ORDERS = 20;
+
+/** How many other phones the caller panel lists. */
+const CALLER_PANEL_OTHER_PHONES = 10;
 
 /**
  * Orders' service interface for other modules (invariant 12).
@@ -866,6 +880,127 @@ export interface OrdersApi {
     customerId: string,
     limit: number,
   ): Promise<readonly OpenOrderFact[]>;
+
+  /**
+   * Whether M41 can still log a verification call on this order (`CALLABLE_STATUSES`), for a
+   * wrap-up deciding whether to record the attempt (D-859). False for an order not of this brand.
+   */
+  phoneCallOrderCallable(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
+
+  // --- M47: the caller panel (D-860) ------------------------------------------------------------
+
+  /**
+   * A buyer as the caller panel shows them: the brand-wide counters with the return rate, what
+   * they spent, their first and last order, tags, RFM segment and the pinned note (who wrote it
+   * and when). No address and nothing near a cost. Undefined for a buyer not of this brand.
+   */
+  callerCustomer(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+  ): Promise<CallerCustomerFacts | undefined>;
+
+  /**
+   * One page of all the buyer's orders the viewer may open (`orderReadScopeFor`, with the sales
+   * queue), newest first; `cursor` is the previous page's `nextCursor` (a malformed one is refused
+   * as `VALIDATION_FAILED`, problem+json).
+   */
+  customerOrdersPage(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    viewer: RequestContext,
+    page: { readonly limit: number; readonly cursor: string | null },
+  ): Promise<{ readonly items: readonly CustomerOrderFact[]; readonly nextCursor: string | null }>;
+
+  /**
+   * The buyer's saved addresses (the default first), then the distinct addresses their twenty
+   * newest orders went to, with district and thana names (D-860 revises D-740 for this panel).
+   */
+  customerAddresses(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+  ): Promise<readonly CustomerAddressFact[]>;
+
+  /** The distinct recipient phones (E.164) on the buyer's orders other than theirs, newest first. */
+  customerOtherPhones(tx: Tx, orgId: string, customerId: string): Promise<readonly string[]>;
+
+  /**
+   * Whether the viewer may change the buyer's pinned note (D-860, `buyerWriteScopeFor`): `update
+   * Customer` from their own context over the buyer's orders with the sales queue, or a buyer with
+   * no orders yet. False for a role without `update Customer`.
+   */
+  pinnedNoteAllowed(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    viewer: RequestContext,
+  ): Promise<boolean>;
+
+  /**
+   * Pin `body` (trimmed; empty clears) on the buyer, stamped with the caller and the time, and
+   * audit `customer.note_pinned` with the lengths only (invariant 10), in the caller's
+   * transaction. For `PUT /v1/customers/:id/pinned-note`, which declares `update Customer`: that
+   * scope with the sales queue is the rule (`buyerWriteScopeSql`, marks it applied), and outside
+   * it `CUSTOMER_NOT_FOUND` (problem+json). The note now pinned, or null.
+   */
+  setPinnedNote(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    body: string,
+  ): Promise<PinnedNoteFact | null>;
+}
+
+/** M47 (D-860): a buyer as the caller panel shows them. No address, nothing near a cost. */
+export interface CallerCustomerFacts {
+  readonly id: string;
+  readonly name: string;
+  readonly phoneE164: string;
+  readonly tags: readonly string[];
+  /** The buyer's RFM segment (M16), or null before the nightly job has scored them. */
+  readonly segment: string | null;
+  readonly orders: number;
+  readonly delivered: number;
+  readonly returned: number;
+  readonly cancelled: number;
+  /** Returned ÷ (delivered + returned) in basis points (`returnRateBps`); null before either. */
+  readonly returnRateBps: number | null;
+  /** What they have spent on delivered orders (`ltv_poisha`), integer poisha. */
+  readonly spentPoisha: bigint;
+  readonly firstOrderAt: Date | null;
+  readonly lastOrderAt: Date | null;
+  readonly pinnedNote: PinnedNoteFact | null;
+}
+
+/** M47 (D-860): the note pinned on a buyer, with who wrote it and when. */
+export interface PinnedNoteFact {
+  readonly body: string;
+  readonly byUserId: string;
+  readonly at: Date;
+}
+
+/** M47 (D-860): one of a buyer's orders in the caller panel. */
+export interface CustomerOrderFact {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly status: OrderStatus;
+  /** The COD the order screens show, integer poisha as a string. */
+  readonly codAmountPoisha: string;
+  readonly createdAt: Date;
+}
+
+/** M47 (D-860): a buyer's address, saved or one an order of theirs went to. */
+export interface CustomerAddressFact {
+  readonly source: 'saved' | 'order';
+  readonly label: string | null;
+  readonly districtName: string | null;
+  readonly thanaName: string | null;
+  readonly area: string | null;
+  readonly addressLine: string;
+  readonly isDefault: boolean;
 }
 
 /** M47: what a phone call needs about the order it is about. No cost. */
@@ -957,6 +1092,8 @@ export class OrdersApiService implements OrdersApi {
     @Inject(CATALOG_API) private readonly catalog: CatalogApi,
     private readonly offers: OffersService,
     private readonly documents: DocumentsService,
+    // M47 (D-860): the pinned note's audit row, in the caller's transaction.
+    private readonly audit: AuditService,
   ) {}
 
   workflowSettings(tx: Tx, orgId: string): Promise<WorkflowSettings> {
@@ -1025,6 +1162,135 @@ export class OrdersApiService implements OrdersApi {
       assignedTo: row.assigned_to,
       createdAt: new Date(row.created_at),
     }));
+  }
+
+  async phoneCallOrderCallable(tx: Tx, orgId: string, orderId: string): Promise<boolean> {
+    const order = await repo.orderById(tx, orgId, orderId);
+    return order !== undefined && CALLABLE_STATUSES.includes(order.status as OrderStatus);
+  }
+
+  // --- M47: the caller panel (D-860) ------------------------------------------------------------
+
+  async callerCustomer(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+  ): Promise<CallerCustomerFacts | undefined> {
+    const row = await repo.callerCustomerById(tx, orgId, customerId);
+    return row === undefined ? undefined : callerCustomerFacts(row);
+  }
+
+  async customerOrdersPage(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    viewer: RequestContext,
+    page: { readonly limit: number; readonly cursor: string | null },
+  ): Promise<{ readonly items: readonly CustomerOrderFact[]; readonly nextCursor: string | null }> {
+    return mapOrderErrors(async () => {
+      let cursor: { createdAt: string; id: string } | null = null;
+      if (page.cursor !== null) {
+        const [at, id] = page.cursor.split('|');
+        if (
+          at === undefined ||
+          id === undefined ||
+          Number.isNaN(new Date(at).getTime()) ||
+          !/^[0-9a-f-]{36}$/i.test(id)
+        ) {
+          throw new OrdersError('VALIDATION_FAILED', 'That page marker is not valid.');
+        }
+        cursor = { createdAt: new Date(at).toISOString(), id };
+      }
+      const rows = await repo.customerOrdersPage(tx, orgId, customerId, orderReadScopeFor(viewer), {
+        limit: page.limit + 1,
+        cursor,
+      });
+      const items = rows.slice(0, page.limit).map((order) => ({
+        id: order.id,
+        orderNo: order.order_no,
+        status: order.status as OrderStatus,
+        codAmountPoisha: String(order.cod_amount_poisha),
+        createdAt: instant(order.created_at) ?? new Date(0),
+      }));
+      const last = items[items.length - 1];
+      return {
+        items,
+        nextCursor:
+          rows.length > page.limit && last !== undefined
+            ? `${last.createdAt.toISOString()}|${last.id}`
+            : null,
+      };
+    });
+  }
+
+  async customerAddresses(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+  ): Promise<readonly CustomerAddressFact[]> {
+    const rows = await repo.namedAddressesOf(tx, orgId, customerId, CALLER_PANEL_RECENT_ORDERS);
+    return rows.map((row) => ({
+      source: row.source,
+      label: row.label,
+      districtName: row.district_name,
+      thanaName: row.thana_name,
+      area: row.area,
+      addressLine: row.address_line,
+      isDefault: row.is_default,
+    }));
+  }
+
+  async customerOtherPhones(tx: Tx, orgId: string, customerId: string): Promise<readonly string[]> {
+    const row = await repo.customerById(tx, orgId, customerId);
+    if (row === undefined) return [];
+    return repo.otherShipPhonesOf(tx, orgId, customerId, row.phone_e164, CALLER_PANEL_OTHER_PHONES);
+  }
+
+  async pinnedNoteAllowed(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    viewer: RequestContext,
+  ): Promise<boolean> {
+    if (scopeFilterFor(viewer, 'update', 'Customer').kind === 'none') return false;
+    return repo.customerReachableIn(tx, orgId, customerId, buyerWriteScopeFor(viewer));
+  }
+
+  async setPinnedNote(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    body: string,
+  ): Promise<PinnedNoteFact | null> {
+    return mapOrderErrors(async () => {
+      const scope = buyerWriteScopeSql(context, request);
+      if (!(await repo.customerReachableIn(tx, context.orgId, customerId, scope))) {
+        throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
+      }
+      const note = body.trim();
+      const written = await repo.setPinnedNote(
+        tx,
+        context.orgId,
+        customerId,
+        note === '' ? null : { body: note, byUserId: context.userId },
+      );
+      if (written === undefined) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
+      // The lengths only: a note about a buyer is personal data (invariant 10).
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'update',
+        action: 'customer.note_pinned',
+        entityType: 'customer',
+        entityId: customerId,
+        before: { length: written.before?.length ?? 0 },
+        after: { length: note.length },
+        requestId: context.requestId,
+        request,
+      });
+      return callerCustomerFacts(written.row).pinnedNote;
+    });
   }
 
   ordersAttributedTo(tx: Tx, orgId: string, campaign: CampaignMatch) {
@@ -1894,6 +2160,33 @@ function itemSummaryOf(lines: readonly repo.OrderLineRow[]): string | null {
 function instant(value: Date | string | null): Date | null {
   if (value === null) return null;
   return value instanceof Date ? value : new Date(value);
+}
+
+/** M47 (D-860): the caller panel's buyer, from their row. */
+function callerCustomerFacts(row: repo.CallerCustomerRow): CallerCustomerFacts {
+  const rate = returnRateBps(row.delivered_count, row.returned_count);
+  const noteAt = instant(row.pinned_note_at);
+  return {
+    id: row.id,
+    name: row.name,
+    phoneE164: row.phone_e164,
+    tags: Array.isArray(row.tags)
+      ? row.tags.filter((tag): tag is string => typeof tag === 'string')
+      : [],
+    segment: row.segment,
+    orders: row.orders_total,
+    delivered: row.delivered_count,
+    returned: row.returned_count,
+    cancelled: row.cancelled_count,
+    returnRateBps: rate === null ? null : Number(rate),
+    spentPoisha: BigInt(row.ltv_poisha),
+    firstOrderAt: instant(row.first_order_at),
+    lastOrderAt: instant(row.last_order_at),
+    pinnedNote:
+      row.pinned_note === null || row.pinned_note_by_user_id === null || noteAt === null
+        ? null
+        : { body: row.pinned_note, byUserId: row.pinned_note_by_user_id, at: noteAt },
+  };
 }
 
 /** §9's `source` block, reduced to the three fields §11's attribution reads. */

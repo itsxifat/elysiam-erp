@@ -1045,3 +1045,87 @@ export async function areaNames(tx: Tx): Promise<AreaNameRow[]> {
   `);
   return [...rows];
 }
+
+// --- M47: a buyer's inbox, for the caller panel (D-860) ------------------------------------------
+
+export interface BuyerContactRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly display_name: string | null;
+  readonly handle: string | null;
+  readonly stage: ContactStage;
+  readonly phone_e164: string | null;
+}
+
+/** The contacts linked to this buyer or holding this phone, newest first (at most `limit`). */
+export async function contactsOfBuyer(
+  tx: Tx,
+  orgId: string,
+  who: { readonly customerId: string | null; readonly phoneE164: string | null },
+  limit: number,
+): Promise<BuyerContactRow[]> {
+  const matches: SQL[] = [];
+  if (who.customerId !== null) matches.push(sql`c.customer_id = ${who.customerId}`);
+  if (who.phoneE164 !== null) matches.push(sql`c.phone_e164 = ${who.phoneE164}`);
+  if (matches.length === 0) return [];
+  const rows = await tx.execute<BuyerContactRow>(sql`
+    select c.id, c.display_name, c.handle, c.stage, c.phone_e164
+    from inbox.contacts c
+    where c.org_id = ${orgId} and (${sql.join(matches, sql` or `)})
+    order by c.updated_at desc, c.id
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
+export interface BuyerIdentityRow extends Record<string, unknown> {
+  readonly contact_id: string;
+  readonly channel: InboxChannelKind;
+  readonly profile_name: string | null;
+}
+
+/** These contacts' identities on the brand's channels, with each channel's kind. */
+export async function identitiesOfContacts(
+  tx: Tx,
+  orgId: string,
+  contactIds: readonly string[],
+): Promise<BuyerIdentityRow[]> {
+  if (contactIds.length === 0) return [];
+  const rows = await tx.execute<BuyerIdentityRow>(sql`
+    select i.contact_id, ch.kind as channel, i.profile_name
+    from inbox.identities i
+    join inbox.channels ch on ch.org_id = i.org_id and ch.id = i.channel_id
+    where i.org_id = ${orgId} and i.contact_id = any (${sql.param([...contactIds])}::uuid[])
+    order by i.created_at
+  `);
+  return [...rows];
+}
+
+export interface BuyerConversationRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly contact_id: string;
+  readonly channel: InboxChannelKind;
+  readonly status: 'open' | 'closed';
+  readonly last_message_at: string | Date;
+  readonly assigned_to: string | null;
+  readonly last_preview: string | null;
+}
+
+/** These contacts' conversations, the latest message first (at most `limit`). */
+export async function conversationsOfContacts(
+  tx: Tx,
+  orgId: string,
+  contactIds: readonly string[],
+  limit: number,
+): Promise<BuyerConversationRow[]> {
+  if (contactIds.length === 0) return [];
+  const rows = await tx.execute<BuyerConversationRow>(sql`
+    select v.id, v.contact_id, ch.kind as channel, v.status, v.last_message_at, v.assigned_to,
+           v.last_preview
+    from inbox.conversations v
+    join inbox.channels ch on ch.org_id = v.org_id and ch.id = v.channel_id
+    where v.org_id = ${orgId} and v.contact_id = any (${sql.param([...contactIds])}::uuid[])
+    order by v.last_message_at desc, v.id
+    limit ${limit}
+  `);
+  return [...rows];
+}

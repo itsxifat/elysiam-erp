@@ -207,6 +207,7 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/customers/:id',
   'GET /v1/customers/:id/profile',
   'PATCH /v1/customers/:id',
+  'PUT /v1/customers/:id/pinned-note',
   'GET /v1/delivery-zones',
   'GET /v1/delivery-zones/for-area',
   'PUT /v1/delivery-zones',
@@ -650,13 +651,15 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/telephony/me',
   'GET /v1/telephony/phone/token',
   'POST /v1/telephony/lookup',
+  'POST /v1/telephony/caller-panel',
   'POST /v1/telephony/calls',
   'POST /v1/telephony/calls/answered',
   'GET /v1/telephony/calls',
   'POST /v1/telephony/calls/search',
+  'GET /v1/telephony/calls/wrap-ups',
   'GET /v1/telephony/calls/:id',
   'GET /v1/telephony/calls/:id/recording',
-  'POST /v1/telephony/calls/:id/outcome',
+  'POST /v1/telephony/calls/:id/wrap-up',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */

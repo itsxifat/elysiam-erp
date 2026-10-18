@@ -2,7 +2,15 @@ import type { MessageKey } from '@elysium/i18n';
 import { Button, Monogram, Money, StatusBadge, cn } from '@elysium/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Grid3x3, Phone, PhoneIncoming, PhoneOff, RotateCcw, X } from 'lucide-react';
+import {
+  Grid3x3,
+  PanelRightOpen,
+  Phone,
+  PhoneIncoming,
+  PhoneOff,
+  RotateCcw,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '../../alive/alive.css';
@@ -20,6 +28,8 @@ import {
   TELEPHONY_KEY,
   type MyPhone,
 } from './api.js';
+import { CallerPanelHost } from './caller-panel-host.js';
+import { openCallerPanel } from './caller-panel-store.js';
 import { useTelT, type TelT } from './messages.js';
 import { lookupAgainIn, nationalDigits, takeRingBack } from './phone-store.js';
 import {
@@ -53,6 +63,18 @@ import {
  * reaches the card.
  */
 export function PhoneDock() {
+  return (
+    <>
+      {/* M47 (D-860): the caller panel, drawn here for everyone who calls, a desk phone's user
+          too; the Calls page and an order's calls open it as the phone's card does. */}
+      <CallerPanelHost />
+      <PersonalPhone />
+    </>
+  );
+}
+
+/** The person's own web phone, when they have one that can start. */
+function PersonalPhone() {
   const t = useTelT();
   const ability = useAbility();
   const session = useSession();
@@ -290,8 +312,12 @@ export function Dock({ phone }: { readonly phone: MyPhone }) {
           if (label !== null) {
             setCard({ kind: 'ringBack', from, label, at: Date.now() });
             widget.current?.answer();
+            // The Call just placed: whom it is to, beside the screen, without taking focus.
+            if (from !== '') openCallerPanel({ phone: from }, { auto: true });
           } else {
             setCard({ kind: 'incoming', from, name: name === '' ? null : name, at: Date.now() });
+            // Who is calling, beside the screen; it never takes focus from the page (D-843).
+            if (from !== '') openCallerPanel({ phone: from }, { auto: true });
             alertIfHidden({
               title: t('tel.phone.alertTitle'),
               body: t('tel.phone.alertBody', { number: displayNumber(from) }),
@@ -572,6 +598,12 @@ export function Dock({ phone }: { readonly phone: MyPhone }) {
         )}
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
+          {card.from === '' ? null : (
+            <Button variant="ghost" size="sm" onClick={() => openCallerPanel({ phone: card.from })}>
+              <PanelRightOpen aria-hidden="true" />
+              {t('tel.panel.details')}
+            </Button>
+          )}
           {card.kind === 'incoming' ? (
             <>
               <Button variant="outline" size="sm" onClick={() => widget.current?.hangup()}>

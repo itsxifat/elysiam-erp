@@ -490,6 +490,11 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     body: { name: 'Route matrix buyer' },
   }),
 
+  'PUT /v1/customers/:id/pinned-note': () => ({
+    url: `/v1/customers/${state().customerId}/pinned-note`,
+    body: { body: 'Route matrix note' },
+  }),
+
   'GET /v1/delivery-zones': () => ({ url: '/v1/delivery-zones' }),
 
   // District 47 is Dhaka, which migration 0042 maps to `inside_dhaka` for every org.
