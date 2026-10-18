@@ -25,7 +25,10 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import { AuditExempt, type AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import {
+  auditNothingChanged,
+  type AuditableRequest,
+} from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
@@ -207,15 +210,17 @@ export class TelephonyController {
 
   /**
    * The screen pop (D-843): a POST with the caller's number in the body, so it stays out of URLs
-   * and access logs (invariant 10), as the tracking page's `POST /v1/track` does.
+   * and access logs (invariant 10), as the tracking page's `POST /v1/track` does. A read: it
+   * writes no audit row (the buyer's name and orders would be kept forever for every ring).
    */
   @RequireAbility('create', 'PhoneCall')
-  @AuditExempt(
-    'A read, sent as a POST only to keep the caller’s number out of URLs. It changes nothing.',
-  )
   @Post('lookup')
   @HttpCode(200)
   async lookup(@Req() request: FastifyRequest, @Body() body: unknown) {
+    auditNothingChanged(
+      auditable(request),
+      'the screen pop reads the caller’s customer; a POST only to keep the number out of URLs',
+    );
     return this.calls.lookup(
       requireContext(request),
       request,
@@ -257,15 +262,17 @@ export class TelephonyController {
 
   /**
    * The call log with its filters in the body (the Calls page's): a phone filter stays out of
-   * URLs and access logs (invariant 10). The same answer as `GET calls`.
+   * URLs and access logs (invariant 10). The same answer as `GET calls`, and like it a read that
+   * writes no audit row.
    */
   @RequireAbility('read', 'PhoneCall')
-  @AuditExempt(
-    'A read, sent as a POST only to keep a phone filter out of URLs. It changes nothing.',
-  )
   @Post('calls/search')
   @HttpCode(200)
   async search(@Req() request: FastifyRequest, @Body() body: unknown) {
+    auditNothingChanged(
+      auditable(request),
+      'the call log reads calls; a POST only to keep a phone filter out of URLs',
+    );
     return this.calls.list(requireContext(request), request, parse(phoneCallListQuerySchema, body));
   }
 

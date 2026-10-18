@@ -968,6 +968,20 @@ describe('the review: scope, reach, claims and retention', () => {
     expect(ringing.customer).toMatchObject({ name: 'Caller', reachable: false });
   });
 
+  it('writes no audit row for the screen pop or the call log’s search: both are reads', async () => {
+    const rows = await withSystem(
+      async (tx) =>
+        tx.execute<{ n: number }>(sql`
+          select count(*)::int as n from audit.audit_log
+          where org_id = ${ORG_A}
+            and (action like 'http:POST /v1/telephony/lookup%'
+                 or action like 'http:POST /v1/telephony/calls/search%')
+        `),
+      { orgId: ORG_A },
+    );
+    expect(rows[0]?.n).toBe(0);
+  });
+
   it('lets only the agent whose phone took a call claim it, once', async () => {
     const answered = (viewer: RoleClient) =>
       viewer.client.request('POST', '/v1/telephony/calls/answered', {
