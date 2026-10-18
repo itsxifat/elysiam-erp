@@ -1958,6 +1958,32 @@ export async function recentOrdersOfCustomer(
   return [...rows];
 }
 
+/** M47 (D-835): a buyer's newest open orders, brand-wide, for linking a call to one. */
+export async function openOrdersOfCustomer(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  limit: number,
+): Promise<
+  { id: string; order_no: string; status: string; assigned_to: string | null; created_at: string }[]
+> {
+  const rows = await tx.execute<{
+    id: string;
+    order_no: string;
+    status: string;
+    assigned_to: string | null;
+    created_at: string;
+  }>(sql`
+    select o.id, o.order_no, o.status::text as status, o.assigned_to, o.created_at
+    from sales.orders o
+    where o.org_id = ${orgId} and o.customer_id = ${customerId}
+      and o.status::text not in ('delivered', 'partially_delivered', 'returned', 'cancelled')
+    order by o.created_at desc, o.id
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
 /**
  * A buyer the viewer may open (D-740), by `CustomersService.assertVisible`'s rule: an order of
  * theirs in the viewer's order scope, or no order at all yet.

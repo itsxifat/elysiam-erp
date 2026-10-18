@@ -86,6 +86,26 @@ export function deskActScopeSql(context: ActiveContext, request: object): SQL {
 }
 
 /**
+ * The desk act scope of `deskActScopeSql`, computed from the caller's own context rather than the
+ * route's (M47, D-834): a phone call's route declares `PhoneCall`, not `Order`, so the order is
+ * locked in the caller's own `update Order` (with the sales queue), widened by what sales reads
+ * for a caller who holds sales. A role with no `update Order` reaches no order this way.
+ */
+export function deskActScopeFor(context: RequestContext): SQL {
+  const own = withQueue(
+    context,
+    filterWhere(scopeFilterFor(context, 'update', 'Order'), COLUMNS, 'Order'),
+  );
+  if (!context.roles.includes('sales')) return own;
+  const salesRead = filterWhere(
+    scopeFilterFor({ ...context, roles: ['sales'] }, 'read', 'Order'),
+    COLUMNS,
+    'Order',
+  );
+  return sql`(${own} or ${salesRead})`;
+}
+
+/**
  * The buyers a caller may open, over their orders (M42, D-740; kept by D-725): `read Customer`
  * mapped onto the orders, "customers of own orders", plus the sales queue. The inbox links a
  * phone typed into a chat only to such a buyer. Not the read scope for orders, which since D-725

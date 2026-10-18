@@ -61,6 +61,7 @@ import { orderQueueSql } from './queues.js';
 import * as desk from './desk.repository.js';
 import * as repo from './orders.repository.js';
 import {
+  deskActScopeFor,
   deskActScopeSql,
   orderActScopeFor,
   orderInActScope,
@@ -1563,46 +1564,74 @@ export class OrdersService {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const order = await this.lockForAct(tx, context, request, id, 'call');
-        if (!CALLABLE_STATUSES.includes(order.status as OrderStatus)) {
-          throw new OrdersError(
-            'ORDER_CALL_INVALID',
-            `Order ${order.order_no} is ${order.status}: its verification calls are over.`,
-          );
-        }
-        const callBackAt = input.callBackAt === undefined ? null : new Date(input.callBackAt);
-        const problem = callAttemptProblem({
-          outcome: input.outcome,
-          callBackAt,
-          now: new Date(),
-        });
-        if (problem !== null) throw new OrdersError('ORDER_CALL_INVALID', problem);
-        const note = input.note === undefined || input.note === '' ? null : input.note;
-        const row = await repo.recordCallAttempt(tx, {
-          orgId: context.orgId,
-          orderId: order.id,
-          outcome: input.outcome,
-          callBackAt,
-          note,
-          calledBy: context.userId,
-        });
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'create',
-          action: 'order.call_logged',
-          entityType: 'order',
-          entityId: order.id,
-          after: {
-            callId: row.id,
-            outcome: input.outcome,
-            callBackAt: callBackAt === null ? null : callBackAt.toISOString(),
-            attempt: order.call_attempts + 1,
-          },
-          request,
-        });
-        return toCallView(row);
+        return this.recordCallOn(tx, context, request, order, input);
       }),
     );
+  }
+
+  /**
+   * M47 (D-834, D-838): an order a person calls about through Envo, or records a phone call's
+   * outcome on, locked in their own desk scope from their context (the route declares
+   * `PhoneCall`, not `Order`), and M41's owner gate for the act `call`.
+   */
+  async lockForPhoneCall(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+  ): Promise<repo.OrderRow> {
+    const order = await repo.lockOrderInScope(tx, context.orgId, id, deskActScopeFor(context));
+    if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+    await this.gate.check(tx, context, request, order, 'call');
+    return order;
+  }
+
+  /** One verification attempt on a locked order, its queue summary and its audit row (D-718). */
+  async recordCallOn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    order: repo.OrderRow,
+    input: CallAttemptInput,
+  ) {
+    if (!CALLABLE_STATUSES.includes(order.status as OrderStatus)) {
+      throw new OrdersError(
+        'ORDER_CALL_INVALID',
+        `Order ${order.order_no} is ${order.status}: its verification calls are over.`,
+      );
+    }
+    const callBackAt = input.callBackAt === undefined ? null : new Date(input.callBackAt);
+    const problem = callAttemptProblem({
+      outcome: input.outcome,
+      callBackAt,
+      now: new Date(),
+    });
+    if (problem !== null) throw new OrdersError('ORDER_CALL_INVALID', problem);
+    const note = input.note === undefined || input.note === '' ? null : input.note;
+    const row = await repo.recordCallAttempt(tx, {
+      orgId: context.orgId,
+      orderId: order.id,
+      outcome: input.outcome,
+      callBackAt,
+      note,
+      calledBy: context.userId,
+    });
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'create',
+      action: 'order.call_logged',
+      entityType: 'order',
+      entityId: order.id,
+      after: {
+        callId: row.id,
+        outcome: input.outcome,
+        callBackAt: callBackAt === null ? null : callBackAt.toISOString(),
+        attempt: order.call_attempts + 1,
+      },
+      request,
+    });
+    return toCallView(row);
   }
 
   async calls(context: ActiveContext, request: object, id: string) {

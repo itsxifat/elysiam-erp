@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { CallAttemptInput } from '@elysium/contracts';
 import type { RequestContext, Tx } from '@elysium/db';
 import { sql, type SQL } from 'drizzle-orm';
 import {
@@ -824,6 +825,68 @@ export interface OrdersApi {
    * brands or other statuses change nothing. Returns the orders marked now.
    */
   markSlipsPrinted(tx: Tx, orgId: string, orderIds: readonly string[]): Promise<readonly string[]>;
+
+  // --- M47: phone calls through Envo (D-834, D-835, D-838) -------------------------------------
+
+  /**
+   * The order a person calls about through Envo, locked in their own desk scope (their `update
+   * Order`, widened by what sales reads, as a verification call's lock: D-725) and through M41's
+   * owner gate for the act `call`: a colleague's order needs `x-acknowledge-owner: 1`, and is then
+   * audited and its owner told (D-710). Any status: a buyer is called after delivery too. Refuses
+   * (as problem+json) an order the caller cannot reach and an unacknowledged owner.
+   */
+  phoneCallTarget(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    orderId: string,
+  ): Promise<PhoneCallTarget>;
+
+  /**
+   * M41's verification attempt for a phone call about an order (D-838), in the caller's
+   * transaction under the same lock and gate as `phoneCallTarget`, with M41's own rules (the
+   * statuses whose calls are over, a call-back time) and audit row. The attempt's id.
+   */
+  recordPhoneCallOutcome(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    orderId: string,
+    input: CallAttemptInput,
+  ): Promise<{ readonly attemptId: string; readonly outcome: string }>;
+
+  /**
+   * A buyer's newest orders still open (not delivered, returned or cancelled), brand-wide, for
+   * linking a call Envo told us about to the order it is probably about (D-835). No scope: the
+   * worker links, and who may see the call is the call's own scope.
+   */
+  openOrdersOfCustomer(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    limit: number,
+  ): Promise<readonly OpenOrderFact[]>;
+}
+
+/** M47: what a phone call needs about the order it is about. No cost. */
+export interface PhoneCallTarget {
+  readonly orderId: string;
+  readonly orderNo: string;
+  readonly status: OrderStatus;
+  readonly customerId: string;
+  /** E.164: the buyer's phone, and the recipient's on this order. */
+  readonly customerPhoneE164: string;
+  readonly recipientPhoneE164: string;
+  readonly assignedTo: string | null;
+}
+
+/** M47: an open order of a buyer, for linking a call to it. */
+export interface OpenOrderFact {
+  readonly id: string;
+  readonly orderNo: string;
+  readonly status: OrderStatus;
+  readonly assignedTo: string | null;
+  readonly createdAt: Date;
 }
 
 /** M42 (D-740): the inbox panel's view of a buyer. */
@@ -912,6 +975,56 @@ export class OrdersApiService implements OrdersApi {
     const ids = [...new Set(orderIds)].sort();
     const marked = await repo.markSlipsPrinted(tx, orgId, ids, sql`true`);
     return marked.map((row) => row.id);
+  }
+
+  async phoneCallTarget(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    orderId: string,
+  ): Promise<PhoneCallTarget> {
+    return mapOrderErrors(async () => {
+      const order = await this.orders.lockForPhoneCall(tx, context, request, orderId);
+      return {
+        orderId: order.id,
+        orderNo: order.order_no,
+        status: order.status as OrderStatus,
+        customerId: order.customer_id,
+        customerPhoneE164: order.customer_phone,
+        recipientPhoneE164: order.ship_phone_e164,
+        assignedTo: order.assigned_to,
+      };
+    });
+  }
+
+  async recordPhoneCallOutcome(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    orderId: string,
+    input: CallAttemptInput,
+  ): Promise<{ readonly attemptId: string; readonly outcome: string }> {
+    return mapOrderErrors(async () => {
+      const order = await this.orders.lockForPhoneCall(tx, context, request, orderId);
+      const view = await this.orders.recordCallOn(tx, context, request, order, input);
+      return { attemptId: view.id, outcome: view.outcome };
+    });
+  }
+
+  async openOrdersOfCustomer(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    limit: number,
+  ): Promise<readonly OpenOrderFact[]> {
+    const rows = await repo.openOrdersOfCustomer(tx, orgId, customerId, limit);
+    return rows.map((row) => ({
+      id: row.id,
+      orderNo: row.order_no,
+      status: row.status as OrderStatus,
+      assignedTo: row.assigned_to,
+      createdAt: new Date(row.created_at),
+    }));
   }
 
   ordersAttributedTo(tx: Tx, orgId: string, campaign: CampaignMatch) {
