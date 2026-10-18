@@ -98,10 +98,15 @@ export interface PendingClick {
  * answers with no call id, so the first event of a call Envo has not told us about is matched
  * to a click within the window. Envo rings the click's own extension first (`"name" <ext>`), so:
  *
- * - a call that names an extension (`from` or `to`) belongs only to a click of that extension:
- *   another person's desk-phone call to the same customer is never theirs;
+ * - an inbound or internal call is never a click's;
+ * - a call that names an extension (`from` or `to`) belongs only to a click of that extension,
+ *   and never to one whose extension is not the caller when the caller is an extension: another
+ *   person's desk-phone call to the same customer, or a colleague ringing the clicking agent,
+ *   is never theirs;
  * - among one person's clicks (two Calls a few seconds apart), the one whose customer number is
- *   also on the call wins, then the newest made at or before the call started, then one made
+ *   also on the call wins; a call that names a customer's mobile no click of theirs is to (the
+ *   person dialling someone else on the desk phone meanwhile) is a call of its own; a call that
+ *   names no mobile takes the newest click made at or before the call started, then one made
  *   just after it (clock skew), the closest first;
  * - a call that names no extension is matched by the customer number alone only when Envo says
  *   it went out: a call of unknown direction from a customer's mobile is the customer calling
@@ -112,7 +117,7 @@ export function matchClick(
   call: Pick<EnvoCallFacts, 'from' | 'to' | 'direction'>,
   now: Date,
 ): PendingClick | null {
-  if (call.direction === 'inbound') return null;
+  if (call.direction === 'inbound' || call.direction === 'internal') return null;
   const numbers = [call.from, call.to].filter((value): value is string => value !== null);
   const phones = new Set(
     numbers
@@ -120,6 +125,8 @@ export function matchClick(
       .filter((phone): phone is E164Phone => phone !== null),
   );
   const extensions = new Set(numbers.filter((value) => isExtensionNumber(value)));
+  // The click's own call names its extension as the caller (Envo's originate sets it so).
+  const caller = call.from !== null && isExtensionNumber(call.from) ? call.from : null;
   const age = (click: PendingClick) => now.getTime() - click.requestedAt.getTime();
   const inWindow = pending
     .filter((click) => age(click) >= -5_000 && age(click) <= CLICK_TO_CALL_MATCH_MS)
@@ -127,9 +134,13 @@ export function matchClick(
   const onNumber = (click: PendingClick) => phones.has(click.toE164 as E164Phone);
 
   if (extensions.size > 0) {
-    const theirs = inWindow.filter((click) => extensions.has(click.extension));
+    const theirs = inWindow.filter(
+      (click) => extensions.has(click.extension) && (caller === null || caller === click.extension),
+    );
+    const named = theirs.find(onNumber);
+    if (named !== undefined) return named;
+    if (phones.size > 0) return null;
     return (
-      theirs.find(onNumber) ??
       theirs.find((click) => age(click) >= 0) ??
       [...theirs].sort((a, b) => age(b) - age(a))[0] ??
       null

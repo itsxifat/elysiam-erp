@@ -227,6 +227,33 @@ describe('linking a call to its click (D-835)', () => {
     ).toBe('theirs');
   });
 
+  it('never takes a colleague ringing the clicking agent, or an internal call, for the click', () => {
+    // Agent A (101) has a pending click to X; colleague 102 rings 101 meanwhile.
+    const pending = [click('a', '101', '01712345678', 20)];
+    expect(matchClick(pending, { from: '102', to: '101', direction: 'unknown' }, now)).toBeNull();
+    expect(matchClick(pending, { from: '101', to: '102', direction: 'internal' }, now)).toBeNull();
+    expect(matchClick(pending, { from: '102', to: '101', direction: 'internal' }, now)).toBeNull();
+    // The click's own call still matches.
+    expect(
+      matchClick(pending, { from: '101', to: '01712345678', direction: 'unknown' }, now)?.id,
+    ).toBe('a');
+  });
+
+  it('gives a call to another customer’s mobile from the same extension a row of its own', () => {
+    // A Calls X from the ERP, then dials Y on the desk phone within three minutes.
+    const pending = [click('x', '101', '01712345678', 40)];
+    for (const direction of ['unknown', 'outbound'] as const) {
+      expect(
+        matchClick(pending, { from: '101', to: '01812345678', direction }, now),
+        direction,
+      ).toBeNull();
+    }
+    // A number that is no mobile says nothing either way: the extension decides.
+    expect(
+      matchClick(pending, { from: '101', to: '09644342036', direction: 'unknown' }, now)?.id,
+    ).toBe('x');
+  });
+
   it('never links an inbound call, a stranger, or a click older than the window', () => {
     const pending = [click('a', '101', '01712345678', CLICK_TO_CALL_MATCH_MS / 1000 + 1)];
     expect(matchClick(pending, { from: '101', to: null, direction: 'outbound' }, now)).toBeNull();
