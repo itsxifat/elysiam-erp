@@ -1361,3 +1361,24 @@ The owner's brief of 2026-10-17. Label printing and packing become their own are
 3. An order split into 3 lots prints 3 slips and labels; packing and handover refuse until every lot is done.
 4. People are assigned to terminals; a terminal's cameras record its packing; the terminal view shows who is working there.
 5. Printers are reachable only on private LAN addresses; printing never runs inside a database transaction.
+
+## M47: Phone calls through Envo
+
+Phase 7 · Effort MAX · Depends on: M41, M42 · Decisions D-830 to D-859
+
+The owner's brief of 2026-10-18. Staff call customers from the ERP through Envo, the owner's own SIP service (`https://envo.enfinito.cloud`; its API and widget are documented in its Developers page, and its source is the reference). Each brand's ERP holds its own Envo connection, each staff member gets an extension, and every call is logged with its recording.
+
+**Build**
+
+- **Connections** (Settings → Calls): one or more Envo connections per brand, each with its base URL, API key and webhook secret (sealed, write-only, shown as fingerprints), a test that reads its extensions and numbers, and the webhook address to paste into Envo.
+- **Extensions:** the connection's extensions, with live presence, assigned to the brand's staff (one person per extension, one extension per person).
+- **Calling:** a Call button wherever a customer's phone is shown (the order page, the order desk's verification calls, the customer, the inbox's customer panel). It rings the agent's extension, then dials the customer (Envo's `POST /api/v1/calls`). A phone inside the console (Envo's embedded widget, with a token minted by the ERP for the signed-in person's extension) answers incoming calls and opens the caller's customer and orders.
+- **Logs and recordings:** Envo's signed webhooks record each call (direction, numbers, extension, person, answered, talk time) against the customer and their orders, and M41's call log takes it. Each recording is downloaded into the ERP's files and played where the call is shown. A sync reads Envo's call history to fill any missed webhook. A Calls page lists every call with filters, the live calls and each extension's state.
+
+**Acceptance checks**
+
+1. A connection is saved with its secrets sealed; the test answers its extensions; a wrong key is refused with a clear reason.
+2. An extension is assigned to a person; their Call button rings their extension, then the customer; a person with no extension is told so.
+3. A signed `call.ended` webhook is logged against the customer and order with its person; a bad signature or an old timestamp is refused; a repeated delivery is logged once.
+4. The recording is stored in the ERP's files and plays from the order page and the Calls page, only for roles that may hear it.
+5. No call to Envo runs inside a database transaction, and no API key, webhook secret or full phone number reaches a log.
