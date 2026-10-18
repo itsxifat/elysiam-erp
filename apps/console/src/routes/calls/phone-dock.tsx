@@ -220,7 +220,8 @@ function StatusBar({
   );
 }
 
-function Dock({ phone }: { readonly phone: MyPhone }) {
+/** The phone itself, for a person whose phone can start (exported for its test). */
+export function Dock({ phone }: { readonly phone: MyPhone }) {
   const t = useTelT();
   const { t: appT } = useLocale();
   const queryClient = useQueryClient();
