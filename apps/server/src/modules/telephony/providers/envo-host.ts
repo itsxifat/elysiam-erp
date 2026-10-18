@@ -10,12 +10,16 @@ import { isIP } from 'node:net';
  * API key is not sent there and the ERP is no way to probe its own network.
  *
  * Refused: loopback, unspecified, link-local (169.254/16, the metadata address, fe80::/10),
- * private (RFC 1918, fc00::/7), shared (100.64/10, CGNAT), benchmarking (198.18/15),
- * multicast and reserved, IPv4-mapped ones included. A private address the brand's own Envo
- * really is on (its DNS answered with the LAN address) is allowed by listing it in
- * `TELEPHONY_ENVO_PRIVATE_CIDRS`. A name that does not resolve is left to the request, which
- * reports it unreachable. The check runs before the request resolves the name again, so it does
- * not close DNS rebinding between the two; it closes every name that simply points inside.
+ * private (RFC 1918, fc00::/7, the old site-local fec0::/10), shared (100.64/10, CGNAT),
+ * benchmarking (198.18/15), documentation (2001:db8::/32), discard (100::/64), multicast and
+ * reserved, and an IPv6 address that carries an IPv4 one whose IPv4 is refused (IPv4-mapped
+ * `::ffff:a.b.c.d`, IPv4-compatible `::a.b.c.d`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`), in
+ * any spelling; local NAT64 (64:ff9b:1::/48) and Teredo (2001::/32) are refused outright. A
+ * private address the brand's own Envo really is on (its DNS answered with the LAN address) is
+ * allowed by listing it in `TELEPHONY_ENVO_PRIVATE_CIDRS`. A name that does not resolve is left
+ * to the request, which reports it unreachable. The check runs before the request resolves the
+ * name again, so it does not close DNS rebinding between the two; it closes every name that
+ * simply points inside.
  */
 
 export interface Cidr {
@@ -67,24 +71,69 @@ const REFUSED_V4: readonly (readonly [string, string])[] = [
 ];
 const REFUSED = REFUSED_V4.map(([cidr, why]) => ({ cidr: parseCidr(cidr)!, why }));
 
+/**
+ * An IPv6 address as its eight 16-bit groups, a dotted IPv4 tail and a zone id read too; null
+ * when it is not one.
+ */
+function ipv6Groups(address: string): number[] | null {
+  let text = (address.split('%')[0] ?? '').toLowerCase();
+  const lastColon = text.lastIndexOf(':');
+  const last = text.slice(lastColon + 1);
+  if (last.includes('.')) {
+    const v4 = ipv4ToInt(last);
+    if (v4 === null) return null;
+    text = `${text.slice(0, lastColon + 1)}${Math.floor(v4 / 65536).toString(16)}:${(v4 % 65536).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] === '' || halves[0] === undefined ? [] : halves[0].split(':');
+  const tail =
+    halves.length === 2 && halves[1] !== '' && halves[1] !== undefined ? halves[1].split(':') : [];
+  if (halves.length === 2 && head.length + tail.length > 7) return null;
+  const parts =
+    halves.length === 2
+      ? [...head, ...Array<string>(8 - head.length - tail.length).fill('0'), ...tail]
+      : head;
+  if (parts.length !== 8 || !parts.every((part) => /^[0-9a-f]{1,4}$/.test(part))) return null;
+  return parts.map((part) => parseInt(part, 16));
+}
+
+function refusedV4(value: number, allowed: readonly Cidr[]): string | null {
+  if (allowed.some((cidr) => inCidr(value, cidr))) return null;
+  return REFUSED.find((entry) => inCidr(value, entry.cidr))?.why ?? null;
+}
+
 /** Why this address is no Envo's, or null. `allowed` are private ranges the brand listed. */
 export function refusedEnvoAddress(address: string, allowed: readonly Cidr[] = []): string | null {
-  const lower = address.toLowerCase();
-  const mapped = lower.startsWith('::ffff:') ? lower.slice('::ffff:'.length) : lower;
-  if (isIP(mapped) === 4) {
-    const value = ipv4ToInt(mapped);
-    if (value === null) return 'unreadable';
-    if (allowed.some((cidr) => inCidr(value, cidr))) return null;
-    return REFUSED.find((entry) => inCidr(value, entry.cidr))?.why ?? null;
+  const lower = address.trim().toLowerCase();
+  if (isIP(lower) === 4) {
+    const value = ipv4ToInt(lower);
+    return value === null ? 'unreadable' : refusedV4(value, allowed);
   }
-  if (isIP(lower) === 6) {
-    if (lower === '::' || lower === '::1') return lower === '::' ? 'unspecified' : 'loopback';
-    if (/^fe[89ab]/.test(lower)) return 'link-local';
-    if (/^f[cd]/.test(lower)) return 'private';
-    if (lower.startsWith('ff')) return 'multicast';
-    return null;
+  if (isIP(lower) !== 6) return 'unreadable';
+  const g = ipv6Groups(lower);
+  if (g === null) return 'unreadable';
+  const [g0 = 0, g1 = 0, g2 = 0, g3 = 0, g4 = 0, g5 = 0, g6 = 0, g7 = 0] = g;
+  const v4 = (hi: number, lo: number) => hi * 65536 + lo;
+  const zeros = (...groups: number[]) => groups.every((group) => group === 0);
+  if (zeros(g0, g1, g2, g3, g4, g5, g6) && g7 === 0) return 'unspecified';
+  if (zeros(g0, g1, g2, g3, g4, g5, g6) && g7 === 1) return 'loopback';
+  // An IPv4 carried inside: mapped (::ffff:0:0/96), compatible (::/96), NAT64 (64:ff9b::/96).
+  if (zeros(g0, g1, g2, g3, g4) && g5 === 0xffff) return refusedV4(v4(g6, g7), allowed);
+  if (zeros(g0, g1, g2, g3, g4, g5)) return refusedV4(v4(g6, g7), allowed);
+  if (g0 === 0x64 && g1 === 0xff9b) {
+    return zeros(g2, g3, g4, g5) ? refusedV4(v4(g6, g7), allowed) : 'reserved';
   }
-  return 'unreadable';
+  // 6to4 (2002::/16) carries its IPv4 in the next two groups; Teredo's is obfuscated.
+  if (g0 === 0x2002) return refusedV4(v4(g1, g2), allowed);
+  if (g0 === 0x2001 && g1 === 0) return 'tunnel';
+  if (g0 === 0x2001 && g1 === 0x0db8) return 'documentation';
+  if (g0 === 0x0100 && zeros(g1, g2, g3)) return 'discard';
+  if ((g0 & 0xffc0) === 0xfe80) return 'link-local';
+  if ((g0 & 0xffc0) === 0xfec0) return 'private';
+  if ((g0 & 0xfe00) === 0xfc00) return 'private';
+  if ((g0 & 0xff00) === 0xff00) return 'multicast';
+  return null;
 }
 
 /** The check the gateway runs before each request: why the host is refused, or null. */
