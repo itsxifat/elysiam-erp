@@ -882,6 +882,11 @@ describe('the review: scope, reach, claims and retention', () => {
     }
     const own = await salesA.client.request('GET', `/v1/telephony/calls/${click}`);
     expect(own.statusCode).toBe(200);
+    // A phone in a query string would reach the proxies' access logs: the GET refuses it.
+    const byPhone = await manager.client.request('GET', '/v1/telephony/calls?phone=01812345678');
+    expect(byPhone.statusCode, byPhone.body).toBe(400);
+    expect(json<{ code: string }>(byPhone).code).toBe('TELEPHONY_INVALID');
+    expect(byPhone.body).toContain('calls/search');
   });
 
   it('lets the owner of the linked order see an inbound call, and no other agent', async () => {

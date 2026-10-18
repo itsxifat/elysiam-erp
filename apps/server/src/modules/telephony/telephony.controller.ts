@@ -34,6 +34,7 @@ import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
 import { TelephonyCallsService } from './calls.service.js';
 import { TelephonyConnectionsService } from './connections.service.js';
+import { TelephonyError, telephonyHttpError } from './telephony.errors.js';
 
 const idSchema = z.string().uuid('No such record.');
 const extensionSchema = z.string().regex(/^[0-9]{2,8}$/, 'An extension is two to eight digits.');
@@ -250,14 +251,23 @@ export class TelephonyController {
     );
   }
 
+  /**
+   * The call log by its query string. A phone filter is refused here (D-845): a query string
+   * reaches the proxies' access logs, so a phone is searched for with `POST calls/search`.
+   */
   @RequireAbility('read', 'PhoneCall')
   @Get('calls')
   async list(@Req() request: FastifyRequest, @Query() query: unknown) {
-    return this.calls.list(
-      requireContext(request),
-      request,
-      parse(phoneCallListQuerySchema, query),
-    );
+    const filters = parse(phoneCallListQuerySchema, query);
+    if (filters.phone !== undefined) {
+      throw telephonyHttpError(
+        new TelephonyError(
+          'TELEPHONY_INVALID',
+          'Search by phone with POST /v1/telephony/calls/search, so the number stays out of URLs.',
+        ),
+      );
+    }
+    return this.calls.list(requireContext(request), request, filters);
   }
 
   /**
