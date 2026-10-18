@@ -1,5 +1,5 @@
 {
-  "id": "cd8bdfe5-0ef6-4b4c-bf5d-a193bc896f46",
+  "id": "972f4624-1e2e-4577-86ec-6ff4976ee876",
   "prevId": "1b3847b1-5bdf-4364-8744-0094023664d0",
   "version": "7",
   "dialect": "postgresql",
@@ -45374,9 +45374,21 @@
           "primaryKey": false,
           "notNull": false
         },
+        "customer_name": {
+          "name": "customer_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "order_id": {
           "name": "order_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "order_no": {
+          "name": "order_no",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -45948,6 +45960,18 @@
         "calls_last_event": {
           "name": "calls_last_event",
           "value": "char_length(\"telephony\".\"calls\".\"last_event\") <= 20"
+        },
+        "calls_customer_name": {
+          "name": "calls_customer_name",
+          "value": "char_length(\"telephony\".\"calls\".\"customer_name\") <= 120"
+        },
+        "calls_order_no": {
+          "name": "calls_order_no",
+          "value": "char_length(\"telephony\".\"calls\".\"order_no\") <= 40"
+        },
+        "calls_order_whole": {
+          "name": "calls_order_whole",
+          "value": "(\"telephony\".\"calls\".\"order_id\" is null) = (\"telephony\".\"calls\".\"order_no\" is null)"
         }
       },
       "isRLSEnabled": false

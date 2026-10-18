@@ -183,7 +183,11 @@ export const telephonyCalls = telephony.table(
     /** The person on the call: who clicked, the extension's person, or who answered (D-836). */
     userId: text('user_id').references(() => users.id, { onDelete: 'restrict' }),
     customerId: uuid('customer_id'),
+    /** The buyer's name when the call was linked, for the lists (no cross-module read). */
+    customerName: text('customer_name'),
     orderId: uuid('order_id'),
+    /** The order's number when the call was linked (an order number never changes). */
+    orderNo: text('order_no'),
     /** The order's owner when the call was linked to it: who else hears it (D-841). */
     orderOwnerUserId: text('order_owner_user_id').references(() => users.id, {
       onDelete: 'restrict',
@@ -315,6 +319,9 @@ export const telephonyCalls = telephony.table(
       sql`(${table.outcome} is null) = (${table.outcomeAttemptId} is null)`,
     ),
     check('calls_last_event', sql`char_length(${table.lastEvent}) <= 20`),
+    check('calls_customer_name', sql`char_length(${table.customerName}) <= 120`),
+    check('calls_order_no', sql`char_length(${table.orderNo}) <= 40`),
+    check('calls_order_whole', sql`(${table.orderId} is null) = (${table.orderNo} is null)`),
   ],
 );
 

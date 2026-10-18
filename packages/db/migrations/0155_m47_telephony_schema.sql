@@ -14,7 +14,9 @@ CREATE TABLE "telephony"."calls" (
 	"extension" text,
 	"user_id" text,
 	"customer_id" uuid,
+	"customer_name" text,
 	"order_id" uuid,
+	"order_no" text,
 	"order_owner_user_id" text,
 	"answered" boolean DEFAULT false NOT NULL,
 	"disposition" text,
@@ -58,7 +60,10 @@ CREATE TABLE "telephony"."calls" (
 	CONSTRAINT "calls_recording_error" CHECK (char_length("telephony"."calls"."recording_error") <= 40),
 	CONSTRAINT "calls_outcome" CHECK ("telephony"."calls"."outcome" is null or "telephony"."calls"."outcome" in ('reached', 'no_answer', 'busy', 'wrong_number', 'call_back')),
 	CONSTRAINT "calls_outcome_whole" CHECK (("telephony"."calls"."outcome" is null) = ("telephony"."calls"."outcome_attempt_id" is null)),
-	CONSTRAINT "calls_last_event" CHECK (char_length("telephony"."calls"."last_event") <= 20)
+	CONSTRAINT "calls_last_event" CHECK (char_length("telephony"."calls"."last_event") <= 20),
+	CONSTRAINT "calls_customer_name" CHECK (char_length("telephony"."calls"."customer_name") <= 120),
+	CONSTRAINT "calls_order_no" CHECK (char_length("telephony"."calls"."order_no") <= 40),
+	CONSTRAINT "calls_order_whole" CHECK (("telephony"."calls"."order_id" is null) = ("telephony"."calls"."order_no" is null))
 );
 --> statement-breakpoint
 CREATE TABLE "telephony"."connections" (

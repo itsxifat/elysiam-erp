@@ -112,7 +112,9 @@ begin
   if (old.envo_call_id is not null and new.envo_call_id is distinct from old.envo_call_id)
      or (old.user_id is not null and new.user_id is distinct from old.user_id)
      or (old.customer_id is not null and new.customer_id is distinct from old.customer_id)
-     or (old.order_id is not null and new.order_id is distinct from old.order_id)
+     or (old.order_id is not null
+         and (new.order_id, new.order_no) is distinct from (old.order_id, old.order_no))
+     or (old.customer_name is not null and new.customer_name is distinct from old.customer_name)
      or (old.order_owner_user_id is not null
          and new.order_owner_user_id is distinct from old.order_owner_user_id)
      or (old.extension is not null and new.extension is distinct from old.extension)
