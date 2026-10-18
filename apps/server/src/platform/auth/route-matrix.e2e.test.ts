@@ -322,6 +322,18 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...TEAM_ROUTE_FIXTURES,
 };
 
+/**
+ * Reads sent as POSTs only to keep a phone number out of URLs and access logs. Each tells the
+ * audit net it changed nothing (`auditNothingChanged`, listed with its reason in
+ * `audit-exempt.test.ts`), so check 3 does not ask them for a row; the telephony e2e test proves
+ * they write none.
+ */
+const READS_SENT_AS_POSTS: ReadonlySet<string> = new Set([
+  // M47 (D-843, D-845): the screen pop and the call log's search.
+  'POST /v1/telephony/lookup',
+  'POST /v1/telephony/calls/search',
+]);
+
 function testedRoutes(): RouteDeclaration[] {
   return describeRoutes(harness.app).filter((route) => !route.declared?.startsWith('public:'));
 }
@@ -396,7 +408,7 @@ describe('every route × every role: the guard admits exactly what the matrix gr
 
         // Check 3: a mutation that succeeded left a row for its actor. The
         // interceptor writes after the response, so poll briefly.
-        const mutation = route.method !== 'GET';
+        const mutation = route.method !== 'GET' && !READS_SENT_AS_POSTS.has(routeKey(route));
         if (mutation && response.statusCode < 300) {
           let after = await auditCount(actor.userId);
           for (let attempt = 0; attempt < 20 && after <= before; attempt += 1) {
@@ -415,7 +427,9 @@ describe('every route × every role: the guard admits exactly what the matrix gr
     // exercised successfully by at least one role.
     expect(admitted).toBeGreaterThan(20);
     expect(refused).toBeGreaterThan(20);
-    const mutationRoutes = testedRoutes().filter((route) => route.method !== 'GET').length;
+    const mutationRoutes = testedRoutes().filter(
+      (route) => route.method !== 'GET' && !READS_SENT_AS_POSTS.has(routeKey(route)),
+    ).length;
     expect(auditedMutations).toBeGreaterThanOrEqual(mutationRoutes);
   }, 600_000);
 });
