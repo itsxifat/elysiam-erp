@@ -270,9 +270,8 @@ After deploying: Settings → Calls → Test lists the extensions; Envo's Send t
 403 means a Cloudflare bot check or WAF rule stands in front: skip it for `/webhooks/envo/*` on
 the brand's zone and `/api/v1/*` on Envo's); `curl -sI https://<admin host>/ | grep -iE
 'content-security-policy|permissions-policy'` shows `wss://call.enfinito.cloud` and
-`microphone=(self)`; and an unsigned POST to the webhook address answers 401. Recordings are kept
-365 days unless a connection says otherwise, beside Envo's own copy: check `df -h` before
-switching recording on, or put the brand on R2 (D-842).
+`microphone=(self)`; and an unsigned POST to the webhook address answers 401. Recordings stay on
+Envo and are streamed from it; the ERP stores none, so they need no disk on the brand (D-858).
 
 ## 6. Operating a brand
 

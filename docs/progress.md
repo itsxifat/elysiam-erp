@@ -3553,3 +3553,30 @@ dry-run|commit --file <users.json>`.
   `integration-wave2`.
 - **New dependencies:** none (Envo's widget is loaded at run time from the connection's own host,
   not installed).
+
+## 2026-10-19 · M47 · the owner's answers (not merged or deployed)
+
+- **Branch:** `m47-envo-calls` in `D:/Projects/elysium-erp-m47`. Decisions D-858 to D-862 (the
+  owner's answers to D-835, D-838, D-840 to D-843 and D-853 appended there); architecture §32;
+  plan `docs/plans/M47.md` (Follow-up).
+- **What changed:** recordings stay with Envo and are streamed with Range through
+  `calls/:id/recording`, never stored, with no recording jobs or retention (D-858); a wrap-up after
+  every call with the ERP's suggestion, `POST calls/:id/wrap-up` replacing `/outcome` and
+  `GET calls/wrap-ups`, and the work dock's WrapUpCard (D-859); the caller panel
+  (`POST /v1/telephony/caller-panel`, the pinned note `PUT /v1/customers/:id/pinned-note`, a new
+  `INBOX_API`) with ChannelMark's platform logos (D-860, D-861); a Call from the inbox asks the
+  conversation owner's go-ahead (D-862). Migrations `0157_m47_owner_answers_schema` and
+  `0158_m47_owner_answers_policies`.
+- **Commits:** c0a31b10 (schema, contracts, domain), 6fd3e91d (server and console), ed8203b7
+  (tests), and this docs commit.
+- **Gates:** format, lint, typecheck, build, `check:bundle` (249.8 KB of 250 KB), `check:white-label`,
+  `check:migrations`, `check:schema` (157 migrations), `check:routes` (651), `check:i18n`,
+  `check:api-client` (regenerated): all pass. Not run: the full verify.
+- **Tests** (heavy lock, 2 workers): `telephony.e2e.test.ts` 44/44 on real Postgres with the Envo
+  stand-in (the stream, wrap-ups, the caller panel, the inbox's go-ahead); 108/108 unit and
+  component tests in 9 files; the route matrix 2/2. Not run: the inbox and orders e2e suites.
+- **Follow-ups:** the bundle has 0.2 KB of headroom (move the dock's inbox card into a lazy
+  chunk); roles with `create PhoneCall` but not `update Conversation` lose the inbox panel's Call
+  (D-862); component tests for the wrap-up form and the caller panel (D-758); Envo's answering
+  extension (D-836); verify against the live Envo.
+- **New dependencies:** none.

@@ -1969,11 +1969,12 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   multi-lot order is refused through the orders module's `HandoverGuardRegistry`. One
   consignment per order; no courier is sent a lot count (none documents one, D-809).
 
-## 32. Phone calls through Envo (M47, D-830 to D-857)
+## 32. Phone calls through Envo (M47, D-830 to D-862)
 
 Staff call customers from the ERP through Envo, the owner's own SIP service. The `telephony`
 module (schema `telephony`) owns it; buyers and orders come through `ORDERS_API` (with M41's owner
-gate), people through `IAM_API`, recordings through `FILES_API` (invariant 12). Envo is never asked
+gate), people through `IAM_API`, the inbox through `INBOX_API` and emails through `STOREFRONT_API`
+(invariant 12). Envo is never asked
 inside a transaction (invariant 6).
 
 - **Connections** (`telephony.connections`, Settings → Calls, `Telephony`): a base URL (an https
@@ -1998,18 +1999,32 @@ inside a transaction (invariant 6).
   `me` and `phone/token` (the person's own extension only, D-843), `POST lookup` (the screen pop,
   D-843), `POST calls` (a Call, D-834), `POST calls/answered` (the claim, D-836), `GET calls` and
   `POST calls/search` (the log; a phone only in the POST body, D-845), `calls/:id`,
-  `calls/:id/recording` (D-840, D-841) and `POST calls/:id/outcome` (D-838). A person with no
+  `calls/:id/recording` (D-858, D-841), `GET calls/wrap-ups` and `POST calls/:id/wrap-up` (D-859)
+  and `POST caller-panel` (D-860). A person with no
   extension gets `TELEPHONY_NO_EXTENSION`; Envo's refusals answer 424 with Envo's reason, masked.
 - **Webhooks** (`POST /webhooks/envo/<org>/<connection>`, `telephony.webhook_events`, D-832): raw
   body, HMAC-SHA256, five minutes, stored once per call and event, applied by
   `telephony.process_webhook`; bodies deleted thirty days after they were processed (D-851).
-- **Jobs** (`telephony.queues.ts`): `process_webhook`; `fetch_recording` (the connection's own
-  host only, size-capped, four tries, then failed with why, D-840); `sync_sweep` every five
-  minutes (each enabled connection's history, oldest window first, the cursor two hours behind
-  now, D-839, and stuck recordings another round); `recording_retention` nightly (365 days
-  ASSUMED per connection, every brand, D-842; webhook bodies, D-851).
+- **Recordings stay with Envo** (D-858): a call keeps Envo's `recording_url` only on the
+  connection's own host; `calls/:id/recording` streams Envo's `/api/v1/recordings/<id>` with the
+  key, outside any transaction, Range passed through, nothing stored. Envo's 404 is
+  `TELEPHONY_RECORDING_UNAVAILABLE`.
+- **Wrap-ups** (D-859): after a call its person picks one of M41's five results (the domain's
+  `suggestWrapUp` preselected), a note and a call-back time; set once on the call, and M41's
+  attempt is recorded through `ORDERS_API` when the call's order is still callable.
+- **The caller panel** (D-860): the buyer's pinned note (`sales.customers.pinned_note`, `PUT
+/v1/customers/:id/pinned-note`), facts, all orders (paged), addresses, phones, emails, socials,
+  conversations and calls with their wrap-ups; full to supervisors and to sales who reach the
+  buyer or are on a call with the phone, minimal otherwise. Platform logos are `ChannelMark`'s
+  inline SVGs (D-861).
+- **The inbox's go-ahead** (D-862): a Call with a conversation runs `INBOX_API.guardCall` in the
+  Call's transaction (409 `INBOX_OWNER_ACK_REQUIRED` until `x-acknowledge-owner: 1`).
+- **Jobs** (`telephony.queues.ts`): `process_webhook`; `sync_sweep` every five minutes (each
+  enabled connection's history, oldest window first, the cursor two hours behind now, D-839);
+  `webhook_retention` nightly (webhook bodies, D-851).
 - **The console**: Call buttons (D-848), the order's phone calls inside M41's verification calls
-  (outcome on demand, D-838), the Calls page (D-845), Settings → Calls, the Staff screen's
+  (the wrap-up form, D-859), the work dock's lazy WrapUpCard and CallerPanel (D-859, D-860), the
+  Calls page (D-845), Settings → Calls, the Staff screen's
   Extension column, and the web phone (D-843): Envo's widget, headless, from the connection's
   `/embed/phone.js`, with a token for the person's own extension, registering on Envo's SIP domain
   (`wss://call.enfinito.cloud` by default), all allowed by the console's CSP path by path (D-844).
