@@ -28,6 +28,12 @@ import {
   inboxStageSchema,
   inboxTagsSchema,
   packingCameraCreateSchema,
+  phoneCallAnsweredSchema,
+  phoneCallOutcomeSchema,
+  phoneCallPlaceSchema,
+  telephonyAssignSchema,
+  telephonyConnectionCreateSchema,
+  telephonyConnectionUpdateSchema,
   packingCameraUpdateSchema,
   partyBalanceQuerySchema,
   reopenPeriodSchema,
@@ -563,6 +569,55 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
   'POST /v1/inbox/saved-replies/:id/use': {
     operationId: 'countSavedReplyUse',
     summary: 'Count one use of a saved reply (inserted into a reply).',
+  },
+
+  // M47: phone calls through Envo (D-830 to D-853).
+  'GET /v1/telephony/connections': {
+    operationId: 'listTelephonyConnections',
+    summary: "The brand's Envo connections: never a secret, only whether it is set and its print.",
+  },
+  'POST /v1/telephony/connections': {
+    operationId: 'createTelephonyConnection',
+    summary: 'Add an Envo connection; the API key and webhook secret are sealed, write-only.',
+    body: named(
+      'TelephonyConnectionCreate',
+      telephonyConnectionCreateSchema,
+      'TelephonyConnectionCreateInput',
+    ),
+  },
+  'PUT /v1/telephony/connections/:id': {
+    operationId: 'updateTelephonyConnection',
+    summary: 'Change a connection; a secret left out is kept.',
+    body: named(
+      'TelephonyConnectionUpdate',
+      telephonyConnectionUpdateSchema,
+      'TelephonyConnectionUpdateInput',
+    ),
+  },
+  'POST /v1/telephony/connections/:id/test': {
+    operationId: 'testTelephonyConnection',
+    summary: "Read the connection's extensions and numbers from Envo with its key.",
+  },
+  'PUT /v1/telephony/connections/:id/extensions/:extension': {
+    operationId: 'assignTelephonyExtension',
+    summary: 'Give an extension to a person: one person per extension, one extension per person.',
+    body: named('TelephonyAssign', telephonyAssignSchema, 'TelephonyAssignInput'),
+  },
+  'POST /v1/telephony/calls': {
+    operationId: 'placePhoneCall',
+    summary:
+      'Call a customer from your own extension; an order held by someone else needs x-acknowledge-owner: 1.',
+    body: named('PhoneCallPlace', phoneCallPlaceSchema, 'PhoneCallPlaceInput'),
+  },
+  'POST /v1/telephony/calls/answered': {
+    operationId: 'answeredPhoneCall',
+    summary: "The browser's phone answered an incoming call from this number.",
+    body: named('PhoneCallAnswered', phoneCallAnsweredSchema, 'PhoneCallAnsweredInput'),
+  },
+  'POST /v1/telephony/calls/:id/outcome': {
+    operationId: 'recordPhoneCallOutcome',
+    summary: "Record a call's verification outcome on its order, as M41's attempt, once.",
+    body: named('CallAttempt', phoneCallOutcomeSchema, 'CallAttemptInput'),
   },
 
   'GET /v1/demo/costed-items': {

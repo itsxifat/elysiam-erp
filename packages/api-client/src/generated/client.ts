@@ -31,6 +31,8 @@ import type {
   MarkPrintedInput,
   PackingCameraCreateInput,
   PackingCameraUpdateInput,
+  PhoneCallAnsweredInput,
+  PhoneCallPlaceInput,
   PresenceBeat,
   PresencePause,
   ReopenPeriodInput,
@@ -38,6 +40,9 @@ import type {
   SavedReplyInput,
   SetRoles,
   SwitchOrg,
+  TelephonyAssignInput,
+  TelephonyConnectionCreateInput,
+  TelephonyConnectionUpdateInput,
   ThresholdInput,
   TwoFactorPolicyInput,
   UpdateProfile,
@@ -69,6 +74,16 @@ export const OPERATIONS = {
     ability: 'update:Conversation',
   },
   addPackingCamera: { method: 'POST', path: '/v1/packing/cameras', ability: 'update:PackingVideo' },
+  answeredPhoneCall: {
+    method: 'POST',
+    path: '/v1/telephony/calls/answered',
+    ability: 'create:PhoneCall',
+  },
+  assignTelephonyExtension: {
+    method: 'PUT',
+    path: '/v1/telephony/connections/{id}/extensions/{extension}',
+    ability: 'update:PhoneExtension',
+  },
   cashBook: { method: 'GET', path: '/v1/ledger/wallets/{id}/cash-book', ability: 'read:Wallet' },
   cashIn: { method: 'POST', path: '/v1/ledger/cash-in', ability: 'update:Wallet' },
   closeInboxConversation: {
@@ -97,6 +112,11 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/inbox/saved-replies',
     ability: 'create:SavedReply',
+  },
+  createTelephonyConnection: {
+    method: 'POST',
+    path: '/v1/telephony/connections',
+    ability: 'create:Telephony',
   },
   createUser: { method: 'POST', path: '/v1/users', ability: 'create:User' },
   dayBook: { method: 'GET', path: '/v1/ledger/day-book', ability: 'read:LedgerReport' },
@@ -230,6 +250,11 @@ export const OPERATIONS = {
     method: 'DELETE',
     path: '/v1/supply/suppliers/{id}',
     ability: 'delete:Supply',
+  },
+  deleteV1TelephonyConnectionsByIdExtensionsByExtension: {
+    method: 'DELETE',
+    path: '/v1/telephony/connections/{id}/extensions/{extension}',
+    ability: 'update:PhoneExtension',
   },
   endMyOtherSessions: {
     method: 'POST',
@@ -1094,6 +1119,43 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}/usage',
     ability: 'update:Supply',
   },
+  getV1TelephonyAssignments: {
+    method: 'GET',
+    path: '/v1/telephony/assignments',
+    ability: 'read:PhoneExtension',
+  },
+  getV1TelephonyCalls: { method: 'GET', path: '/v1/telephony/calls', ability: 'read:PhoneCall' },
+  getV1TelephonyCallsById: {
+    method: 'GET',
+    path: '/v1/telephony/calls/{id}',
+    ability: 'read:PhoneCall',
+  },
+  getV1TelephonyCallsByIdRecording: {
+    method: 'GET',
+    path: '/v1/telephony/calls/{id}/recording',
+    ability: 'read:PhoneCall',
+  },
+  getV1TelephonyConnectionsByIdExtensions: {
+    method: 'GET',
+    path: '/v1/telephony/connections/{id}/extensions',
+    ability: 'read:PhoneExtension',
+  },
+  getV1TelephonyConnectionsByIdLive: {
+    method: 'GET',
+    path: '/v1/telephony/connections/{id}/live',
+    ability: 'read:Telephony',
+  },
+  getV1TelephonyLookup: {
+    method: 'GET',
+    path: '/v1/telephony/lookup',
+    ability: 'create:PhoneCall',
+  },
+  getV1TelephonyMe: { method: 'GET', path: '/v1/telephony/me', ability: 'read:PhoneCall' },
+  getV1TelephonyPhoneToken: {
+    method: 'GET',
+    path: '/v1/telephony/phone/token',
+    ability: 'create:PhoneCall',
+  },
   getV1Terminals: { method: 'GET', path: '/v1/terminals', ability: 'read:PackingTerminal' },
   getWebhooksMetaByOrgId: { method: 'GET', path: '/webhooks/meta/{orgId}', ability: 'public' },
   getWorkflowSettings: {
@@ -1126,6 +1188,11 @@ export const OPERATIONS = {
   listPackingCameras: { method: 'GET', path: '/v1/packing/cameras', ability: 'update:Order' },
   listPeriods: { method: 'GET', path: '/v1/ledger/periods', ability: 'read:LedgerPeriod' },
   listSavedReplies: { method: 'GET', path: '/v1/inbox/saved-replies', ability: 'read:SavedReply' },
+  listTelephonyConnections: {
+    method: 'GET',
+    path: '/v1/telephony/connections',
+    ability: 'read:Telephony',
+  },
   listUsers: { method: 'GET', path: '/v1/users', ability: 'read:User' },
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
@@ -1253,6 +1320,7 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}',
     ability: 'update:Supply',
   },
+  placePhoneCall: { method: 'POST', path: '/v1/telephony/calls', ability: 'create:PhoneCall' },
   postApiAdminScannerLogin: { method: 'POST', path: '/api/admin/scanner/login', ability: 'public' },
   postNcomByOrgIdOrders: { method: 'POST', path: '/ncom/{orgId}/orders', ability: 'public' },
   postNcomByOrgIdV1Release: { method: 'POST', path: '/ncom/{orgId}/v1/release', ability: 'public' },
@@ -2083,6 +2151,11 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}/notes',
     ability: 'update:Supply',
   },
+  postV1TelephonyConnectionsByIdLiveByCallIdHangup: {
+    method: 'POST',
+    path: '/v1/telephony/connections/{id}/live/{callId}/hangup',
+    ability: 'update:PhoneCall',
+  },
   postV1Terminals: { method: 'POST', path: '/v1/terminals', ability: 'create:PackingTerminal' },
   postV1TerminalsByIdBind: {
     method: 'POST',
@@ -2100,6 +2173,11 @@ export const OPERATIONS = {
     ability: 'update:PackingTerminal',
   },
   postV1Track: { method: 'POST', path: '/v1/track', ability: 'public' },
+  postWebhooksEnvoByOrgIdByConnectionId: {
+    method: 'POST',
+    path: '/webhooks/envo/{orgId}/{connectionId}',
+    ability: 'public',
+  },
   postWebhooksMetaByOrgId: { method: 'POST', path: '/webhooks/meta/{orgId}', ability: 'public' },
   putV1CatalogAttributesByIdValuesOrder: {
     method: 'PUT',
@@ -2267,6 +2345,11 @@ export const OPERATIONS = {
     path: '/v1/inbox/conversations/{id}/read',
     ability: 'update:Conversation',
   },
+  recordPhoneCallOutcome: {
+    method: 'POST',
+    path: '/v1/telephony/calls/{id}/outcome',
+    ability: 'create:PhoneCall',
+  },
   releaseInboxConversation: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/release',
@@ -2365,6 +2448,11 @@ export const OPERATIONS = {
     ability: 'update:Conversation',
   },
   teamBoard: { method: 'GET', path: '/v1/orders/team-board', ability: 'read:OrderWorkflow' },
+  testTelephonyConnection: {
+    method: 'POST',
+    path: '/v1/telephony/connections/{id}/test',
+    ability: 'update:Telephony',
+  },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
   turnOffMyTwoFactor: {
     method: 'POST',
@@ -2386,6 +2474,11 @@ export const OPERATIONS = {
     method: 'PUT',
     path: '/v1/inbox/saved-replies/{id}',
     ability: 'update:SavedReply',
+  },
+  updateTelephonyConnection: {
+    method: 'PUT',
+    path: '/v1/telephony/connections/{id}',
+    ability: 'update:Telephony',
   },
   userPasswordLink: {
     method: 'POST',
@@ -2452,6 +2545,19 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: PackingCameraCreateInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.addPackingCamera, input, options),
+    /** The browser's phone answered an incoming call from this number. */
+    answeredPhoneCall: (
+      input: { readonly body: PhoneCallAnsweredInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.answeredPhoneCall, input, options),
+    /** Give an extension to a person: one person per extension, one extension per person. */
+    assignTelephonyExtension: (
+      input: {
+        readonly path: { readonly extension: string; readonly id: string };
+        readonly body: TelephonyAssignInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.assignTelephonyExtension, input, options),
     /** Movements through one wallet over a date range. */
     cashBook: (
       input: {
@@ -2496,6 +2602,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: SavedReplyInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.createSavedReply, input, options),
+    /** Add an Envo connection; the API key and webhook secret are sealed, write-only. */
+    createTelephonyConnection: (
+      input: { readonly body: TelephonyConnectionCreateInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.createTelephonyConnection, input, options),
     /** Invite a user into this organization with one or more roles. */
     createUser: (
       input: { readonly body: CreateUser },
@@ -2655,6 +2766,17 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1SupplySuppliersById, input, options),
+    /** DELETE /v1/telephony/connections/:id/extensions/:extension */
+    deleteV1TelephonyConnectionsByIdExtensionsByExtension: (
+      input: { readonly path: { readonly extension: string; readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(
+        runtime,
+        OPERATIONS.deleteV1TelephonyConnectionsByIdExtensionsByExtension,
+        input,
+        options,
+      ),
     /** Sign out every device but this one. */
     endMyOtherSessions: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.endMyOtherSessions, undefined, options),
@@ -3594,6 +3716,44 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplySuppliersByIdUsage, input, options),
+    /** GET /v1/telephony/assignments */
+    getV1TelephonyAssignments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyAssignments, undefined, options),
+    /** GET /v1/telephony/calls */
+    getV1TelephonyCalls: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyCalls, undefined, options),
+    /** GET /v1/telephony/calls/:id */
+    getV1TelephonyCallsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1TelephonyCallsById, input, options),
+    /** GET /v1/telephony/calls/:id/recording */
+    getV1TelephonyCallsByIdRecording: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyCallsByIdRecording, input, options),
+    /** GET /v1/telephony/connections/:id/extensions */
+    getV1TelephonyConnectionsByIdExtensions: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyConnectionsByIdExtensions, input, options),
+    /** GET /v1/telephony/connections/:id/live */
+    getV1TelephonyConnectionsByIdLive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyConnectionsByIdLive, input, options),
+    /** GET /v1/telephony/lookup */
+    getV1TelephonyLookup: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyLookup, undefined, options),
+    /** GET /v1/telephony/me */
+    getV1TelephonyMe: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyMe, undefined, options),
+    /** GET /v1/telephony/phone/token */
+    getV1TelephonyPhoneToken: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyPhoneToken, undefined, options),
     /** GET /v1/terminals */
     getV1Terminals: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Terminals, undefined, options),
@@ -3669,6 +3829,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The brand's saved replies, the most used first. */
     listSavedReplies: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listSavedReplies, undefined, options),
+    /** The brand's Envo connections: never a secret, only whether it is set and its print. */
+    listTelephonyConnections: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listTelephonyConnections, undefined, options),
     /** This organization's staff, their roles and sign-in state, and open resets. */
     listUsers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listUsers, undefined, options),
@@ -3841,6 +4004,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1SupplySuppliersById, input, options),
+    /** Call a customer from your own extension; an order held by someone else needs x-acknowledge-owner: 1. */
+    placePhoneCall: (
+      input: { readonly body: PhoneCallPlaceInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.placePhoneCall, input, options),
     /** POST /api/admin/scanner/login */
     postApiAdminScannerLogin: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postApiAdminScannerLogin, undefined, options),
@@ -4751,6 +4919,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplySuppliersByIdNotes, input, options),
+    /** POST /v1/telephony/connections/:id/live/:callId/hangup */
+    postV1TelephonyConnectionsByIdLiveByCallIdHangup: (
+      input: { readonly path: { readonly callId: string; readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1TelephonyConnectionsByIdLiveByCallIdHangup, input, options),
     /** POST /v1/terminals */
     postV1Terminals: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Terminals, undefined, options),
@@ -4771,6 +4945,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/track */
     postV1Track: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Track, undefined, options),
+    /** POST /webhooks/envo/:orgId/:connectionId */
+    postWebhooksEnvoByOrgIdByConnectionId: (
+      input: { readonly path: { readonly connectionId: string; readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postWebhooksEnvoByOrgIdByConnectionId, input, options),
     /** POST /webhooks/meta/:orgId */
     postWebhooksMetaByOrgId: (
       input: { readonly path: { readonly orgId: string } },
@@ -4937,6 +5117,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.readInboxConversation, input, options),
+    /** Record a call's verification outcome on its order, as M41's attempt, once. */
+    recordPhoneCallOutcome: (
+      input: { readonly path: { readonly id: string }; readonly body: CallAttemptInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.recordPhoneCallOutcome, input, options),
     /** Release a conversation back to Unassigned. */
     releaseInboxConversation: (
       input: { readonly path: { readonly id: string } },
@@ -5061,6 +5246,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Who is active, idle or away, their open orders, today's confirmations and offers. */
     teamBoard: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.teamBoard, undefined, options),
+    /** Read the connection's extensions and numbers from Envo with its key. */
+    testTelephonyConnection: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.testTelephonyConnection, input, options),
     /** Debit and credit totals per account as of a business date. */
     trialBalance: (
       input: { readonly query: { readonly asOf: string } },
@@ -5091,6 +5281,14 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: SavedReplyInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.updateSavedReply, input, options),
+    /** Change a connection; a secret left out is kept. */
+    updateTelephonyConnection: (
+      input: {
+        readonly path: { readonly id: string };
+        readonly body: TelephonyConnectionUpdateInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updateTelephonyConnection, input, options),
     /** Issue, ask for, or collect a one-time link that sets a password. */
     userPasswordLink: (
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
