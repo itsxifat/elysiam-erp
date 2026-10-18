@@ -111,7 +111,11 @@ describe('the web phone (M47, D-844)', () => {
     expect(policy).toMatch(
       /connect-src [^;]*https:\/\/envo\.enfinito\.cloud wss:\/\/envo\.enfinito\.cloud/,
     );
-    for (const bad of ['http://envo.example', "https://x.example; script-src 'unsafe-inline'", '*']) {
+    for (const bad of [
+      'http://envo.example',
+      "https://x.example; script-src 'unsafe-inline'",
+      '*',
+    ]) {
       expect(() => contentSecurityPolicy('', { ...API, telephonyOrigins: bad }), bad).toThrow(
         /VITE_CSP_TELEPHONY_ORIGINS/,
       );
