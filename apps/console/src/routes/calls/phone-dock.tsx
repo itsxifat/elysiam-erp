@@ -57,11 +57,14 @@ export function PhoneDock() {
   const ability = useAbility();
   const session = useSession();
   const allowed = session.context !== null && ability.can('create', 'PhoneCall');
+  // Asked again every minute: an extension taken off the person, or a connection switched
+  // off, stops this tab's phone within a minute rather than at its next focus or reload.
   const mine = useQuery({
     queryKey: MY_PHONE_KEY,
     queryFn: myPhone,
     enabled: allowed,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
   const [dismissed, setDismissed] = useDismissed();
   const phone = mine.data?.phone ?? null;
