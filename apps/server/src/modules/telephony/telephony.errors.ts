@@ -38,6 +38,7 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   TELEPHONY_RECORDING_UNAVAILABLE: 404,
   TELEPHONY_OUTCOME_INVALID: 409,
   TELEPHONY_CREDENTIALS_MISSING: 409,
+  RATE_LIMITED: 429,
 };
 
 export function telephonyHttpError(error: TelephonyError): HttpException {
@@ -51,6 +52,8 @@ export function telephonyHttpError(error: TelephonyError): HttpException {
       return new ConflictException(body);
     case 424:
       return new HttpException(body, HttpStatus.FAILED_DEPENDENCY);
+    case 429:
+      return new HttpException(body, HttpStatus.TOO_MANY_REQUESTS);
     default:
       return new BadRequestException(body);
   }

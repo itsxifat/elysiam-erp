@@ -14,6 +14,7 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeHasNoRowDimension, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { MemoryRateLimiter } from '../../platform/http/rate-limit.js';
 import { FILES_API, type FilesApi } from '../files/files.api.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
@@ -39,6 +40,14 @@ const ANSWERED_WINDOW_MS = 3 * 60_000;
 
 /** A call ringing or answered this recently names its caller in the screen pop (D-843). */
 const LIVE_LOOKUP_MS = 3 * 60_000;
+
+/**
+ * How often a claim may ask Envo's live calls, a minute: per person (the console's phone asks at
+ * most four times for one answer) and per connection, so repeated claims cannot spend the
+ * brand key's shared budget that Calls, the sync and Settings → Calls need (recheck N1).
+ */
+const CLAIMS_PER_PERSON_PER_MINUTE = 8;
+const CLAIMS_PER_CONNECTION_PER_MINUTE = 30;
 
 /** Envo's live states of a call that is talking: `talking` (bridged) or a channel `up`. */
 const TALKING_STATES = new Set(['talking', 'up']);
@@ -129,6 +138,9 @@ export function callView(row: repo.CallRow, names: Names) {
  */
 @Injectable()
 export class TelephonyCallsService {
+  /** Per process, in memory: it guards Envo's budget, not an exact count across replicas. */
+  private readonly claims = new MemoryRateLimiter();
+
   constructor(
     private readonly audit: AuditService,
     private readonly connections: TelephonyConnectionsService,
@@ -630,7 +642,8 @@ export class TelephonyCallsService {
    *   an Envo whose SIP usernames are not `<extension>_…`) stays nobody's, as a desk phone's
    *   answer does: a supervisor sees it.
    *
-   * Envo is asked between two short transactions, never inside one (invariant 6).
+   * Envo is asked between two short transactions, never inside one (invariant 6), and at most
+   * eight times a minute per person and thirty per connection (`RATE_LIMITED` past that).
    */
   async answered(context: ActiveContext, request: AuditableRequest, input: PhoneCallAnsweredInput) {
     return mapTelephonyErrors(async () => {
@@ -655,6 +668,24 @@ export class TelephonyCallsService {
         throw new TelephonyError('TELEPHONY_NOT_FOUND', 'Envo has not announced that call yet.');
       }
       const envoCallId = found.call.envo_call_id;
+      const person = this.claims.hit(
+        `person:${context.orgId}:${context.userId}`,
+        CLAIMS_PER_PERSON_PER_MINUTE,
+        60,
+      );
+      const line = person.allowed
+        ? this.claims.hit(
+            `connection:${found.mine.connection.id}`,
+            CLAIMS_PER_CONNECTION_PER_MINUTE,
+            60,
+          )
+        : person;
+      if (!line.allowed) {
+        throw new TelephonyError(
+          'RATE_LIMITED',
+          'Envo was asked about answered calls too often. Wait a minute and try again.',
+        );
+      }
       let live: readonly EnvoLiveCall[];
       try {
         live = await this.gateway.liveCalls(
