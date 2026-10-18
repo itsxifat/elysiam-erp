@@ -56,6 +56,12 @@ export function settingsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     path: '/settings/order-workflow',
     component: lazyRouteComponent(() => import('./workflow.js'), 'WorkflowSettingsPage'),
   });
+  // M47: Envo's connections and who has which extension (D-830, D-846).
+  const calls = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/settings/calls',
+    component: lazyRouteComponent(() => import('./calls.js'), 'CallsSettingsPage'),
+  });
   return [
     index,
     thresholds,
@@ -65,6 +71,7 @@ export function settingsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     registers,
     security,
     inbox,
+    calls,
     workflow,
   ] as const;
 }

@@ -24,6 +24,7 @@ import { customersPath } from './customers-nav.js';
 import { isCustomersKey, useCustomersT } from './messages.js';
 import { DatePicker } from '../../ui/date-picker.js';
 import { listAccounts } from '../website/api.js';
+import { CallButton } from '../calls/call-button.js';
 
 /** A birthday or an anniversary can be decades back: the calendar lists the years. */
 const OCCASION_YEARS = { from: 1930, to: new Date().getUTCFullYear() } as const;
@@ -129,7 +130,16 @@ function ProfileBody({ profile }: { readonly profile: BuyerProfile }) {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h1 className="text-lg font-semibold tracking-tight">{customer.name}</h1>
-          <p className="text-sm text-muted-foreground tabular-nums">{customer.phone}</p>
+          <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground tabular-nums">
+            {customer.phone}
+            {/* M47 (D-834): call the buyer from your own extension. */}
+            <CallButton
+              target={{ customerId: customer.id }}
+              phone={customer.phone}
+              label={customer.name}
+              size="icon"
+            />
+          </p>
         </div>
         <StatusBadge tone={profile.segment === null ? 'neutral' : 'info'}>
           {profile.segment === null

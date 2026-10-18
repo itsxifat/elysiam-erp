@@ -27,6 +27,7 @@ import { usersRoutes } from './users/routes.js';
 import { websiteRoutes } from './website/routes.js';
 import { inboxRoutes } from './inbox/routes.js';
 import { labelsRoutes } from './labels/routes.js';
+import { callsRoutes } from './calls/routes.js';
 import { AppShell } from '../shell/app-shell.js';
 import { useT } from '../i18n/locale.js';
 import { tableSearchSchema } from '../lib/table-search.js';
@@ -156,6 +157,8 @@ const account = accountRoutes(rootRoute);
 const inbox = inboxRoutes(rootRoute);
 /** M46 owns `/labels` and `/packaging`: the label desks and the packing terminals (D-800). */
 const labels = labelsRoutes(rootRoute);
+/** M47 owns `/calls`: every call through Envo, the live calls and the extensions (D-845). */
+const calls = callsRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -186,6 +189,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/inbox',
         '/labels',
         '/packaging',
+        '/calls',
       ].includes(item.to),
   )
   .map((item) =>
@@ -220,6 +224,7 @@ const routeTree = rootRoute.addChildren([
   ...account,
   ...inbox,
   ...labels,
+  ...calls,
   ...placeholderRoutes,
 ]);
 

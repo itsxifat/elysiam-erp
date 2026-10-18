@@ -52,6 +52,12 @@ const CallBar = lazy(() =>
   import('../routes/inbox/calls/call-bar.js').then((module) => ({ default: module.CallBar })),
 );
 
+// M47 (D-843): the console's phone through Envo, for a person with an extension. Its own chunk,
+// loaded from this lazy one, so it adds nothing to the first download.
+const PhoneDock = lazy(() =>
+  import('../routes/calls/phone-dock.js').then((module) => ({ default: module.PhoneDock })),
+);
+
 const BEAT_MS = 30_000;
 const NOTICE_MS = 15_000;
 const INPUT_EVENTS = ['keydown', 'pointerdown', 'touchstart', 'wheel'] as const;
@@ -74,6 +80,11 @@ export function WorkDock() {
       <Suspense fallback={null}>
         <CallBar />
       </Suspense>
+      {ability.can('create', 'PhoneCall') ? (
+        <Suspense fallback={null}>
+          <PhoneDock />
+        </Suspense>
+      ) : null}
       {ability.can('update', 'Presence') ? <Dock /> : null}
     </>
   );

@@ -20,6 +20,8 @@ import type { SettingsMessageKey } from './messages.js';
  * - security: `update SecurityPolicy` (M40, D-692), which no membership role holds: super
  *   admins only.
  * - inbox: `read InboxChannel` (M42, D-733), org_admin; saving is `update`, the same role.
+ * - calls: `read PhoneExtension` (M47, D-831), org_admin and branch_manager; the connections'
+ *   writes are `create`/`update Telephony` (org_admin), the extensions' `update PhoneExtension`.
  */
 export interface SettingsTab {
   readonly path: string;
@@ -63,6 +65,12 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     path: '/settings/inbox',
     labelKey: 'settings.nav.inbox',
     required: { action: 'read', subject: 'InboxChannel' },
+  },
+  // M47 (D-830, D-846): Envo's connections and the extensions, for the desk's supervisors.
+  {
+    path: '/settings/calls',
+    labelKey: 'settings.nav.calls',
+    required: { action: 'read', subject: 'PhoneExtension' },
   },
   // M41: auto-assign, the offer countdown and the cap on open orders (D-715).
   {

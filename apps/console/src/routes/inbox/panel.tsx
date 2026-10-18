@@ -40,6 +40,7 @@ import { useInboxT } from './messages.js';
 import { useOwnerGuard } from './owner-guard.js';
 import { ProductThumb } from './product-thumb.js';
 import { SellPanel } from './sell-panel.js';
+import { CallButton } from '../calls/call-button.js';
 
 /**
  * The customer panel beside a thread (M42, D-738 to D-742): phones in the chat saved in one
@@ -262,7 +263,15 @@ function PhonesBlock({ view, mayWrite, busy, run, id }: BlockProps) {
       {view.contact.phone === null ? null : (
         <p className="text-sm">
           <span className="text-muted-foreground">{t('inbox.panel.phone')}: </span>
-          <span className="font-medium tabular-nums">{displayPhone(view.contact.phone)}</span>
+          <span className="font-medium tabular-nums">{displayPhone(view.contact.phone)}</span>{' '}
+          {/* M47 (D-834): call the contact from your own extension. */}
+          <CallButton
+            target={{ phone: view.contact.phone }}
+            phone={view.contact.phone}
+            label={view.customer?.name ?? displayPhone(view.contact.phone)}
+            size="icon"
+            className="align-middle"
+          />
         </p>
       )}
       {view.phonesFound.length === 0 ? (

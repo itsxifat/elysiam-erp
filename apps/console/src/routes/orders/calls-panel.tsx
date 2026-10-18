@@ -9,6 +9,7 @@ import { useT } from '../../i18n/locale.js';
 import '../../i18n/workflow.js';
 import type { OrderDetail } from './api.js';
 import { useOwnerGuard } from './owner-guard.js';
+import { OrderPhoneCalls } from '../calls/order-phone-calls.js';
 import { CALL_OUTCOMES, listCalls, logCall, type CallOutcome } from './workflow-api.js';
 import { useNow } from './use-now.js';
 import { callBackIsDue, localInputToIso } from './workflow-logic.js';
@@ -153,6 +154,14 @@ export function CallsPanel({
           )}
         </form>
       ) : null}
+
+      {/* M47 (D-838): Call through Envo, and each call Envo reported, with its outcome. */}
+      <OrderPhoneCalls
+        orderId={order.id}
+        orderNo={order.orderNo}
+        phone={order.shipTo.phone}
+        callable={callable}
+      />
 
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('wf.calls.none')}</p>

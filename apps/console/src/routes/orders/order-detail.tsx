@@ -29,6 +29,7 @@ import {
 } from './api.js';
 import { AdvancesPanel } from './advances-panel.js';
 import { CallsPanel } from './calls-panel.js';
+import { CallButton } from '../calls/call-button.js';
 import { OwnerGuardProvider, OwnershipBanner } from './owner-guard.js';
 import { OrderActions } from './order-actions.js';
 import { ParcelPanel } from './parcel-panel.js';
@@ -237,7 +238,16 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
                 >
                   {order.customer.name}
                 </Link>
-                <p className="text-sm tabular-nums">{order.shipTo.phone}</p>
+                <p className="flex flex-wrap items-center gap-2 text-sm tabular-nums">
+                  {order.shipTo.phone}
+                  {/* M47 (D-834): ring your own extension, then this number. */}
+                  <CallButton
+                    target={{ orderId: order.id, phone: order.shipTo.phone }}
+                    phone={order.shipTo.phone}
+                    label={order.orderNo}
+                    size="icon"
+                  />
+                </p>
               </div>
               <div>
                 <h2 className="text-xs font-medium text-muted-foreground">

@@ -167,6 +167,8 @@ const en = {
   // M46: the label desks and the packing terminals (D-800).
   'nav.labels': 'Labels',
   'nav.packaging': 'Packaging',
+  // M47 (D-845): the Calls page, after the inbox in Sell.
+  'nav.calls': 'Calls',
   'nav.customers': 'Customers',
   'nav.catalog': 'Catalog',
   'nav.stock': 'Stock',
@@ -3405,6 +3407,8 @@ const en = {
   // M40: My account in the account menu, and a session walled by the brand's two-step setting.
   'settings.nav.security': 'Security',
   'settings.nav.inbox': 'Inbox',
+  // M47 (D-830): Envo's connections and the extensions.
+  'settings.nav.calls': 'Calls',
   'shell.myAccount': 'My account',
   'auth.walled.detail':
     'Your role now requires two-step sign-in. Enter your password to set it up; it takes about a minute.',

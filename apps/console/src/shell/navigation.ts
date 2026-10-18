@@ -18,6 +18,7 @@ import {
   Megaphone,
   Package,
   PackageCheck,
+  PhoneCall,
   PackagePlus,
   PackageOpen,
   PackageSearch,
@@ -158,6 +159,13 @@ export const NAVIGATION: readonly NavSection[] = [
         labelKey: 'nav.inbox',
         icon: Inbox,
         required: { action: 'read', subject: 'Conversation' },
+      },
+      // M47 (D-845). Every call through Envo: sales their own, supervisors the brand's.
+      {
+        to: '/calls',
+        labelKey: 'nav.calls',
+        icon: PhoneCall,
+        required: { action: 'read', subject: 'PhoneCall' },
       },
       {
         to: '/courier',

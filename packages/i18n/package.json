@@ -72,6 +72,10 @@
     "./locales/sections/labels.en": {
       "types": "./dist/locales/sections/labels.en.d.ts",
       "default": "./dist/locales/sections/labels.en.js"
+    },
+    "./locales/sections/telephony.en": {
+      "types": "./dist/locales/sections/telephony.en.d.ts",
+      "default": "./dist/locales/sections/telephony.en.js"
     }
   },
   "files": [

@@ -65,6 +65,8 @@ import {
 import { DeskSection } from './desk-section.js';
 import { orderedRoles, passwordLinkUrl, rolesToSubmit } from './link.js';
 import { useUsersT, type UsersMessageKey } from './messages.js';
+import { listAssignments } from '../calls/api.js';
+import { useTelT } from '../calls/messages.js';
 
 /**
  * The Staff screen (gaps-users-auth): a brand's people, what each may do, and their
@@ -196,6 +198,18 @@ export function UsersPage() {
     enabled: mayChange && ability.can('read', 'LedgerReport'),
   });
   const branches = useMemo(() => branchesQuery.data?.items ?? [], [branchesQuery.data]);
+  // M47 (D-846): each person's Envo extension, for the desk's supervisors.
+  const tel = useTelT();
+  const assignmentsQuery = useQuery({
+    queryKey: ['telephony', 'assignments'],
+    queryFn: listAssignments,
+    enabled: mayRead && ability.can('read', 'PhoneExtension'),
+  });
+  const extensions = useMemo(
+    () => new Map((assignmentsQuery.data?.items ?? []).map((row) => [row.userId, row.extension])),
+    [assignmentsQuery.data],
+  );
+  const showExtensions = assignmentsQuery.data !== undefined;
 
   // A second admin's decision arrives as an approval event; the list is simply re-read.
   useRealtime({
@@ -289,6 +303,22 @@ export function UsersPage() {
           );
         },
       }),
+      ...(showExtensions
+        ? [
+            column.display({
+              id: 'extension',
+              header: tel('tel.staff.extension'),
+              cell: (cell) => {
+                const extension = extensions.get(cell.row.original.userId);
+                return extension === undefined ? (
+                  <span className="text-muted-foreground">—</span>
+                ) : (
+                  <span className="tabular-nums">{extension}</span>
+                );
+              },
+            }),
+          ]
+        : []),
       column.accessor('status', {
         header: u('users.colStatus'),
         cell: (cell) => {
@@ -371,7 +401,7 @@ export function UsersPage() {
         },
       }),
     ]) as readonly DataTableColumn<StaffRow>[];
-  }, [u, branches, mayChange, locale]);
+  }, [u, branches, mayChange, locale, tel, extensions, showExtensions]);
 
   if (!mayRead) {
     return (

@@ -23,6 +23,7 @@ const SETTINGS_KEYS = [
   'settings.nav.registers',
   'settings.nav.security',
   'settings.nav.inbox',
+  'settings.nav.calls',
   'wf.settings.tab',
   'settings.loading',
   'settings.errorTitle',
