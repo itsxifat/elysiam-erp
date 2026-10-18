@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { withOrg, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import { pino } from 'pino';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ALL_QUEUES } from '../../job-queues.js';
 import { attachScope } from '../../platform/auth/scope.js';
@@ -18,12 +18,10 @@ import {
   type InjectedResponse,
   type RoleClient,
 } from '../../testing/http-harness.js';
-import { FILES_API, type FilesApi } from '../files/files.api.js';
 import { seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { TelephonyCallsService } from './calls.service.js';
 import { TELEPHONY_SYSTEM_USER } from './ingest.service.js';
-import { silentWav } from './providers/envo-gateway.js';
-import { RECORDING_TRIES, TelephonyRecordingsService } from './recordings.service.js';
+import { rangeOf, silentWav } from './providers/envo-gateway.js';
 import { envoSignatureFor } from './signature.js';
 import { TelephonySyncService } from './sync.service.js';
 import * as repo from './telephony.repository.js';
@@ -44,9 +42,9 @@ import { TelephonyWebhookService } from './webhook.service.js';
  * 3. A signed `call.started` and `call.ended` land on the click: the customer, the order and the
  *    person; an inbound call is linked by the caller's phone; a bad signature and an old
  *    timestamp are refused (and the connection says so); a repeated delivery is stored once.
- * 4. The recording is downloaded from the connection's own host into the files and plays for the
- *    person and a supervisor, not for another sales agent; a link to another host is never
- *    fetched. The outcome is M41's attempt, once. The sync fills a missed webhook.
+ * 4. The recording stays with Envo and is streamed from the connection's own host for the person
+ *    and a supervisor, not for another sales agent (D-858); a link to another host is never
+ *    kept. The outcome is M41's attempt, once. The sync fills a missed webhook.
  * 5. No key, secret or whole phone reaches the audit log; another brand sees none of it; the
  *    call record's origin cannot be rewritten.
  */
@@ -187,13 +185,12 @@ async function callRow(id: string) {
           customer_id: string | null;
           order_id: string | null;
           talk_seconds: number | null;
-          recording_status: string;
-          recording_error: string | null;
+          recording_url: string | null;
           direction: string;
           outcome: string | null;
         }>(sql`
           select id, envo_call_id, status, answered, user_id, customer_id, order_id, talk_seconds,
-                 recording_status, recording_error, direction, outcome
+                 recording_url, direction, outcome
           from telephony.calls where org_id = ${ORG_A} and id = ${id}
         `)
       )[0],
@@ -283,13 +280,21 @@ beforeAll(async () => {
           page,
           limit,
         });
-      } else if (url === '/api/v1/recordings/42?download=1') {
-        const wav = silentWav(2);
-        response.writeHead(200, {
-          'content-type': 'audio/wav',
-          'content-length': String(wav.byteLength),
+      } else if (url === '/api/v1/recordings/42') {
+        // As Envo's `res.sendFile`: one range gets 206, one past the end 416, none the whole file.
+        const range = request.headers.range;
+        const part = rangeOf(silentWav(2), typeof range === 'string' ? range : null);
+        response.writeHead(part.status, {
+          'accept-ranges': 'bytes',
+          ...(part.contentRange === null ? {} : { 'content-range': part.contentRange }),
+          ...(part.status === 416
+            ? {}
+            : { 'content-type': 'audio/wav', 'content-length': String(part.body.byteLength) }),
         });
-        response.end(Buffer.from(wav));
+        response.end(Buffer.from(part.body));
+      } else if (url === '/api/v1/recordings/43') {
+        // Envo's retention blanked it, or the .wav is still being written.
+        send(404, { error: 'Recording file not found' });
       } else if (url === '/api/v1/calls/live') {
         send(200, { calls: live });
       } else {
@@ -320,7 +325,6 @@ beforeAll(async () => {
     sync: Object.assign(Object.create(sync) as TelephonySyncService, {
       sweep: () => Promise.resolve({ queued: 0 }),
     }),
-    recordings: harness.app.get(TelephonyRecordingsService),
     report: () => Promise.resolve(),
   });
 
@@ -661,10 +665,9 @@ describe('check 3: Envo’s signed webhooks', () => {
           await tx.execute<{
             customer_id: string;
             order_id: string;
-            recording_status: string;
-            recording_error: string;
+            recording_url: string | null;
           }>(sql`
-            select customer_id, order_id, recording_status, recording_error
+            select customer_id, order_id, recording_url
             from telephony.calls where envo_call_id = '1789455900.3'
           `)
         )[0],
@@ -673,15 +676,14 @@ describe('check 3: Envo’s signed webhooks', () => {
     expect(row).toMatchObject({
       customer_id: inboundCustomer,
       order_id: open.id,
-      recording_status: 'failed',
-      recording_error: 'not_connection_host',
+      recording_url: null,
     });
     expect(envoRequests.some((call) => call.url.includes('elsewhere'))).toBe(false);
   });
 });
 
 describe('check 4: the recording, the outcome and the sync', () => {
-  it('keeps the recording and plays it for its person and a supervisor, not another agent', async () => {
+  it('streams the recording from Envo for its person and a supervisor, not another agent', async () => {
     const click = await until(
       () =>
         withSystem(
@@ -689,7 +691,7 @@ describe('check 4: the recording, the outcome and the sync', () => {
             (
               await tx.execute<{ id: string }>(sql`
                 select id from telephony.calls
-                where envo_call_id = '1789455634.59' and recording_status = 'stored'
+                where envo_call_id = '1789455634.59' and recording_url is not null
               `)
             )[0]?.id,
           { orgId: ORG_A },
@@ -700,15 +702,65 @@ describe('check 4: the recording, the outcome and the sync', () => {
     expect(own.statusCode).toBe(200);
     expect(own.headers['content-type']).toBe('audio/wav');
     expect(own.body.slice(0, 4)).toBe('RIFF');
-    const boss = await manager.client.request('GET', `/v1/telephony/calls/${click}/recording`);
-    expect(boss.statusCode).toBe(200);
+    expect(own.headers['cache-control']).toBe('no-store');
+    // A seek: the browser's Range goes through to Envo, and Envo's 206 comes back.
+    const boss = await manager.client.request('GET', `/v1/telephony/calls/${click}/recording`, {
+      headers: { range: 'bytes=0-3' },
+    });
+    expect(boss.statusCode, boss.body).toBe(206);
+    expect(boss.headers['content-range']).toMatch(/^bytes 0-3\/\d+$/);
+    expect(boss.body).toBe('RIFF');
     const other = await salesB.client.request('GET', `/v1/telephony/calls/${click}/recording`);
     expect(other.statusCode).toBe(404);
-    const download = envoRequests.find((call) => call.url === '/api/v1/recordings/42?download=1');
+    const download = envoRequests.find((call) => call.url === '/api/v1/recordings/42');
     expect(download?.authorization).toBe(`Bearer ${KEY}`);
+    // Nothing is kept in the ERP's storage (D-858).
+    const stored = await withSystem(
+      async (tx) =>
+        tx.execute<{ n: number }>(
+          sql`select count(*)::int as n from files.objects where org_id = ${ORG_A}`,
+        ),
+      { orgId: ORG_A },
+    );
+    expect(stored[0]?.n).toBe(0);
   });
 
-  it('records the verification outcome on the order once, as M41’s attempt', async () => {
+  it('says so when Envo no longer has the recording', async () => {
+    const ended = await deliver({
+      event: 'call.ended',
+      id: '1789455950.4',
+      sipServer: { id: 7 },
+      direction: 'inbound',
+      from: '8801555123456',
+      to: '09644342036',
+      answered: true,
+      disposition: 'answered',
+      talkSec: 12,
+      durationSec: 15,
+      recordingUrl: `${envoBase}/api/v1/recordings/43`,
+    });
+    expect(ended.statusCode, ended.body).toBe(200);
+    await processed();
+    const call = await until(
+      () =>
+        withSystem(
+          async (tx) =>
+            (
+              await tx.execute<{ id: string }>(sql`
+                select id from telephony.calls
+                where envo_call_id = '1789455950.4' and recording_url is not null
+              `)
+            )[0]?.id,
+          { orgId: ORG_A },
+        ),
+      'the call with a recording link',
+    );
+    const gone = await manager.client.request('GET', `/v1/telephony/calls/${call}/recording`);
+    expect(gone.statusCode, gone.body).toBe(404);
+    expect(json<{ code: string }>(gone).code).toBe('TELEPHONY_RECORDING_UNAVAILABLE');
+  });
+
+  it('wraps up a call about an order once, writing M41’s attempt, by its own person only', async () => {
     const click = (
       await withSystem(
         async (tx) =>
@@ -718,18 +770,87 @@ describe('check 4: the recording, the outcome and the sync', () => {
         { orgId: ORG_A },
       )
     )[0]?.id;
-    const recorded = await salesA.client.request('POST', `/v1/telephony/calls/${click}/outcome`, {
-      body: { outcome: 'reached' },
+    const listed = await salesA.client.request('GET', '/v1/telephony/calls/wrap-ups');
+    expect(listed.statusCode, listed.body).toBe(200);
+    const waiting = json<{ items: { id: string; suggestedResult: string | null }[] }>(listed);
+    expect(waiting.items.map((row) => row.id)).toContain(click);
+    const listedForB = json<{ items: { id: string }[] }>(
+      await salesB.client.request('GET', '/v1/telephony/calls/wrap-ups'),
+    );
+    expect(listedForB.items.map((row) => row.id)).not.toContain(click);
+
+    const wrapUp = (viewer: RoleClient, id: string | undefined, body: Record<string, unknown>) =>
+      viewer.client.request('POST', `/v1/telephony/calls/${id ?? ''}/wrap-up`, { body });
+    // Reached needs what was said (the shared schema refuses it at the edge).
+    const bare = await wrapUp(salesA, click, { result: 'reached' });
+    expect(bare.statusCode, bare.body).toBe(400);
+    // Another agent: not their call.
+    const colleague = await wrapUp(salesB, click, { result: 'reached', note: 'Spoke to her' });
+    expect(colleague.statusCode).toBe(404);
+    // Sales B's own click from check 2 never connected: nothing to wrap up yet.
+    const ringing = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string }>(sql`
+            select id from telephony.calls
+            where org_id = ${ORG_A} and user_id = ${salesB.userId} and status <> 'ended'
+            order by occurred_at limit 1
+          `)
+        )[0]?.id,
+      { orgId: ORG_A },
+    );
+    const early = await wrapUp(salesB, ringing, { result: 'no_answer' });
+    expect(early.statusCode, early.body).toBe(409);
+    expect(json<{ code: string }>(early).code).toBe('TELEPHONY_WRAP_UP_INVALID');
+
+    const saved = await wrapUp(salesA, click, {
+      result: 'reached',
+      note: 'Confirmed the address; wants it on Friday',
     });
-    expect(recorded.statusCode, recorded.body).toBe(201);
-    const again = await salesA.client.request('POST', `/v1/telephony/calls/${click}/outcome`, {
-      body: { outcome: 'reached' },
+    expect(saved.statusCode, saved.body).toBe(201);
+    expect(
+      json<{
+        orderAttempt: boolean;
+        call: { wrapUp: { result: string; note: string; byUserId: string } | null };
+      }>(saved),
+    ).toMatchObject({
+      orderAttempt: true,
+      call: {
+        wrapUp: {
+          result: 'reached',
+          note: 'Confirmed the address; wants it on Friday',
+          byUserId: salesA.userId,
+        },
+      },
     });
-    expect(json<{ code: string }>(again).code).toBe('TELEPHONY_OUTCOME_INVALID');
+    const again = await wrapUp(salesA, click, { result: 'no_answer' });
+    expect(json<{ code: string }>(again).code).toBe('TELEPHONY_WRAP_UP_INVALID');
     const attempts = json<{ items: { outcome: string }[] }>(
       await salesA.client.request('GET', `/v1/orders/${orderA.id}/calls`),
     );
-    expect(attempts.items.map((row) => row.outcome)).toContain('reached');
+    expect(attempts.items.filter((row) => row.outcome === 'reached')).toHaveLength(1);
+    expect(await callRow(click ?? '')).toMatchObject({ outcome: 'reached' });
+    // Once set, the wrap-up never changes, even for its own person.
+    await expect(
+      withOrg({ orgId: ORG_A, userId: salesA.userId }, (tx) =>
+        tx.execute(sql`update telephony.calls set wrap_up_note = 'rewritten' where id = ${click}`),
+      ),
+    ).rejects.toThrow();
+    const after = json<{ items: { id: string }[] }>(
+      await salesA.client.request('GET', '/v1/telephony/calls/wrap-ups'),
+    );
+    expect(after.items.map((row) => row.id)).not.toContain(click);
+    // The audit row keeps the note's length, never its words.
+    const audited = await withSystem(
+      async (tx) =>
+        tx.execute<{ after: Record<string, unknown> }>(sql`
+          select after from audit.audit_log
+          where org_id = ${ORG_A} and action = 'phone_call.wrapped_up' and entity_id = ${click}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(audited).toHaveLength(1);
+    expect(JSON.stringify(audited[0]?.after)).not.toContain('Friday');
   });
 
   it('fills a missed webhook from Envo’s call history', async () => {
@@ -1158,7 +1279,7 @@ describe('the review: scope, reach, claims and retention', () => {
 
   it('refuses a new base URL without its API key, so the key never leaves for another host', async () => {
     const view = json<{
-      connections: { id: string; name: string; recordingRetentionDays: number }[];
+      connections: { id: string; name: string }[];
     }>(await admin.client.request('GET', '/v1/telephony/connections'));
     const wrong = view.connections.find((row) => row.name === 'Wrong');
     expect(wrong).toBeDefined();
@@ -1167,90 +1288,13 @@ describe('the review: scope, reach, claims and retention', () => {
         name: 'Wrong',
         baseUrl: 'http://127.0.0.1:9',
         enabled: true,
-        recordingRetentionDays: 365,
       },
     });
     expect(moved.statusCode, moved.body).toBe(400);
     expect(json<{ code: string }>(moved).code).toBe('TELEPHONY_INVALID');
   });
 
-  it('gives a storage failure its tries, then another round within the day, never for ever', async () => {
-    const recordings = harness.app.get(TelephonyRecordingsService);
-    const files = harness.app.get<FilesApi>(FILES_API, { strict: false });
-    // A recording waiting for its download, with no job queued (the test runs the job's work).
-    const waiting = async (envoCallId: string, endedAt: Date) =>
-      withOrg({ orgId: ORG_A, userId: TELEPHONY_SYSTEM_USER }, async (tx) => {
-        const row = await repo.insertCall(tx, {
-          orgId: ORG_A,
-          connectionId,
-          envoCallId,
-          firstSeen: 'webhook',
-          direction: 'inbound',
-          status: 'ended',
-          fromNumber: '+8801755555555',
-          toNumber: '09644342036',
-          customerPhoneE164: '+8801755555555',
-          extension: null,
-          userId: null,
-          customerId: null,
-          customerName: null,
-          orderId: null,
-          orderNo: null,
-          orderOwnerUserId: null,
-          occurredAt: endedAt,
-          requestedAt: null,
-        });
-        await repo.updateCall(tx, ORG_A, row.id, {
-          endedAt,
-          recordingUrl: `${envoBase}/api/v1/recordings/42`,
-          recordingStatus: 'pending',
-        });
-        return row.id;
-      });
-    const fresh = await waiting('1789459000.1', new Date());
-    const old = await waiting('1789459000.2', new Date(Date.now() - 2 * 86_400_000));
-
-    const refused = vi
-      .spyOn(files, 'storeProduced')
-      .mockRejectedValue(new Error('the storage is down'));
-    try {
-      for (let attempt = 1; attempt < RECORDING_TRIES; attempt += 1) {
-        await expect(recordings.fetch(ORG_A, fresh), `try ${String(attempt)}`).rejects.toThrow(
-          'could not be stored yet',
-        );
-      }
-      expect(await recordings.fetch(ORG_A, fresh)).toBe('failed');
-    } finally {
-      refused.mockRestore();
-    }
-    expect(await callRow(fresh)).toMatchObject({
-      recording_status: 'failed',
-      recording_error: 'storage',
-    });
-
-    // Two hours on: the storage failure gets another round; the recording two days old that
-    // never left `pending` is given up rather than tried again.
-    const later = new Date(Date.now() + 2 * 3600_000);
-    const round = await recordings.requeueStuck(later);
-    expect(round.queued).toBeGreaterThanOrEqual(1);
-    expect(round.gaveUp).toBeGreaterThanOrEqual(1);
-    expect(await callRow(old)).toMatchObject({
-      recording_status: 'failed',
-      recording_error: 'stuck',
-    });
-    expect(['pending', 'stored']).toContain((await callRow(fresh))?.recording_status);
-    await until(
-      async () => ((await callRow(fresh))?.recording_status === 'stored' ? true : undefined),
-      'the retried recording',
-    );
-    // Given up is given up: the next round leaves it alone.
-    const next = await recordings.requeueStuck(new Date(later.getTime() + 2 * 3600_000));
-    expect(next.gaveUp).toBe(0);
-    expect((await callRow(old))?.recording_status).toBe('failed');
-  });
-
-  it('expires recordings past their retention and deletes processed webhook bodies at 30 days', async () => {
-    const click = await clickOfA();
+  it('deletes processed webhook bodies at 30 days', async () => {
     const old = await withSystem(
       async (tx) =>
         (
@@ -1279,16 +1323,11 @@ describe('the review: scope, reach, claims and retention', () => {
     const before = await counted();
     expect(before?.old).toBe(1);
     const swept = await harness.app
-      .get(TelephonyRecordingsService)
-      .retention(new Date(Date.now() + 400 * 86_400_000));
-    expect(swept.expired).toBeGreaterThan(0);
+      .get(TelephonyWebhookService)
+      .prune(new Date(Date.now() + 400 * 86_400_000));
     expect(swept.pruned).toBe(1);
     const after = await counted();
     expect(after).toEqual({ old: 0, kept: before?.kept });
-    const row = await callRow(click);
-    expect(row?.recording_status).toBe('expired');
-    const gone = await salesA.client.request('GET', `/v1/telephony/calls/${click}/recording`);
-    expect(json<{ code: string }>(gone).code).toBe('TELEPHONY_RECORDING_UNAVAILABLE');
   });
 });
 
@@ -1605,4 +1644,232 @@ describe('the review: attribution and the phone’s readiness', () => {
     expect(await readiness(deskPhone, 'no_web_phone')).toMatchObject({ ready: false });
     expect(await readiness(switchedOff, 'extension_off')).toMatchObject({ ready: false });
   }, 30_000);
+});
+
+describe('the owner’s answers: wrap-up, the caller panel and the inbox’s go-ahead', () => {
+  let conversationId = '';
+  let contactId = '';
+
+  it('wraps up a call with no order: the result and the note, no attempt', async () => {
+    const click = (
+      await withSystem(
+        async (tx) =>
+          tx.execute<{ id: string }>(
+            sql`select id from telephony.calls where envo_call_id = '1789457900.1'`,
+          ),
+        { orgId: ORG_A },
+      )
+    )[0]?.id;
+    const ended = await deliver({
+      event: 'call.ended',
+      id: '1789457900.1',
+      sipServer: { id: 7 },
+      direction: 'outbound',
+      from: '103',
+      to: '01912345670',
+      startedAt: new Date(Date.now() - 30_000).toISOString(),
+      answeredAt: new Date(Date.now() - 25_000).toISOString(),
+      endedAt: new Date().toISOString(),
+      answered: true,
+      disposition: 'answered',
+      durationSec: 30,
+      talkSec: 25,
+    });
+    expect(ended.statusCode, ended.body).toBe(200);
+    await processed();
+    const waiting = json<{ items: { id: string }[] }>(
+      await salesC.client.request('GET', '/v1/telephony/calls/wrap-ups'),
+    );
+    expect(waiting.items.map((row) => row.id)).toContain(click);
+    const notA = json<{ items: { id: string }[] }>(
+      await salesA.client.request('GET', '/v1/telephony/calls/wrap-ups'),
+    );
+    expect(notA.items.map((row) => row.id)).not.toContain(click);
+    const saved = await salesC.client.request(
+      'POST',
+      `/v1/telephony/calls/${click ?? ''}/wrap-up`,
+      {
+        body: { result: 'no_answer', note: 'Rang out twice' },
+      },
+    );
+    expect(saved.statusCode, saved.body).toBe(201);
+    expect(
+      json<{ orderAttempt: boolean; call: { wrapUp: { result: string; note: string } } }>(saved),
+    ).toMatchObject({
+      orderAttempt: false,
+      call: { wrapUp: { result: 'no_answer', note: 'Rang out twice' } },
+    });
+  });
+
+  it('asks the conversation’s owner’s go-ahead before an inbox Call, and tells the owner', async () => {
+    ({ conversationId, contactId } = await withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          insert into inbox.channels (org_id, kind, external_id, enabled, updated_by)
+          values (${ORG_A}, 'messenger', '900000000000047', true, 'usr_m47_fixture')
+          on conflict (org_id, kind) do nothing
+        `);
+        const channel = (
+          await tx.execute<{ id: string }>(sql`
+            select id from inbox.channels where org_id = ${ORG_A} and kind = 'messenger'
+          `)
+        )[0]?.id;
+        const contact = (
+          await tx.execute<{ id: string }>(sql`
+            insert into inbox.contacts (org_id, display_name, phone_e164, customer_id)
+            values (${ORG_A}, 'Rumana on Messenger', '+8801612345678', ${customerId})
+            returning id
+          `)
+        )[0]?.id;
+        const identity = (
+          await tx.execute<{ id: string }>(sql`
+            insert into inbox.identities (org_id, contact_id, channel_id, external_user_id)
+            values (${ORG_A}, ${contact}, ${channel}, 'psid-m47-telephony')
+            returning id
+          `)
+        )[0]?.id;
+        const conversation = (
+          await tx.execute<{ id: string }>(sql`
+            insert into inbox.conversations
+              (org_id, channel_id, contact_id, identity_id, last_inbound_at, last_message_at,
+               last_preview, last_direction, unread_count, assigned_to, assigned_at)
+            values (${ORG_A}, ${channel}, ${contact}, ${identity}, now(), now(), 'hello',
+                    'inbound', 1, ${salesA.userId}, now())
+            returning id
+          `)
+        )[0]?.id;
+        return { conversationId: conversation ?? '', contactId: contact ?? '' };
+      },
+      { orgId: ORG_A },
+    ));
+    const refused = await salesB.client.request('POST', '/v1/telephony/calls', {
+      body: { conversationId },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(json<{ code: string }>(refused).code).toBe('INBOX_OWNER_ACK_REQUIRED');
+    const before = envoRequests.length;
+    const placed = await salesB.client.request('POST', '/v1/telephony/calls', {
+      body: { conversationId },
+      headers: { 'x-acknowledge-owner': '1' },
+    });
+    expect(placed.statusCode, placed.body).toBe(201);
+    const originate = envoRequests.slice(before).find((row) => row.url === '/api/v1/calls');
+    expect(JSON.parse(originate?.body ?? '{}')).toEqual({ from: '102', to: '01612345678' });
+    const audited = await withSystem(
+      async (tx) =>
+        tx.execute<{ actor_user_id: string }>(sql`
+          select actor_user_id from audit.audit_log
+          where org_id = ${ORG_A} and action = 'inbox.call' and entity_id = ${contactId}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(audited.map((row) => row.actor_user_id)).toEqual([salesB.userId]);
+    const told = await withSystem(
+      async (tx) =>
+        tx.execute<{ payload: Record<string, unknown> }>(sql`
+          select payload from events.outbox where name = 'inbox.owner_overridden'
+        `),
+      { orgId: ORG_A },
+    );
+    expect(told.map((row) => row.payload)).toContainEqual(
+      expect.objectContaining({
+        conversationId,
+        ownerUserId: salesA.userId,
+        actorUserId: salesB.userId,
+        action: 'call',
+      }),
+    );
+  });
+
+  it('pins a note on the buyer, with its author, for whoever may see their panel', async () => {
+    const pinned = await salesA.client.request('PUT', `/v1/customers/${customerId}/pinned-note`, {
+      body: { body: 'Sales A handles her; she wants Friday deliveries' },
+    });
+    expect(pinned.statusCode, pinned.body).toBe(200);
+    expect(json<{ pinnedNote: { body: string; byUserId: string } | null }>(pinned)).toMatchObject({
+      pinnedNote: {
+        body: 'Sales A handles her; she wants Friday deliveries',
+        byUserId: salesA.userId,
+      },
+    });
+    const stranger = await salesC.client.request('PUT', `/v1/customers/${customerId}/pinned-note`, {
+      body: { body: 'Not mine to write' },
+    });
+    expect(stranger.statusCode, stranger.body).toBe(404);
+  });
+
+  it('gives a supervisor the whole panel: every order newest first, contacts, every call', async () => {
+    const newer = await seedOrder(ORG_A, {
+      status: 'delivered',
+      customerId,
+      lines: [],
+      assignedTo: salesA.userId,
+    });
+    const newest = await seedOrder(ORG_A, {
+      status: 'confirmed',
+      customerId,
+      lines: [],
+      assignedTo: salesA.userId,
+    });
+    const panel = await manager.client.request('POST', '/v1/telephony/caller-panel', {
+      body: { customerId },
+    });
+    expect(panel.statusCode, panel.body).toBe(200);
+    expect(panel.headers['cache-control']).toBe('no-store');
+    const full = json<{
+      full: boolean;
+      customer: {
+        id: string;
+        pinnedNote: { body: string; byUserId: string; byName: string | null } | null;
+      } | null;
+      orders: { items: { id: string }[] };
+      addresses: unknown[];
+      otherPhones: { phone: string; source: string }[];
+      socials: { channel: string }[];
+      calls: {
+        person: { id: string } | null;
+        wrapUp: { note: string | null } | null;
+        canPlay: boolean;
+      }[];
+    }>(panel);
+    expect(full.full).toBe(true);
+    expect(full.customer).toMatchObject({
+      id: customerId,
+      pinnedNote: { byUserId: salesA.userId },
+    });
+    expect(full.customer?.pinnedNote?.byName).not.toBeNull();
+    expect(full.orders.items.slice(0, 3).map((row) => row.id)).toEqual([
+      newest.id,
+      newer.id,
+      orderA.id,
+    ]);
+    expect(full.addresses.length).toBeGreaterThan(0);
+    expect(full.otherPhones).toContainEqual({ phone: '+8801612345678', source: 'inbox' });
+    expect(full.socials.map((row) => row.channel)).toContain('messenger');
+    // A colleague's call is in the history with what they wrote after it.
+    const colleagues = full.calls.find((row) => row.person?.id === salesA.userId && row.wrapUp);
+    expect(colleagues).toMatchObject({
+      wrapUp: { note: 'Confirmed the address; wants it on Friday' },
+      canPlay: true,
+    });
+    // Sales A reaches her through her order: the whole panel, sales B's calls with her too.
+    const own = json<{ full: boolean; calls: { person: { id: string } | null }[] }>(
+      await salesA.client.request('POST', '/v1/telephony/caller-panel', { body: { customerId } }),
+    );
+    expect(own.full).toBe(true);
+    expect(own.calls.map((row) => row.person?.id)).toContain(salesB.userId);
+  });
+
+  it('gives an agent who cannot reach the buyer and is on no call with them the minimal answer', async () => {
+    const minimal = json<{ full: boolean; customer: unknown }>(
+      await salesC.client.request('POST', '/v1/telephony/caller-panel', { body: { customerId } }),
+    );
+    expect(minimal).toMatchObject({ full: false, customer: null });
+    const byPhone = json<{ full: boolean; customer: unknown }>(
+      await salesC.client.request('POST', '/v1/telephony/caller-panel', {
+        body: { phone: '01812345678' },
+      }),
+    );
+    expect(byPhone).toMatchObject({ full: false, customer: null });
+  });
 });
