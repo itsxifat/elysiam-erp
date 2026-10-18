@@ -892,7 +892,7 @@ export async function deleteProcessedWebhooks(
     where org_id = ${orgId} and id in (
       select id from telephony.webhook_events
       where org_id = ${orgId} and processed_at is not null
-        and processed_at < ${before.toISOString()}::timestamptz
+        and processed_at < least(${before.toISOString()}::timestamptz, now() - interval '30 days')
       order by processed_at
       limit ${limit}
     )

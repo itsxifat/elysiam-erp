@@ -62,7 +62,9 @@ interface EnvoRequest {
 }
 
 const envoRequests: EnvoRequest[] = [];
-let history: unknown[] = [];
+let history: { readonly startedAt: string }[] = [];
+/** What the stand-in's `/api/v1/calls/live` answers, as Envo's `liveCalls` shapes it. */
+let live: unknown[] = [];
 let envo: Server;
 let envoBase = '';
 let harness: HttpHarness;
@@ -72,6 +74,7 @@ let salesA: RoleClient;
 let salesB: RoleClient;
 let manager: RoleClient;
 let adminB: RoleClient;
+let salesC: RoleClient;
 let connectionId = '';
 let customerId = '';
 let orderA = { id: '', orderNo: '' };
@@ -251,7 +254,21 @@ beforeAll(async () => {
           sipDomain: 'envo.example.test',
         });
       } else if (url.startsWith('/api/v1/calls?')) {
-        send(200, { calls: history, total: history.length, page: 1, limit: 200 });
+        // As Envo's `GET /calls`: `calldate >= from` and `< to`, newest first, paged.
+        const query = new URL(url, 'http://envo.test').searchParams;
+        const from = Date.parse(query.get('from') ?? '1970-01-01T00:00:00Z');
+        const to = query.has('to') ? Date.parse(query.get('to') ?? '') : Infinity;
+        const limit = Number(query.get('limit') ?? 50);
+        const page = Number(query.get('page') ?? 1);
+        const listed = history
+          .filter((call) => Date.parse(call.startedAt) >= from && Date.parse(call.startedAt) < to)
+          .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+        send(200, {
+          calls: listed.slice((page - 1) * limit, page * limit),
+          total: listed.length,
+          page,
+          limit,
+        });
       } else if (url === '/api/v1/recordings/42?download=1') {
         const wav = silentWav(2);
         response.writeHead(200, {
@@ -260,7 +277,7 @@ beforeAll(async () => {
         });
         response.end(Buffer.from(wav));
       } else if (url === '/api/v1/calls/live') {
-        send(200, { calls: [] });
+        send(200, { calls: live });
       } else {
         send(404, { error: 'Not found' });
       }
@@ -293,6 +310,7 @@ beforeAll(async () => {
   salesB = await harness.asRole('sales', ORG_A);
   manager = await harness.asRole('branch_manager', ORG_A);
   adminB = await harness.asRole('org_admin', ORG_B);
+  salesC = await harness.asRole('sales', ORG_A);
 
   customerId = await seedCustomer(ORG_A, { phoneE164: CUSTOMER_PHONE, name: 'Rumana Akter' });
   orderA = await seedOrder(ORG_A, {
@@ -809,5 +827,283 @@ describe('check 5: secrets, phones, brands and the record', () => {
     expect(await refusal(sql`delete from telephony.calls where id = ${click}`)).toMatch(
       /permission denied/,
     );
+  });
+});
+
+/**
+ * The review's permission and correctness paths (M47's ledger, tenancy and correctness audits):
+ * who sees which call, the screen pop's reach, the answered claim, a late event, a base URL
+ * changed without its key, and the nightly retention.
+ */
+describe('the review: scope, reach, claims and retention', () => {
+  const clickOfA = async () =>
+    (
+      await withSystem(
+        async (tx) =>
+          tx.execute<{ id: string }>(
+            sql`select id from telephony.calls where envo_call_id = '1789455634.59'`,
+          ),
+        { orgId: ORG_A },
+      )
+    )[0]?.id ?? '';
+  const inboundOfB = async () =>
+    (
+      await withSystem(
+        async (tx) =>
+          tx.execute<{ id: string }>(
+            sql`select id from telephony.calls where envo_call_id = '1789455900.3'`,
+          ),
+        { orgId: ORG_A },
+      )
+    )[0]?.id ?? '';
+
+  it('gives sales C extension 103', async () => {
+    const given = await manager.client.request(
+      'PUT',
+      `/v1/telephony/connections/${connectionId}/extensions/103`,
+      { body: { userId: salesC.userId } },
+    );
+    expect(given.statusCode, given.body).toBe(200);
+  });
+
+  it('shows another agent none of agent A’s calls, in the list, the search or by id', async () => {
+    const click = await clickOfA();
+    for (const viewer of [salesB, salesC]) {
+      const listed = json<{ items: { id: string }[] }>(
+        await viewer.client.request('GET', '/v1/telephony/calls'),
+      );
+      expect(listed.items.map((row) => row.id)).not.toContain(click);
+      const searched = json<{ items: { id: string }[] }>(
+        await viewer.client.request('POST', '/v1/telephony/calls/search', { body: { limit: 50 } }),
+      );
+      expect(searched.items.map((row) => row.id)).not.toContain(click);
+      const one = await viewer.client.request('GET', `/v1/telephony/calls/${click}`);
+      expect(one.statusCode).toBe(404);
+    }
+    const own = await salesA.client.request('GET', `/v1/telephony/calls/${click}`);
+    expect(own.statusCode).toBe(200);
+  });
+
+  it('lets the owner of the linked order see an inbound call, and no other agent', async () => {
+    const call = await inboundOfB();
+    const owner = await salesB.client.request('GET', `/v1/telephony/calls/${call}`);
+    expect(owner.statusCode, owner.body).toBe(200);
+    for (const other of [salesA, salesC]) {
+      const refused = await other.client.request('GET', `/v1/telephony/calls/${call}`);
+      expect(refused.statusCode).toBe(404);
+    }
+    const boss = await manager.client.request('GET', `/v1/telephony/calls/${call}`);
+    expect(boss.statusCode).toBe(200);
+  });
+
+  it('names a buyer in the screen pop only to someone who may open them', async () => {
+    const lookup = (viewer: RoleClient, phone: string) =>
+      viewer.client.request('POST', '/v1/telephony/lookup', { body: { phone } });
+    // Sales C may not open the caller (their only order is sales B's): nothing, no orders.
+    const stranger = json<{ customer: unknown; openOrders: unknown[] }>(
+      await lookup(salesC, '01912345670'),
+    );
+    expect(stranger).toMatchObject({ customer: null, openOrders: [] });
+    const owner = json<{ customer: { name: string; reachable: boolean } | null }>(
+      await lookup(salesB, '01912345670'),
+    );
+    expect(owner.customer).toMatchObject({ name: 'Caller', reachable: true });
+    // A Call to the bare number does not name the buyer on the call either.
+    const placed = await salesC.client.request('POST', '/v1/telephony/calls', {
+      body: { phone: '01912345670' },
+    });
+    expect(placed.statusCode, placed.body).toBe(201);
+    expect(json<{ call: { customer: unknown } }>(placed).call.customer).toBeNull();
+  });
+
+  it('names the caller of a call ringing on the agent’s connection, then not once it ends', async () => {
+    const started = await deliver({
+      event: 'call.started',
+      id: '1789458000.1',
+      sipServer: { id: 7 },
+      direction: null,
+      from: '01912345670',
+      to: '09644342036',
+      startedAt: new Date().toISOString(),
+      durationSec: 0,
+      talkSec: 0,
+    });
+    expect(started.statusCode, started.body).toBe(200);
+    await processed();
+    const ringing = json<{ customer: { name: string; reachable: boolean } | null }>(
+      await salesC.client.request('POST', '/v1/telephony/lookup', {
+        body: { phone: '01912345670' },
+      }),
+    );
+    expect(ringing.customer).toMatchObject({ name: 'Caller', reachable: false });
+  });
+
+  it('lets only the agent whose phone took a call claim it, once', async () => {
+    const answered = (viewer: RoleClient) =>
+      viewer.client.request('POST', '/v1/telephony/calls/answered', {
+        body: { from: '01912345670' },
+      });
+    // Not yet talking in Envo: nobody's yet.
+    live = [{ id: '1789458000.1', state: 'ringing', channels: [{ endpoint: 'btcl_trunk' }] }];
+    expect((await answered(salesB)).statusCode).toBe(404);
+    // Talking on 102's phone (sales B): sales C (103) cannot take it, sales B can, once.
+    live = [
+      {
+        id: '1789458000.1',
+        state: 'talking',
+        channels: [{ endpoint: 'btcl_trunk' }, { endpoint: '102_brand_web' }],
+      },
+    ];
+    const other = await answered(salesC);
+    expect(other.statusCode, other.body).toBe(404);
+    const mine = await answered(salesB);
+    expect(mine.statusCode, mine.body).toBe(200);
+    expect(json<{ person: { id: string } }>(mine).person.id).toBe(salesB.userId);
+    expect((await answered(salesC)).statusCode).toBe(404);
+    live = [];
+    const ended = await deliver({
+      event: 'call.ended',
+      id: '1789458000.1',
+      sipServer: { id: 7 },
+      direction: 'inbound',
+      from: '01912345670',
+      to: '09644342036',
+      answered: true,
+      disposition: 'answered',
+      talkSec: 12,
+      durationSec: 15,
+    });
+    expect(ended.statusCode).toBe(200);
+    await processed();
+    const after = json<{ customer: unknown }>(
+      await salesC.client.request('POST', '/v1/telephony/lookup', {
+        body: { phone: '01912345670' },
+      }),
+    );
+    expect(after.customer).toBeNull();
+  });
+
+  it('never lets an ended call be claimed by the person answering the next one', async () => {
+    const ended = await deliver({
+      event: 'call.ended',
+      id: '1789458100.1',
+      sipServer: { id: 7 },
+      direction: 'inbound',
+      from: '01733333333',
+      to: '09644342036',
+      answered: false,
+      disposition: 'no answer',
+      talkSec: 0,
+      durationSec: 20,
+    });
+    expect(ended.statusCode).toBe(200);
+    await processed();
+    live = [{ id: '1789458100.1', state: 'talking', channels: [{ endpoint: '101_brand_web' }] }];
+    const claimed = await salesA.client.request('POST', '/v1/telephony/calls/answered', {
+      body: { from: '01733333333' },
+    });
+    expect(claimed.statusCode).toBe(404);
+    live = [];
+  });
+
+  it('keeps a finished call’s talk time when a late call.started arrives after call.ended', async () => {
+    const at = new Date(Date.now() - 60_000).toISOString();
+    await deliver({
+      event: 'call.ended',
+      id: '1789458200.1',
+      sipServer: { id: 7 },
+      direction: 'inbound',
+      from: '01744444444',
+      to: '09644342036',
+      startedAt: at,
+      answered: true,
+      disposition: 'answered',
+      talkSec: 30,
+      durationSec: 40,
+    });
+    await processed();
+    await deliver({
+      event: 'call.started',
+      id: '1789458200.1',
+      sipServer: { id: 7 },
+      direction: null,
+      from: '01744444444',
+      to: '09644342036',
+      startedAt: at,
+      talkSec: 0,
+      durationSec: 1,
+    });
+    await processed();
+    const row = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ talk_seconds: number; duration_seconds: number; status: string }>(sql`
+            select talk_seconds, duration_seconds, status from telephony.calls
+            where envo_call_id = '1789458200.1'
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(row).toMatchObject({ talk_seconds: 30, duration_seconds: 40, status: 'ended' });
+  });
+
+  it('refuses a new base URL without its API key, so the key never leaves for another host', async () => {
+    const view = json<{
+      connections: { id: string; name: string; recordingRetentionDays: number }[];
+    }>(await admin.client.request('GET', '/v1/telephony/connections'));
+    const wrong = view.connections.find((row) => row.name === 'Wrong');
+    expect(wrong).toBeDefined();
+    const moved = await admin.client.request('PUT', `/v1/telephony/connections/${wrong?.id}`, {
+      body: {
+        name: 'Wrong',
+        baseUrl: 'http://127.0.0.1:9',
+        enabled: true,
+        recordingRetentionDays: 365,
+      },
+    });
+    expect(moved.statusCode, moved.body).toBe(400);
+    expect(json<{ code: string }>(moved).code).toBe('TELEPHONY_INVALID');
+  });
+
+  it('expires recordings past their retention and deletes processed webhook bodies at 30 days', async () => {
+    const click = await clickOfA();
+    const old = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string }>(sql`
+            insert into telephony.webhook_events
+              (org_id, connection_id, event, envo_call_id, body, processed_at, outcome)
+            values (${ORG_A}, ${connectionId}, 'call.ended', '1789400000.1', '{}'::jsonb,
+                    now() - interval '40 days', 'updated')
+            returning id
+          `)
+        )[0]?.id,
+      { orgId: ORG_A },
+    );
+    const counted = async () =>
+      withSystem(
+        async (tx) =>
+          (
+            await tx.execute<{ old: number; kept: number }>(sql`
+              select count(*) filter (where id = ${old ?? ''})::int as old,
+                     count(*) filter (where id <> ${old ?? ''})::int as kept
+              from telephony.webhook_events where org_id = ${ORG_A}
+            `)
+          )[0],
+        { orgId: ORG_A },
+      );
+    const before = await counted();
+    expect(before?.old).toBe(1);
+    const swept = await harness.app
+      .get(TelephonyRecordingsService)
+      .retention(new Date(Date.now() + 400 * 86_400_000));
+    expect(swept.expired).toBeGreaterThan(0);
+    expect(swept.pruned).toBe(1);
+    const after = await counted();
+    expect(after).toEqual({ old: 0, kept: before?.kept });
+    const row = await callRow(click);
+    expect(row?.recording_status).toBe('expired');
+    const gone = await salesA.client.request('GET', `/v1/telephony/calls/${click}/recording`);
+    expect(json<{ code: string }>(gone).code).toBe('TELEPHONY_RECORDING_UNAVAILABLE');
   });
 });
