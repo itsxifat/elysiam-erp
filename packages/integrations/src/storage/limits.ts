@@ -78,6 +78,12 @@ export const ALLOWED_MIME_TYPES: readonly MimeRule[] = [
   { mime: 'audio/mp4', maxBytes: 16 * MiB, extension: 'm4a', isImage: false, isAudio: true },
   { mime: 'audio/mpeg', maxBytes: 16 * MiB, extension: 'mp3', isImage: false, isAudio: true },
   { mime: 'audio/aac', maxBytes: 16 * MiB, extension: 'aac', isImage: false, isAudio: true },
+  /*
+   * A phone call's recording (M47, D-840): Envo keeps each call as an 8 kHz, 16-bit mono WAV
+   * (its `envo-record` dialplan), about 0.96 MB a minute. 64 MiB holds an hour and ten minutes.
+   * Produced by the server from Envo's download, never uploaded by a browser.
+   */
+  { mime: 'audio/wav', maxBytes: 64 * MiB, extension: 'wav', isImage: false, isAudio: true },
 ];
 
 const BY_MIME = new Map(ALLOWED_MIME_TYPES.map((rule) => [rule.mime, rule]));
@@ -140,10 +146,11 @@ export function sniffMime(bytes: Uint8Array): string | null {
   if (starts(0xff, 0xd8, 0xff)) return 'image/jpeg';
   if (starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png';
   if (starts(0x25, 0x50, 0x44, 0x46, 0x2d)) return 'application/pdf';
-  // RIFF....WEBP
+  // RIFF....WEBP, and M47's RIFF....WAVE (a call recording, D-840).
   if (starts(0x52, 0x49, 0x46, 0x46) && bytes.length >= 12) {
     const tag = String.fromCharCode(...bytes.subarray(8, 12));
     if (tag === 'WEBP') return 'image/webp';
+    if (tag === 'WAVE') return 'audio/wav';
   }
   // ISO-BMFF: `....ftyp` and a brand. AVIF is an image; the HEIF family is an image this
   // list does not take; any other brand is an MP4 a recorder wrote (`isom`, `iso5`, `mp42`…).
