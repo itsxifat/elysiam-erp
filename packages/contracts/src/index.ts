@@ -72,5 +72,7 @@ export * from './inbox.js';
 export * from './inbox-saved-replies.js';
 // M45: voice messages and calls in the inbox.
 export * from './inbox-voice.js';
+// M47: phone calls through Envo.
+export * from './telephony.js';
 // M41: the order workflow: ownership, presence, desk profiles, calls and auto-assign.
 export * from './workflow.js';

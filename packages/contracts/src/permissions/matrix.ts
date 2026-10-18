@@ -348,6 +348,10 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: ['read', 'update'], subject: 'OrderWorkflow', scope: 'org' },
     // M46 (D-820): the hub's terminals, printers and auto-print rule.
     { action: ['read', 'create', 'update'], subject: 'PackingTerminal', scope: 'org' },
+    // M47 (D-831): Envo's connections, the extensions and every call of the brand.
+    { action: ['read', 'create', 'update'], subject: 'Telephony', scope: 'org' },
+    { action: ['read', 'update'], subject: 'PhoneExtension', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'PhoneCall', scope: 'org' },
     /*
      * §22's files. The grant is coarse and the row check is not (D-115).
      *
@@ -435,6 +439,8 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     { action: 'read', subject: 'SavedReply', scope: 'org' },
     // M41 (D-713): their own presence at the desk, and "Not taking orders".
     { action: ['read', 'update'], subject: 'Presence', scope: 'own' },
+    // M47 (D-831, D-841): calling customers from their own extension, and hearing their calls.
+    { action: ['read', 'create'], subject: 'PhoneCall', scope: 'own' },
     // No `request ApprovalRequest`: §6 gives sales no action that goes through
     // maker-checker, and REQUESTER_TYPES lists none (D-072).
     /*
@@ -531,6 +537,11 @@ export const MATRIX: Readonly<Record<MembershipRole, readonly Rule[]>> = {
     // M46 (D-820): the hub's supervisor sets up its terminals and printers, brand-wide (no row
     // dimension: a terminal is the hub's, not a branch's).
     { action: ['read', 'create', 'update'], subject: 'PackingTerminal', scope: 'org' },
+    // M47 (D-831): the desk's supervisor sees the connections, assigns extensions, and hears and
+    // hangs up every call of the brand (a call has no branch, as a terminal has none).
+    { action: 'read', subject: 'Telephony', scope: 'org' },
+    { action: ['read', 'update'], subject: 'PhoneExtension', scope: 'org' },
+    { action: ['read', 'create', 'update'], subject: 'PhoneCall', scope: 'org' },
     { action: ['read', 'update'], subject: 'Customer', scope: 'branch' },
     { action: ['read', 'update'], subject: 'Wallet', scope: 'branch' },
     // §6: branch P&L without cost detail. The scope grants the report; the

@@ -189,6 +189,27 @@ export const SUBJECTS = [
    * branch's. Printing an order and packing it stay `update Order`, scoped by the order.
    */
   'PackingTerminal',
+  /**
+   * The brand's Envo connections (M47, D-831): Settings → Calls' base URL, API key and webhook
+   * secret, the test, the webhook address and its last delivery. org_admin reads, adds and
+   * changes them; branch_manager reads them (no secret is ever shown to anyone, only that it is
+   * set). Not a row in §6's grid, which predates calling.
+   */
+  'Telephony',
+  /**
+   * Who has which Envo extension (M47, D-846): the connection's extensions with live presence,
+   * and assigning one to a person of the brand. The desk's supervisors, org_admin and
+   * branch_manager, brand-wide (an extension has no branch). Not a row in §6's grid.
+   */
+  'PhoneExtension',
+  /**
+   * A phone call through Envo (M47, D-841): the call log, its recording, placing a call from
+   * one's own extension and a supervisor's hang-up. org_admin and branch_manager read, place and
+   * hang up every call of the brand; sales read their own calls and those of the orders they
+   * hold (`own`: the person on the call, or the order's owner when the call was linked), and
+   * place calls from their own extension. Not a row in §6's grid.
+   */
+  'PhoneCall',
 ] as const;
 
 export type Subject = (typeof SUBJECTS)[number];

@@ -558,6 +558,22 @@ export const labelsJobChangedPayload = z
   })
   .strict();
 
+/**
+ * M47 (D-850): a phone call through Envo moved (requested, dialing, ringing, answered, ended,
+ * failed, its recording kept). Ids only, with the people it concerns: the person on the call and
+ * the order's owner, whose rooms hear it besides the supervisors'. The order page, the Calls page
+ * and the person's phone fetch the call (`GET /v1/telephony/calls/:id`), where the scope applies.
+ */
+export const telephonyCallChangedPayload = z
+  .object({
+    callId: uuid,
+    orderId: uuid.nullable(),
+    status: z.enum(['requested', 'dialing', 'failed', 'ringing', 'answered', 'ended']),
+    recording: z.enum(['none', 'pending', 'stored', 'failed', 'expired']),
+    userIds: z.array(z.string()).max(4),
+  })
+  .strict();
+
 export const EVENTS = {
   'approval.requested': defineEvent('approval.requested', approvalRequestedPayload, {
     // §19: to every eligible checker. The dispatcher narrows that from
@@ -696,6 +712,11 @@ export const EVENTS = {
   // M46: the print queue (D-813, D-816).
   'labels.job_changed': defineEvent('labels.job_changed', labelsJobChangedPayload, {
     roles: ['warehouse', 'org_admin', 'branch_manager'],
+  }),
+  // M47 (D-850): a call through Envo, to the supervisors and the people it concerns.
+  'telephony.call_changed': defineEvent('telephony.call_changed', telephonyCallChangedPayload, {
+    roles: ['org_admin', 'branch_manager'],
+    extra: (payload) => payload.userIds.map(userRoom),
   }),
 } as const;
 

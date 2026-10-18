@@ -701,6 +701,29 @@ export const ERROR_CODES = [
   'LOT_CLOSE_REFUSED',
   /** Every lot's label must be scanned before the order goes to the courier (D-808). */
   'ORDER_LOTS_NOT_HANDED',
+  // M47: phone calls through Envo (D-830 to D-853)
+  /** No Envo connection, extension or call of this brand has that id. */
+  'TELEPHONY_NOT_FOUND',
+  /** The connection's settings do not fit together: the base URL, a missing key, the retention. */
+  'TELEPHONY_INVALID',
+  /** You have no extension in this brand: a supervisor assigns one in Settings → Calls. */
+  'TELEPHONY_NO_EXTENSION',
+  /** The connection is switched off, or its API key is not set, so Envo cannot be asked. */
+  'TELEPHONY_NOT_READY',
+  /** Envo refused the request (a wrong key, a missing scope, an extension it does not know). */
+  'TELEPHONY_ENVO_REFUSED',
+  /** Envo could not be reached in time, or answered with something that is not Envo's. */
+  'TELEPHONY_ENVO_UNREACHABLE',
+  /** That extension already belongs to someone, or that person already has an extension. */
+  'TELEPHONY_EXTENSION_TAKEN',
+  /** That number cannot be called from here (not a Bangladeshi mobile, or not this order's). */
+  'TELEPHONY_NUMBER_INVALID',
+  /** The call has no recording kept here (none was made, it is still coming, or it expired). */
+  'TELEPHONY_RECORDING_UNAVAILABLE',
+  /** That call's outcome is already recorded, or it has no order to record it on. */
+  'TELEPHONY_OUTCOME_INVALID',
+  /** This installation has no credentials key, so an Envo key or secret cannot be kept. */
+  'TELEPHONY_CREDENTIALS_MISSING',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

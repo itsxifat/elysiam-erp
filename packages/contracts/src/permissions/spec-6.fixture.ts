@@ -443,4 +443,23 @@ export const SPEC_6_GRANTS: readonly string[] = [
   'branch_manager|create|PackingTerminal|org',
   'branch_manager|update|PackingTerminal|org',
   'warehouse|read|PackingTerminal|org',
+  // | (not a row in the grid) | phone calls through Envo (M47, D-831, D-841, D-846) |
+  // The connections and their secrets are org_admin's; the desk's supervisors assign extensions
+  // and hear every call; sales place calls from their own extension and hear their own.
+  'org_admin|read|Telephony|org',
+  'org_admin|create|Telephony|org',
+  'org_admin|update|Telephony|org',
+  'branch_manager|read|Telephony|org',
+  'org_admin|read|PhoneExtension|org',
+  'org_admin|update|PhoneExtension|org',
+  'branch_manager|read|PhoneExtension|org',
+  'branch_manager|update|PhoneExtension|org',
+  'org_admin|read|PhoneCall|org',
+  'org_admin|create|PhoneCall|org',
+  'org_admin|update|PhoneCall|org',
+  'branch_manager|read|PhoneCall|org',
+  'branch_manager|create|PhoneCall|org',
+  'branch_manager|update|PhoneCall|org',
+  'sales|read|PhoneCall|own',
+  'sales|create|PhoneCall|own',
 ];

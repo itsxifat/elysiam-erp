@@ -91,6 +91,10 @@
     "./assignment": {
       "types": "./dist/assignment/index.d.ts",
       "default": "./dist/assignment/index.js"
+    },
+    "./telephony": {
+      "types": "./dist/telephony/index.d.ts",
+      "default": "./dist/telephony/index.js"
     }
   },
   "files": [
