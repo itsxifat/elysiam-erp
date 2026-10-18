@@ -79,6 +79,9 @@ const OWNER: Readonly<Record<string, string>> = {
   // M41: presence and desk profiles. People come from `IamApi`; orders read these through
   // `TeamApi`, so no debt either way.
   team: 'team',
+  // M47: Envo connections, extensions, calls and webhook bodies. Buyers and orders through
+  // `ORDERS_API`, people through `IAM_API`, recordings through `FILES_API`, so no debt.
+  telephony: 'telephony',
   wallets: 'wallets',
 };
 
