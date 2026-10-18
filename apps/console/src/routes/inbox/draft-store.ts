@@ -13,7 +13,7 @@ import { emptyDraft, type SellDraft } from './sell-logic.js';
  * draft is removed, and any older than three days is swept when the inbox opens.
  */
 
-const PREFIX = 'elysium.inbox.sell.v1';
+const PREFIX = 'erp.inbox.sell.v1';
 const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 
 const keyOf = (userId: string, conversationId: string) => `${PREFIX}:${userId}:${conversationId}`;

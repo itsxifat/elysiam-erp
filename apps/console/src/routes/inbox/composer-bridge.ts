@@ -10,7 +10,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
  * (an older composer, the conversation not open), the caller copies the text instead.
  */
 
-export const COMPOSE_EVENT = 'elysium:inbox-compose';
+export const COMPOSE_EVENT = 'erp:inbox-compose';
 
 export interface ComposeRequest {
   readonly conversationId: string;
