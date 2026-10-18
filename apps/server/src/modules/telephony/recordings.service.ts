@@ -36,7 +36,8 @@ class TryAgain extends Error {}
  * (Envo no longer has the file), `envo_refused`, `too_large`, `unsupported` or `no_key`. Every
  * five minutes `requeueStuck` gives a recording another round of tries when the reason may pass
  * (`unreachable`, `storage`), once an hour for a day after the call, and a recording left
- * `pending` by a job that died (its retries spent on an error no try caught) a fresh round.
+ * `pending` by a job that died (its retries spent on an error no try caught) a fresh round, for
+ * a day after the call; one still `pending` after that is `failed` as `stuck`.
  */
 @Injectable()
 export class TelephonyRecordingsService {
@@ -131,14 +132,29 @@ export class TelephonyRecordingsService {
   /**
    * Every five minutes (with the sync sweep): another round of tries for recordings that may
    * still be had. `pending` with no job alive for half an hour (a job whose retries ran out on an
-   * error no try caught); `failed` as `unreachable` or `storage`, an hour after the last round,
-   * within a day of the call. Each gets its tries counted afresh.
+   * error no try caught); `failed` as `unreachable` or `storage`, an hour after the last round;
+   * both within a day of the call. Each gets its tries counted afresh. A recording still
+   * `pending` a day after its call is given up: `failed` as `stuck`.
    */
-  async requeueStuck(now: Date = new Date()): Promise<{ readonly queued: number }> {
+  async requeueStuck(
+    now: Date = new Date(),
+  ): Promise<{ readonly queued: number; readonly gaveUp: number }> {
     const orgIds = await withGlobal((tx) => repo.allOrgIds(tx));
     let queued = 0;
+    let gaveUp = 0;
     for (const orgId of orgIds) {
       try {
+        gaveUp += await withOrg({ orgId, userId: TELEPHONY_SYSTEM_USER }, async (tx) => {
+          const rows = await repo.stuckRecordingsPast(tx, orgId, now, 50);
+          for (const row of rows) {
+            const moved = await repo.updateCall(tx, orgId, row.id, {
+              recordingStatus: 'failed',
+              recordingError: 'stuck',
+            });
+            await announce(tx, orgId, moved);
+          }
+          return rows.length;
+        });
         queued += await withOrg({ orgId, userId: TELEPHONY_SYSTEM_USER }, async (tx) => {
           const rows = await repo.recordingsToRetry(tx, orgId, now, 50);
           for (const row of rows) {
@@ -165,7 +181,7 @@ export class TelephonyRecordingsService {
         );
       }
     }
-    return { queued };
+    return { queued, gaveUp };
   }
 
   private async finish(

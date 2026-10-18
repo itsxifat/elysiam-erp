@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { withOrg, withSystem } from '@elysium/db';
 import { sql } from 'drizzle-orm';
 import { pino } from 'pino';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ALL_QUEUES } from '../../job-queues.js';
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
@@ -17,11 +17,14 @@ import {
   type InjectedResponse,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import { FILES_API, type FilesApi } from '../files/files.api.js';
 import { seedCustomer, seedOrder } from '../orders/orders.testing.js';
+import { TELEPHONY_SYSTEM_USER } from './ingest.service.js';
 import { silentWav } from './providers/envo-gateway.js';
-import { TelephonyRecordingsService } from './recordings.service.js';
+import { RECORDING_TRIES, TelephonyRecordingsService } from './recordings.service.js';
 import { envoSignatureFor } from './signature.js';
 import { TelephonySyncService } from './sync.service.js';
+import * as repo from './telephony.repository.js';
 import { registerTelephonyJobs } from './telephony.worker.js';
 import { TelephonyWebhookService } from './webhook.service.js';
 
@@ -1117,6 +1120,81 @@ describe('the review: scope, reach, claims and retention', () => {
     });
     expect(moved.statusCode, moved.body).toBe(400);
     expect(json<{ code: string }>(moved).code).toBe('TELEPHONY_INVALID');
+  });
+
+  it('gives a storage failure its tries, then another round within the day, never for ever', async () => {
+    const recordings = harness.app.get(TelephonyRecordingsService);
+    const files = harness.app.get<FilesApi>(FILES_API, { strict: false });
+    // A recording waiting for its download, with no job queued (the test runs the job's work).
+    const waiting = async (envoCallId: string, endedAt: Date) =>
+      withOrg({ orgId: ORG_A, userId: TELEPHONY_SYSTEM_USER }, async (tx) => {
+        const row = await repo.insertCall(tx, {
+          orgId: ORG_A,
+          connectionId,
+          envoCallId,
+          firstSeen: 'webhook',
+          direction: 'inbound',
+          status: 'ended',
+          fromNumber: '+8801755555555',
+          toNumber: '09644342036',
+          customerPhoneE164: '+8801755555555',
+          extension: null,
+          userId: null,
+          customerId: null,
+          customerName: null,
+          orderId: null,
+          orderNo: null,
+          orderOwnerUserId: null,
+          occurredAt: endedAt,
+          requestedAt: null,
+        });
+        await repo.updateCall(tx, ORG_A, row.id, {
+          endedAt,
+          recordingUrl: `${envoBase}/api/v1/recordings/42`,
+          recordingStatus: 'pending',
+        });
+        return row.id;
+      });
+    const fresh = await waiting('1789459000.1', new Date());
+    const old = await waiting('1789459000.2', new Date(Date.now() - 2 * 86_400_000));
+
+    const refused = vi
+      .spyOn(files, 'storeProduced')
+      .mockRejectedValue(new Error('the storage is down'));
+    try {
+      for (let attempt = 1; attempt < RECORDING_TRIES; attempt += 1) {
+        await expect(recordings.fetch(ORG_A, fresh), `try ${String(attempt)}`).rejects.toThrow(
+          'could not be stored yet',
+        );
+      }
+      expect(await recordings.fetch(ORG_A, fresh)).toBe('failed');
+    } finally {
+      refused.mockRestore();
+    }
+    expect(await callRow(fresh)).toMatchObject({
+      recording_status: 'failed',
+      recording_error: 'storage',
+    });
+
+    // Two hours on: the storage failure gets another round; the recording two days old that
+    // never left `pending` is given up rather than tried again.
+    const later = new Date(Date.now() + 2 * 3600_000);
+    const round = await recordings.requeueStuck(later);
+    expect(round.queued).toBeGreaterThanOrEqual(1);
+    expect(round.gaveUp).toBeGreaterThanOrEqual(1);
+    expect(await callRow(old)).toMatchObject({
+      recording_status: 'failed',
+      recording_error: 'stuck',
+    });
+    expect(['pending', 'stored']).toContain((await callRow(fresh))?.recording_status);
+    await until(
+      async () => ((await callRow(fresh))?.recording_status === 'stored' ? true : undefined),
+      'the retried recording',
+    );
+    // Given up is given up: the next round leaves it alone.
+    const next = await recordings.requeueStuck(new Date(later.getTime() + 2 * 3600_000));
+    expect(next.gaveUp).toBe(0);
+    expect((await callRow(old))?.recording_status).toBe('failed');
   });
 
   it('expires recordings past their retention and deletes processed webhook bodies at 30 days', async () => {

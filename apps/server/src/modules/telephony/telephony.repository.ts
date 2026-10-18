@@ -785,9 +785,9 @@ export async function storedRecordingsPast(
 }
 
 /**
- * Recordings worth another round of tries (D-840): `pending` and untouched for half an hour, or
- * `failed` for a reason that may pass (`unreachable`, `storage`) an hour after the last round,
- * within a day of the call.
+ * Recordings worth another round of tries (D-840), within a day of the call: `pending` and
+ * untouched for half an hour, or `failed` for a reason that may pass (`unreachable`, `storage`)
+ * an hour after the last round.
  */
 export async function recordingsToRetry(
   tx: Tx,
@@ -803,9 +803,32 @@ export async function recordingsToRetry(
         (c.recording_status = 'pending'
           and c.updated_at < ${at}::timestamptz - interval '30 minutes')
         or (c.recording_status = 'failed' and c.recording_error in ('unreachable', 'storage')
-          and c.updated_at < ${at}::timestamptz - interval '1 hour'
-          and coalesce(c.ended_at, c.occurred_at) > ${at}::timestamptz - interval '1 day')
+          and c.updated_at < ${at}::timestamptz - interval '1 hour')
       )
+      and coalesce(c.ended_at, c.occurred_at) > ${at}::timestamptz - interval '1 day'
+    order by c.updated_at
+    limit ${limit}
+    for update of c skip locked
+  `);
+  return [...rows];
+}
+
+/**
+ * Recordings still `pending` a day after the call with no job alive for half an hour (each round
+ * of tries died on an error no try caught): given up, not retried for ever on the key's budget.
+ */
+export async function stuckRecordingsPast(
+  tx: Tx,
+  orgId: string,
+  now: Date,
+  limit: number,
+): Promise<{ id: string }[]> {
+  const at = now.toISOString();
+  const rows = await tx.execute<{ id: string }>(sql`
+    select c.id from telephony.calls c
+    where c.org_id = ${orgId} and c.recording_status = 'pending'
+      and c.updated_at < ${at}::timestamptz - interval '30 minutes'
+      and coalesce(c.ended_at, c.occurred_at) <= ${at}::timestamptz - interval '1 day'
     order by c.updated_at
     limit ${limit}
     for update of c skip locked
