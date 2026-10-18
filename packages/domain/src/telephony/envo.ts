@@ -106,7 +106,7 @@ export function customerSide(input: {
       return customerPhoneFrom(input.to);
     case 'internal':
       return null;
-    default:
+    case 'unknown':
       return customerPhoneFrom(input.to) ?? customerPhoneFrom(input.from);
   }
 }
