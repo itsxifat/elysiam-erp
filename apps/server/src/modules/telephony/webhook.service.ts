@@ -10,7 +10,7 @@ import { connectionBinding, openSecret } from './telephony-secrets.js';
 import { TELEPHONY_QUEUES } from './telephony.queues.js';
 import * as repo from './telephony.repository.js';
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DELIVERY = /^[0-9a-zA-Z-]{1,64}$/;
 const DAY_MS = 86_400_000;
 
