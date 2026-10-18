@@ -42,8 +42,10 @@ import {
 } from '@elysium/contracts';
 import {
   phoneCallAnsweredSchema,
+  phoneCallListQuerySchema,
   phoneCallOutcomeSchema,
   phoneCallPlaceSchema,
+  phoneLookupQuerySchema,
   telephonyAssignSchema,
   telephonyConnectionCreateSchema,
   telephonyConnectionUpdateSchema,
@@ -610,6 +612,17 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     summary:
       'Call a customer from your own extension; an order held by someone else needs x-acknowledge-owner: 1.',
     body: named('PhoneCallPlace', phoneCallPlaceSchema, 'PhoneCallPlaceInput'),
+  },
+  'POST /v1/telephony/lookup': {
+    operationId: 'lookupPhoneCaller',
+    summary:
+      "Who is calling: the buyer a number names (only one the caller may open, or whose call is on the caller's phone now) and their open orders.",
+    body: named('PhoneLookup', phoneLookupQuerySchema),
+  },
+  'POST /v1/telephony/calls/search': {
+    operationId: 'searchPhoneCalls',
+    summary: 'The call log, its filters in the body so a phone stays out of URLs.',
+    body: named('PhoneCallListQuery', phoneCallListQuerySchema),
   },
   'POST /v1/telephony/calls/answered': {
     operationId: 'answeredPhoneCall',

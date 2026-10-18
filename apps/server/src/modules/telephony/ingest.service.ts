@@ -1,22 +1,25 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import {
-  answeredAfter,
   customerSide,
   isExtensionNumber,
-  isPhoneCallOver,
   matchClick,
+  phoneCallProgress,
   phoneCallStatusAfter,
   recordingIdFrom,
   storedNumber,
   type EnvoCallFacts,
+  type PhoneCallDirection,
+  type PhoneCallDisposition,
   type PhoneCallStatus,
 } from '@elysium/domain/telephony';
 
 import { emit } from '../../platform/events/outbox.js';
 import { enqueue } from '../../platform/jobs/enqueue.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
+import { CALLING_ROLES } from './telephony.roles.js';
 import { TELEPHONY_QUEUES } from './telephony.queues.js';
 import * as repo from './telephony.repository.js';
 
@@ -37,15 +40,41 @@ export type IngestOutcome = 'created' | 'matched' | 'updated' | 'unchanged';
  *
  * A call Envo names for the first time is the newest click of the connection whose extension or
  * number is on it, from the three minutes before it started (Envo's `POST /calls` answers with no
- * id); otherwise a new row, its person found by the extension on it, its customer by the phone on
+ * id); otherwise a new row, its person found by the extension on it (its holder, when they still
+ * place calls and already held it when the call started, D-846), its customer by the phone on
  * the customer's side (`ORDERS_API.buyerIdByPhone`), and its order the customer's newest open one.
- * Then its progress moves forward only (the trigger holds the same rule), and a recording on the
- * connection's own host is queued for download. Runs in the caller's transaction, under a lock on
- * the Envo call, and never calls Envo (invariant 6).
+ * Then its progress moves forward only (`phoneCallProgress`; the trigger holds the same rule), and
+ * a recording on the connection's own host is queued for download. Runs in the caller's
+ * transaction, under a lock on the Envo call, and never calls Envo (invariant 6).
  */
 @Injectable()
 export class TelephonyIngestService {
-  constructor(@Inject(ORDERS_API) private readonly orders: OrdersApi) {}
+  constructor(
+    @Inject(ORDERS_API) private readonly orders: OrdersApi,
+    @Inject(IAM_API) private readonly iam: IamApi,
+  ) {}
+
+  /**
+   * Whom an extension names on a call that started at `at` (D-846): its holder, when they are
+   * still a member who places calls and held it before the call began. A call the sync or a late
+   * webhook brings in after the extension changed hands is nobody's rather than the new
+   * holder's (they would hear a conversation they were not on); a supervisor sees it.
+   */
+  async holderAt(
+    tx: Tx,
+    orgId: string,
+    connectionId: string,
+    extension: string,
+    at: Date,
+  ): Promise<string | null> {
+    const assignment = await repo.assignmentOfExtension(tx, orgId, connectionId, extension);
+    if (assignment === undefined) return null;
+    if (new Date(assignment.created_at).getTime() > at.getTime()) return null;
+    const members = await this.iam.activeMembers(tx, orgId, { roles: CALLING_ROLES });
+    return members.some((member) => member.userId === assignment.user_id)
+      ? assignment.user_id
+      : null;
+  }
 
   async apply(
     tx: Tx,
@@ -140,8 +169,8 @@ export class TelephonyIngestService {
           : null;
     const assignee =
       extension === null
-        ? undefined
-        : await repo.assignmentOfExtension(tx, orgId, connection.id, extension);
+        ? null
+        : await this.holderAt(tx, orgId, connection.id, extension, facts.startedAt ?? now);
     const link = customerPhone === null ? null : await this.customerLink(tx, orgId, customerPhone);
     return repo.insertCall(tx, {
       orgId,
@@ -154,7 +183,7 @@ export class TelephonyIngestService {
       toNumber: storedNumber(facts.to),
       customerPhoneE164: customerPhone,
       extension,
-      userId: assignee?.user_id ?? null,
+      userId: assignee,
       customerId: link?.customerId ?? null,
       customerName: link?.customerName ?? null,
       orderId: link?.order?.id ?? null,
@@ -203,45 +232,34 @@ export class TelephonyIngestService {
     now: Date,
   ): Promise<repo.CallChange> {
     const change: { -readonly [K in keyof repo.CallChange]: repo.CallChange[K] } = {};
-    const current = call.status as PhoneCallStatus;
-    const status = phoneCallStatusAfter(current, facts.event);
-    if (status !== current) change.status = status;
-    const ended = isPhoneCallOver(status) && status === 'ended';
-    const answered = answeredAfter(call.answered, facts);
-    if (answered !== call.answered) change.answered = answered;
-
-    if (call.direction === 'unknown' && facts.direction !== 'unknown') {
-      change.direction = facts.direction;
-    }
-    const wasEnded = current === 'ended';
-    const from = storedNumber(facts.from);
-    const to = storedNumber(facts.to);
-    if (from !== null && from !== call.from_number && (!wasEnded || call.from_number === null)) {
-      change.fromNumber = from;
-    }
-    if (to !== null && to !== call.to_number && (!wasEnded || call.to_number === null)) {
-      change.toNumber = to;
-    }
-    if (facts.disposition !== null && facts.disposition !== call.disposition) {
-      change.disposition = facts.disposition;
-    }
-    if (facts.talkSeconds !== null && facts.talkSeconds !== call.talk_seconds) {
-      change.talkSeconds = facts.talkSeconds;
-    }
-    if (facts.durationSeconds !== null && facts.durationSeconds !== call.duration_seconds) {
-      change.durationSeconds = facts.durationSeconds;
-    }
-    if (call.started_at === null) change.startedAt = facts.startedAt ?? now;
-    if (call.answered_at === null && answered) {
-      change.answeredAt = facts.answeredAt ?? now;
-    }
-    if (call.ended_at === null && ended) {
-      change.endedAt =
-        facts.endedAt ??
-        (facts.startedAt !== null && facts.durationSeconds !== null
-          ? new Date(facts.startedAt.getTime() + facts.durationSeconds * 1000)
-          : now);
-    }
+    const moved = phoneCallProgress(
+      {
+        status: call.status as PhoneCallStatus,
+        answered: call.answered,
+        direction: call.direction as PhoneCallDirection,
+        fromNumber: call.from_number,
+        toNumber: call.to_number,
+        disposition: call.disposition as PhoneCallDisposition | null,
+        talkSeconds: call.talk_seconds,
+        durationSeconds: call.duration_seconds,
+        startedAt: call.started_at === null ? null : new Date(call.started_at),
+        answeredAt: call.answered_at === null ? null : new Date(call.answered_at),
+        endedAt: call.ended_at === null ? null : new Date(call.ended_at),
+      },
+      facts,
+      now,
+    );
+    if (moved.status !== undefined) change.status = moved.status;
+    if (moved.answered !== undefined) change.answered = moved.answered;
+    if (moved.direction !== undefined) change.direction = moved.direction;
+    if (moved.fromNumber !== undefined) change.fromNumber = moved.fromNumber;
+    if (moved.toNumber !== undefined) change.toNumber = moved.toNumber;
+    if (moved.disposition !== undefined) change.disposition = moved.disposition;
+    if (moved.talkSeconds !== undefined) change.talkSeconds = moved.talkSeconds;
+    if (moved.durationSeconds !== undefined) change.durationSeconds = moved.durationSeconds;
+    if (moved.startedAt != null) change.startedAt = moved.startedAt;
+    if (moved.answeredAt != null) change.answeredAt = moved.answeredAt;
+    if (moved.endedAt != null) change.endedAt = moved.endedAt;
 
     // The links, once each (D-835): a call with no customer yet gets the one its phone names.
     const customerPhone =
@@ -275,9 +293,11 @@ export class TelephonyIngestService {
     if (call.user_id === null && call.extension === null && call.direction !== 'inbound') {
       const extension = isExtensionNumber(facts.from) ? facts.from : null;
       if (extension !== null) {
-        const assignee = await repo.assignmentOfExtension(tx, orgId, connection.id, extension);
+        const startedAt =
+          change.startedAt ?? (call.started_at === null ? now : new Date(call.started_at));
+        const assignee = await this.holderAt(tx, orgId, connection.id, extension, startedAt);
         change.extension = extension;
-        if (assignee !== undefined) change.userId = assignee.user_id;
+        if (assignee !== null) change.userId = assignee;
       }
     }
 

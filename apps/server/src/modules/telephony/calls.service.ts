@@ -19,10 +19,11 @@ import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { envoFailure, TelephonyConnectionsService } from './connections.service.js';
 import { announce } from './ingest.service.js';
-import type { EnvoGateway } from './providers/envo-gateway.js';
+import type { EnvoGateway, EnvoLiveCall } from './providers/envo-gateway.js';
 import { TELEPHONY_CONFIG, type TelephonyConfig } from './telephony.config.js';
 import { mapTelephonyErrors, TelephonyError } from './telephony.errors.js';
 import * as repo from './telephony.repository.js';
+import { CALLING_ROLES } from './telephony.roles.js';
 import { ENVO_GATEWAY } from './telephony.tokens.js';
 
 export const RECORDING_PURPOSE = 'call-recording' as const;
@@ -35,6 +36,23 @@ const DOUBLE_PRESS_SECONDS = 20;
 
 /** An inbound call answered in the browser is the newest from that number in these minutes. */
 const ANSWERED_WINDOW_MS = 3 * 60_000;
+
+/** A call ringing or answered this recently names its caller in the screen pop (D-843). */
+const LIVE_LOOKUP_MS = 3 * 60_000;
+
+/** Envo's live states of a call that is talking: `talking` (bridged) or a channel `up`. */
+const TALKING_STATES = new Set(['talking', 'up']);
+
+/** Why the console's phone does not start for a person with an extension (D-843). */
+export type PhoneNotReady =
+  'switched_off' | 'no_key' | 'stand_in' | 'extension_off' | 'no_web_phone';
+
+/** A double press found inside the transaction: undone, so M41's gate is not told twice. */
+class RepeatedPress extends Error {
+  constructor(readonly row: repo.CallRow) {
+    super('the same call');
+  }
+}
 
 const OPEN_STATUSES = new Set([
   'pending',
@@ -50,9 +68,18 @@ function iso(value: Date | string | null): string | null {
   return value === null ? null : new Date(value).toISOString();
 }
 
-/** The start of an Asia/Dhaka calendar date, as an instant (invariant 8). */
+/** The start of an Asia/Dhaka calendar date, as an instant (invariant 8); a typed 400 if none. */
 function dhakaDayStart(date: string): Date {
-  return new Date(`${date}T00:00:00+06:00`);
+  const at = new Date(`${date}T00:00:00+06:00`);
+  // A day the calendar has not (2026-13-01, 2026-02-30) is refused rather than rolled over.
+  if (Number.isNaN(at.getTime()) || dhakaDateOf(at) !== date) {
+    throw new TelephonyError('TELEPHONY_INVALID', `${date} is not a calendar date.`);
+  }
+  return at;
+}
+
+function dhakaDateOf(at: Date): string {
+  return new Date(at.getTime() + 6 * 3600_000).toISOString().slice(0, 10);
 }
 
 type Names = ReadonlyMap<string, string>;
@@ -117,10 +144,16 @@ export class TelephonyCallsService {
     return new Map(members.map((member) => [member.userId, member.name]));
   }
 
-  /** The signed-in person's extension and its connection, or null (`TELEPHONY_NO_EXTENSION`). */
+  /**
+   * The signed-in person's extension and its connection, or null (`TELEPHONY_NO_EXTENSION`). An
+   * extension still given to someone who no longer places calls here (their role taken away,
+   * D-846) is not theirs to use.
+   */
   private async myPhone(tx: Tx, context: ActiveContext) {
     const assignment = await repo.assignmentOfUser(tx, context.orgId, context.userId);
     if (assignment === undefined) return null;
+    const members = await this.iam.activeMembers(tx, context.orgId, { roles: CALLING_ROLES });
+    if (!members.some((member) => member.userId === context.userId)) return null;
     const connection = await repo.connectionById(tx, context.orgId, assignment.connection_id);
     if (connection === undefined) return null;
     return { assignment, connection };
@@ -133,24 +166,56 @@ export class TelephonyCallsService {
     );
   }
 
-  /** The console's phone: whether this person has one, and where its widget comes from (D-843). */
+  /**
+   * The console's phone: whether this person has one, and where its widget comes from (D-843).
+   * `ready` only when the web phone can start: the connection on with a key that opens, a real
+   * Envo (not the stand-in, whose token Envo would refuse), and the extension enabled in Envo
+   * with its web phone on (Envo's `webPhone`; a desk-phone extension calls through its desk
+   * phone and has no web phone to start). Envo's extension list is read after the transaction
+   * (cached ten seconds); when Envo cannot be asked, the phone tries and says what happened.
+   */
   async me(context: ActiveContext, request: object) {
     scopeHasNoRowDimension(request, 'the caller’s own extension, by their user id');
-    return mapTelephonyErrors(() =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const mine = await this.myPhone(tx, context);
-        if (mine === null) return { phone: null };
-        return {
-          phone: {
-            connectionId: mine.connection.id,
-            connectionName: mine.connection.name,
-            extension: mine.assignment.extension,
-            baseUrl: mine.connection.base_url,
-            ready: mine.connection.enabled && mine.connection.api_key_fingerprint !== null,
-          },
-        };
-      }),
+    return mapTelephonyErrors(async () => {
+      const mine = await withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
+        this.myPhone(tx, context),
+      );
+      if (mine === null) return { phone: null };
+      const notReady = await this.phoneNotReady(mine, context.orgId);
+      return {
+        phone: {
+          connectionId: mine.connection.id,
+          connectionName: mine.connection.name,
+          extension: mine.assignment.extension,
+          baseUrl: mine.connection.base_url,
+          ready: notReady === null,
+          notReady,
+        },
+      };
+    });
+  }
+
+  private async phoneNotReady(
+    mine: { readonly assignment: repo.AssignmentRow; readonly connection: repo.ConnectionRow },
+    orgId: string,
+  ): Promise<PhoneNotReady | null> {
+    if (!mine.connection.enabled) return 'switched_off';
+    if (mine.connection.api_key_fingerprint === null) return 'no_key';
+    if (this.gateway.provider === 'fake') return 'stand_in';
+    let envo;
+    try {
+      envo = this.connections.open(mine.connection, orgId, { requireEnabled: true });
+    } catch {
+      return 'no_key';
+    }
+    const listed = await this.connections.extensionInEnvo(
+      mine.connection.id,
+      envo,
+      mine.assignment.extension,
     );
+    if (listed === 'unknown') return null;
+    if (listed?.enabled !== true) return 'extension_off';
+    return listed.webPhone ? null : 'no_web_phone';
   }
 
   /**
@@ -193,9 +258,9 @@ export class TelephonyCallsService {
   async place(context: ActiveContext, request: AuditableRequest, input: PhoneCallPlaceInput) {
     return mapTelephonyErrors(async () => {
       assertInScope(request, { createdBy: context.userId });
-      const prepared = await withOrg(
-        { orgId: context.orgId, userId: context.userId },
-        async (tx) => {
+      let prepared;
+      try {
+        prepared = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
           await repo.lockPersonCalls(tx, context.orgId, context.userId);
           const mine = await this.myPhone(tx, context);
           if (mine === null) throw this.noExtension();
@@ -210,7 +275,8 @@ export class TelephonyCallsService {
             target.phone,
             DOUBLE_PRESS_SECONDS,
           );
-          if (again !== undefined) return { again, mine, envo, target };
+          // Undone, not committed: M41's gate wrote its notice to the owner for the first press.
+          if (again !== undefined) throw new RepeatedPress(again);
           const row = await repo.insertCall(tx, {
             orgId: context.orgId,
             connectionId: mine.connection.id,
@@ -249,11 +315,13 @@ export class TelephonyCallsService {
             request,
           });
           await announce(tx, context.orgId, row);
-          return { again: undefined, row, mine, envo, target };
-        },
-      );
-      if (prepared.again !== undefined) {
-        return { call: callView(prepared.again, new Map()), repeated: true };
+          return { row, mine, envo, target };
+        });
+      } catch (error) {
+        if (error instanceof RepeatedPress) {
+          return { call: callView(error.row, new Map()), repeated: true };
+        }
+        throw error;
       }
 
       let failure: TelephonyError | null = null;
@@ -357,12 +425,21 @@ export class TelephonyCallsService {
     if (given === null) {
       throw new TelephonyError('TELEPHONY_NUMBER_INVALID', 'Say whom to call.');
     }
-    const customerId = (await this.orders.buyerIdByPhone(tx, context.orgId, given)) ?? null;
-    const panel =
-      customerId === null
-        ? undefined
-        : await this.orders.customerPanel(tx, context.orgId, customerId, 0, context);
-    return { phone: given, customerId, customerName: panel?.name ?? null, order: null };
+    // A phone alone names its buyer on the call only for a person who may open that buyer
+    // (D-740, as the inbox links a typed phone): the Call button is no phone-to-buyer lookup.
+    // Envo's webhooks link the call for the supervisors either way.
+    const found = (await this.orders.buyerIdByPhone(tx, context.orgId, given)) ?? null;
+    const reachable =
+      found !== null && (await this.orders.customerReachable(tx, context.orgId, found, context));
+    const panel = reachable
+      ? await this.orders.customerPanel(tx, context.orgId, found, 0, context)
+      : undefined;
+    return {
+      phone: given,
+      customerId: panel === undefined ? null : found,
+      customerName: panel?.name ?? null,
+      order: null,
+    };
   }
 
   private mobile(raw: string): string {
@@ -538,31 +615,79 @@ export class TelephonyCallsService {
   }
 
   /**
-   * The browser's phone answered an incoming call from this number (D-836): Envo's webhooks do
+   * The browser's phone answered an incoming call from this number (D-836). Envo's webhooks do
    * not say which extension answered, so the newest inbound call from it on the person's
-   * connection that nobody has yet becomes theirs. 404 until Envo's `call.started` is in.
+   * connection that nobody has yet becomes theirs, when:
+   *
+   * - it is still going here (ringing or answered, not ended): an earlier, missed call from the
+   *   same number is never taken for the one picked up now (404 until Envo's `call.started` is
+   *   in, which the console's phone asks again for);
+   * - Envo shows it talking right now, and, when its channels name extensions (Envo names a
+   *   phone `<extension>_<SIP server>`, its web phone with `_web`), the person's own among them:
+   *   after the answer Asterisk keeps only the answering phone's channel, so a ring-group
+   *   colleague who did not pick up cannot take the call and its recording.
+   *
+   * Envo is asked between two short transactions, never inside one (invariant 6).
    */
   async answered(context: ActiveContext, request: AuditableRequest, input: PhoneCallAnsweredInput) {
-    return mapTelephonyErrors(() =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    return mapTelephonyErrors(async () => {
+      const raw = storedNumber(input.from);
+      if (raw === null) throw new TelephonyError('TELEPHONY_NUMBER_INVALID', 'That is no number.');
+      const phone = { e164: customerPhoneFrom(input.from), raw };
+      const since = () => new Date(Date.now() - ANSWERED_WINDOW_MS);
+      const found = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const mine = await this.myPhone(tx, context);
         if (mine === null) throw this.noExtension();
-        const raw = storedNumber(input.from);
-        if (raw === null)
-          throw new TelephonyError('TELEPHONY_NUMBER_INVALID', 'That is no number.');
         const call = await repo.unclaimedInbound(
           tx,
           context.orgId,
           mine.connection.id,
-          { e164: customerPhoneFrom(input.from), raw },
-          new Date(Date.now() - ANSWERED_WINDOW_MS),
+          phone,
+          since(),
+          { lock: false },
         );
-        if (call === undefined) {
-          throw new TelephonyError('TELEPHONY_NOT_FOUND', 'Envo has not announced that call yet.');
+        return { mine, call };
+      });
+      if (found.call?.envo_call_id == null) {
+        throw new TelephonyError('TELEPHONY_NOT_FOUND', 'Envo has not announced that call yet.');
+      }
+      const envoCallId = found.call.envo_call_id;
+      let live: readonly EnvoLiveCall[];
+      try {
+        live = await this.gateway.liveCalls(
+          this.connections.open(found.mine.connection, context.orgId, { requireEnabled: true }),
+        );
+      } catch (error) {
+        throw error instanceof TelephonyError ? error : envoFailure(error);
+      }
+      const now = live.find((call) => call.id === envoCallId);
+      if (now === undefined || !TALKING_STATES.has(now.state)) {
+        throw new TelephonyError(
+          'TELEPHONY_NOT_FOUND',
+          'Envo does not show that call as answered right now.',
+        );
+      }
+      if (!answeredOn(now, found.mine.assignment.extension)) {
+        throw new TelephonyError(
+          'TELEPHONY_NOT_FOUND',
+          'Envo shows another extension on that call.',
+        );
+      }
+      return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const call = await repo.unclaimedInbound(
+          tx,
+          context.orgId,
+          found.mine.connection.id,
+          phone,
+          since(),
+          { lock: true },
+        );
+        if (call === undefined || call.id !== found.call?.id) {
+          throw new TelephonyError('TELEPHONY_NOT_FOUND', 'Someone else has that call now.');
         }
         const moved = await repo.updateCall(tx, context.orgId, call.id, {
           userId: context.userId,
-          ...(call.extension === null ? { extension: mine.assignment.extension } : {}),
+          ...(call.extension === null ? { extension: found.mine.assignment.extension } : {}),
         });
         assertInScope(request, { createdBy: context.userId });
         await this.audit.record(tx, {
@@ -572,20 +697,26 @@ export class TelephonyCallsService {
           action: 'phone_call.answered_here',
           entityType: 'phone_call',
           entityId: call.id,
-          after: { extension: mine.assignment.extension },
+          after: { extension: found.mine.assignment.extension },
           requestId: context.requestId,
           request,
         });
         await announce(tx, context.orgId, moved);
         return callView(moved, await this.names(tx, context.orgId));
-      }),
-    );
+      });
+    });
   }
 
   /**
    * Who is calling (the screen pop, D-843): the customer a number names, with their open orders
    * the caller may open, and whether it is the ring-back of the caller's own Call (Envo rings
    * the person first, showing the customer's number) so the phone may answer it at once.
+   *
+   * The buyer is named only to a person who may open them (D-740, as the order desk's lookup and
+   * the inbox's panel), or whose phone that number is on right now: the ring-back of their own
+   * Call, or an inbound call on their connection still ringing or answered. Any other number is
+   * answered as nobody's, so the route is no phone-to-buyer lookup. Sent as a POST, so the
+   * number stays out of URLs and access logs (invariant 10).
    */
   async lookup(context: ActiveContext, request: object, rawPhone: string) {
     scopeHasNoRowDimension(request, 'the caller’s own incoming call, by its number');
@@ -612,6 +743,23 @@ export class TelephonyCallsService {
           customerId,
           context,
         );
+        // The ring-back of the person's own Call names its buyer when the Call did (an order or
+        // a buyer they may reach); a Call to a bare number did not, and does not here either.
+        const ownCall = ringBackRow?.customer_id === customerId;
+        if (!reachable && !ownCall) {
+          const mine = await this.myPhone(tx, context);
+          const ringing =
+            mine !== null &&
+            (await repo.liveInboundFrom(
+              tx,
+              context.orgId,
+              mine.connection.id,
+              { e164: phone, raw: phone },
+              new Date(Date.now() - LIVE_LOOKUP_MS),
+              context.userId,
+            )) !== undefined;
+          if (!ringing) return { phone, customer: null, openOrders: [], ringBack };
+        }
         const panel = await this.orders.customerPanel(tx, context.orgId, customerId, 10, context);
         if (panel === undefined) return { phone, customer: null, openOrders: [], ringBack };
         return {
@@ -643,6 +791,17 @@ export class TelephonyCallsService {
       }),
     );
   }
+}
+
+/**
+ * Whether Envo's live call shows this extension's phone, or no phone of any extension (an
+ * Envo whose SIP usernames are not `<extension>_…` says nothing either way). Envo names an
+ * extension's endpoints `<number>_<SIP server slug>` and its web phone `<that>_web`
+ * (`createExtension`, `webEndpoint`); a trunk's endpoint has another name.
+ */
+export function answeredOn(call: EnvoLiveCall, extension: string): boolean {
+  const phones = call.endpoints.filter((endpoint) => /^[0-9]{2,8}_/.test(endpoint));
+  return phones.length === 0 || phones.some((endpoint) => endpoint.startsWith(`${extension}_`));
 }
 
 /** For a route that filters calls by a column outside the call's own scope. */

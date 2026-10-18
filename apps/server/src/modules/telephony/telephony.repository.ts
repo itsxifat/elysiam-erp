@@ -224,10 +224,22 @@ export async function recordSync(
   `);
 }
 
-/** Every brand's id, for a sweep that walks them one by one. */
+/** Every active brand's id, for a sweep that acts (the sync asks Envo for active ones only). */
 export async function allOrgIds(tx: Tx): Promise<string[]> {
   const rows = await tx.execute<{ id: string }>(
     sql`select id from org.organizations where is_active order by slug`,
+  );
+  return [...rows].map((row) => row.id);
+}
+
+/**
+ * Every brand's id, switched off or not, for a sweep that deletes personal data: a brand that
+ * was switched off still owes its customers the recordings' retention (D-842), as the packing
+ * videos' purge walks every brand (D-612).
+ */
+export async function everyOrgId(tx: Tx): Promise<string[]> {
+  const rows = await tx.execute<{ id: string }>(
+    sql`select id from org.organizations order by slug`,
   );
   return [...rows].map((row) => row.id);
 }
@@ -692,27 +704,60 @@ export async function listCalls(
   return [...rows];
 }
 
-/** The newest inbound call from this number on the connection that nobody has yet (D-836). */
+function fromThisNumber(phone: { readonly e164: string | null; readonly raw: string }): SQL {
+  return phone.e164 === null
+    ? sql`c.from_number = ${phone.raw}`
+    : sql`(c.customer_phone_e164 = ${phone.e164} or c.from_number = ${phone.raw})`;
+}
+
+/**
+ * The newest inbound call from this number on the connection that nobody has yet and that is
+ * still going (ringing or answered, not ended) (D-836): a missed or finished call from the same
+ * number is never claimed by the person answering the next one.
+ */
 export async function unclaimedInbound(
   tx: Tx,
   orgId: string,
   connectionId: string,
   phone: { readonly e164: string | null; readonly raw: string },
   since: Date,
+  options: { readonly lock: boolean },
 ): Promise<CallRow | undefined> {
   const rows = await tx.execute<CallRow>(sql`
     select ${CALL_COLUMNS} from telephony.calls c
     where c.org_id = ${orgId} and c.connection_id = ${connectionId}
       and c.direction in ('inbound', 'unknown') and c.user_id is null
+      and c.status in ('ringing', 'answered') and c.ended_at is null
       and c.occurred_at >= ${since.toISOString()}::timestamptz
-      and ${
-        phone.e164 === null
-          ? sql`c.from_number = ${phone.raw}`
-          : sql`(c.customer_phone_e164 = ${phone.e164} or c.from_number = ${phone.raw})`
-      }
+      and ${fromThisNumber(phone)}
     order by c.occurred_at desc
     limit 1
-    for update
+    ${options.lock ? sql`for update` : sql``}
+  `);
+  return rows[0];
+}
+
+/**
+ * An inbound call from this number on the connection, ringing or answered right now, nobody's
+ * yet or this person's (the screen pop's reason to name a caller, D-843).
+ */
+export async function liveInboundFrom(
+  tx: Tx,
+  orgId: string,
+  connectionId: string,
+  phone: { readonly e164: string | null; readonly raw: string },
+  since: Date,
+  userId: string,
+): Promise<{ id: string } | undefined> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select c.id from telephony.calls c
+    where c.org_id = ${orgId} and c.connection_id = ${connectionId}
+      and c.direction in ('inbound', 'unknown')
+      and (c.user_id is null or c.user_id = ${userId})
+      and c.status in ('ringing', 'answered') and c.ended_at is null
+      and c.occurred_at >= ${since.toISOString()}::timestamptz
+      and ${fromThisNumber(phone)}
+    limit 1
   `);
   return rows[0];
 }
@@ -735,6 +780,35 @@ export async function storedRecordingsPast(
     order by c.ended_at
     limit ${limit}
     for update of c
+  `);
+  return [...rows];
+}
+
+/**
+ * Recordings worth another round of tries (D-840): `pending` and untouched for half an hour, or
+ * `failed` for a reason that may pass (`unreachable`, `storage`) an hour after the last round,
+ * within a day of the call.
+ */
+export async function recordingsToRetry(
+  tx: Tx,
+  orgId: string,
+  now: Date,
+  limit: number,
+): Promise<{ id: string; recording_status: string }[]> {
+  const at = now.toISOString();
+  const rows = await tx.execute<{ id: string; recording_status: string }>(sql`
+    select c.id, c.recording_status from telephony.calls c
+    where c.org_id = ${orgId} and c.recording_url is not null
+      and (
+        (c.recording_status = 'pending'
+          and c.updated_at < ${at}::timestamptz - interval '30 minutes')
+        or (c.recording_status = 'failed' and c.recording_error in ('unreachable', 'storage')
+          and c.updated_at < ${at}::timestamptz - interval '1 hour'
+          and coalesce(c.ended_at, c.occurred_at) > ${at}::timestamptz - interval '1 day')
+      )
+    order by c.updated_at
+    limit ${limit}
+    for update of c skip locked
   `);
   return [...rows];
 }
@@ -801,6 +875,30 @@ export async function webhookForProcessing(
     for update
   `);
   return rows[0];
+}
+
+/**
+ * Stored bodies processed before `before` (thirty days, D-851), deleted: the call rows keep what
+ * they said. The trigger refuses an unprocessed or younger one.
+ */
+export async function deleteProcessedWebhooks(
+  tx: Tx,
+  orgId: string,
+  before: Date,
+  limit: number,
+): Promise<number> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    delete from telephony.webhook_events
+    where org_id = ${orgId} and id in (
+      select id from telephony.webhook_events
+      where org_id = ${orgId} and processed_at is not null
+        and processed_at < ${before.toISOString()}::timestamptz
+      order by processed_at
+      limit ${limit}
+    )
+    returning id
+  `);
+  return rows.length;
 }
 
 export async function markWebhookProcessed(

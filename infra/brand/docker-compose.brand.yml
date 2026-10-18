@@ -47,6 +47,10 @@ x-server-env: &server-env
   # BRAND_INBOX_META_PROVIDER=graph and BRAND_INBOX_META_ENABLED=true. Receiving needs neither.
   INBOX_META_PROVIDER: ${BRAND_INBOX_META_PROVIDER:-fake}
   INBOX_META_ENABLED: ${BRAND_INBOX_META_ENABLED:-false}
+  # Calls through Envo (M47, D-830): `fake` for a demo brand with no SIP server; and a private
+  # address a connection's base URL may resolve to (a LAN Envo), refused unless listed here.
+  TELEPHONY_ENVO_PROVIDER: ${BRAND_TELEPHONY_ENVO_PROVIDER:-http}
+  TELEPHONY_ENVO_PRIVATE_CIDRS: ${BRAND_TELEPHONY_ENVO_PRIVATE_CIDRS:-}
   GOTENBERG_URL: http://gotenberg:3000
   # M38c (D-683): where the camera process writes each IP camera's live preview frame; the
   # API reads it (read-only) to serve the packing station's live view.

@@ -10,7 +10,9 @@
 --   DELETE (both audited by the service, D-846).
 -- * `calls`: inserted (a click, or Envo's first word about a call), then only its progress moves
 --   (the trigger below). Never deleted; a recording past its retention leaves its row `expired`.
--- * `webhook_events`: Envo's bodies, stored once, then only marked processed (trigger below).
+-- * `webhook_events`: Envo's bodies, stored once, then only marked processed (trigger below),
+--   and deleted thirty days after they were processed (D-851): they repeat the caller's whole
+--   number, the call row keeps what matters, and Envo's retries are seconds apart.
 --
 -- No analytics read on any of them.
 
@@ -62,7 +64,7 @@ create policy "webhook_events_org_isolation" on "telephony"."webhook_events"
   using (org_id = nullif(current_setting('app.org_id', true), '')::uuid)
   with check (org_id = nullif(current_setting('app.org_id', true), '')::uuid);
 --> statement-breakpoint
-grant select, insert, update on "telephony"."webhook_events" to "erp_app";
+grant select, insert, update, delete on "telephony"."webhook_events" to "erp_app";
 --> statement-breakpoint
 
 -- A connection's identity is fixed: the brand, who added it and when.
@@ -154,6 +156,15 @@ begin
     raise exception 'CONFLICT: a finished call''s numbers are fixed.'
       using errcode = 'check_violation';
   end if;
+  -- Envo measures the seconds when it sends each event, so a late call.started (talk 0) must not
+  -- undo call.ended's: once known, talk time and duration only grow.
+  if (old.talk_seconds is not null
+      and (new.talk_seconds is null or new.talk_seconds < old.talk_seconds))
+     or (old.duration_seconds is not null
+         and (new.duration_seconds is null or new.duration_seconds < old.duration_seconds)) then
+    raise exception 'CONFLICT: a call''s talk time and duration only grow.'
+      using errcode = 'check_violation';
+  end if;
   if new.recording_status is distinct from old.recording_status then
     if not (
       (old.recording_status in ('none', 'failed') and new.recording_status in ('pending', 'failed'))
@@ -209,3 +220,21 @@ $$;
 create trigger webhook_events_path
 before update on telephony.webhook_events
 for each row execute function telephony.assert_webhook_event_change();
+--> statement-breakpoint
+
+-- A stored body is deleted only once processed and thirty days old (D-851), by the nightly
+-- retention: never one still waiting for its job, never one Envo could still be retrying.
+create or replace function telephony.assert_webhook_event_delete() returns trigger
+language plpgsql as $$
+begin
+  if old.processed_at is null or old.processed_at > now() - interval '30 days' then
+    raise exception 'CONFLICT: a webhook body is kept until thirty days after it was processed.'
+      using errcode = 'check_violation';
+  end if;
+  return old;
+end;
+$$;
+--> statement-breakpoint
+create trigger webhook_events_kept
+before delete on telephony.webhook_events
+for each row execute function telephony.assert_webhook_event_delete();

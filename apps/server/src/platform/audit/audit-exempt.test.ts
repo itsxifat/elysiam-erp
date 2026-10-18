@@ -106,6 +106,10 @@ describe('@AuditExempt', () => {
       // D-551, D-552): no person decided either; the events have a log of their own.
       'modules/storefront/web-marketing.controller.ts#customLinkView',
       'modules/storefront/web-marketing.controller.ts#events',
+      // M47: the screen pop and the call log's search (D-843, D-845): reads sent as POSTs only
+      // to keep a phone number out of URLs and access logs.
+      'modules/telephony/telephony.controller.ts#lookup',
+      'modules/telephony/telephony.controller.ts#search',
       // M47: Envo's webhook (D-832). No person acts; the body is stored and applied by a job,
       // whose call rows are the record.
       'modules/telephony/webhook.controller.ts#receive',

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
-import type { MembershipRole } from '@elysium/contracts';
 import type {
   TelephonyConnectionCreateInput,
   TelephonyConnectionUpdateInput,
@@ -26,10 +25,8 @@ import { TELEPHONY_CONFIG, type TelephonyConfig } from './telephony.config.js';
 import { mapTelephonyErrors, TelephonyError } from './telephony.errors.js';
 import { connectionBinding, openSecret, sealSecret } from './telephony-secrets.js';
 import * as repo from './telephony.repository.js';
+import { CALLING_ROLES } from './telephony.roles.js';
 import { ENVO_GATEWAY } from './telephony.tokens.js';
-
-/** The roles that place calls (`create PhoneCall`, D-831): the only people given an extension. */
-export const CALLING_ROLES: readonly MembershipRole[] = ['sales', 'branch_manager', 'org_admin'];
 
 /** Envo allows 120 requests a minute per key: presence is asked at most every ten seconds. */
 const EXTENSIONS_CACHE_MS = 10_000;
@@ -232,6 +229,14 @@ export class TelephonyConnectionsService {
           );
         }
         const baseUrl = this.baseUrl(input.baseUrl);
+        // The sealed key goes only to the host it was pasted for (D-830): a new address needs the
+        // key pasted again, or editing the address would be a way to read the write-only key.
+        if (baseUrl !== before.base_url && input.apiKey === undefined) {
+          throw new TelephonyError(
+            'TELEPHONY_INVALID',
+            'A new base URL needs its API key: paste the key again for the new address.',
+          );
+        }
         const taken = (await repo.connectionsOf(tx, context.orgId)).some(
           (row) => row.id !== id && row.name.toLowerCase() === input.name.toLowerCase(),
         );
@@ -414,6 +419,23 @@ export class TelephonyConnectionsService {
   }
 
   /**
+   * One extension as Envo lists it (cached ten seconds), null when Envo does not list it, or
+   * `unknown` when Envo could not be asked. For the console's phone: whether it can start.
+   */
+  async extensionInEnvo(
+    id: string,
+    envo: EnvoConnection,
+    extension: string,
+  ): Promise<EnvoExtension | null | 'unknown'> {
+    try {
+      const listed = await this.liveExtensions(id, envo);
+      return listed.find((row) => row.extension === extension) ?? null;
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  /**
    * A connection's extensions (D-847): Envo's list with live presence, each with the person it is
    * given to, and the brand's people who place calls. Envo being unreachable still shows the
    * assignments, with the reason.
@@ -443,7 +465,14 @@ export class TelephonyConnectionsService {
       const names = new Map(read.members.map((member) => [member.userId, member.name]));
       const mine = read.assignments.filter((assignment) => assignment.connection_id === id);
       const byExtension = new Map(mine.map((assignment) => [assignment.extension, assignment]));
-      const person = (userId: string) => ({ id: userId, name: names.get(userId) ?? null });
+      // `current: false`: still given to someone who no longer places calls here (deactivated,
+      // or their calling role taken away). Their calls are nobody's until a supervisor takes the
+      // extension off them (D-846).
+      const person = (userId: string) => ({
+        id: userId,
+        name: names.get(userId) ?? null,
+        current: names.has(userId),
+      });
       const listed = new Set((live ?? []).map((extension) => extension.extension));
       return {
         connectionId: id,

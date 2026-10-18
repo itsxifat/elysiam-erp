@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { FakeEnvoGateway, HttpEnvoGateway, type EnvoGateway } from './providers/envo-gateway.js';
+import { envoHostCheck, parseCidr } from './providers/envo-host.js';
 
 /**
  * Telephony's configuration (M47, D-849), parsed here rather than in `serverEnv()` for the reason
@@ -14,6 +15,10 @@ import { FakeEnvoGateway, HttpEnvoGateway, type EnvoGateway } from './providers/
  * - `TELEPHONY_ENVO_TIMEOUT_MS`: each request to Envo (8 s). A recording's download gets 60 s.
  * - `TELEPHONY_RECORDING_MAX_BYTES`: the largest recording kept (64 MiB, the storage rule's).
  * - `TELEPHONY_PHONE_TOKEN_TTL_SECONDS`: the web phone's token (120 s; Envo allows 60 to 3600).
+ * - `TELEPHONY_ENVO_PRIVATE_CIDRS`: private IPv4 ranges a base URL's name may resolve to,
+ *   space- or comma-separated (`192.168.20.237/32`), for a brand whose own Envo its DNS answers
+ *   with a LAN address. Empty (the default): every private, loopback and link-local address is
+ *   refused (D-830).
  */
 const schema = z.object({
   TELEPHONY_ENVO_PROVIDER: z.enum(['http', 'fake']).default('http'),
@@ -30,6 +35,24 @@ const schema = z.object({
     .max(64 * 1024 * 1024)
     .default(64 * 1024 * 1024),
   TELEPHONY_PHONE_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(120),
+  TELEPHONY_ENVO_PRIVATE_CIDRS: z
+    .string()
+    .default('')
+    .transform((value, context) => {
+      const cidrs = value
+        .split(/[\s,]+/)
+        .filter(Boolean)
+        .map((entry) => ({ entry, cidr: parseCidr(entry) }));
+      const bad = cidrs.find((item) => item.cidr === null);
+      if (bad !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: `"${bad.entry}" is not an IPv4 address or range`,
+        });
+        return z.NEVER;
+      }
+      return cidrs.flatMap((item) => (item.cidr === null ? [] : [item.cidr]));
+    }),
   NODE_ENV: z.string().optional(),
 });
 
@@ -56,5 +79,9 @@ export function envoGatewayFor(config: TelephonyConfig): EnvoGateway {
   return new HttpEnvoGateway({
     timeoutMs: config.TELEPHONY_ENVO_TIMEOUT_MS,
     recordingTimeoutMs: config.TELEPHONY_RECORDING_TIMEOUT_MS,
+    // The tests' stand-in is on 127.0.0.1; everywhere else the host's addresses are checked.
+    ...(config.TELEPHONY_ALLOW_PLAIN_HTTP
+      ? {}
+      : { checkHost: envoHostCheck(config.TELEPHONY_ENVO_PRIVATE_CIDRS) }),
   });
 }

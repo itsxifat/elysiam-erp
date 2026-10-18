@@ -15,12 +15,15 @@ import {
   matchClick,
   parseEnvoCall,
   parseEnvoSignature,
+  phoneCallProgress,
   phoneCallStatusAfter,
   recordingExpired,
   recordingIdFrom,
   signatureFresh,
   storedNumber,
   talkTime,
+  type EnvoCallFacts,
+  type PhoneCallProgressState,
   type PhoneCallStatus,
 } from './index.js';
 
@@ -75,6 +78,19 @@ describe('numbers (D-833)', () => {
     expect(customerSide({ direction: 'outbound', from: '101', to: mobile })).toBe(e164);
     expect(customerSide({ direction: 'internal', from: '101', to: '102' })).toBeNull();
     expect(customerSide({ direction: 'unknown', from: '101', to: mobile })).toBe(e164);
+  });
+
+  it('reads a call of unknown direction by its extension, and waits when both sides are mobiles', () => {
+    const customer = '01712345678';
+    const e164 = '+8801712345678';
+    // A customer calling the brand's hotline, before Envo has written the CDR.
+    expect(customerSide({ direction: 'unknown', from: customer, to: '09644342036' })).toBe(e164);
+    // A customer reaching an extension straight.
+    expect(customerSide({ direction: 'unknown', from: customer, to: '101' })).toBe(e164);
+    // A customer calling the brand's own number on a SIM or a GSM gateway: not taken as the
+    // customer for good; Envo's direction decides on a later event.
+    expect(customerSide({ direction: 'unknown', from: customer, to: '01811111111' })).toBeNull();
+    expect(customerSide({ direction: 'inbound', from: customer, to: '01811111111' })).toBe(e164);
   });
 });
 
@@ -152,8 +168,50 @@ describe('linking a call to its click (D-835)', () => {
       matchClick(pending, { from: null, to: '01812345678', direction: 'outbound' }, now)?.id,
     ).toBe('other');
     expect(
-      matchClick(pending, { from: '8801712345678', to: '9', direction: 'unknown' }, now)?.id,
+      matchClick(pending, { from: null, to: '8801712345678', direction: 'outbound' }, now)?.id,
     ).toBe('b');
+  });
+
+  it('never gives one person’s click another extension’s call to the same customer', () => {
+    // Agent A (101) pressed Call for X; agent B dials X from desk phone 102 meanwhile.
+    const pending = [click('a', '101', '01712345678', 20)];
+    for (const direction of ['unknown', 'outbound'] as const) {
+      expect(
+        matchClick(pending, { from: '102', to: '01712345678', direction }, now),
+        direction,
+      ).toBeNull();
+    }
+  });
+
+  it('never takes the customer calling back for the click (direction not known yet)', () => {
+    const pending = [click('a', '101', '01712345678', 20)];
+    expect(
+      matchClick(pending, { from: '01712345678', to: '09644342036', direction: 'unknown' }, now),
+    ).toBeNull();
+    expect(
+      matchClick(pending, { from: '8801712345678', to: null, direction: 'unknown' }, now),
+    ).toBeNull();
+  });
+
+  it('keeps two quick Calls by one person apart: the number, then the click made before it', () => {
+    // Call 1 (to A) at 10:00:00.1, click 2 (to B) at 10:00:03; call 1's word arrives after.
+    const callStart = new Date(now.getTime() + 100);
+    const pending = [
+      { ...click('one', '101', '01711111111', 0) },
+      { ...click('two', '101', '01822222222', -3) },
+    ];
+    expect(
+      matchClick(pending, { from: '101', to: '01711111111', direction: 'unknown' }, callStart)?.id,
+    ).toBe('one');
+    // The event names only the extension: the click made at or before the start wins.
+    expect(
+      matchClick(pending, { from: '101', to: '101', direction: 'unknown' }, callStart)?.id,
+    ).toBe('one');
+    // Call 2, with click 1 already linked.
+    const second = new Date(now.getTime() + 3_100);
+    expect(
+      matchClick([pending[1]!], { from: '101', to: '101', direction: 'unknown' }, second)?.id,
+    ).toBe('two');
   });
 
   it('lets the extension on the call decide between two clicks to the same customer', () => {
@@ -179,6 +237,147 @@ describe('linking a call to its click (D-835)', () => {
     expect(
       matchClick(fresh, { from: '103', to: '01912345678', direction: 'outbound' }, now),
     ).toBeNull();
+  });
+});
+
+describe('what a word from Envo moves on a call (D-837)', () => {
+  const at = (iso: string) => new Date(iso);
+  const facts = (over: Partial<EnvoCallFacts>): EnvoCallFacts => ({
+    event: 'call.ended',
+    callId: '1789455634.59',
+    sipServerId: 7,
+    direction: 'outbound',
+    from: '101',
+    to: '01812345678',
+    answered: null,
+    disposition: null,
+    talkSeconds: null,
+    durationSeconds: null,
+    startedAt: null,
+    answeredAt: null,
+    endedAt: null,
+    recordingUrl: null,
+    test: false,
+    ...over,
+  });
+  const fresh: PhoneCallProgressState = {
+    status: 'dialing',
+    answered: false,
+    direction: 'unknown',
+    fromNumber: null,
+    toNumber: null,
+    disposition: null,
+    talkSeconds: null,
+    durationSeconds: null,
+    startedAt: null,
+    answeredAt: null,
+    endedAt: null,
+  };
+  const apply = (state: PhoneCallProgressState, word: EnvoCallFacts, now: Date) => ({
+    ...state,
+    ...phoneCallProgress(state, word, now),
+  });
+
+  it('keeps a finished call’s talk time when a late call.started or call.answered arrives', () => {
+    const now = at('2026-10-18T10:01:00Z');
+    let state = apply(
+      fresh,
+      facts({
+        event: 'call.ended',
+        answered: true,
+        disposition: 'answered',
+        talkSeconds: 38,
+        durationSeconds: 42,
+        startedAt: at('2026-10-18T10:00:00Z'),
+        answeredAt: at('2026-10-18T10:00:04Z'),
+        endedAt: at('2026-10-18T10:00:42Z'),
+      }),
+      now,
+    );
+    for (const event of ['call.started', 'call.answered'] as const) {
+      state = apply(
+        state,
+        facts({ event, talkSeconds: 0, durationSeconds: 1, startedAt: at('2026-10-18T10:00:00Z') }),
+        now,
+      );
+    }
+    expect(state).toMatchObject({
+      status: 'ended',
+      talkSeconds: 38,
+      durationSeconds: 42,
+      disposition: 'answered',
+    });
+  });
+
+  it('never lowers the seconds or unsays an answered disposition, over any order of words', () => {
+    const word = fc.record({
+      event: fc.constantFrom(...EVENTS),
+      talk: fc.option(fc.integer({ min: 0, max: 600 }), { nil: null }),
+      duration: fc.option(fc.integer({ min: 0, max: 700 }), { nil: null }),
+      disposition: fc.option(fc.constantFrom('answered', 'no_answer', 'busy' as const), {
+        nil: null,
+      }),
+    });
+    fc.assert(
+      fc.property(fc.array(word, { maxLength: 8 }), (words) => {
+        let state = fresh;
+        const now = at('2026-10-18T10:05:00Z');
+        for (const step of words) {
+          const before = state;
+          state = apply(
+            state,
+            facts({
+              event: step.event,
+              talkSeconds: step.talk,
+              durationSeconds: step.duration,
+              disposition: step.disposition,
+              startedAt: at('2026-10-18T10:00:00Z'),
+            }),
+            now,
+          );
+          if (before.talkSeconds !== null) {
+            expect(state.talkSeconds).toBeGreaterThanOrEqual(before.talkSeconds);
+          }
+          if (before.durationSeconds !== null) {
+            expect(state.durationSeconds).toBeGreaterThanOrEqual(before.durationSeconds);
+          }
+          if (before.disposition === 'answered') expect(state.disposition).toBe('answered');
+          if (before.answeredAt !== null) expect(state.answeredAt).toBe(before.answeredAt);
+          if (before.endedAt !== null) expect(state.endedAt).toBe(before.endedAt);
+        }
+      }),
+    );
+  });
+
+  it('dates a call learned only from the history by its start, duration and talk time', () => {
+    const state = apply(
+      fresh,
+      facts({
+        event: 'sync',
+        direction: 'inbound',
+        from: '01812345678',
+        to: '09644342036',
+        answered: true,
+        disposition: 'answered',
+        talkSeconds: 25,
+        durationSeconds: 30,
+        startedAt: at('2026-10-18T09:00:00Z'),
+      }),
+      at('2026-10-18T09:47:00Z'),
+    );
+    expect(state.endedAt).toEqual(at('2026-10-18T09:00:30Z'));
+    expect(state.answeredAt).toEqual(at('2026-10-18T09:00:05Z'));
+    expect(state.answeredAt!.getTime()).toBeLessThanOrEqual(state.endedAt!.getTime());
+  });
+
+  it('lets call.ended’s disposition replace a history row’s, and nothing replace answered', () => {
+    const now = at('2026-10-18T10:05:00Z');
+    let state = apply(fresh, facts({ event: 'sync', disposition: 'no_answer' }), now);
+    state = apply(state, facts({ event: 'call.ended', disposition: 'busy' }), now);
+    expect(state.disposition).toBe('busy');
+    state = apply(state, facts({ event: 'sync', disposition: 'answered' }), now);
+    state = apply(state, facts({ event: 'call.ended', disposition: 'no_answer' }), now);
+    expect(state.disposition).toBe('answered');
   });
 });
 

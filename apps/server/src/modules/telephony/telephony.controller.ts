@@ -25,7 +25,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditExempt, type AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
@@ -205,13 +205,21 @@ export class TelephonyController {
     return this.calls.phoneToken(requireContext(request), request);
   }
 
+  /**
+   * The screen pop (D-843): a POST with the caller's number in the body, so it stays out of URLs
+   * and access logs (invariant 10), as the tracking page's `POST /v1/track` does.
+   */
   @RequireAbility('create', 'PhoneCall')
-  @Get('lookup')
-  async lookup(@Req() request: FastifyRequest, @Query() query: unknown) {
+  @AuditExempt(
+    'A read, sent as a POST only to keep the caller’s number out of URLs. It changes nothing.',
+  )
+  @Post('lookup')
+  @HttpCode(200)
+  async lookup(@Req() request: FastifyRequest, @Body() body: unknown) {
     return this.calls.lookup(
       requireContext(request),
       request,
-      parse(phoneLookupQuerySchema, query).phone,
+      parse(phoneLookupQuerySchema, body).phone,
     );
   }
 
@@ -247,6 +255,20 @@ export class TelephonyController {
     );
   }
 
+  /**
+   * The call log with its filters in the body (the Calls page's): a phone filter stays out of
+   * URLs and access logs (invariant 10). The same answer as `GET calls`.
+   */
+  @RequireAbility('read', 'PhoneCall')
+  @AuditExempt(
+    'A read, sent as a POST only to keep a phone filter out of URLs. It changes nothing.',
+  )
+  @Post('calls/search')
+  @HttpCode(200)
+  async search(@Req() request: FastifyRequest, @Body() body: unknown) {
+    return this.calls.list(requireContext(request), request, parse(phoneCallListQuerySchema, body));
+  }
+
   @RequireAbility('read', 'PhoneCall')
   @Get('calls/:id')
   async one(@Req() request: FastifyRequest, @Param('id') id: string) {
@@ -255,7 +277,9 @@ export class TelephonyController {
 
   /**
    * A call's recording, to a person who may see the call: the bytes, not JSON, so `@Res()` and a
-   * manual send (nothing in a recording is a cost). Private, cached briefly in the browser only.
+   * manual send (nothing in a recording is a cost). `no-store`: a customer's voice is not kept in
+   * the browser's cache, where another account on the same browser could be served it without
+   * the scope check (the console plays it from the fetched blob).
    */
   @RequireAbility('read', 'PhoneCall')
   @Get('calls/:id/recording')
@@ -272,7 +296,7 @@ export class TelephonyController {
     await reply
       .header('content-type', recording.mime)
       .header('content-length', String(recording.bytes.byteLength))
-      .header('cache-control', 'private, max-age=300')
+      .header('cache-control', 'no-store')
       .header('x-content-type-options', 'nosniff')
       .header('content-disposition', 'inline')
       .send(Buffer.from(recording.bytes));

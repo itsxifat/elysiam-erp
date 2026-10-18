@@ -135,7 +135,10 @@ export const TELEPHONY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
   }),
   'GET /v1/telephony/me': () => ({ url: '/v1/telephony/me' }),
   'GET /v1/telephony/phone/token': () => ({ url: '/v1/telephony/phone/token' }),
-  'GET /v1/telephony/lookup': () => ({ url: '/v1/telephony/lookup?phone=01712345678' }),
+  'POST /v1/telephony/lookup': () => ({
+    url: '/v1/telephony/lookup',
+    body: { phone: '01712345678' },
+  }),
   'POST /v1/telephony/calls': () => ({
     url: '/v1/telephony/calls',
     body: { phone: '01712345678' },
@@ -145,6 +148,10 @@ export const TELEPHONY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
     body: { from: '01712345678' },
   }),
   'GET /v1/telephony/calls': () => ({ url: '/v1/telephony/calls?limit=5' }),
+  'POST /v1/telephony/calls/search': () => ({
+    url: '/v1/telephony/calls/search',
+    body: { limit: 5 },
+  }),
   'GET /v1/telephony/calls/:id': async () => ({ url: `/v1/telephony/calls/${await freshCall()}` }),
   'GET /v1/telephony/calls/:id/recording': async () => ({
     url: `/v1/telephony/calls/${await freshCall()}/recording`,

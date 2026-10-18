@@ -56,6 +56,8 @@ export interface EnvoLiveCall {
   readonly state: string;
   readonly startedAt: string | null;
   readonly durationSec: number;
+  /** Its channels' SIP endpoints (`channels[].endpoint` in Envo's `liveCalls`). */
+  readonly endpoints: readonly string[];
 }
 
 export interface EnvoCallHistoryPage {
@@ -116,10 +118,18 @@ export interface EnvoGateway {
   /** `POST /api/v1/calls/hangup`: every channel of the call (or the channel) named. */
   hangup(connection: EnvoConnection, call: string): Promise<number>;
   liveCalls(connection: EnvoConnection): Promise<readonly EnvoLiveCall[]>;
-  /** `GET /api/v1/calls?from&limit&page`: finished calls, newest first, one entry per call. */
+  /**
+   * `GET /api/v1/calls?from&to&limit&page`: finished calls started in `[from, to)`, newest first,
+   * one entry per call.
+   */
   callHistory(
     connection: EnvoConnection,
-    query: { readonly from: Date; readonly page: number; readonly limit: number },
+    query: {
+      readonly from: Date;
+      readonly to?: Date;
+      readonly page: number;
+      readonly limit: number;
+    },
   ): Promise<EnvoCallHistoryPage>;
   /** `POST /api/v1/webphone/token`: a short-lived token for one extension's web phone. */
   webphoneToken(
@@ -140,16 +150,32 @@ export interface HttpEnvoOptions {
   readonly timeoutMs: number;
   readonly recordingTimeoutMs: number;
   readonly fetch?: Fetch;
+  /**
+   * Why the base URL's host may not be asked right now, or null (D-830, `envo-host.ts`): its
+   * addresses checked before every request. Absent for the tests' stand-in on 127.0.0.1.
+   */
+  readonly checkHost?: (hostname: string) => Promise<string | null>;
 }
+
+/** The most of a JSON answer read (a history page of 200 calls is well under it). */
+const JSON_MAX_BYTES = 2 * 1024 * 1024;
 
 function text(value: unknown, max = 200): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, max) : null;
 }
 
-/** What Envo said, short and masked: a refusal may quote a number it was given. */
-function envoMessage(payload: unknown): string | null {
+/**
+ * What Envo said, short and masked: a refusal may quote a number it was given. A host that is
+ * not Envo might echo the request; the key, and any bearer token, never reach a message.
+ */
+function envoMessage(payload: unknown, apiKey: string): string | null {
   const said = text((payload as { error?: unknown } | null)?.error, 200);
-  return said === null ? null : maskPhonesInText(said);
+  if (said === null) return null;
+  const unkeyed = (apiKey === '' ? said : said.split(apiKey).join('[key]')).replace(
+    /bearer\s+[\x21-\x7e]+/gi,
+    'Bearer [key]',
+  );
+  return maskPhonesInText(unkeyed);
 }
 
 function hostOf(baseUrl: string): string {
@@ -160,9 +186,29 @@ function hostOf(baseUrl: string): string {
   }
 }
 
-/** A refusal as a person reads it (acceptance check 1: "a wrong key is refused with a clear reason"). */
-function failureFor(status: number, payload: unknown): EnvoError {
-  const said = envoMessage(payload);
+/**
+ * A refusal as a person reads it (acceptance check 1: "a wrong key is refused with a clear
+ * reason"). Envo always answers its refusals as JSON; a 403 that is not JSON, or that carries
+ * Cloudflare's ray, never reached Envo (a bot challenge or a firewall rule in front of it).
+ */
+function failureFor(
+  status: number,
+  payload: unknown,
+  connection: EnvoConnection,
+  headers?: Headers,
+): EnvoError {
+  const said = envoMessage(payload, connection.apiKey);
+  const blockedOnTheWay =
+    (status === 403 || status === 503) &&
+    (payload === null || headers?.get('cf-mitigated') != null) &&
+    headers?.get('cf-ray') != null;
+  if (blockedOnTheWay || (status === 403 && payload === null)) {
+    return new EnvoError(
+      'refused',
+      `The request was stopped before it reached Envo at ${hostOf(connection.baseUrl)} (a firewall or bot check in front of it, such as Cloudflare's).`,
+      status,
+    );
+  }
   switch (status) {
     case 401:
       return new EnvoError(
@@ -194,21 +240,35 @@ function failureFor(status: number, payload: unknown): EnvoError {
   }
 }
 
-async function readCapped(response: Response, maxBytes: number): Promise<Uint8Array> {
+/**
+ * The body, refused (never truncated) past `maxBytes`. A body that stops coming (the timeout, a
+ * reset connection) is Envo unreachable, which a job tries again, not a refusal.
+ */
+async function readCapped(
+  response: Response,
+  maxBytes: number,
+  tooLarge = 'The recording is larger than the ERP keeps.',
+): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length') ?? NaN);
   if (Number.isFinite(declared) && declared > maxBytes) {
-    await response.body?.cancel();
-    throw new EnvoError('too_large', 'The recording is larger than the ERP keeps.', null);
+    await response.body?.cancel().catch(() => undefined);
+    throw new EnvoError('too_large', tooLarge, null);
   }
   if (response.body === null) return new Uint8Array();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-    total += chunk.byteLength;
-    if (total > maxBytes) {
-      throw new EnvoError('too_large', 'The recording is larger than the ERP keeps.', null);
+  try {
+    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        await response.body.cancel().catch(() => undefined);
+        throw new EnvoError('too_large', tooLarge, null);
+      }
+      chunks.push(chunk);
     }
-    chunks.push(chunk);
+  } catch (error) {
+    if (error instanceof EnvoError) throw error;
+    throw new EnvoError('unreachable', 'The answer stopped before it was all received.', null);
   }
   const bytes = new Uint8Array(total);
   let offset = 0;
@@ -250,6 +310,16 @@ export class HttpEnvoGateway implements EnvoGateway {
     timeoutMs = this.options.timeoutMs,
   ): Promise<Response> {
     const url = `${connection.baseUrl.replace(/\/+$/, '')}${path}`;
+    if (this.options.checkHost !== undefined) {
+      const why = await this.options.checkHost(new URL(url).hostname);
+      if (why !== null) {
+        throw new EnvoError(
+          'refused',
+          `${hostOf(connection.baseUrl)} resolves to a ${why} address, which the ERP does not call. If the brand's Envo really is there, list that address in TELEPHONY_ENVO_PRIVATE_CIDRS.`,
+          null,
+        );
+      }
+    }
     let response: Response;
     try {
       response = await this.fetch(url, {
@@ -290,9 +360,15 @@ export class HttpEnvoGateway implements EnvoGateway {
     body?: unknown,
   ): Promise<unknown> {
     const response = await this.send(connection, method, path, body);
-    const raw = await response.text();
+    const raw = new TextDecoder().decode(
+      await readCapped(
+        response,
+        JSON_MAX_BYTES,
+        `${hostOf(connection.baseUrl)} answered with more than the ERP reads.`,
+      ),
+    );
     const payload = parseJson(raw);
-    if (!response.ok) throw failureFor(response.status, payload);
+    if (!response.ok) throw failureFor(response.status, payload, connection, response.headers);
     if (payload === null || typeof payload !== 'object') {
       throw new EnvoError(
         'unexpected',
@@ -390,6 +466,7 @@ export class HttpEnvoGateway implements EnvoGateway {
       const record = row as Record<string, unknown>;
       const id = text(record.id, 40);
       if (id === null || !/^[0-9]{1,20}(\.[0-9]{1,10})?$/.test(id)) return [];
+      const channels = Array.isArray(record.channels) ? record.channels : [];
       return [
         {
           id,
@@ -401,6 +478,10 @@ export class HttpEnvoGateway implements EnvoGateway {
             typeof record.durationSec === 'number' && record.durationSec >= 0
               ? Math.round(record.durationSec)
               : 0,
+          endpoints: channels.flatMap((channel: unknown) => {
+            const endpoint = text((channel as { endpoint?: unknown } | null)?.endpoint, 80);
+            return endpoint === null ? [] : [endpoint];
+          }),
         },
       ];
     });
@@ -408,10 +489,16 @@ export class HttpEnvoGateway implements EnvoGateway {
 
   async callHistory(
     connection: EnvoConnection,
-    query: { readonly from: Date; readonly page: number; readonly limit: number },
+    query: {
+      readonly from: Date;
+      readonly to?: Date;
+      readonly page: number;
+      readonly limit: number;
+    },
   ): Promise<EnvoCallHistoryPage> {
     const search = new URLSearchParams({
       from: query.from.toISOString(),
+      ...(query.to === undefined ? {} : { to: query.to.toISOString() }),
       limit: String(query.limit),
       page: String(query.page),
     });
@@ -464,8 +551,10 @@ export class HttpEnvoGateway implements EnvoGateway {
       this.options.recordingTimeoutMs,
     );
     if (!response.ok) {
-      const raw = await response.text().catch(() => '');
-      throw failureFor(response.status, parseJson(raw));
+      const raw = await readCapped(response, JSON_MAX_BYTES)
+        .then((bytes) => new TextDecoder().decode(bytes))
+        .catch(() => '');
+      throw failureFor(response.status, parseJson(raw), connection, response.headers);
     }
     return {
       bytes: await readCapped(response, maxBytes),

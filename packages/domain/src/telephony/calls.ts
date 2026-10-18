@@ -2,8 +2,11 @@ import type { E164Phone } from '../orders/phone.js';
 import {
   customerPhoneFrom,
   isExtensionNumber,
+  storedNumber,
   type EnvoCallFacts,
   type EnvoEvent,
+  type PhoneCallDirection,
+  type PhoneCallDisposition,
 } from './envo.js';
 
 /**
@@ -93,10 +96,16 @@ export interface PendingClick {
 /**
  * The click a new call of the connection belongs to (D-835), or null. Envo's `POST /calls`
  * answers with no call id, so the first event of a call Envo has not told us about is matched
- * to the newest click within the window whose extension appears on the call (`from` or `to`),
- * else the newest whose customer number does: Envo rings the extension from `"name" <ext>` and
- * dials the number given, and which of the two each event carries depends on where the call was
- * when Envo described it.
+ * to a click within the window. Envo rings the click's own extension first (`"name" <ext>`), so:
+ *
+ * - a call that names an extension (`from` or `to`) belongs only to a click of that extension:
+ *   another person's desk-phone call to the same customer is never theirs;
+ * - among one person's clicks (two Calls a few seconds apart), the one whose customer number is
+ *   also on the call wins, then the newest made at or before the call started, then one made
+ *   just after it (clock skew), the closest first;
+ * - a call that names no extension is matched by the customer number alone only when Envo says
+ *   it went out: a call of unknown direction from a customer's mobile is the customer calling
+ *   back, not the click.
  */
 export function matchClick(
   pending: readonly PendingClick[],
@@ -111,23 +120,134 @@ export function matchClick(
       .filter((phone): phone is E164Phone => phone !== null),
   );
   const extensions = new Set(numbers.filter((value) => isExtensionNumber(value)));
+  const age = (click: PendingClick) => now.getTime() - click.requestedAt.getTime();
   const inWindow = pending
-    .filter((click) => {
-      const age = now.getTime() - click.requestedAt.getTime();
-      return age >= -5_000 && age <= CLICK_TO_CALL_MATCH_MS;
-    })
+    .filter((click) => age(click) >= -5_000 && age(click) <= CLICK_TO_CALL_MATCH_MS)
     .sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime());
-  // The extension on the call names whose click it is; the number alone is the fallback (two
-  // people may call the same customer a moment apart).
-  return (
-    inWindow.find((click) => extensions.has(click.extension)) ??
-    inWindow.find((click) => phones.has(click.toE164 as E164Phone)) ??
-    null
-  );
+  const onNumber = (click: PendingClick) => phones.has(click.toE164 as E164Phone);
+
+  if (extensions.size > 0) {
+    const theirs = inWindow.filter((click) => extensions.has(click.extension));
+    return (
+      theirs.find(onNumber) ??
+      theirs.find((click) => age(click) >= 0) ??
+      [...theirs].sort((a, b) => age(b) - age(a))[0] ??
+      null
+    );
+  }
+  if (call.direction !== 'outbound') return null;
+  return inWindow.find(onNumber) ?? null;
 }
 
-/** A click Envo took but never described, after this long, is closed as not connected. */
+/**
+ * A click Envo took but never described, after this long, is closed as not connected, unless
+ * Envo still shows a call in progress on its extension (a long call whose webhooks were lost).
+ */
 export const CLICK_TO_CALL_STALE_MS = 15 * 60_000;
+
+// --- what a word from Envo moves on a call (D-837) -----------------------------------------------
+
+/** The parts of a call Envo's word may move, as the call has them now. */
+export interface PhoneCallProgressState {
+  readonly status: PhoneCallStatus;
+  readonly answered: boolean;
+  readonly direction: PhoneCallDirection;
+  readonly fromNumber: string | null;
+  readonly toNumber: string | null;
+  readonly disposition: PhoneCallDisposition | null;
+  readonly talkSeconds: number | null;
+  readonly durationSeconds: number | null;
+  readonly startedAt: Date | null;
+  readonly answeredAt: Date | null;
+  readonly endedAt: Date | null;
+}
+
+export type PhoneCallProgressChange = {
+  -readonly [K in keyof PhoneCallProgressState]?: PhoneCallProgressState[K];
+};
+
+/**
+ * What this word from Envo moves on the call, each part only when it may (D-837): the status
+ * furthest along, answered once answered, the direction once known, the numbers until it ends.
+ *
+ * Envo measures `talkSec` and `durationSec` when it sends each event, and sends each event on its
+ * own with retries, so a `call.started` or `call.answered` (talk 0, a second or two long) can
+ * arrive after `call.ended`, and a history row cut by the sync's window can describe one leg of
+ * the call. So the seconds never go down, and once the call is over only `call.ended` and the
+ * history may raise them. Disposition: the first one said, replaced by `call.ended`'s (Envo's
+ * own word at the end) and by `answered` (a call that was answered stays so), never by a
+ * history row's or an earlier event's other one.
+ *
+ * Times: the start, the answer and the end are set once. A history row says no answer or end
+ * time: the end is the start plus the duration, and the answer the end less the talk time
+ * (Asterisk's `billsec` runs from the answer to the hangup); never the time the sync ran, which
+ * could fall after the end. Unknown, it is left unset.
+ */
+export function phoneCallProgress(
+  current: PhoneCallProgressState,
+  facts: EnvoCallFacts,
+  now: Date,
+): PhoneCallProgressChange {
+  const change: PhoneCallProgressChange = {};
+  const status = phoneCallStatusAfter(current.status, facts.event);
+  if (status !== current.status) change.status = status;
+  const answered = answeredAfter(current.answered, facts);
+  if (answered !== current.answered) change.answered = answered;
+  if (current.direction === 'unknown' && facts.direction !== 'unknown') {
+    change.direction = facts.direction;
+  }
+
+  const wasEnded = current.status === 'ended';
+  const from = storedNumber(facts.from);
+  const to = storedNumber(facts.to);
+  if (from !== null && from !== current.fromNumber && (!wasEnded || current.fromNumber === null)) {
+    change.fromNumber = from;
+  }
+  if (to !== null && to !== current.toNumber && (!wasEnded || current.toNumber === null)) {
+    change.toNumber = to;
+  }
+
+  const final = facts.event === 'call.ended' || facts.event === 'sync';
+  if (facts.disposition !== null && facts.disposition !== current.disposition) {
+    const replaces =
+      current.disposition === null ||
+      facts.disposition === 'answered' ||
+      (facts.event === 'call.ended' && current.disposition !== 'answered');
+    if (replaces) change.disposition = facts.disposition;
+  }
+  const seconds = (said: number | null, kept: number | null): number | null => {
+    if (said === null) return null;
+    if (wasEnded && !final) return null;
+    return kept === null || said > kept ? said : null;
+  };
+  const talk = seconds(facts.talkSeconds, current.talkSeconds);
+  if (talk !== null) change.talkSeconds = talk;
+  const duration = seconds(facts.durationSeconds, current.durationSeconds);
+  if (duration !== null) change.durationSeconds = duration;
+
+  const startedAt = current.startedAt ?? facts.startedAt ?? now;
+  if (current.startedAt === null) change.startedAt = startedAt;
+  const derivedEnd =
+    facts.endedAt ??
+    (facts.startedAt !== null && facts.durationSeconds !== null
+      ? new Date(facts.startedAt.getTime() + facts.durationSeconds * 1000)
+      : null);
+  if (current.answeredAt === null && answered) {
+    if (facts.answeredAt !== null) change.answeredAt = facts.answeredAt;
+    else if (final) {
+      const talked = facts.talkSeconds ?? current.talkSeconds;
+      const end = derivedEnd ?? current.endedAt;
+      if (end !== null && talked !== null) {
+        const at = new Date(end.getTime() - talked * 1000);
+        change.answeredAt = at < startedAt ? startedAt : at;
+      }
+    } else change.answeredAt = now;
+  }
+  if (current.endedAt === null && status === 'ended') {
+    change.endedAt = derivedEnd ?? now;
+  }
+  return change;
+}
 
 // --- recordings (D-840, D-842) -------------------------------------------------------------------
 

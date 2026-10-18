@@ -91,8 +91,11 @@ export function storedNumber(raw: string | null | undefined): string | null {
 
 /**
  * The customer's side of a call: the caller of an inbound call, the number dialled on an
- * outbound one, nobody on an internal one. A call Envo has not described yet (`unknown`) is the
- * side that is a BD mobile, `to` first (the ERP's own calls go out).
+ * outbound one, nobody on an internal one. A call Envo has not described yet (`unknown`, its
+ * `call.started` usually is) is read by its extension: the other side of an extension; with no
+ * extension on it, the one side that is a BD mobile. Two mobiles (a brand number that is a SIM
+ * or a GSM gateway, called by a customer) say nothing yet, so the customer waits for Envo's
+ * direction rather than being taken, once and for good, as the brand's own number.
  */
 export function customerSide(input: {
   readonly direction: PhoneCallDirection;
@@ -106,8 +109,14 @@ export function customerSide(input: {
       return customerPhoneFrom(input.to);
     case 'internal':
       return null;
-    case 'unknown':
-      return customerPhoneFrom(input.to) ?? customerPhoneFrom(input.from);
+    case 'unknown': {
+      if (isExtensionNumber(input.from)) return customerPhoneFrom(input.to);
+      if (isExtensionNumber(input.to)) return customerPhoneFrom(input.from);
+      const from = customerPhoneFrom(input.from);
+      const to = customerPhoneFrom(input.to);
+      if (from !== null && to !== null) return null;
+      return from ?? to;
+    }
   }
 }
 

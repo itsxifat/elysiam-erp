@@ -54,6 +54,7 @@ export async function registerTelephonyJobs(deps: TelephonyWorkerDependencies): 
     TELEPHONY_QUEUES.syncSweep.name,
     async () => {
       await sync.sweep();
+      await recordings.requeueStuck();
     },
     report,
   );
