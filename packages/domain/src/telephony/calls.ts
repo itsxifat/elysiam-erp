@@ -260,20 +260,6 @@ export function phoneCallProgress(
   return change;
 }
 
-// --- recordings (D-840, D-842) -------------------------------------------------------------------
-
-export const RECORDING_STATUSES = ['none', 'pending', 'stored', 'failed', 'expired'] as const;
-export type RecordingStatus = (typeof RECORDING_STATUSES)[number];
-
-export const RECORDING_RETENTION_DEFAULT_DAYS = 365;
-export const RECORDING_RETENTION_MIN_DAYS = 30;
-export const RECORDING_RETENTION_MAX_DAYS = 3650;
-
-/** Whether a recording kept since `endedAt` is past the connection's retention at `now`. */
-export function recordingExpired(endedAt: Date, retentionDays: number, now: Date): boolean {
-  return now.getTime() - endedAt.getTime() > retentionDays * 86_400_000;
-}
-
 /** Talk time as a person reads it: `0:38`, `12:05`, `1:02:09`. */
 export function talkTime(seconds: number): string {
   const whole = Math.max(0, Math.floor(seconds));

@@ -16,14 +16,14 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { primaryId, timestamps } from '../columns.js';
-import { fileObjects } from '../files/index.js';
 import { users } from '../iam/index.js';
 import { callAttempts, customers, orders } from '../orders/index.js';
 import { organizations } from '../org/index.js';
 
 /**
- * Phone calls through Envo (M47, D-830 to D-853): the brand's Envo connections, who has which
- * extension, every call with its recording, and Envo's webhook bodies as they arrived.
+ * Phone calls through Envo (M47, D-830 to D-862): the brand's Envo connections, who has which
+ * extension, every call with where Envo keeps its recording (D-858) and the staff's wrap-up of it
+ * (D-859), and Envo's webhook bodies as they arrived.
  *
  * Tenant tables with the full treatment (invariant 4): `org_id` with RLS ENABLE and FORCE
  * (migration `*_m47_telephony_policies`), and every tenant foreign key carries `org_id` on both
@@ -43,9 +43,9 @@ const sealedBytes = customType<{ data: Buffer; driverData: Buffer }>({
 
 /**
  * One Envo SIP server the brand calls through (D-830): its base URL (the only origin the ERP
- * calls or downloads from for it), its API key and webhook secret, the brand's retention for its
- * recordings, and what the ERP last heard from it (the Test, a webhook, a refused signature, the
- * sync).
+ * calls or streams a recording from for it), its API key and webhook secret, and what the ERP
+ * last heard from it (the Test, a webhook, a refused signature, the sync). Envo keeps the
+ * recordings, for as long as Envo keeps them (D-858).
  */
 export const telephonyConnections = telephony.table(
   'connections',
@@ -63,7 +63,6 @@ export const telephonyConnections = telephony.table(
     webhookSecretSealed: sealedBytes('webhook_secret_sealed'),
     webhookSecretKeyId: text('webhook_secret_key_id'),
     webhookSecretFingerprint: text('webhook_secret_fingerprint'),
-    recordingRetentionDays: integer('recording_retention_days').notNull().default(365),
     /** Envo's SIP server (tenant) id and name, as its `/ping` answered the last Test. */
     envoServerId: integer('envo_server_id'),
     envoServerName: text('envo_server_name'),
@@ -102,7 +101,6 @@ export const telephonyConnections = telephony.table(
       'connections_webhook_secret_whole',
       sql`(${table.webhookSecretSealed} is null) = (${table.webhookSecretFingerprint} is null)`,
     ),
-    check('connections_retention', sql`${table.recordingRetentionDays} between 30 and 3650`),
     check('connections_server_name', sql`char_length(${table.envoServerName}) <= 80`),
     check('connections_test_error', sql`char_length(${table.lastTestError}) <= 300`),
     check('connections_webhook_event', sql`char_length(${table.lastWebhookEvent}) <= 40`),
@@ -155,8 +153,9 @@ export const telephonyExtensionAssignments = telephony.table(
  * One phone call through Envo (D-837): a person's click (`first_seen = 'click'`, Envo's call id
  * unknown until its first webhook names it, D-835) or a call Envo told us about (a webhook or
  * the sync). Unique per connection by Envo's call id. Its origin never changes; its progress
- * (status, answered, the numbers Envo learns, the links set once, the recording's path) moves
- * forward only, which the trigger in `*_m47_telephony_policies` enforces. Never deleted.
+ * (status, answered, the numbers Envo learns, the links set once, the recording's address) moves
+ * forward only, and the person's wrap-up is written once (D-859), which the trigger in
+ * `*_m47_owner_answers_policies` enforces. Never deleted.
  */
 export const telephonyCalls = telephony.table(
   'calls',
@@ -203,15 +202,26 @@ export const telephonyCalls = telephony.table(
     errorCode: text('error_code'),
     /** What Envo said, masked. Never a key, a secret or a whole phone. */
     errorDetail: text('error_detail'),
-    recordingStatus: text('recording_status').notNull().default('none'),
+    /**
+     * Where Envo keeps the call's recording (D-858), only when Envo named one on the
+     * connection's own host: the ERP streams it from there and never stores a copy. Set once.
+     */
     recordingUrl: text('recording_url'),
-    recordingFileId: uuid('recording_file_id'),
-    recordingBytes: integer('recording_bytes'),
-    recordingAttempts: integer('recording_attempts').notNull().default(0),
-    recordingError: text('recording_error'),
     /** M41's verification attempt recorded for this call (D-838), once. */
     outcomeAttemptId: uuid('outcome_attempt_id'),
     outcome: text('outcome'),
+    /**
+     * The person's wrap-up after the call (D-859): M41's five results, what it was about or
+     * what was agreed, and when to call back. Written once, by the person on the call; all of
+     * it null until then.
+     */
+    wrapUpResult: text('wrap_up_result'),
+    wrapUpNote: text('wrap_up_note'),
+    wrapUpCallBackAt: timestamp('wrap_up_call_back_at', { withTimezone: true, mode: 'date' }),
+    wrappedUpByUserId: text('wrapped_up_by_user_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    wrappedUpAt: timestamp('wrapped_up_at', { withTimezone: true, mode: 'date' }),
     lastEvent: text('last_event'),
     lastEventAt: timestamp('last_event_at', { withTimezone: true, mode: 'date' }),
     ...timestamps,
@@ -230,9 +240,10 @@ export const telephonyCalls = telephony.table(
     index('calls_org_pending_clicks_idx')
       .on(table.orgId, table.connectionId, table.requestedAt)
       .where(sql`${table.envoCallId} is null and ${table.status} in ('requested', 'dialing')`),
-    index('calls_org_recording_idx')
-      .on(table.orgId, table.endedAt)
-      .where(sql`${table.recordingStatus} = 'stored'`),
+    // A person's calls still waiting for their wrap-up (D-859): the console asks on every page.
+    index('calls_org_wrap_up_idx')
+      .on(table.orgId, table.userId, table.endedAt)
+      .where(sql`${table.status} = 'ended' and ${table.wrappedUpAt} is null`),
     foreignKey({
       name: 'calls_org_id_connection_id_fk',
       columns: [table.orgId, table.connectionId],
@@ -247,11 +258,6 @@ export const telephonyCalls = telephony.table(
       name: 'calls_org_id_order_id_fk',
       columns: [table.orgId, table.orderId],
       foreignColumns: [orders.orgId, orders.id],
-    }).onDelete('restrict'),
-    foreignKey({
-      name: 'calls_org_id_recording_file_id_fk',
-      columns: [table.orgId, table.recordingFileId],
-      foreignColumns: [fileObjects.orgId, fileObjects.id],
     }).onDelete('restrict'),
     foreignKey({
       name: 'calls_org_id_outcome_attempt_id_fk',
@@ -297,16 +303,7 @@ export const telephonyCalls = telephony.table(
     ),
     check('calls_error_code', sql`char_length(${table.errorCode}) <= 40`),
     check('calls_error_detail', sql`char_length(${table.errorDetail}) <= 300`),
-    check(
-      'calls_recording_status',
-      sql`${table.recordingStatus} in ('none', 'pending', 'stored', 'failed', 'expired')`,
-    ),
-    check(
-      'calls_recording_stored_has_file',
-      sql`(${table.recordingStatus} = 'stored') = (${table.recordingFileId} is not null)`,
-    ),
     check('calls_recording_url', sql`char_length(${table.recordingUrl}) <= 500`),
-    check('calls_recording_error', sql`char_length(${table.recordingError}) <= 40`),
     check(
       'calls_outcome',
       sql`${table.outcome} is null or ${table.outcome} in ('reached', 'no_answer', 'busy', 'wrong_number', 'call_back')`,
@@ -315,6 +312,24 @@ export const telephonyCalls = telephony.table(
       'calls_outcome_whole',
       sql`(${table.outcome} is null) = (${table.outcomeAttemptId} is null)`,
     ),
+    check(
+      'calls_wrap_up_result',
+      sql`${table.wrapUpResult} is null or ${table.wrapUpResult} in ('reached', 'no_answer', 'busy', 'wrong_number', 'call_back')`,
+    ),
+    // Who and when come with the result; a note or a call-back time never without one.
+    check(
+      'calls_wrap_up_whole',
+      sql`(${table.wrapUpResult} is null) = (${table.wrappedUpByUserId} is null)
+          and (${table.wrapUpResult} is null) = (${table.wrappedUpAt} is null)
+          and (${table.wrapUpResult} is not null
+               or (${table.wrapUpNote} is null and ${table.wrapUpCallBackAt} is null))`,
+    ),
+    // A call-back has its time, and only a call-back has one (M41's rule, D-718).
+    check(
+      'calls_wrap_up_call_back',
+      sql`(${table.wrapUpResult} = 'call_back') = (${table.wrapUpCallBackAt} is not null)`,
+    ),
+    check('calls_wrap_up_note', sql`char_length(${table.wrapUpNote}) <= 1000`),
     check('calls_last_event', sql`char_length(${table.lastEvent}) <= 20`),
     check('calls_customer_name', sql`char_length(${table.customerName}) <= 120`),
     check('calls_order_no', sql`char_length(${table.orderNo}) <= 40`),

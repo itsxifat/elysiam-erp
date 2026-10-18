@@ -560,16 +560,19 @@ export const labelsJobChangedPayload = z
 
 /**
  * M47 (D-850): a phone call through Envo moved (requested, dialing, ringing, answered, ended,
- * failed, its recording kept). Ids only, with the people it concerns: the person on the call and
- * the order's owner, whose rooms hear it besides the supervisors'. The order page, the Calls page
- * and the person's phone fetch the call (`GET /v1/telephony/calls/:id`), where the scope applies.
+ * failed, Envo named its recording, D-858; the person wrapped it up, D-859). Ids only, with the
+ * people it concerns: the person on the call and the order's owner, whose rooms hear it besides
+ * the supervisors'. The order page, the Calls page, the person's phone and the wrap-up card fetch
+ * the call (`GET /v1/telephony/calls/:id`, `GET /v1/telephony/calls/wrap-ups`), where the scope
+ * applies.
  */
 export const telephonyCallChangedPayload = z
   .object({
     callId: uuid,
     orderId: uuid.nullable(),
     status: z.enum(['requested', 'dialing', 'failed', 'ringing', 'answered', 'ended']),
-    recording: z.enum(['none', 'pending', 'stored', 'failed', 'expired']),
+    /** Whether Envo named a recording of it on the connection's host (D-858). */
+    recording: z.boolean(),
     userIds: z.array(z.string()).max(4),
   })
   .strict();

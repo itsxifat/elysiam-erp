@@ -17,7 +17,6 @@ import {
   parseEnvoSignature,
   phoneCallProgress,
   phoneCallStatusAfter,
-  recordingExpired,
   recordingIdFrom,
   signatureFresh,
   storedNumber,
@@ -505,10 +504,7 @@ describe('the base URL and the recording link (D-830, D-840)', () => {
     expect(recordingIdFrom(42, base)).toBeNull();
   });
 
-  it('expires a recording past its retention, and writes talk time plainly', () => {
-    const ended = new Date('2025-10-18T00:00:00Z');
-    expect(recordingExpired(ended, 365, new Date('2026-10-18T00:00:01Z'))).toBe(true);
-    expect(recordingExpired(ended, 365, new Date('2026-10-17T00:00:00Z'))).toBe(false);
+  it('writes talk time plainly', () => {
     expect(talkTime(38)).toBe('0:38');
     expect(talkTime(725)).toBe('12:05');
     expect(talkTime(3729)).toBe('1:02:09');

@@ -19,6 +19,7 @@ import {
 
 import { primaryId, timestamps } from '../columns.js';
 import { skus } from '../catalog/index.js';
+import { users } from '../iam/index.js';
 import { branches, locations, organizations } from '../org/index.js';
 import { districts, thanas } from '../ref/index.js';
 
@@ -253,6 +254,16 @@ export const customers = sales.table(
     profession: text('profession'),
     tags: jsonb('tags').notNull().default([]),
     notes: text('notes'),
+    /**
+     * The note pinned on top of the caller panel (M47, D-860): what to do with this buyer, or
+     * who was handling them, for whoever calls next. Who wrote it and when come with it; clearing
+     * it clears all three (the audit row keeps who did).
+     */
+    pinnedNote: text('pinned_note'),
+    pinnedNoteByUserId: text('pinned_note_by_user_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    pinnedNoteAt: timestamp('pinned_note_at', { withTimezone: true, mode: 'date' }),
     /** Buyer stats, maintained by order transitions. */
     ordersTotal: integer('orders_total').notNull().default(0),
     deliveredCount: integer('delivered_count').notNull().default(0),
@@ -297,6 +308,16 @@ export const customers = sales.table(
           and ${table.returnedCount} >= 0 and ${table.cancelledCount} >= 0`,
     ),
     check('customers_ltv_not_negative', sql`${table.ltvPoisha} >= 0`),
+    check(
+      'customers_pinned_note',
+      sql`${table.pinnedNote} is null
+          or (char_length(${table.pinnedNote}) <= 2000 and char_length(btrim(${table.pinnedNote})) >= 1)`,
+    ),
+    check(
+      'customers_pinned_note_whole',
+      sql`(${table.pinnedNote} is null) = (${table.pinnedNoteByUserId} is null)
+          and (${table.pinnedNote} is null) = (${table.pinnedNoteAt} is null)`,
+    ),
   ],
 );
 

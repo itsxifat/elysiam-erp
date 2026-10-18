@@ -718,10 +718,10 @@ export const ERROR_CODES = [
   'TELEPHONY_EXTENSION_TAKEN',
   /** That number cannot be called from here (not a Bangladeshi mobile, or not this order's). */
   'TELEPHONY_NUMBER_INVALID',
-  /** The call has no recording kept here (none was made, it is still coming, or it expired). */
+  /** The call has no recording, or Envo no longer has it (or is still saving it, D-858). */
   'TELEPHONY_RECORDING_UNAVAILABLE',
-  /** That call's outcome is already recorded, or it has no order to record it on. */
-  'TELEPHONY_OUTCOME_INVALID',
+  /** That call cannot be wrapped up (not yours, not over, already wrapped up, D-859). */
+  'TELEPHONY_WRAP_UP_INVALID',
   /** This installation has no credentials key, so an Envo key or secret cannot be kept. */
   'TELEPHONY_CREDENTIALS_MISSING',
 ] as const;
