@@ -3456,51 +3456,100 @@ dry-run|commit --file <users.json>`.
 ## 2026-10-18 · M47 · phone calls through Envo (not merged or deployed)
 
 - **Branch and worktree:** `m47-envo-calls` from `integration-wave2` (b19dd6b8), in
-  `D:/Projects/elysium-erp-m47`. Decisions D-830 to D-855; plan `docs/plans/M47.md`.
+  `D:/Projects/elysium-erp-m47`. Decisions D-830 to D-857 (D-856 is the review, D-857 the owner's
+  steps; D-858 and D-859 unused); plan `docs/plans/M47.md`; architecture §32; the brand runbook's
+  "Phone calls through Envo".
 - **What was built:** the `telephony` module (connections with a sealed write-only key and
   secret and a Test, extensions given to people with Envo's presence, a Call from the person's
   own extension written before Envo is asked, Envo's signed webhooks stored and applied by a job,
   the sync every five minutes, recordings downloaded into the files and played by scope, a
-  nightly retention), the console's Calls page, Settings → Calls, Call buttons, the order's phone
-  calls inside M41's verification calls, the Staff screen's Extension column, and Envo's web phone
-  inside the console with its screen pop.
-- **Migrations:** `0155_m47_telephony_schema` (drizzle-kit: four tables) and
-  `0156_m47_telephony_policies` (hand-written: RLS ENABLE and FORCE and minimal grants, the
-  connection, call and webhook triggers; talk time never lower; webhook bodies deleted only
-  thirty days after processing). Both are this branch's own, edited during the review.
-- **The review (applied 2026-10-18):** the web phone was torn down on every render (an unstable
-  `t` in its effect's dependencies) and the CSP blocked its SIP socket on Envo's SIP domain
-  (critical, fixed, D-843, D-844); the screen pop and a Call to a bare number named buyers outside
-  the caller's reach (D-740; fixed, POST so numbers stay out of access logs); click matching gave
+  nightly retention), with what it needs from other modules through their APIs: the orders
+  module's phone-call lock, owner gate, outcome, buyer by phone and open orders (`ORDERS_API`),
+  and a private `call-recording` file purpose for WAV recordings (`FILES_API`). In the console:
+  the Calls page (`/calls`, a new sidebar entry), Settings → Calls (`/settings/calls`), Call
+  buttons on the order page, its verification calls, the buyer page and the inbox's customer
+  panel, the order's phone calls inside M41's verification calls, the Staff screen's Extension
+  column, and Envo's web phone inside the console with its screen pop.
+- **Migrations:** `0155_m47_telephony_schema` (drizzle-kit: the `telephony` schema, four tables:
+  `connections`, `extension_assignments`, `calls`, `webhook_events`, with composite
+  `(org_id, x_id)` foreign keys) and `0156_m47_telephony_policies` (hand-written: RLS ENABLE and
+  FORCE and minimal grants on each, the connection, call and webhook triggers: a call's origin
+  fixed, its progress forward only and talk time never lower, no call ever deleted, a webhook body
+  deleted only thirty days after it was processed). Both are this branch's own and were edited
+  during the review; neither is on `integration-wave2` or `main` yet.
+- **Settings and deploy:** the API and worker read `TELEPHONY_ENVO_PROVIDER` (`http` by default,
+  `fake` for a demo), `TELEPHONY_ENVO_PRIVATE_CIDRS` (empty refuses every private address), and
+  timeouts and caps with defaults; `TELEPHONY_ALLOW_PLAIN_HTTP` is for the tests' stand-in only,
+  refused in production. A brand's `.env.brand` gains four optional settings, all empty or `http`
+  for the owner's Envo: `BRAND_TELEPHONY_ENVO_PROVIDER` and `BRAND_TELEPHONY_ENVO_PRIVATE_CIDRS`
+  (passed through the compose file) and `BRAND_CSP_TELEPHONY_ORIGINS` and
+  `BRAND_CSP_TELEPHONY_SOCKETS` (web build arguments, checked by `server-deploy.sh` before the new
+  API starts). The console's CSP (Envo's `/embed/phone.js` and `/api/embed/session`,
+  `wss://call.enfinito.cloud`) and `Permissions-Policy: microphone=(self)` come with the release's
+  nginx include; the brand nginx already sends `/webhooks` to the API; the preview's
+  `infra/preview/nginx-elyerp.conf` now does too. Two new schedules: `telephony.sync_sweep`
+  every five minutes and `telephony.recording_retention` at 03:50.
+- **Bundle:** `check:bundle` 249.5 KB of 250, as before M47: the phone, the Calls page, Settings →
+  Calls and the telephony strings are lazy chunks, and the request shapes are the
+  `@elysium/contracts/telephony` subpath (D-852).
+- **The review (applied 2026-10-18), D-856:** 92 findings from seven reviewers (tenancy and
+  permissions, Envo against its source, security, correctness, acceptance, the console, infra): 7
+  critical, 24 warnings, 61 notes. **81 fixed**: all 7 critical, 22 warnings, 52 notes. The
+  critical ones were two faults: the web phone was torn down on every render (an unstable `t` in
+  its effect's dependencies), and the CSP blocked its SIP socket on Envo's SIP domain (D-843,
+  D-844). Among the rest: the screen pop and a Call to a bare number named buyers outside the
+  caller's reach (D-740; fixed, and POST, so numbers stay out of access logs); click matching gave
   another extension's call to a click, and one person's two quick Calls could swap; any agent
   could claim an inbound call; late events lowered talk time; the sync's cursor skipped unread
   pages and long calls; a storage failure left a recording pending; the verification panel dialled
   the buyer while showing the recipient; a new base URL kept the old key; Envo's host was not
-  resolved; webhook bodies were kept forever (all fixed, D-830 to D-851). Owner decisions recorded
-  as ASSUMED: D-838, D-841, D-842, D-851, D-853.
-- **The recheck (applied 2026-10-18):** a Call to a bare number still named the buyer, their
-  order and its owner once Envo's webhook landed on the click (critical, fixed: a click's links
-  are the click's own, D-834); the screen pop and the call log's POST reads wrote an audit row
-  with buyers' names on every ring and page load (`auditNothingChanged` now); an answered claim
-  passed when Envo's channels named no phone, so a call in an IVR or queue could be taken (now
-  only with the claimant's own phone, D-836), and asked Envo uncached (now eight a minute a
-  person, thirty a connection); the screen pop said "Not a customer yet" for a known buyer
-  until Envo's `call.started` was applied (now Envo's live calls are asked, the dock asks again
-  while ringing, and it says "Caller", D-843); a click took a colleague's or an internal call,
-  or a desk-phone call to another customer (D-835); IPv6 spellings slipped the host check
-  (D-830); `GET /calls` took a phone in its query (D-845); a recording stuck pending was retried
-  for ever (D-840). Tests added for the sync's windows and cursor, attribution and readiness,
-  the host check, storage failures and requeues, and the console's phone (one widget through
-  renders, the ring-back rules).
-- **Evidence (minimal tests, D-758):** the domain (`telephony.test.ts`, 32: numbers, the customer's
-  side, the click matching cases of the review, `phoneCallProgress` over any order of words, the
-  signature, the base URL); `pages-headers.test.ts` (the phone's paths and sockets); real Postgres
-  (`telephony.e2e.test.ts`, 29: the five acceptance checks and the review's scope, reach, claim,
-  late-event, base-URL and retention paths, with Envo's adapter against a stand-in; 39 after the
-  recheck); `envo-host.test.ts` (9); the console's `phone-dock.test.tsx` (3) and
-  `phone-store.test.ts` (8). Typecheck of server, console and api-client; eslint and prettier on every touched file; the gates below.
-  Not run: the full verify, the stack specs, the live Envo.
-- **Follow-ups:** verify against the owner's Envo (Unverified integrations); stream recordings
-  with Range; an answering-extension field from Envo (D-836); a single phone tab (D-843); owner
-  questions D-838, D-841, D-853.
-- **New dependencies:** none.
+  resolved; webhook bodies were kept forever (all fixed, D-830 to D-851). **11 not fixed**, each
+  with its reason in D-856: two need the owner (perm-4, perm-6, recorded as ASSUMED in D-841 and
+  D-853), two are operator rules (infra-3, one Envo SIP server per brand, D-854; infra-5, the disk
+  and the retention, D-842), two are follow-ups (rec-2, Range streaming; call-2, more Call
+  buttons), two are tests deferred under D-758 (test-1, test-2 in part), and three needed no
+  change (infra-6, infra-7, infra-14). Owner decisions recorded as ASSUMED: D-835, D-838, D-841,
+  D-842, D-843, D-851, D-853.
+- **The recheck (applied 2026-10-18):** 17 findings, 15 confirmed (1 critical, 3 warnings, 11
+  notes), **all 15 fixed**; N2 and N3 were not confirmed. A Call to a bare number still named the
+  buyer, their order and its owner once Envo's webhook landed on the click (critical, fixed: a
+  click's links are the click's own, D-834); the screen pop and the call log's POST reads wrote an
+  audit row with buyers' names on every ring and page load (`auditNothingChanged` now); an
+  answered claim passed when Envo's channels named no phone, so a call in an IVR or queue could be
+  taken (now only with the claimant's own phone, D-836), and asked Envo uncached (now eight a
+  minute a person, thirty a connection, then a 429 `RATE_LIMITED`); the screen pop said "Not a
+  customer yet" for a known buyer until Envo's `call.started` was applied (now Envo's live calls
+  are asked, the dock asks again while ringing, and it says "Caller", D-843); a click took a
+  colleague's or an internal call, or a desk-phone call to another customer (D-835); IPv6
+  spellings slipped the host check (D-830); `GET /calls` took a phone in its query (D-845); a
+  recording stuck pending was retried for ever (D-840). Tests added for the sync's windows and
+  cursor, attribution and readiness, the host check, storage failures and requeues, and the
+  console's phone (one widget through renders, the ring-back rules).
+- **Evidence (minimal tests, D-758; every heavy run through `heavy.mjs` with two workers):** the
+  domain (`packages/domain/src/telephony/telephony.test.ts`, 32: numbers, the customer's side,
+  the click matching cases, `phoneCallProgress` over any order of words, the signature, the base
+  URL); `packages/config` `pages-headers.test.ts` (10: the phone's paths and sockets); real
+  Postgres (`apps/server/src/modules/telephony/telephony.e2e.test.ts`, 39: the five acceptance
+  checks, then the review's and the recheck's scope, reach, claim, late-event, base-URL,
+  retention, storage, sync and attribution paths, with Envo's real adapter against a stand-in
+  built from Envo's source); `providers/envo-host.test.ts` (9); the console's
+  `routes/calls/phone-dock.test.tsx` (3) and `phone-store.test.ts` (8); `route-matrix.e2e` (every
+  route as every role, with the new `POST lookup` and `POST calls/search`), `audit-exempt` and
+  `module-boundaries` (40). Typecheck of server, console and api-client; eslint and prettier on
+  every touched file; server and console builds. Gates PASS: `check:i18n`, `check:routes` (648
+  routes), `check:api-client` (regenerated), `check:migrations`, `check:schema` (155 migrations
+  agree), `check:bundle`. Failing on the base b19dd6b8, not from M47: `check:white-label` (two
+  strings in the inbox chunk, `elysium.inbox.sell.v1` and `elysium:inbox-compose`) and prettier on
+  M46's 0153 and 0154 snapshots. Not run: the full verify, the stack specs and screenshots, the
+  cost sweep, `check:bundle` and the generated route-matrix suite after the recheck (it added no
+  route, and its console changes are in lazy chunks), the live Envo.
+- **Follow-ups:** verify against the owner's Envo (the list under Unverified integrations); stream
+  recordings with Range (D-840); the answering extension from Envo (D-836); a single phone tab and
+  M44a's ring (D-843); Call buttons on the order list if the budget allows (D-848); take an
+  extension off when IAM deactivates its holder (D-846); a lookup guard against DNS rebinding
+  (D-830); the deferred tests (the orphan sweep, the size cap, the sync sweep, the Calls page's
+  filters, console units, a transaction probe for check 5); owner questions D-835, D-838, D-841,
+  D-842, D-843, D-853 (D-857); the base's white-label hits and snapshot formatting, for
+  `integration-wave2`.
+- **New dependencies:** none (Envo's widget is loaded at run time from the connection's own host,
+  not installed).

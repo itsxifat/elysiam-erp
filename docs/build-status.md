@@ -6,15 +6,16 @@ detail is in `progress.md` (session log), `plans/` (one file per milestone) and 
 ## Overall
 
 ```
-Everything     [###################-]  97%   (about 41.8 of 43 milestones)
+Everything     [###################-]  97%   (about 42.7 of 44 milestones)
 First plan     [###################-]  98%   (M00 to M30)
 Wave 3         [##################--]  93%   (M31 to M39)
-Wave 4         [####################] 100%   (M40 to M46; broad tests deferred, D-758)
+Wave 4         [###################-]  99%   (M40 to M47; M47 not merged or deployed; broad tests deferred, D-758)
 ```
 
 - The first plan had 33 milestones; six are out on the owner's instruction (M13, M21, M22, M27,
-  M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620) and **wave 4 adds 7**
-  (M40 to M43, 2026-10-11; M44 and M45, 2026-10-12; M46, 2026-10-17), so **43 count** in all.
+  M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620) and **wave 4 adds 8**
+  (M40 to M43, 2026-10-11; M44 and M45, 2026-10-12; M46, 2026-10-17; M47, 2026-10-18), so
+  **44 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits; a part-built one counts
   for the share that is done.
 - Today: **33 done** (M32 and M38 on 2026-10-08), **3 part-built**: M14b and M30 (wait for a
@@ -103,15 +104,17 @@ Wave 4         [####################] 100%   (M40 to M46; broad tests deferred, 
 | M44  | A fast, alive inbox; selling from the chat      |  100% | Live 2026-10-12: full-window inbox, names and photos, motion and sounds, saved replies, size and quantity spotting in English and Bangla, product picker, order placed from the chat                                 |
 | M45  | Voice messages and calls                        |  100% | Live 2026-10-12: voice messages both ways, calls ringing in the browser; untested against Meta until the owner tries them (Messenger calling is not offered in Bangladesh)                                           |
 | M46  | Labels and Packaging, terminals, printers, lots |  100% | Live 2026-10-17: label and packing terminals with people and cameras, network and browser printers, automatic labels on booking, a print log with reprint reasons, orders in several lots; untested on real printers |
-| M47  | Phone calls through Envo                        |   90% | Built 2026-10-18, not merged or deployed: Envo connections, extensions for staff, Call buttons, the phone in the console, call logs and recordings; untested against the live Envo                                   |
+| M47  | Phone calls through Envo                        |   90% | Built and reviewed 2026-10-18, not merged or deployed: Envo connections, extensions for staff, Call buttons, the phone in the console, call logs and recordings; untested against the live Envo                      |
 
 ## Being built now
 
 1. **Online now:** Elysiam's ERP at `https://erp.elysium-lifestyle.bd` and Beownz's at
    `https://erp.beownz.com`, with the packing station and video; the website at
    `https://demo.elysium-lifestyle.bd`.
-2. **Ready, waiting for the owner:** the mother ERP needs its own server and domain.
-3. **Then:** the final addresses (M37). Removing a super admin, and stepping down, is built
+2. **Built, waiting to be merged and deployed:** phone calls through Envo (M47, branch
+   `m47-envo-calls`).
+3. **Ready, waiting for the owner:** the mother ERP needs its own server and domain.
+4. **Then:** the final addresses (M37). Removing a super admin, and stepping down, is built
    (2026-10-10, branch `superadmin-removal`, not merged or deployed).
 
 ## Time left (estimate)
@@ -126,10 +129,28 @@ Wave 4         [####################] 100%   (M40 to M46; broad tests deferred, 
 
 Nothing here blocks building; each one blocks going live.
 
+**New 2026-10-18 (phone calls through Envo, M47), once it is deployed** (step by step in
+`decisions.md` D-857):
+
+- **In Envo**, for each brand's own SIP server: an API key with the read, calls and webphone
+  scopes and the brand's ERP address (`https://erp.elysium-lifestyle.bd`, `https://erp.beownz.com`)
+  under Allowed browser origins; Web phone on for each extension used in the browser; recording
+  on where calls should be kept.
+- **In the ERP**, Settings → Calls: add the connection (`https://envo.enfinito.cloud` and the API
+  key) and press Test. Then make a webhook in Envo's Developers → Webhooks to the address the ERP
+  shows, paste its signing secret back into the connection, switch it on, and give each agent an
+  extension.
+- **Each agent**: allow the microphone in Chrome the first time the phone asks.
+- **Six questions** (`decisions.md`): who may hear recordings (D-841), how long to keep them (365
+  days for now, D-842), whether an unanswered call counts as a verification attempt (D-838),
+  whether an inbound call links the caller's newest open order by itself (D-835), whether the
+  ring-back of your own Call answers by itself (D-843), and whether a Call from the inbox asks
+  the conversation's owner first (D-853).
+
 **New 2026-10-08 (the IP camera, M38c):**
 
-- After the next deploy, enter the packing table's camera in Orders → Pack → Settings → IP
-  cameras: its address `rtsp://192.168.20.111:554/stream1`, the camera account's user name and
+- After the next deploy, enter the packing table's camera in Packaging → Cameras (it was Orders →
+  Pack → Settings → IP cameras before M46): its address `rtsp://192.168.20.111:554/stream1`, the camera account's user name and
   password (typed there, never sent in chat). Check it reads **Ready**, choose it on the packing
   computer, pack one order and play its video. Say if `stream2` (smaller files) should be used.
 

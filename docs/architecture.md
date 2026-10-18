@@ -1969,7 +1969,7 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   multi-lot order is refused through the orders module's `HandoverGuardRegistry`. One
   consignment per order; no courier is sent a lot count (none documents one, D-809).
 
-## 32. Phone calls through Envo (M47, D-830 to D-855)
+## 32. Phone calls through Envo (M47, D-830 to D-857)
 
 Staff call customers from the ERP through Envo, the owner's own SIP service. The `telephony`
 module (schema `telephony`) owns it; buyers and orders come through `ORDERS_API` (with M41's owner
@@ -1992,6 +1992,14 @@ inside a transaction (invariant 6).
   deleted. Supervisors see every call, sales their own and their orders' (D-841). An inbound call
   becomes a person's when their browser phone answered it and Envo shows it talking on their phone
   (D-836).
+- **Routes** (`/v1/telephony`, D-831): `connections` (list, create, `PUT :id`, `POST :id/test`),
+  `connections/:id/extensions` (the list with presence; `PUT` and `DELETE :extension` give and
+  take one off), `assignments`, `connections/:id/live` and `…/live/:callId/hangup` (supervisors),
+  `me` and `phone/token` (the person's own extension only, D-843), `POST lookup` (the screen pop,
+  D-843), `POST calls` (a Call, D-834), `POST calls/answered` (the claim, D-836), `GET calls` and
+  `POST calls/search` (the log; a phone only in the POST body, D-845), `calls/:id`,
+  `calls/:id/recording` (D-840, D-841) and `POST calls/:id/outcome` (D-838). A person with no
+  extension gets `TELEPHONY_NO_EXTENSION`; Envo's refusals answer 424 with Envo's reason, masked.
 - **Webhooks** (`POST /webhooks/envo/<org>/<connection>`, `telephony.webhook_events`, D-832): raw
   body, HMAC-SHA256, five minutes, stored once per call and event, applied by
   `telephony.process_webhook`; bodies deleted thirty days after they were processed (D-851).
