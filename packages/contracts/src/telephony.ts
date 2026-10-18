@@ -62,7 +62,10 @@ export type TelephonyConnectionUpdateInput = z.infer<typeof telephonyConnectionU
 /** One extension of a connection to one person of the brand (D-846). */
 export const telephonyAssignSchema = z
   .object({
-    extension: z.string().trim().regex(/^[0-9]{2,8}$/, 'An extension is two to eight digits.'),
+    extension: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{2,8}$/, 'An extension is two to eight digits.'),
     userId: z.string().trim().min(1).max(64),
   })
   .strict();

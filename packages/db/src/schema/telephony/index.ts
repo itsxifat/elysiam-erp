@@ -102,10 +102,7 @@ export const telephonyConnections = telephony.table(
       'connections_webhook_secret_whole',
       sql`(${table.webhookSecretSealed} is null) = (${table.webhookSecretFingerprint} is null)`,
     ),
-    check(
-      'connections_retention',
-      sql`${table.recordingRetentionDays} between 30 and 3650`,
-    ),
+    check('connections_retention', sql`${table.recordingRetentionDays} between 30 and 3650`),
     check('connections_server_name', sql`char_length(${table.envoServerName}) <= 80`),
     check('connections_test_error', sql`char_length(${table.lastTestError}) <= 300`),
     check('connections_webhook_event', sql`char_length(${table.lastWebhookEvent}) <= 40`),

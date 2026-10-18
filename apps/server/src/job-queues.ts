@@ -14,6 +14,7 @@ import { PACKING_QUEUE_DEFINITIONS } from './modules/packing/packing.queues.js';
 import { INBOX_QUEUE_DEFINITIONS } from './modules/inbox/inbox.queues.js';
 import { VOICE_CALLS_QUEUE_DEFINITIONS } from './modules/inbox/voice-calls.queues.js';
 import { OFFER_QUEUE_DEFINITIONS } from './modules/orders/offers.queues.js';
+import { TELEPHONY_QUEUE_DEFINITIONS } from './modules/telephony/telephony.queues.js';
 
 /**
  * Every pg-boss queue the application defines, for both entrypoints.
@@ -48,4 +49,6 @@ export const ALL_QUEUES: readonly QueueDefinition[] = [
   ...VOICE_CALLS_QUEUE_DEFINITIONS,
   // M41: auto-assign's offers, their deadlines and the minute sweep.
   ...OFFER_QUEUE_DEFINITIONS,
+  // M47: Envo's webhooks applied, recordings kept, the call history synced, retention.
+  ...TELEPHONY_QUEUE_DEFINITIONS,
 ];

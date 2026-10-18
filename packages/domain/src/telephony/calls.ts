@@ -68,7 +68,10 @@ export function phoneCallStatusAfter(
  * `call.ended` of a call nobody picked up cannot unsay `call.answered`). Envo's `call.ended`
  * carries `answered`; `call.answered` is itself the news.
  */
-export function answeredAfter(current: boolean, facts: Pick<EnvoCallFacts, 'event' | 'answered'>): boolean {
+export function answeredAfter(
+  current: boolean,
+  facts: Pick<EnvoCallFacts, 'event' | 'answered'>,
+): boolean {
   if (current) return true;
   if (facts.event === 'call.answered') return true;
   return facts.answered === true;
@@ -102,7 +105,9 @@ export function matchClick(
   if (call.direction === 'inbound') return null;
   const numbers = [call.from, call.to].filter((value): value is string => value !== null);
   const phones = new Set(
-    numbers.map((value) => customerPhoneFrom(value)).filter((phone): phone is E164Phone => phone !== null),
+    numbers
+      .map((value) => customerPhoneFrom(value))
+      .filter((phone): phone is E164Phone => phone !== null),
   );
   const extensions = new Set(numbers.filter((value) => isExtensionNumber(value)));
   const candidates = pending

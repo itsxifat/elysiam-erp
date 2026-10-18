@@ -127,7 +127,9 @@ export type BaseUrlProblem = 'invalid' | 'not_https' | 'not_origin' | 'host_refu
 export function envoBaseUrl(
   input: string,
   options: { readonly allowPlainHttp?: boolean } = {},
-): { readonly ok: true; readonly origin: string } | { readonly ok: false; readonly problem: BaseUrlProblem } {
+):
+  | { readonly ok: true; readonly origin: string }
+  | { readonly ok: false; readonly problem: BaseUrlProblem } {
   let url: URL;
   try {
     url = new URL(input.trim());
@@ -235,7 +237,8 @@ function stringOrNull(value: unknown, max = 64): string | null {
 }
 
 function secondsOrNull(value: unknown): number | null {
-  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  const number =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   return Number.isFinite(number) && number >= 0 && number < 86_400 * 7 ? Math.round(number) : null;
 }
 

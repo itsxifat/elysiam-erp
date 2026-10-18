@@ -10,6 +10,7 @@ import { FilesModule } from './modules/files/files.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { HrModule } from './modules/hr/hr.module.js';
 import { InboxModule } from './modules/inbox/inbox.module.js';
+import { TelephonyModule } from './modules/telephony/telephony.module.js';
 import { IntakeModule } from './modules/intake/intake.module.js';
 import { IamModule } from './modules/iam/iam.module.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
@@ -116,6 +117,8 @@ export class AppModule {
         PackingModule,
         // M42: the unified inbox; after orders and the catalog, whose APIs it reads.
         InboxModule,
+        // M47: phone calls through Envo; after orders, IAM and files, whose APIs it reads.
+        TelephonyModule,
         ...(withDemo ? [DemoModule] : []),
       ],
     };

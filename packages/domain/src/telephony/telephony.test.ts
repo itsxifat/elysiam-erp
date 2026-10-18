@@ -160,8 +160,12 @@ describe('linking a call to its click (D-835)', () => {
     const pending = [click('a', '101', '01712345678', CLICK_TO_CALL_MATCH_MS / 1000 + 1)];
     expect(matchClick(pending, { from: '101', to: null, direction: 'outbound' }, now)).toBeNull();
     const fresh = [click('a', '101', '01712345678', 10)];
-    expect(matchClick(fresh, { from: '01712345678', to: '09', direction: 'inbound' }, now)).toBeNull();
-    expect(matchClick(fresh, { from: '103', to: '01912345678', direction: 'outbound' }, now)).toBeNull();
+    expect(
+      matchClick(fresh, { from: '01712345678', to: '09', direction: 'inbound' }, now),
+    ).toBeNull();
+    expect(
+      matchClick(fresh, { from: '103', to: '01912345678', direction: 'outbound' }, now),
+    ).toBeNull();
   });
 });
 
@@ -216,9 +220,13 @@ describe('the signature header (D-832)', () => {
 
   it('accepts five minutes either way and nothing past it', () => {
     fc.assert(
-      fc.property(fc.integer({ min: 0, max: 2_000_000_000 }), fc.integer({ min: -900, max: 900 }), (t, skew) => {
-        expect(signatureFresh(t, t + skew)).toBe(Math.abs(skew) <= 300);
-      }),
+      fc.property(
+        fc.integer({ min: 0, max: 2_000_000_000 }),
+        fc.integer({ min: -900, max: 900 }),
+        (t, skew) => {
+          expect(signatureFresh(t, t + skew)).toBe(Math.abs(skew) <= 300);
+        },
+      ),
     );
   });
 });
@@ -232,7 +240,12 @@ describe('the base URL and the recording link (D-830, D-840)', () => {
     expect(envoBaseUrl('http://envo.enfinito.cloud')).toEqual({ ok: false, problem: 'not_https' });
     expect(envoBaseUrl('https://envo.enfinito.cloud/api')).toMatchObject({ ok: false });
     expect(envoBaseUrl('https://user:pw@envo.enfinito.cloud')).toMatchObject({ ok: false });
-    for (const host of ['https://127.0.0.1', 'https://localhost', 'https://[::1]', 'https://db.internal']) {
+    for (const host of [
+      'https://127.0.0.1',
+      'https://localhost',
+      'https://[::1]',
+      'https://db.internal',
+    ]) {
       expect(envoBaseUrl(host), host).toEqual({ ok: false, problem: 'host_refused' });
     }
     expect(envoBaseUrl('http://127.0.0.1:4555', { allowPlainHttp: true })).toEqual({
@@ -247,7 +260,9 @@ describe('the base URL and the recording link (D-830, D-840)', () => {
     expect(recordingIdFrom('https://evil.example/api/v1/recordings/42', base)).toBeNull();
     expect(recordingIdFrom(`${base}/api/v1/recordings/42/../../x`, base)).toBeNull();
     expect(recordingIdFrom(`${base}/api/v1/calls`, base)).toBeNull();
-    expect(recordingIdFrom(`https://envo.enfinito.cloud:8443/api/v1/recordings/42`, base)).toBeNull();
+    expect(
+      recordingIdFrom(`https://envo.enfinito.cloud:8443/api/v1/recordings/42`, base),
+    ).toBeNull();
     expect(recordingIdFrom(42, base)).toBeNull();
   });
 

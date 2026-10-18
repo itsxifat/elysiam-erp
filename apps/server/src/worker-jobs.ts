@@ -56,6 +56,11 @@ import { InboxWebhookService } from './modules/inbox/webhook.service.js';
 import { InboxCallsService } from './modules/inbox/calls.service.js';
 import { InboxMediaService } from './modules/inbox/media.service.js';
 import { registerVoiceCallsJobs } from './modules/inbox/voice-calls.worker.js';
+import { TelephonyModule } from './modules/telephony/telephony.module.js';
+import { TelephonyRecordingsService } from './modules/telephony/recordings.service.js';
+import { TelephonySyncService } from './modules/telephony/sync.service.js';
+import { registerTelephonyJobs } from './modules/telephony/telephony.worker.js';
+import { TelephonyWebhookService } from './modules/telephony/webhook.service.js';
 import type { OutboxDispatcher } from './platform/events/dispatcher.js';
 import { reportJobFailedThroughOutbox } from './platform/jobs/job-failed.js';
 import type { JobsRuntime } from './platform/jobs/jobs.runtime.js';
@@ -97,6 +102,8 @@ export const WORKER_MODULES = [
   PackingModule,
   // M42: Meta's webhooks threaded, replies sent, and contacts made customers by their orders.
   InboxModule,
+  // M47: Envo's webhooks applied, recordings kept, the call history synced.
+  TelephonyModule,
 ] as const;
 
 export interface WorkerJobDependencies {
@@ -194,6 +201,15 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     jobs,
     media: context.get(InboxMediaService),
     calls: context.get(InboxCallsService),
+    report,
+  });
+
+  // M47: Envo's webhooks, recordings, the five-minute sync and the nightly retention.
+  await registerTelephonyJobs({
+    jobs,
+    webhooks: context.get(TelephonyWebhookService),
+    sync: context.get(TelephonySyncService),
+    recordings: context.get(TelephonyRecordingsService),
     report,
   });
 

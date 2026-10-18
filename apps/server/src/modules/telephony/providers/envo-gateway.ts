@@ -173,7 +173,11 @@ function failureFor(status: number, payload: unknown): EnvoError {
     case 402:
       return new EnvoError('refused', 'Envo says this account is not active.', status);
     case 403:
-      return new EnvoError('refused', `Envo refused: ${said ?? 'not allowed for this key.'}`, status);
+      return new EnvoError(
+        'refused',
+        `Envo refused: ${said ?? 'not allowed for this key.'}`,
+        status,
+      );
     case 404:
       return new EnvoError('not_found', `Envo has no such thing: ${said ?? 'not found.'}`, status);
     case 429:
@@ -213,6 +217,15 @@ async function readCapped(response: Response, maxBytes: number): Promise<Uint8Ar
     offset += chunk.byteLength;
   }
   return bytes;
+}
+
+function parseJson(raw: string): unknown {
+  if (raw === '') return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 function bareMime(value: string | null): string | null {
@@ -278,12 +291,7 @@ export class HttpEnvoGateway implements EnvoGateway {
   ): Promise<unknown> {
     const response = await this.send(connection, method, path, body);
     const raw = await response.text();
-    let payload: unknown = null;
-    try {
-      payload = raw === '' ? null : JSON.parse(raw);
-    } catch {
-      payload = null;
-    }
+    const payload = parseJson(raw);
     if (!response.ok) throw failureFor(response.status, payload);
     if (payload === null || typeof payload !== 'object') {
       throw new EnvoError(
@@ -457,13 +465,7 @@ export class HttpEnvoGateway implements EnvoGateway {
     );
     if (!response.ok) {
       const raw = await response.text().catch(() => '');
-      let payload: unknown = null;
-      try {
-        payload = raw === '' ? null : JSON.parse(raw);
-      } catch {
-        payload = null;
-      }
-      throw failureFor(response.status, payload);
+      throw failureFor(response.status, parseJson(raw));
     }
     return {
       bytes: await readCapped(response, maxBytes),

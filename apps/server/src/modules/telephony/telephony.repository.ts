@@ -315,11 +315,7 @@ export async function insertAssignment(
   return rows[0]?.id ?? null;
 }
 
-export async function deleteAssignment(
-  tx: Tx,
-  orgId: string,
-  id: string,
-): Promise<boolean> {
+export async function deleteAssignment(tx: Tx, orgId: string, id: string): Promise<boolean> {
   const rows = await tx.execute<{ id: string }>(sql`
     delete from telephony.extension_assignments
     where org_id = ${orgId} and id = ${id}
@@ -405,6 +401,21 @@ export async function callByEnvoId(
     where c.org_id = ${orgId} and c.connection_id = ${connectionId}
       and c.envo_call_id = ${envoCallId}
     for update
+  `);
+  return rows[0];
+}
+
+/** The same, for a screen: no lock. */
+export async function callByEnvoIdReadOnly(
+  tx: Tx,
+  orgId: string,
+  connectionId: string,
+  envoCallId: string,
+): Promise<CallRow | undefined> {
+  const rows = await tx.execute<CallRow>(sql`
+    select ${CALL_COLUMNS} from telephony.calls c
+    where c.org_id = ${orgId} and c.connection_id = ${connectionId}
+      and c.envo_call_id = ${envoCallId}
   `);
   return rows[0];
 }
@@ -665,9 +676,7 @@ export async function listCalls(
   if (filters.phoneE164 !== undefined) {
     where.push(sql`c.customer_phone_e164 = ${filters.phoneE164}`);
   } else if (filters.phoneRaw !== undefined) {
-    where.push(
-      sql`(c.from_number = ${filters.phoneRaw} or c.to_number = ${filters.phoneRaw})`,
-    );
+    where.push(sql`(c.from_number = ${filters.phoneRaw} or c.to_number = ${filters.phoneRaw})`);
   }
   if (filters.cursor !== undefined) {
     where.push(
