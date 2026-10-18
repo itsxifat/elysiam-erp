@@ -57,6 +57,10 @@ import {
 } from '../../modules/inbox/inbox.route-fixtures.js';
 import { VOICE_CALLS_ROUTE_FIXTURES } from '../../modules/inbox/voice-calls.route-fixtures.js';
 import {
+  TELEPHONY_ROUTE_FIXTURES,
+  prepareTelephonyFixtures,
+} from '../../modules/telephony/telephony.route-fixtures.js';
+import {
   MARKETING_ROUTE_FIXTURES,
   prepareMarketingFixtures,
 } from '../../modules/marketing/marketing.route-fixtures.js';
@@ -127,6 +131,7 @@ beforeAll(async () => {
   await prepareMarketplaceFixtures();
   await preparePackingFixtures();
   await prepareInboxFixtures();
+  await prepareTelephonyFixtures();
   for (const role of MEMBERSHIP_ROLES) clients.set(role, await harness.asRole(role, ORG_A));
 }, 300_000);
 
@@ -311,6 +316,8 @@ const FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   ...INBOX_ROUTE_FIXTURES,
   // M45: voice messages and calls.
   ...VOICE_CALLS_ROUTE_FIXTURES,
+  // M47: phone calls through Envo.
+  ...TELEPHONY_ROUTE_FIXTURES,
   // M41: presence and desk profiles.
   ...TEAM_ROUTE_FIXTURES,
 };

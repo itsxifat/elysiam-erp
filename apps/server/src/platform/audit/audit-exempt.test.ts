@@ -106,6 +106,9 @@ describe('@AuditExempt', () => {
       // D-551, D-552): no person decided either; the events have a log of their own.
       'modules/storefront/web-marketing.controller.ts#customLinkView',
       'modules/storefront/web-marketing.controller.ts#events',
+      // M47: Envo's webhook (D-832). No person acts; the body is stored and applied by a job,
+      // whose call rows are the record.
+      'modules/telephony/webhook.controller.ts#receive',
     ]);
   });
 

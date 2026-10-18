@@ -63,6 +63,8 @@ export function setServerTestEnv(overrides: TestEnvOverrides = {}): void {
   process.env.STOREFRONT_SSLCOMMERZ_PROVIDER ??= 'fake';
   // The tests pay through a sandbox store, as a staging server would (ledger audit C1).
   process.env.STOREFRONT_SSLCOMMERZ_ALLOW_SANDBOX ??= 'true';
+  // M47: a test never rings a phone through the owner's SIP server unless it names a stand-in.
+  process.env.TELEPHONY_ENVO_PROVIDER ??= 'fake';
 }
 
 /**

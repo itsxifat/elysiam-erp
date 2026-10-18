@@ -93,9 +93,10 @@ export interface PendingClick {
 /**
  * The click a new call of the connection belongs to (D-835), or null. Envo's `POST /calls`
  * answers with no call id, so the first event of a call Envo has not told us about is matched
- * to the newest click within the window whose extension or customer number appears on the call
- * (`from` or `to`): Envo rings the extension from `"name" <ext>` and dials the number given, and
- * which of the two each event carries depends on where the call was when Envo described it.
+ * to the newest click within the window whose extension appears on the call (`from` or `to`),
+ * else the newest whose customer number does: Envo rings the extension from `"name" <ext>` and
+ * dials the number given, and which of the two each event carries depends on where the call was
+ * when Envo described it.
  */
 export function matchClick(
   pending: readonly PendingClick[],
@@ -110,14 +111,19 @@ export function matchClick(
       .filter((phone): phone is E164Phone => phone !== null),
   );
   const extensions = new Set(numbers.filter((value) => isExtensionNumber(value)));
-  const candidates = pending
+  const inWindow = pending
     .filter((click) => {
       const age = now.getTime() - click.requestedAt.getTime();
       return age >= -5_000 && age <= CLICK_TO_CALL_MATCH_MS;
     })
-    .filter((click) => extensions.has(click.extension) || phones.has(click.toE164 as E164Phone))
     .sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime());
-  return candidates[0] ?? null;
+  // The extension on the call names whose click it is; the number alone is the fallback (two
+  // people may call the same customer a moment apart).
+  return (
+    inWindow.find((click) => extensions.has(click.extension)) ??
+    inWindow.find((click) => phones.has(click.toE164 as E164Phone)) ??
+    null
+  );
 }
 
 /** A click Envo took but never described, after this long, is closed as not connected. */

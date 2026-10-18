@@ -156,6 +156,19 @@ describe('linking a call to its click (D-835)', () => {
     ).toBe('b');
   });
 
+  it('lets the extension on the call decide between two clicks to the same customer', () => {
+    const pending = [
+      click('mine', '101', '01712345678', 20),
+      click('theirs', '102', '01712345678', 2),
+    ];
+    expect(
+      matchClick(pending, { from: '101', to: '01712345678', direction: 'outbound' }, now)?.id,
+    ).toBe('mine');
+    expect(
+      matchClick(pending, { from: null, to: '01712345678', direction: 'outbound' }, now)?.id,
+    ).toBe('theirs');
+  });
+
   it('never links an inbound call, a stranger, or a click older than the window', () => {
     const pending = [click('a', '101', '01712345678', CLICK_TO_CALL_MATCH_MS / 1000 + 1)];
     expect(matchClick(pending, { from: '101', to: null, direction: 'outbound' }, now)).toBeNull();

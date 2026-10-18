@@ -636,6 +636,26 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/inbox/selling-context',
   'GET /v1/inbox/products',
   'GET /v1/inbox/size-charts/:id',
+  // M47: phone calls through Envo (`Telephony`, `PhoneExtension`, `PhoneCall`).
+  'GET /v1/telephony/connections',
+  'POST /v1/telephony/connections',
+  'PUT /v1/telephony/connections/:id',
+  'POST /v1/telephony/connections/:id/test',
+  'GET /v1/telephony/connections/:id/extensions',
+  'PUT /v1/telephony/connections/:id/extensions/:extension',
+  'DELETE /v1/telephony/connections/:id/extensions/:extension',
+  'GET /v1/telephony/assignments',
+  'GET /v1/telephony/connections/:id/live',
+  'POST /v1/telephony/connections/:id/live/:callId/hangup',
+  'GET /v1/telephony/me',
+  'GET /v1/telephony/phone/token',
+  'GET /v1/telephony/lookup',
+  'POST /v1/telephony/calls',
+  'POST /v1/telephony/calls/answered',
+  'GET /v1/telephony/calls',
+  'GET /v1/telephony/calls/:id',
+  'GET /v1/telephony/calls/:id/recording',
+  'POST /v1/telephony/calls/:id/outcome',
 ];
 
 /** The manifest key for a route, as `describeRoutes` reports it. */
