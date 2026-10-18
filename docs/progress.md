@@ -3478,12 +3478,27 @@ dry-run|commit --file <users.json>`.
   the buyer while showing the recipient; a new base URL kept the old key; Envo's host was not
   resolved; webhook bodies were kept forever (all fixed, D-830 to D-851). Owner decisions recorded
   as ASSUMED: D-838, D-841, D-842, D-851, D-853.
-- **Evidence (minimal tests, D-758):** the domain (`telephony.test.ts`, 30: numbers, the customer's
+- **The recheck (applied 2026-10-18):** a Call to a bare number still named the buyer, their
+  order and its owner once Envo's webhook landed on the click (critical, fixed: a click's links
+  are the click's own, D-834); the screen pop and the call log's POST reads wrote an audit row
+  with buyers' names on every ring and page load (`auditNothingChanged` now); an answered claim
+  passed when Envo's channels named no phone, so a call in an IVR or queue could be taken (now
+  only with the claimant's own phone, D-836), and asked Envo uncached (now eight a minute a
+  person, thirty a connection); the screen pop said "Not a customer yet" for a known buyer
+  until Envo's `call.started` was applied (now Envo's live calls are asked, the dock asks again
+  while ringing, and it says "Caller", D-843); a click took a colleague's or an internal call,
+  or a desk-phone call to another customer (D-835); IPv6 spellings slipped the host check
+  (D-830); `GET /calls` took a phone in its query (D-845); a recording stuck pending was retried
+  for ever (D-840). Tests added for the sync's windows and cursor, attribution and readiness,
+  the host check, storage failures and requeues, and the console's phone (one widget through
+  renders, the ring-back rules).
+- **Evidence (minimal tests, D-758):** the domain (`telephony.test.ts`, 32: numbers, the customer's
   side, the click matching cases of the review, `phoneCallProgress` over any order of words, the
   signature, the base URL); `pages-headers.test.ts` (the phone's paths and sockets); real Postgres
   (`telephony.e2e.test.ts`, 29: the five acceptance checks and the review's scope, reach, claim,
-  late-event, base-URL and retention paths, with Envo's adapter against a stand-in). Typecheck of
-  server, console and api-client; eslint and prettier on every touched file; the gates below.
+  late-event, base-URL and retention paths, with Envo's adapter against a stand-in; 39 after the
+  recheck); `envo-host.test.ts` (9); the console's `phone-dock.test.tsx` (3) and
+  `phone-store.test.ts` (8). Typecheck of server, console and api-client; eslint and prettier on every touched file; the gates below.
   Not run: the full verify, the stack specs, the live Envo.
 - **Follow-ups:** verify against the owner's Envo (Unverified integrations); stream recordings
   with Range; an answering-extension field from Envo (D-836); a single phone tab (D-843); owner
