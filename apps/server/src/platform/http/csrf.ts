@@ -147,6 +147,9 @@ const SIGNED_MACHINE_PREFIXES = [
   // M42: Meta's webhooks for the inbox, signed with the brand's app secret over the raw body
   // (D-732). No cookie authority at all.
   '/webhooks/meta/',
+  // M47: Envo's webhooks, signed with the connection's webhook secret over the raw body and a
+  // timestamp (D-832). No cookie authority at all.
+  '/webhooks/envo/',
   '/v1/scanner/sign-in',
   '/v1/scanner/sign-out',
   // The scanner app as it ships signs in at the old site's address (D-554).

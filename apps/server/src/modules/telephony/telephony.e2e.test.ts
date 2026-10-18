@@ -386,7 +386,7 @@ describe('check 1: a connection, sealed, tested', () => {
     });
     const id = json<{ id: string }>(other).id;
     const test = await admin.client.request('POST', `/v1/telephony/connections/${id}/test`);
-    expect(test.statusCode, test.body).toBe(502);
+    expect(test.statusCode, test.body).toBe(424);
     const problem = json<{ code: string; detail?: string; message?: string }>(test);
     expect(problem.code).toBe('TELEPHONY_ENVO_REFUSED');
     expect(test.body).toContain('Envo refused the API key');
@@ -789,22 +789,25 @@ describe('check 5: secrets, phones, brands and the record', () => {
         { orgId: ORG_A },
       )
     )[0]?.id;
-    await expect(
-      withOrg({ orgId: ORG_A, userId: admin.userId }, (tx) =>
-        tx.execute(sql`update telephony.calls set status = 'ringing' where id = ${click}`),
+    const refusal = async (statement: ReturnType<typeof sql>): Promise<string> => {
+      try {
+        await withOrg({ orgId: ORG_A, userId: admin.userId }, (tx) => tx.execute(statement));
+        return 'accepted';
+      } catch (error) {
+        const cause = (error as { cause?: { message?: string } }).cause;
+        return `${(error as Error).message} ${cause?.message ?? ''}`;
+      }
+    };
+    expect(
+      await refusal(sql`update telephony.calls set status = 'ringing' where id = ${click}`),
+    ).toMatch(/this call is over/);
+    expect(
+      await refusal(
+        sql`update telephony.calls set occurred_at = now() - interval '1 day' where id = ${click}`,
       ),
-    ).rejects.toThrow(/over|forward/);
-    await expect(
-      withOrg({ orgId: ORG_A, userId: admin.userId }, (tx) =>
-        tx.execute(
-          sql`update telephony.calls set occurred_at = now() - interval '1 day' where id = ${click}`,
-        ),
-      ),
-    ).rejects.toThrow(/origin/);
-    await expect(
-      withOrg({ orgId: ORG_A, userId: admin.userId }, (tx) =>
-        tx.execute(sql`delete from telephony.calls where id = ${click}`),
-      ),
-    ).rejects.toThrow(/permission/);
+    ).toMatch(/origin is fixed/);
+    expect(await refusal(sql`delete from telephony.calls where id = ${click}`)).toMatch(
+      /permission denied/,
+    );
   });
 });

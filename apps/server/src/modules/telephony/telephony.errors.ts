@@ -1,10 +1,10 @@
 import {
-  BadGatewayException,
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   NotFoundException,
-  type HttpException,
 } from '@nestjs/common';
 import type { ErrorCode } from '@elysium/contracts';
 
@@ -30,8 +30,9 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   TELEPHONY_INVALID: 400,
   TELEPHONY_NO_EXTENSION: 409,
   TELEPHONY_NOT_READY: 409,
-  TELEPHONY_ENVO_REFUSED: 502,
-  TELEPHONY_ENVO_UNREACHABLE: 502,
+  // 424, not 502: the person needs Envo's reason, and a 5xx's detail is never shown (§23).
+  TELEPHONY_ENVO_REFUSED: 424,
+  TELEPHONY_ENVO_UNREACHABLE: 424,
   TELEPHONY_EXTENSION_TAKEN: 409,
   TELEPHONY_NUMBER_INVALID: 400,
   TELEPHONY_RECORDING_UNAVAILABLE: 404,
@@ -48,8 +49,8 @@ export function telephonyHttpError(error: TelephonyError): HttpException {
       return new ForbiddenException(body);
     case 409:
       return new ConflictException(body);
-    case 502:
-      return new BadGatewayException(body);
+    case 424:
+      return new HttpException(body, HttpStatus.FAILED_DEPENDENCY);
     default:
       return new BadRequestException(body);
   }
