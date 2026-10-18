@@ -1968,3 +1968,41 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   order through the state machine only once every lot is scanned, and a person's Ship of a
   multi-lot order is refused through the orders module's `HandoverGuardRegistry`. One
   consignment per order; no courier is sent a lot count (none documents one, D-809).
+
+## 32. Phone calls through Envo (M47, D-830 to D-855)
+
+Staff call customers from the ERP through Envo, the owner's own SIP service. The `telephony`
+module (schema `telephony`) owns it; buyers and orders come through `ORDERS_API` (with M41's owner
+gate), people through `IAM_API`, recordings through `FILES_API` (invariant 12). Envo is never asked
+inside a transaction (invariant 6).
+
+- **Connections** (`telephony.connections`, Settings → Calls, `Telephony`): a base URL (an https
+  origin on a public name, resolved and refused when it points inside, D-830), the API key and the
+  webhook secret sealed write-only (fingerprints only; a new address needs the key again), an
+  enable switch, the Test (Envo's `/ping`, extensions and numbers), the webhook address, and the
+  last test, webhook, refused signature and sync. One Envo SIP server per brand (D-854).
+- **Extensions** (`telephony.extension_assignments`, `PhoneExtension`): one person per extension
+  and one extension per person, given by a supervisor, with Envo's live presence (cached ten
+  seconds, D-847); a holder names a call only while they still place calls and held it when it
+  started (D-846).
+- **Calls** (`telephony.calls`, `PhoneCall`, D-837): one row per call, from a person's Call
+  (`first_seen = click`, written before Envo is asked, D-834) or Envo's first word about it
+  (`webhook`, `sync`); matched to its click, customer and order once (D-835); its progress moves
+  forward only (`phoneCallProgress` in the domain, and a trigger), append-only otherwise, never
+  deleted. Supervisors see every call, sales their own and their orders' (D-841). An inbound call
+  becomes a person's when their browser phone answered it and Envo shows it talking on their phone
+  (D-836).
+- **Webhooks** (`POST /webhooks/envo/<org>/<connection>`, `telephony.webhook_events`, D-832): raw
+  body, HMAC-SHA256, five minutes, stored once per call and event, applied by
+  `telephony.process_webhook`; bodies deleted thirty days after they were processed (D-851).
+- **Jobs** (`telephony.queues.ts`): `process_webhook`; `fetch_recording` (the connection's own
+  host only, size-capped, four tries, then failed with why, D-840); `sync_sweep` every five
+  minutes (each enabled connection's history, oldest window first, the cursor two hours behind
+  now, D-839, and stuck recordings another round); `recording_retention` nightly (365 days
+  ASSUMED per connection, every brand, D-842; webhook bodies, D-851).
+- **The console**: Call buttons (D-848), the order's phone calls inside M41's verification calls
+  (outcome on demand, D-838), the Calls page (D-845), Settings → Calls, the Staff screen's
+  Extension column, and the web phone (D-843): Envo's widget, headless, from the connection's
+  `/embed/phone.js`, with a token for the person's own extension, registering on Envo's SIP domain
+  (`wss://call.enfinito.cloud` by default), all allowed by the console's CSP path by path (D-844).
+  Realtime is `telephony.call_changed`, ids only (D-850).

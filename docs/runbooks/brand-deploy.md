@@ -246,6 +246,34 @@ ffmpeg -version` shows it.
   input lists with the passwords stay in `camera-buffer`. `dc <slug> logs camera` says "camera
   preview stopped" with the reason when one fails; the recording is not affected.
 
+### Phone calls through Envo (M47)
+
+Each brand has an Envo SIP server of its own: never point two brands' connections at one, or each
+would import the other's calls and recordings (D-854). In Envo, for that SIP server:
+
+1. Developers → API keys: a key with the read, calls and webphone scopes, and the brand's console
+   (`https://<admin host>`) under allowed browser origins (without it the browser phone's session
+   is refused). The package must include API access.
+2. Each extension used in the browser has Web phone on.
+3. Developers → Webhooks: the address Settings → Calls shows, events `call.started`,
+   `call.answered` and `call.ended`; paste its signing secret into Settings → Calls.
+
+The brand's `.env.brand` needs nothing for the owner's Envo. For another Envo, set
+`BRAND_CSP_TELEPHONY_ORIGINS` (its https origin) and `BRAND_CSP_TELEPHONY_SOCKETS` (`wss://` and
+its SIP domain), every host, space-separated, no quotes, and deploy (D-844). The API refuses a base
+URL whose name resolves to a private address (D-830): check what the API container sees,
+`dc <slug> exec -T api getent hosts envo.enfinito.cloud`, and if it is a LAN address set
+`BRAND_TELEPHONY_ENVO_PRIVATE_CIDRS=<that address>/32`. `BRAND_TELEPHONY_ENVO_PROVIDER=fake` is
+for a demo brand with no SIP server.
+
+After deploying: Settings → Calls → Test lists the extensions; Envo's Send test shows HTTP 200 (a
+403 means a Cloudflare bot check or WAF rule stands in front: skip it for `/webhooks/envo/*` on
+the brand's zone and `/api/v1/*` on Envo's); `curl -sI https://<admin host>/ | grep -iE
+'content-security-policy|permissions-policy'` shows `wss://call.enfinito.cloud` and
+`microphone=(self)`; and an unsigned POST to the webhook address answers 401. Recordings are kept
+365 days unless a connection says otherwise, beside Envo's own copy: check `df -h` before
+switching recording on, or put the brand on R2 (D-842).
+
 ## 6. Operating a brand
 
 ```sh

@@ -3452,3 +3452,40 @@ dry-run|commit --file <users.json>`.
   that LAN is reachable and that subnet stays allowed; printers elsewhere use the print station. Both `.env.brand` files gained
   `BRAND_PRINTER_REFUSED_CIDRS=172.16.0.0/12,192.168.20.237/32` (every Docker bridge on the host,
   and the server's own address), backups `.env.brand.bak-m46`.
+
+## 2026-10-18 · M47 · phone calls through Envo (not merged or deployed)
+
+- **Branch and worktree:** `m47-envo-calls` from `integration-wave2` (b19dd6b8), in
+  `D:/Projects/elysium-erp-m47`. Decisions D-830 to D-855; plan `docs/plans/M47.md`.
+- **What was built:** the `telephony` module (connections with a sealed write-only key and
+  secret and a Test, extensions given to people with Envo's presence, a Call from the person's
+  own extension written before Envo is asked, Envo's signed webhooks stored and applied by a job,
+  the sync every five minutes, recordings downloaded into the files and played by scope, a
+  nightly retention), the console's Calls page, Settings → Calls, Call buttons, the order's phone
+  calls inside M41's verification calls, the Staff screen's Extension column, and Envo's web phone
+  inside the console with its screen pop.
+- **Migrations:** `0155_m47_telephony_schema` (drizzle-kit: four tables) and
+  `0156_m47_telephony_policies` (hand-written: RLS ENABLE and FORCE and minimal grants, the
+  connection, call and webhook triggers; talk time never lower; webhook bodies deleted only
+  thirty days after processing). Both are this branch's own, edited during the review.
+- **The review (applied 2026-10-18):** the web phone was torn down on every render (an unstable
+  `t` in its effect's dependencies) and the CSP blocked its SIP socket on Envo's SIP domain
+  (critical, fixed, D-843, D-844); the screen pop and a Call to a bare number named buyers outside
+  the caller's reach (D-740; fixed, POST so numbers stay out of access logs); click matching gave
+  another extension's call to a click, and one person's two quick Calls could swap; any agent
+  could claim an inbound call; late events lowered talk time; the sync's cursor skipped unread
+  pages and long calls; a storage failure left a recording pending; the verification panel dialled
+  the buyer while showing the recipient; a new base URL kept the old key; Envo's host was not
+  resolved; webhook bodies were kept forever (all fixed, D-830 to D-851). Owner decisions recorded
+  as ASSUMED: D-838, D-841, D-842, D-851, D-853.
+- **Evidence (minimal tests, D-758):** the domain (`telephony.test.ts`, 30: numbers, the customer's
+  side, the click matching cases of the review, `phoneCallProgress` over any order of words, the
+  signature, the base URL); `pages-headers.test.ts` (the phone's paths and sockets); real Postgres
+  (`telephony.e2e.test.ts`, 29: the five acceptance checks and the review's scope, reach, claim,
+  late-event, base-URL and retention paths, with Envo's adapter against a stand-in). Typecheck of
+  server, console and api-client; eslint and prettier on every touched file; the gates below.
+  Not run: the full verify, the stack specs, the live Envo.
+- **Follow-ups:** verify against the owner's Envo (Unverified integrations); stream recordings
+  with Range; an answering-extension field from Envo (D-836); a single phone tab (D-843); owner
+  questions D-838, D-841, D-853.
+- **New dependencies:** none.
