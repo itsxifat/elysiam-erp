@@ -715,6 +715,63 @@
         "required": ["from"],
         "additionalProperties": false
       },
+      "PhoneCallListQuery": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["inbound", "outbound", "internal"]
+          },
+          "answered": {
+            "type": "string",
+            "enum": ["answered", "missed"]
+          },
+          "orderNo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "phone": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 32
+          },
+          "orderId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "customerId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
       "PhoneCallPlace": {
         "type": "object",
         "properties": {
@@ -734,6 +791,18 @@
             "maxLength": 32
           }
         },
+        "additionalProperties": false
+      },
+      "PhoneLookup": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 40
+          }
+        },
+        "required": ["phone"],
         "additionalProperties": false
       },
       "PresenceBeat": {
@@ -52423,6 +52492,99 @@
         }
       }
     },
+    "/v1/telephony/calls/search": {
+      "post": {
+        "operationId": "searchPhoneCalls",
+        "summary": "The call log, its filters in the body so a phone stays out of URLs.",
+        "tags": ["telephony"],
+        "x-ability": "read:PhoneCall",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneCallListQuery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/telephony/connections": {
       "get": {
         "operationId": "listTelephonyConnections",
@@ -53309,13 +53471,28 @@
       }
     },
     "/v1/telephony/lookup": {
-      "get": {
-        "operationId": "getV1TelephonyLookup",
-        "summary": "GET /v1/telephony/lookup",
+      "post": {
+        "operationId": "lookupPhoneCaller",
+        "summary": "Who is calling: the buyer a number names (only one the caller may open, or whose call is on the caller's phone now) and their open orders.",
         "tags": ["telephony"],
         "x-ability": "create:PhoneCall",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneLookup"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "content": {
               "application/json": {
@@ -53345,6 +53522,16 @@
           },
           "403": {
             "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
             "content": {
               "application/problem+json": {
                 "schema": {

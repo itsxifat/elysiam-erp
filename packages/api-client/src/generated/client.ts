@@ -1145,11 +1145,6 @@ export const OPERATIONS = {
     path: '/v1/telephony/connections/{id}/live',
     ability: 'read:Telephony',
   },
-  getV1TelephonyLookup: {
-    method: 'GET',
-    path: '/v1/telephony/lookup',
-    ability: 'create:PhoneCall',
-  },
   getV1TelephonyMe: { method: 'GET', path: '/v1/telephony/me', ability: 'read:PhoneCall' },
   getV1TelephonyPhoneToken: {
     method: 'GET',
@@ -1197,6 +1192,7 @@ export const OPERATIONS = {
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   logOrderCall: { method: 'POST', path: '/v1/orders/{id}/calls', ability: 'update:Order' },
+  lookupPhoneCaller: { method: 'POST', path: '/v1/telephony/lookup', ability: 'create:PhoneCall' },
   markSlipsPrinted: { method: 'POST', path: '/v1/orders/mark-printed', ability: 'update:Order' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
   myOrderOffers: { method: 'GET', path: '/v1/orders/offers/mine', ability: 'read:Order' },
@@ -2403,6 +2399,11 @@ export const OPERATIONS = {
     method: 'PUT',
     path: '/v1/orders/workflow-settings',
     ability: 'update:OrderWorkflow',
+  },
+  searchPhoneCalls: {
+    method: 'POST',
+    path: '/v1/telephony/calls/search',
+    ability: 'read:PhoneCall',
   },
   setApprovalThresholds: {
     method: 'PUT',
@@ -3745,9 +3746,6 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1TelephonyConnectionsByIdLive, input, options),
-    /** GET /v1/telephony/lookup */
-    getV1TelephonyLookup: (options?: RequestOptions): Promise<unknown> =>
-      request(runtime, OPERATIONS.getV1TelephonyLookup, undefined, options),
     /** GET /v1/telephony/me */
     getV1TelephonyMe: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1TelephonyMe, undefined, options),
@@ -3846,6 +3844,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: CallAttemptInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.logOrderCall, input, options),
+    /** Who is calling: the buyer a number names (only one the caller may open, or whose call is on the caller's phone now) and their open orders. */
+    lookupPhoneCaller: (
+      input: { readonly body: unknown },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.lookupPhoneCaller, input, options),
     /** The hub printed these confirmed orders' slips. */
     markSlipsPrinted: (
       input: { readonly body: MarkPrintedInput },
@@ -5192,6 +5195,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: WorkflowSettingsInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.saveWorkflowSettings, input, options),
+    /** The call log, its filters in the body so a phone stays out of URLs. */
+    searchPhoneCalls: (
+      input: { readonly body: unknown },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.searchPhoneCalls, input, options),
     /** Set this organization's maker-checker thresholds. */
     setApprovalThresholds: (
       input: { readonly body: ThresholdInput },
