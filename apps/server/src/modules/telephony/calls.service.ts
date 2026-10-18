@@ -427,7 +427,7 @@ export class TelephonyCallsService {
     }
     // A phone alone names its buyer on the call only for a person who may open that buyer
     // (D-740, as the inbox links a typed phone): the Call button is no phone-to-buyer lookup.
-    // Envo's webhooks link the call for the supervisors either way.
+    // Envo's webhooks never add a buyer to a click later (`TelephonyIngestService.progress`).
     const found = (await this.orders.buyerIdByPhone(tx, context.orgId, given)) ?? null;
     const reachable =
       found !== null && (await this.orders.customerReachable(tx, context.orgId, found, context));
@@ -744,7 +744,8 @@ export class TelephonyCallsService {
           context,
         );
         // The ring-back of the person's own Call names its buyer when the Call did (an order or
-        // a buyer they may reach); a Call to a bare number did not, and does not here either.
+        // a buyer they may reach); a Call to a bare number did not, and does not here either. A
+        // click's buyer is the one written with it: Envo's webhooks never add one to a click.
         const ownCall = ringBackRow?.customer_id === customerId;
         if (!reachable && !ownCall) {
           const mine = await this.myPhone(tx, context);

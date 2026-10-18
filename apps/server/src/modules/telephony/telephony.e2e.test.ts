@@ -913,7 +913,37 @@ describe('the review: scope, reach, claims and retention', () => {
       body: { phone: '01912345670' },
     });
     expect(placed.statusCode, placed.body).toBe(201);
-    expect(json<{ call: { customer: unknown } }>(placed).call.customer).toBeNull();
+    const click = json<{ call: { id: string; customer: unknown } }>(placed).call;
+    expect(click.customer).toBeNull();
+    // Nor once Envo's webhook lands on the click: the buyer, their open order and its owner stay
+    // off the caller's own call, and the ring-back's screen pop stays nobody's.
+    const started = await deliver({
+      event: 'call.started',
+      id: '1789457900.1',
+      sipServer: { id: 7 },
+      direction: null,
+      from: '103',
+      to: '01912345670',
+      startedAt: new Date().toISOString(),
+      durationSec: 0,
+      talkSec: 0,
+    });
+    expect(started.statusCode, started.body).toBe(200);
+    await processed();
+    expect(await callRow(click.id)).toMatchObject({
+      envo_call_id: '1789457900.1',
+      user_id: salesC.userId,
+      customer_id: null,
+      order_id: null,
+    });
+    const seen = json<{ customer: unknown; order: unknown; orderOwner: unknown }>(
+      await salesC.client.request('GET', `/v1/telephony/calls/${click.id}`),
+    );
+    expect(seen).toMatchObject({ customer: null, order: null, orderOwner: null });
+    const ringBack = json<{ customer: unknown; ringBack: { callId: string } | null }>(
+      await lookup(salesC, '01912345670'),
+    );
+    expect(ringBack).toMatchObject({ customer: null, ringBack: { callId: click.id } });
   });
 
   it('names the caller of a call ringing on the agent’s connection, then not once it ends', async () => {

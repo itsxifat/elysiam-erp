@@ -274,7 +274,10 @@ export class TelephonyIngestService {
     if (call.customer_phone_e164 === null && customerPhone !== null) {
       change.customerPhoneE164 = customerPhone;
     }
-    if (call.customer_id === null && customerPhone !== null) {
+    // A click's links are the click's own (D-834): a Call to a bare number names its buyer only
+    // when the caller may open them, so Envo's word never adds one to the caller's row later
+    // (the caller would read the buyer, their open order and its owner off their own call).
+    if (call.customer_id === null && customerPhone !== null && call.first_seen !== 'click') {
       const link = await this.customerLink(tx, orgId, customerPhone);
       if (link !== null) {
         change.customerId = link.customerId;
