@@ -622,10 +622,13 @@ export class TelephonyCallsService {
    * - it is still going here (ringing or answered, not ended): an earlier, missed call from the
    *   same number is never taken for the one picked up now (404 until Envo's `call.started` is
    *   in, which the console's phone asks again for);
-   * - Envo shows it talking right now, and, when its channels name extensions (Envo names a
-   *   phone `<extension>_<SIP server>`, its web phone with `_web`), the person's own among them:
-   *   after the answer Asterisk keeps only the answering phone's channel, so a ring-group
-   *   colleague who did not pick up cannot take the call and its recording.
+   * - Envo shows it talking right now, with the person's own phone among its channels (Envo
+   *   names a phone `<extension>_<SIP server>`, its web phone with `_web`): after the answer
+   *   Asterisk keeps only the answering phone's channel, so a ring-group colleague who did not
+   *   pick up cannot take the call and its recording. A call whose channels name no phone of
+   *   the person's (still in an IVR, a queue or music on hold, its only channel the trunk's; or
+   *   an Envo whose SIP usernames are not `<extension>_…`) stays nobody's, as a desk phone's
+   *   answer does: a supervisor sees it.
    *
    * Envo is asked between two short transactions, never inside one (invariant 6).
    */
@@ -668,10 +671,7 @@ export class TelephonyCallsService {
         );
       }
       if (!answeredOn(now, found.mine.assignment.extension)) {
-        throw new TelephonyError(
-          'TELEPHONY_NOT_FOUND',
-          'Envo shows another extension on that call.',
-        );
+        throw new TelephonyError('TELEPHONY_NOT_FOUND', 'Envo does not show your phone on that call.');
       }
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const call = await repo.unclaimedInbound(
@@ -795,14 +795,14 @@ export class TelephonyCallsService {
 }
 
 /**
- * Whether Envo's live call shows this extension's phone, or no phone of any extension (an
- * Envo whose SIP usernames are not `<extension>_…` says nothing either way). Envo names an
+ * Whether Envo's live call shows this extension's own phone among its channels. Envo names an
  * extension's endpoints `<number>_<SIP server slug>` and its web phone `<that>_web`
- * (`createExtension`, `webEndpoint`); a trunk's endpoint has another name.
+ * (`createExtension`, `webEndpoint`); a trunk's endpoint has another name. No phone of this
+ * extension's, no claim: a call ringing in an IVR or a queue is `up` with only the trunk's
+ * channel, and must not become whoever asks first (recheck W2).
  */
 export function answeredOn(call: EnvoLiveCall, extension: string): boolean {
-  const phones = call.endpoints.filter((endpoint) => /^[0-9]{2,8}_/.test(endpoint));
-  return phones.length === 0 || phones.some((endpoint) => endpoint.startsWith(`${extension}_`));
+  return call.endpoints.some((endpoint) => endpoint.startsWith(`${extension}_`));
 }
 
 /** For a route that filters calls by a column outside the call's own scope. */

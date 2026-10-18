@@ -990,6 +990,11 @@ describe('the review: scope, reach, claims and retention', () => {
     // Not yet talking in Envo: nobody's yet.
     live = [{ id: '1789458000.1', state: 'ringing', channels: [{ endpoint: 'btcl_trunk' }] }];
     expect((await answered(salesB)).statusCode).toBe(404);
+    // Answered into an IVR or a queue: `up`, with only the trunk's channel. Nobody's.
+    live = [{ id: '1789458000.1', state: 'up', channels: [{ endpoint: 'btcl_trunk' }] }];
+    const queued = await answered(salesC);
+    expect(queued.statusCode, queued.body).toBe(404);
+    expect(queued.body).toContain('does not show your phone');
     // Talking on 102's phone (sales B): sales C (103) cannot take it, sales B can, once.
     live = [
       {
