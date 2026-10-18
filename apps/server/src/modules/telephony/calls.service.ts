@@ -20,7 +20,11 @@ import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { envoFailure, TelephonyConnectionsService } from './connections.service.js';
 import { announce } from './ingest.service.js';
-import type { EnvoGateway, EnvoLiveCall } from './providers/envo-gateway.js';
+import {
+  liveCallOnPhoneOf,
+  type EnvoGateway,
+  type EnvoLiveCall,
+} from './providers/envo-gateway.js';
 import { TELEPHONY_CONFIG, type TelephonyConfig } from './telephony.config.js';
 import { mapTelephonyErrors, TelephonyError } from './telephony.errors.js';
 import * as repo from './telephony.repository.js';
@@ -701,8 +705,11 @@ export class TelephonyCallsService {
           'Envo does not show that call as answered right now.',
         );
       }
-      if (!answeredOn(now, found.mine.assignment.extension)) {
-        throw new TelephonyError('TELEPHONY_NOT_FOUND', 'Envo does not show your phone on that call.');
+      if (!liveCallOnPhoneOf(now, found.mine.assignment.extension)) {
+        throw new TelephonyError(
+          'TELEPHONY_NOT_FOUND',
+          'Envo does not show your phone on that call.',
+        );
       }
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const call = await repo.unclaimedInbound(
@@ -745,18 +752,22 @@ export class TelephonyCallsService {
    *
    * The buyer is named only to a person who may open them (D-740, as the order desk's lookup and
    * the inbox's panel), or whose phone that number is on right now: the ring-back of their own
-   * Call, or an inbound call on their connection still ringing or answered. Any other number is
-   * answered as nobody's, so the route is no phone-to-buyer lookup. Sent as a POST, so the
-   * number stays out of URLs and access logs (invariant 10).
+   * Call, an inbound call on their connection still ringing or answered here, or, before Envo's
+   * `call.started` has reached the ERP and been applied (it is sent a second or more after the
+   * phone rings), a call from that number Envo's live calls show on the person's own phone (asked
+   * after the transaction, cached five seconds). Any other number is answered as nobody's, so the
+   * route is no phone-to-buyer lookup. Sent as a POST, so the number stays out of URLs and access
+   * logs (invariant 10).
    */
   async lookup(context: ActiveContext, request: object, rawPhone: string) {
     scopeHasNoRowDimension(request, 'the caller’s own incoming call, by its number');
-    return mapTelephonyErrors(() =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+    return mapTelephonyErrors(async () => {
+      const actor = { orgId: context.orgId, userId: context.userId };
+      const read = await withOrg(actor, async (tx) => {
         const phone = customerPhoneFrom(rawPhone);
-        if (phone === null) return { phone: null, customer: null, openOrders: [], ringBack: null };
+        if (phone === null) return { answer: nobody(null, null) };
         const ringBackRow = await repo.recentClick(tx, context.orgId, context.userId, phone, 90);
-        const ringBack =
+        const ringBack: RingBack =
           ringBackRow === undefined
             ? null
             : {
@@ -767,7 +778,7 @@ export class TelephonyCallsService {
                     : { id: ringBackRow.order_id, orderNo: ringBackRow.order_no ?? '' },
               };
         const customerId = await this.orders.buyerIdByPhone(tx, context.orgId, phone);
-        if (customerId === undefined) return { phone, customer: null, openOrders: [], ringBack };
+        if (customerId === undefined) return { answer: nobody(phone, ringBack) };
         const reachable = await this.orders.customerReachable(
           tx,
           context.orgId,
@@ -778,62 +789,90 @@ export class TelephonyCallsService {
         // a buyer they may reach); a Call to a bare number did not, and does not here either. A
         // click's buyer is the one written with it: Envo's webhooks never add one to a click.
         const ownCall = ringBackRow?.customer_id === customerId;
-        if (!reachable && !ownCall) {
-          const mine = await this.myPhone(tx, context);
-          const ringing =
-            mine !== null &&
-            (await repo.liveInboundFrom(
-              tx,
-              context.orgId,
-              mine.connection.id,
-              { e164: phone, raw: phone },
-              new Date(Date.now() - LIVE_LOOKUP_MS),
-              context.userId,
-            )) !== undefined;
-          if (!ringing) return { phone, customer: null, openOrders: [], ringBack };
-        }
-        const panel = await this.orders.customerPanel(tx, context.orgId, customerId, 10, context);
-        if (panel === undefined) return { phone, customer: null, openOrders: [], ringBack };
-        return {
-          phone,
-          customer: {
-            id: panel.id,
-            name: panel.name,
-            reachable,
-            ...(reachable
-              ? {
-                  orders: panel.orders,
-                  delivered: panel.delivered,
-                  returned: panel.returned,
-                  cancelled: panel.cancelled,
-                }
-              : {}),
-          },
-          openOrders: panel.recentOrders
-            .filter((order) => OPEN_STATUSES.has(order.status))
-            .map((order) => ({
-              id: order.id,
-              orderNo: order.orderNo,
-              status: order.status,
-              codAmountPoisha: order.codAmountPoisha,
-              createdAt: order.createdAt.toISOString(),
-            })),
-          ringBack,
-        };
-      }),
-    );
+        const named = (on: boolean) =>
+          callerAnswer(this.orders, tx, context, phone, customerId, on, ringBack);
+        if (reachable) return { answer: await named(true) };
+        if (ownCall) return { answer: await named(false) };
+        const mine = await this.myPhone(tx, context);
+        if (mine === null) return { answer: nobody(phone, ringBack) };
+        const ringing = await repo.liveInboundFrom(
+          tx,
+          context.orgId,
+          mine.connection.id,
+          { e164: phone, raw: phone },
+          new Date(Date.now() - LIVE_LOOKUP_MS),
+          context.userId,
+        );
+        if (ringing !== undefined) return { answer: await named(false) };
+        return { ask: { mine, phone, customerId, ringBack } };
+      });
+      if ('answer' in read) return read.answer;
+      const { mine, phone, customerId, ringBack } = read.ask;
+      const onMyPhone = await this.connections.callFromOnPhone(
+        mine.connection,
+        context.orgId,
+        phone,
+        mine.assignment.extension,
+      );
+      if (!onMyPhone) return nobody(phone, ringBack);
+      return withOrg(actor, (tx) =>
+        callerAnswer(this.orders, tx, context, phone, customerId, false, ringBack),
+      );
+    });
   }
 }
 
+type RingBack = {
+  readonly callId: string;
+  readonly order: { readonly id: string; readonly orderNo: string } | null;
+} | null;
+
+/** The screen pop's answer naming nobody. */
+function nobody(phone: string | null, ringBack: RingBack) {
+  return { phone, customer: null, openOrders: [], ringBack };
+}
+
 /**
- * Whether Envo's live call shows this extension's own phone among its channels. Envo names an
- * extension's endpoints `<number>_<SIP server slug>` and its web phone `<that>_web`
- * (`createExtension`, `webEndpoint`); a trunk's endpoint has another name. No phone of this
- * extension's, no claim: a call ringing in an IVR or a queue is `up` with only the trunk's
- * channel, and must not become whoever asks first (recheck W2).
+ * The screen pop's answer for a buyer the person may be told of (D-843): their name and open
+ * orders, and their history only when the person may open them (`reachable`).
  */
-export function answeredOn(call: EnvoLiveCall, extension: string): boolean {
-  return call.endpoints.some((endpoint) => endpoint.startsWith(`${extension}_`));
+async function callerAnswer(
+  orders: OrdersApi,
+  tx: Tx,
+  context: ActiveContext,
+  phone: string,
+  customerId: string,
+  reachable: boolean,
+  ringBack: RingBack,
+) {
+  const panel = await orders.customerPanel(tx, context.orgId, customerId, 10, context);
+  if (panel === undefined) return nobody(phone, ringBack);
+  return {
+    phone,
+    customer: {
+      id: panel.id,
+      name: panel.name,
+      reachable,
+      ...(reachable
+        ? {
+            orders: panel.orders,
+            delivered: panel.delivered,
+            returned: panel.returned,
+            cancelled: panel.cancelled,
+          }
+        : {}),
+    },
+    openOrders: panel.recentOrders
+      .filter((order) => OPEN_STATUSES.has(order.status))
+      .map((order) => ({
+        id: order.id,
+        orderNo: order.orderNo,
+        status: order.status,
+        codAmountPoisha: order.codAmountPoisha,
+        createdAt: order.createdAt.toISOString(),
+      })),
+    ringBack,
+  };
 }
 
 /** For a route that filters calls by a column outside the call's own scope. */

@@ -60,6 +60,16 @@ export interface EnvoLiveCall {
   readonly endpoints: readonly string[];
 }
 
+/**
+ * Whether Envo's live call shows this extension's own phone among its channels. Envo names an
+ * extension's endpoints `<number>_<SIP server slug>` and its web phone `<that>_web`
+ * (`createExtension`, `webEndpoint`); a trunk's endpoint has another name. No phone of this
+ * extension's, no: a call ringing in an IVR or a queue is `up` with only the trunk's channel.
+ */
+export function liveCallOnPhoneOf(call: EnvoLiveCall, extension: string): boolean {
+  return call.endpoints.some((endpoint) => endpoint.startsWith(`${extension}_`));
+}
+
 export interface EnvoCallHistoryPage {
   /** The rows as Envo sent them; `parseEnvoCall(row, 'sync')` reads each. */
   readonly calls: readonly unknown[];

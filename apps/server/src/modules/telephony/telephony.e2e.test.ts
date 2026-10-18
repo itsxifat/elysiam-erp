@@ -954,6 +954,42 @@ describe('the review: scope, reach, claims and retention', () => {
     expect(ringBack).toMatchObject({ customer: null, ringBack: { callId: click.id } });
   });
 
+  it('names the caller Envo shows on the agent’s own phone before call.started is applied', async () => {
+    const lookup = (viewer: RoleClient) =>
+      viewer.client
+        .request('POST', '/v1/telephony/lookup', { body: { phone: '01912345670' } })
+        .then((response) =>
+          json<{ customer: { name: string; reachable: boolean } | null }>(response),
+        );
+    // The phone rings first; Envo's webhook comes a second or more later and is applied by a
+    // job. Until then, Envo's live calls say the number is ringing on sales C's phone (103).
+    live = [
+      {
+        id: '1789457950.1',
+        from: '8801912345670',
+        to: '09644342036',
+        state: 'ringing',
+        channels: [{ endpoint: 'btcl_trunk' }, { endpoint: '103_brand_web' }],
+      },
+    ];
+    try {
+      // Asked again as the console's phone does (Envo's live calls are cached five seconds).
+      const named = await until(async () => {
+        const answer = await lookup(salesC);
+        return answer.customer === null ? undefined : answer;
+      }, 'the live call in the screen pop');
+      expect(named.customer).toMatchObject({ name: 'Caller', reachable: false });
+      // Not on sales A's phone (101): nobody.
+      expect((await lookup(salesA)).customer).toBeNull();
+    } finally {
+      live = [];
+    }
+    await until(
+      async () => ((await lookup(salesC)).customer === null ? true : undefined),
+      'the call off the live calls',
+    );
+  }, 30_000);
+
   it('names the caller of a call ringing on the agent’s connection, then not once it ends', async () => {
     const started = await deliver({
       event: 'call.started',

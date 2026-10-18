@@ -6,7 +6,7 @@ import type {
   TelephonyConnectionUpdateInput,
 } from '@elysium/contracts/telephony';
 import { withOrg } from '@elysium/db';
-import { envoBaseUrl, type BaseUrlProblem } from '@elysium/domain/telephony';
+import { customerPhoneFrom, envoBaseUrl, type BaseUrlProblem } from '@elysium/domain/telephony';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -19,6 +19,7 @@ import {
   type EnvoExtension,
   type EnvoGateway,
   type EnvoLiveCall,
+  liveCallOnPhoneOf,
 } from './providers/envo-gateway.js';
 import { ENVO_WEBHOOK_PREFIX } from './raw-body.js';
 import { TELEPHONY_CONFIG, type TelephonyConfig } from './telephony.config.js';
@@ -632,21 +633,46 @@ export class TelephonyConnectionsService {
     );
   }
 
+  /** Envo's calls in progress on a connection, asked at most every five seconds. */
+  private async liveCallsOf(id: string, envo: EnvoConnection): Promise<readonly EnvoLiveCall[]> {
+    const cached = this.liveCache.get(id);
+    if (cached !== undefined && Date.now() - cached.at < LIVE_CACHE_MS) return cached.value;
+    const value = await this.gateway.liveCalls(envo);
+    this.liveCache.set(id, { at: Date.now(), value });
+    return value;
+  }
+
+  /**
+   * Whether Envo shows a call from this mobile on this extension's own phone right now, ringing
+   * or talking (the screen pop's word before Envo's `call.started` is applied, D-843); false when
+   * Envo cannot be asked. Asked with no transaction open (invariant 6), cached five seconds.
+   */
+  async callFromOnPhone(
+    row: repo.ConnectionRow,
+    orgId: string,
+    phoneE164: string,
+    extension: string,
+  ): Promise<boolean> {
+    let calls: readonly EnvoLiveCall[];
+    try {
+      calls = await this.liveCallsOf(row.id, this.open(row, orgId, { requireEnabled: true }));
+    } catch {
+      return false;
+    }
+    return calls.some(
+      (call) => customerPhoneFrom(call.from) === phoneE164 && liveCallOnPhoneOf(call, extension),
+    );
+  }
+
   /** The connection's calls in progress (`/calls/live`), each with the ERP's call when it has one. */
   async live(context: ActiveContext, id: string) {
     return mapTelephonyErrors(async () => {
       const { envo } = await this.credentials(context, id, { requireEnabled: false });
       let calls: readonly EnvoLiveCall[];
-      const cached = this.liveCache.get(id);
-      if (cached !== undefined && Date.now() - cached.at < LIVE_CACHE_MS) {
-        calls = cached.value;
-      } else {
-        try {
-          calls = await this.gateway.liveCalls(envo);
-        } catch (error) {
-          throw envoFailure(error);
-        }
-        this.liveCache.set(id, { at: Date.now(), value: calls });
+      try {
+        calls = await this.liveCallsOf(id, envo);
+      } catch (error) {
+        throw envoFailure(error);
       }
       const known = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const members = await this.iam.activeMembers(tx, context.orgId);

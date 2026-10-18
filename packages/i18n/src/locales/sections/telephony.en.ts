@@ -51,7 +51,7 @@ const en = {
   'tel.phone.onCall': 'On call',
   'tel.phone.ended': 'Call ended',
   'tel.phone.unknown': 'Unknown caller',
-  'tel.phone.notCustomer': 'Not a customer yet',
+  'tel.phone.caller': 'Caller',
   'tel.phone.openOrders': 'Open orders',
   'tel.phone.noOpenOrders': 'No open orders',
   'tel.phone.openCustomer': 'Open customer',

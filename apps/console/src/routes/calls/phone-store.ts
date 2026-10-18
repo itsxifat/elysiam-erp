@@ -64,3 +64,20 @@ export function onRingBackExpected(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
+
+/** A ringing card that names nobody asks who is calling again this often, for this long. */
+const LOOKUP_AGAIN_MS = 2_000;
+const LOOKUP_AGAIN_FOR_MS = 12_000;
+
+/**
+ * When the screen pop asks again (D-843): only for a ringing card that names nobody yet, in its
+ * first seconds (Envo's `call.started` reaches the ERP a second or more after the phone rings).
+ */
+export function lookupAgainIn(
+  card: { readonly kind: string; readonly at?: number } | null,
+  customer: unknown,
+  now: number,
+): number | false {
+  if (card?.kind !== 'incoming' || card.at === undefined || customer !== null) return false;
+  return now - card.at < LOOKUP_AGAIN_FOR_MS ? LOOKUP_AGAIN_MS : false;
+}

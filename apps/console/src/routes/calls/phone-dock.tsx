@@ -21,7 +21,7 @@ import {
   type MyPhone,
 } from './api.js';
 import { useTelT, type TelT } from './messages.js';
-import { nationalDigits, takeRingBack } from './phone-store.js';
+import { lookupAgainIn, nationalDigits, takeRingBack } from './phone-store.js';
 import {
   EnvoLoadError,
   loadEnvo,
@@ -421,11 +421,15 @@ function Dock({ phone }: { readonly phone: MyPhone }) {
     return () => window.clearInterval(timer);
   }, [card]);
 
+  // The screen pop. A ringing call may be asked about before Envo's word of it has reached the
+  // ERP (the phone rings first): a ringing card that names nobody yet asks again every two
+  // seconds for its first moments (D-843).
   const caller = useQuery({
     queryKey: [...TELEPHONY_KEY, 'lookup', card === null ? '' : nationalDigits(card.from)],
     queryFn: () => lookupCaller(card?.from ?? ''),
     enabled: card !== null && card.from !== '',
     staleTime: 30_000,
+    refetchInterval: (query) => lookupAgainIn(card, query.state.data?.customer ?? null, Date.now()),
   });
 
   const restart = () => {
@@ -513,9 +517,10 @@ function Dock({ phone }: { readonly phone: MyPhone }) {
                 </span>
               ) : null}
             </p>
+            {/* A number the ERP names nobody for may still be a buyer this person may not
+                open: "Caller", never "not a customer". */}
             <p className="truncate text-base font-semibold">
-              {name ??
-                (lookup?.phone === null ? t('tel.phone.unknown') : t('tel.phone.notCustomer'))}
+              {name ?? (lookup?.phone === null ? t('tel.phone.unknown') : t('tel.phone.caller'))}
             </p>
             <p className="text-sm text-muted-foreground tabular-nums">{displayNumber(card.from)}</p>
             {lookup?.customer?.reachable === true && lookup.customer.orders !== undefined ? (
