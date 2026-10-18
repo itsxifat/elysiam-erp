@@ -38,7 +38,7 @@ import {
   type LiveCall,
 } from './api.js';
 import { CallState, DirectionMark, outcomeLabel, partyNumber, talkText } from './call-parts.js';
-import { useTelT } from './messages.js';
+import { useTelT, type TelephonyKey, type TelT } from './messages.js';
 import { RecordingPlayer } from './recording-player.js';
 
 /**
@@ -426,12 +426,27 @@ function ConnectionPicker({
   );
 }
 
+/** Envo's live call state (`talking`, or Asterisk's channel state lower-cased), in words. */
+const LIVE_STATES = new Set(['talking', 'ring', 'ringing', 'up', 'down', 'busy', 'dialing']);
+function liveState(state: string, t: TelT): string {
+  return LIVE_STATES.has(state)
+    ? t(`tel.live.state.${state}` as TelephonyKey)
+    : t('tel.live.state.other');
+}
+
+/** Envo's extension state (Asterisk's device state as Envo names it), or nothing to add. */
+const EXTENSION_STATES = new Set(['idle', 'inuse', 'busy', 'ringing', 'onhold', 'removed']);
+function extensionState(status: string, t: TelT): string | null {
+  return EXTENSION_STATES.has(status) ? t(`tel.ext.state.${status}` as TelephonyKey) : null;
+}
+
 function Live() {
   const t = useTelT();
   const ability = useAbility();
   const queryClient = useQueryClient();
   const { connections, list, id, setChosen } = useConnections();
   const [ending, setEnding] = useState<LiveCall | null>(null);
+  const [hangUpProblem, setHangUpProblem] = useState<string | null>(null);
   const live = useQuery({
     queryKey: [...TELEPHONY_KEY, 'live', id],
     queryFn: () => liveCalls(id ?? ''),
@@ -440,6 +455,9 @@ function Live() {
   });
   const hangUp = useMutation({
     mutationFn: (call: LiveCall) => hangUpLive(id ?? '', call.id),
+    onMutate: () => setHangUpProblem(null),
+    onError: (error) =>
+      setHangUpProblem(t('tel.live.hangUpFailed', { reason: errorText(error, t('tel.failed')) })),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: [...TELEPHONY_KEY, 'live'] }),
   });
   if (connections.isPending) return <Skeleton className="h-24 w-full" />;
@@ -449,6 +467,11 @@ function Live() {
   return (
     <div className="space-y-4">
       <ConnectionPicker list={list} id={id} onChange={setChosen} />
+      {hangUpProblem === null ? null : (
+        <p role="alert" className="text-sm text-destructive">
+          {hangUpProblem}
+        </p>
+      )}
       {live.isError ? (
         <ErrorState
           title={t('tel.failed')}
@@ -465,7 +488,7 @@ function Live() {
                 →
               </span>
               <span className="tabular-nums">{call.to ?? '—'}</span>
-              <StatusBadge tone="info">{call.state}</StatusBadge>
+              <StatusBadge tone="info">{liveState(call.state, t)}</StatusBadge>
               <span className="text-muted-foreground tabular-nums">
                 {`${String(Math.floor(call.durationSec / 60))}:${String(call.durationSec % 60).padStart(2, '0')}`}
               </span>
@@ -503,7 +526,8 @@ function Live() {
         closeLabel={t('tel.close')}
         destructive
         onConfirm={async () => {
-          if (ending !== null) await hangUp.mutateAsync(ending);
+          // A refusal (the call already over, Envo's reason) closes the dialog and is said above.
+          if (ending !== null) await hangUp.mutateAsync(ending).catch(() => undefined);
         }}
       />
     </div>
@@ -571,8 +595,10 @@ function Extensions() {
                       {row.inEnvo ? null : (
                         <StatusBadge tone="warning">{t('tel.settings.notInEnvo')}</StatusBadge>
                       )}
-                      {row.status === 'unknown' || row.status === 'unavailable' ? null : (
-                        <span className="text-xs text-muted-foreground">{row.status}</span>
+                      {extensionState(row.status, t) === null ? null : (
+                        <span className="text-xs text-muted-foreground">
+                          {extensionState(row.status, t)}
+                        </span>
                       )}
                     </span>
                   </td>

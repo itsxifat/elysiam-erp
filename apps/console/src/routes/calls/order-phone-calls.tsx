@@ -14,9 +14,10 @@ const EVENTS = ['telephony.call_changed'] as const;
 
 /**
  * An order's phone calls through Envo (M47, D-838), inside M41's verification calls: a Call
- * button for the buyer, and each call Envo reported about the order (who, when, answered or
- * missed, talk time, the recording) with "Record the outcome", which logs M41's attempt for it,
- * once. Lists only the calls the viewer may see (D-841). Loaded with the order page's chunk.
+ * button for the recipient (the number shown is the one dialled), and each call Envo reported
+ * about the order (who, when, answered or missed, talk time, the recording) with "Record the
+ * outcome", which logs M41's attempt for it, once. Lists only the calls the viewer may see
+ * (D-841). Loaded with the order page's chunk.
  */
 export function OrderPhoneCalls({
   orderId,
@@ -56,7 +57,8 @@ export function OrderPhoneCalls({
     <div className="space-y-2 border-t border-border pt-3" data-testid="order-phone-calls">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium">{t('tel.order.title')}</h3>
-        <CallButton target={{ orderId }} phone={phone} label={orderNo} />
+        {/* The number shown is the one dialled: the recipient M41 verifies (as the header does). */}
+        <CallButton target={{ orderId, phone }} phone={phone} label={orderNo} />
       </div>
       {calls.isPending && mayRead ? (
         <Skeleton className="h-10 w-full" />

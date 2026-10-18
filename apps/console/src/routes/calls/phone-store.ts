@@ -1,13 +1,19 @@
 /**
  * What the console's Call buttons tell its phone (M47, D-843), in this tab only.
  *
- * Envo answers a Call by ringing the person's own phone first, showing the customer's number,
- * and dials the customer once it is picked up. A ring-back from a number this tab has just asked
- * to call is the person's own call coming back to them, so the phone answers it at once instead
- * of showing it as a stranger's call. Kept for thirty seconds, then forgotten.
+ * Envo answers a Call by ringing the person's own phone first and dials the customer once it is
+ * picked up. That ring-back shows the customer's number with the caller name `Envo call <number>`
+ * (Envo's `envo-cc` dialplan). A ring-back from a number this tab has just asked to call, named
+ * so, is the person's own call coming back to them, so the phone answers it at once instead of
+ * showing it as a stranger's call. A real call from that customer in the same moment carries
+ * the customer's own name, not Envo's, and rings as any call does. Kept for thirty seconds, then
+ * forgotten; forgotten at once when the server refused the Call.
  */
 
 const RING_BACK_MS = 30_000;
+
+/** The caller name Envo gives its click-to-call ring-back (`CALLERID(name)=Envo call <to>`). */
+const RING_BACK_NAME = 'Envo call ';
 
 interface Expected {
   readonly national: string;
@@ -31,10 +37,24 @@ export function expectRingBack(phone: string, label: string): void {
   for (const listener of listeners) listener();
 }
 
-/** The label of the ring-back this number is, if it is one; it is used up. */
-export function takeRingBack(phone: string, now: number = Date.now()): string | null {
+/** The server refused the Call: no ring-back is coming, so none is answered by itself. */
+export function forgetRingBack(phone: string): void {
+  if (expected?.national === nationalDigits(phone)) expected = null;
+}
+
+/**
+ * The label of the ring-back this incoming call is, if it is one; it is used up. Both the number
+ * and Envo's ring-back name must match.
+ */
+export function takeRingBack(
+  phone: string,
+  callerName: string,
+  now: number = Date.now(),
+): string | null {
   if (expected === null || now - expected.at > RING_BACK_MS) return null;
   if (nationalDigits(phone) !== expected.national) return null;
+  if (!callerName.startsWith(RING_BACK_NAME)) return null;
+  if (nationalDigits(callerName.slice(RING_BACK_NAME.length)) !== expected.national) return null;
   const label = expected.label;
   expected = null;
   return label;

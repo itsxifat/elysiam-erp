@@ -67,8 +67,20 @@ deploy_brand() {
   HOST=$(setting BRAND_ADMIN_HOST)
   PORT=$(setting BRAND_API_PORT)
   CSP_EXTRA=$(setting BRAND_CSP_CONNECT_SRC)
-  # M47 (D-844): another Envo host for the web phone; empty keeps the console's default.
-  CSP_TELEPHONY=$(setting BRAND_CSP_TELEPHONY_ORIGINS)
+  # M47 (D-844): the web phone's Envo hosts (its script and session) and SIP sockets. A value
+  # replaces the console's default (https://envo.enfinito.cloud, wss://call.enfinito.cloud), so
+  # list every host, space-separated; quotes are dropped. Checked here, before the new API
+  # starts, so a bad value stops the deploy with the old release still whole.
+  CSP_TELEPHONY=$(setting BRAND_CSP_TELEPHONY_ORIGINS | tr -d "\"'")
+  CSP_PHONE_SOCKETS=$(setting BRAND_CSP_TELEPHONY_SOCKETS | tr -d "\"'")
+  for SOURCE in $CSP_TELEPHONY; do
+    printf '%s\n' "$SOURCE" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]+)?$' \
+      || fail "BRAND_CSP_TELEPHONY_ORIGINS: $SOURCE is not an https origin"
+  done
+  for SOURCE in $CSP_PHONE_SOCKETS; do
+    printf '%s\n' "$SOURCE" | grep -Eq '^wss://[A-Za-z0-9.-]+(:[0-9]+)?$' \
+      || fail "BRAND_CSP_TELEPHONY_SOCKETS: $SOURCE is not a wss origin"
+  done
   BEHIND_CF=$(setting BRAND_BEHIND_CLOUDFLARE)
   [ -n "$HOST" ] && [ -n "$PORT" ] || fail "$ENV_FILE has no BRAND_ADMIN_HOST or BRAND_API_PORT"
   ID=$(printf '%s' "$SLUG" | tr '-' '_')
@@ -123,6 +135,7 @@ deploy_brand() {
     --build-arg "VITE_API_URL=https://$HOST" \
     --build-arg "VITE_CSP_CONNECT_SRC=$CSP_EXTRA" \
     --build-arg "VITE_CSP_TELEPHONY_ORIGINS=$CSP_TELEPHONY" \
+    --build-arg "VITE_CSP_TELEPHONY_SOCKETS=$CSP_PHONE_SOCKETS" \
     --output "type=local,dest=$WEB/releases/$SHA" "$SRC"
   [ -f "$WEB/releases/$SHA/www/index.html" ] || fail "$SLUG's SPA build wrote no index.html"
   chmod -R u=rwX,go=rX "$WEB/releases/$SHA"

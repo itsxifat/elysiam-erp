@@ -30,9 +30,15 @@ import path from 'node:path';
  *   phone through Envo, M47 D-844, and M45's voice messages and call answering). Location,
  *   payment and USB stay off everywhere.
  * - The phone's origins (M47, D-844, `telephonyOrigins`, `VITE_CSP_TELEPHONY_ORIGINS`): Envo's
- *   embedded phone is a script served by the brand's Envo host (`<host>/embed/phone.js`), which
- *   then asks that host for its SIP session and registers over its WebSocket, so each origin is
- *   added to `script-src` and, with its `wss:` twin, to `connect-src`. Only https origins.
+ *   embedded phone is one script served by the brand's Envo host, `<host>/embed/phone.js`, which
+ *   then asks that host for its SIP session, `<host>/api/embed/session`. Exactly those two paths
+ *   are allowed (`script-src` and `connect-src`), not the whole host: the rest of Envo's
+ *   dashboard is no script this console runs. Only https origins.
+ * - The phone's sockets (M47, D-844, `telephonySockets`, `VITE_CSP_TELEPHONY_SOCKETS`): the
+ *   session names the WebSocket the phone registers on, `wss://<Envo's SIP domain>/ws`, and Envo
+ *   puts that on a host of its own (`call.enfinito.cloud` beside the Cloudflare-proxied
+ *   `envo.enfinito.cloud`, Envo's README and installer). Each listed `wss:` origin, and the
+ *   `wss:` twin of each phone origin, is added to `connect-src`.
  * - `frame-ancestors 'none'` and `X-Frame-Options: DENY`: no page is meant to be framed.
  */
 
@@ -47,6 +53,39 @@ export interface PagesHeadersOptions {
   readonly allowMicrophone?: boolean;
   /** The web phone's hosts, space-separated https origins (`VITE_CSP_TELEPHONY_ORIGINS`). */
   readonly telephonyOrigins?: string | undefined;
+  /** The web phone's SIP sockets, space-separated wss origins (`VITE_CSP_TELEPHONY_SOCKETS`). */
+  readonly telephonySockets?: string | undefined;
+}
+
+function telephonyOriginList(value: string | undefined): string[] {
+  const phones = (value ?? '').split(/\s+/).filter(Boolean);
+  for (const source of phones) {
+    if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(source)) {
+      throw new Error(`VITE_CSP_TELEPHONY_ORIGINS: "${source}" is not an https origin`);
+    }
+  }
+  return phones;
+}
+
+/**
+ * The `wss:` origins the web phone may open (D-844): the listed sockets, then the `wss:` twin of
+ * each phone origin, without repeats. The console's phone checks Envo's SIP domain against the
+ * same list, so a mismatch is said in words instead of a phone that never registers.
+ */
+export function telephonySocketSources(options: {
+  readonly telephonyOrigins?: string | undefined;
+  readonly telephonySockets?: string | undefined;
+}): string[] {
+  const sockets = (options.telephonySockets ?? '').split(/\s+/).filter(Boolean);
+  for (const source of sockets) {
+    if (!/^wss:\/\/[a-z0-9.-]+(:\d+)?$/i.test(source)) {
+      throw new Error(`VITE_CSP_TELEPHONY_SOCKETS: "${source}" is not a wss origin`);
+    }
+  }
+  const twins = telephonyOriginList(options.telephonyOrigins).map(
+    (source) => `wss://${source.slice('https://'.length)}`,
+  );
+  return [...new Set([...sockets, ...twins].map((source) => source.toLowerCase()))];
 }
 
 const INLINE_SCRIPT = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
@@ -77,25 +116,22 @@ export function contentSecurityPolicy(html: string, options: PagesHeadersOptions
       throw new Error(`VITE_CSP_CONNECT_SRC: "${source}" is not an https or wss origin`);
     }
   }
-  const phones = (options.telephonyOrigins ?? '').split(/\s+/).filter(Boolean);
-  for (const source of phones) {
-    if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(source)) {
-      throw new Error(`VITE_CSP_TELEPHONY_ORIGINS: "${source}" is not an https origin`);
-    }
-  }
-  const phoneSockets = phones.map((source) => `wss://${source.slice('https://'.length)}`);
+  const phones = telephonyOriginList(options.telephonyOrigins);
+  const phoneScripts = phones.map((source) => `${source}/embed/phone.js`);
+  const phoneSessions = phones.map((source) => `${source}/api/embed/session`);
+  const phoneSockets = telephonySocketSources(options);
   const apiOrigin = new URL(options.apiUrl).origin;
   const extraHttps = extra.filter((source) => source.toLowerCase().startsWith('https:'));
   const directives: [string, string[]][] = [
     ['default-src', ["'self'"]],
-    ['script-src', ["'self'", ...inlineScriptHashes(html), ...phones]],
+    ['script-src', ["'self'", ...inlineScriptHashes(html), ...phoneScripts]],
     ['style-src', ["'self'", "'unsafe-inline'"]],
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
     ['media-src', ["'self'", 'blob:', apiOrigin, ...extraHttps]],
     ['font-src', ["'self'"]],
     [
       'connect-src',
-      ["'self'", ...apiSources(options.apiUrl), ...extra, ...phones, ...phoneSockets],
+      ["'self'", ...apiSources(options.apiUrl), ...extra, ...phoneSessions, ...phoneSockets],
     ],
     ['worker-src', ["'self'"]],
     ['manifest-src', ["'self'"]],

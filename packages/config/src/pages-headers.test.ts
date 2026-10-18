@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { contentSecurityPolicy, inlineScriptHashes, pagesHeadersFile } from './pages-headers.js';
+import {
+  contentSecurityPolicy,
+  inlineScriptHashes,
+  pagesHeadersFile,
+  telephonySocketSources,
+} from './pages-headers.js';
 
 /** The SPAs' `_headers` for Cloudflare Pages (M14b, D-347). */
 
@@ -102,15 +107,22 @@ describe('pagesHeadersFile', () => {
 });
 
 describe('the web phone (M47, D-844)', () => {
-  it('lets the console load Envo’s phone from its host and talk to it over https and wss', () => {
+  it('lets the console load Envo’s phone script and session from its host, nothing else there', () => {
     const policy = contentSecurityPolicy('', {
       ...API,
       telephonyOrigins: 'https://envo.enfinito.cloud',
+      telephonySockets: 'wss://call.enfinito.cloud',
     });
-    expect(policy).toMatch(/script-src 'self'[^;]* https:\/\/envo\.enfinito\.cloud/);
-    expect(policy).toMatch(
-      /connect-src [^;]*https:\/\/envo\.enfinito\.cloud wss:\/\/envo\.enfinito\.cloud/,
-    );
+    const directive = (name: string) =>
+      policy
+        .split('; ')
+        .find((part) => part.startsWith(`${name} `))
+        ?.split(' ')
+        .slice(1) ?? [];
+    expect(directive('script-src')).toContain('https://envo.enfinito.cloud/embed/phone.js');
+    expect(directive('script-src')).not.toContain('https://envo.enfinito.cloud');
+    expect(directive('connect-src')).toContain('https://envo.enfinito.cloud/api/embed/session');
+    expect(directive('connect-src')).not.toContain('https://envo.enfinito.cloud');
     for (const bad of [
       'http://envo.example',
       "https://x.example; script-src 'unsafe-inline'",
@@ -118,6 +130,33 @@ describe('the web phone (M47, D-844)', () => {
     ]) {
       expect(() => contentSecurityPolicy('', { ...API, telephonyOrigins: bad }), bad).toThrow(
         /VITE_CSP_TELEPHONY_ORIGINS/,
+      );
+    }
+  });
+
+  it('lets the phone open its SIP socket on Envo’s SIP domain, a host of its own', () => {
+    // Envo's session answers `wss://<sip_domain>/ws`; the owner's Envo puts it on
+    // call.enfinito.cloud, beside the dashboard's envo.enfinito.cloud.
+    const policy = contentSecurityPolicy('', {
+      ...API,
+      telephonyOrigins: 'https://envo.enfinito.cloud',
+      telephonySockets: 'wss://call.enfinito.cloud',
+    });
+    expect(policy).toMatch(/connect-src [^;]*wss:\/\/call\.enfinito\.cloud/);
+    expect(policy).toMatch(/connect-src [^;]*wss:\/\/envo\.enfinito\.cloud/);
+    expect(
+      telephonySocketSources({
+        telephonyOrigins: 'https://envo.enfinito.cloud',
+        telephonySockets: 'wss://CALL.enfinito.cloud wss://call.enfinito.cloud',
+      }),
+    ).toEqual(['wss://call.enfinito.cloud', 'wss://envo.enfinito.cloud']);
+    for (const bad of [
+      'https://call.example',
+      "wss://x.example; script-src 'unsafe-inline'",
+      '*',
+    ]) {
+      expect(() => contentSecurityPolicy('', { ...API, telephonySockets: bad }), bad).toThrow(
+        /VITE_CSP_TELEPHONY_SOCKETS/,
       );
     }
   });

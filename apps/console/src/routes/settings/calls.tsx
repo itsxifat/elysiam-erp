@@ -1,3 +1,4 @@
+import { TELEPHONY_DEFAULT_BASE_URL } from '@elysium/contracts/telephony';
 import {
   Button,
   Checkbox,
@@ -13,7 +14,7 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
@@ -129,7 +130,12 @@ function ConnectionCard({
   const ability = useAbility();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'copied' | 'failed' | null>(null);
+  useEffect(() => {
+    if (copied === null) return;
+    const timer = window.setTimeout(() => setCopied(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
   const [result, setResult] = useState<{
     readonly tone: 'ok' | 'error';
     readonly text: string;
@@ -301,11 +307,26 @@ function ConnectionCard({
             size="sm"
             variant="outline"
             onClick={() => {
-              void navigator.clipboard?.writeText(webhook).then(() => setCopied(true));
+              // No clipboard (an insecure page, an old browser) or permission refused: say so,
+              // and the address stays there to select.
+              const clipboard = (navigator as { clipboard?: Clipboard }).clipboard;
+              if (clipboard === undefined) {
+                setCopied('failed');
+                return;
+              }
+              void clipboard.writeText(webhook).then(
+                () => setCopied('copied'),
+                () => setCopied('failed'),
+              );
             }}
           >
-            {copied ? t('tel.settings.copied') : t('tel.settings.copy')}
+            {copied === 'copied' ? t('tel.settings.copied') : t('tel.settings.copy')}
           </Button>
+          {copied === 'failed' ? (
+            <span role="status" className="text-xs text-muted-foreground">
+              {t('tel.settings.copyFailed')}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -345,8 +366,8 @@ function ConnectionDialog({
   const t = useTelT();
   const ids = useId();
   const queryClient = useQueryClient();
-  const [name, setName] = useState(connection?.name ?? 'Envo');
-  const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? 'https://envo.enfinito.cloud');
+  const [name, setName] = useState(connection?.name ?? t('tel.settings.defaultName'));
+  const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? TELEPHONY_DEFAULT_BASE_URL);
   const [apiKey, setApiKey] = useState('');
   const [secret, setSecret] = useState('');
   const [enabled, setEnabled] = useState(connection?.enabled ?? true);
@@ -605,6 +626,9 @@ function ExtensionItem({
         {row.assignee !== null ? (
           <>
             <span>{row.assignee.name ?? '—'}</span>
+            {row.assignee.current ? null : (
+              <StatusBadge tone="warning">{t('tel.ext.left')}</StatusBadge>
+            )}
             {mayAssign ? (
               <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
                 {t('tel.settings.unassign')}
@@ -656,7 +680,8 @@ function ExtensionItem({
         closeLabel={t('tel.close')}
         destructive
         onConfirm={async () => {
-          await takeOff.mutateAsync();
+          // A refusal closes the dialog and is said in the row (onError), not behind the dialog.
+          await takeOff.mutateAsync().catch(() => undefined);
         }}
       />
     </li>

@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 
 import { createEnv } from '@elysium/config/env';
-import { pagesHeaders } from '@elysium/config/pages-headers';
+import { pagesHeaders, telephonySocketSources } from '@elysium/config/pages-headers';
 
 import { clientEnvSchema } from './src/env.schema.js';
 
@@ -14,22 +14,35 @@ export default defineConfig(({ mode }) => {
   // check that only runs in the bundle would ship the broken config first.
   const raw = loadEnv(mode, import.meta.dirname, 'VITE_');
   const env = createEnv('console', clientEnvSchema, raw);
+  // M47 (D-844): Envo's web phone. Its script and session come from the Envo host
+  // (`VITE_CSP_TELEPHONY_ORIGINS`), its SIP WebSocket from Envo's SIP domain, a host of its own
+  // on the owner's Envo (`VITE_CSP_TELEPHONY_SOCKETS`). Each setting, when given, replaces its
+  // default: list every host, space-separated.
+  const telephonyOrigins = raw.VITE_CSP_TELEPHONY_ORIGINS || 'https://envo.enfinito.cloud';
+  const telephonySockets = raw.VITE_CSP_TELEPHONY_SOCKETS || 'wss://call.enfinito.cloud';
 
   return {
+    // The sockets the policy allows, for the phone to compare with Envo's SIP domain.
+    define: {
+      __TELEPHONY_SOCKETS__: JSON.stringify(
+        telephonySocketSources({ telephonyOrigins, telephonySockets }),
+      ),
+    },
     plugins: [
       react(),
       tailwindcss(),
       // `dist/_headers` for Cloudflare Pages, and the same headers under `vite preview`
       // (M14b, D-347). `VITE_CSP_CONNECT_SRC` adds the R2 upload endpoint in production. The
       // camera for this origin (M38b, D-616): the packing video and scanning with a phone.
-      // M47 (D-844): Envo's web phone from its host (`VITE_CSP_TELEPHONY_ORIGINS`, the owner's
-      // Envo by default), and the microphone for it and for M45's voice messages.
+      // M47 (D-844): Envo's web phone (above), and the microphone for it and for M45's voice
+      // messages.
       pagesHeaders({
         apiUrl: env.VITE_API_URL,
         extraConnectSrc: raw.VITE_CSP_CONNECT_SRC,
         allowCamera: true,
         allowMicrophone: true,
-        telephonyOrigins: raw.VITE_CSP_TELEPHONY_ORIGINS || 'https://envo.enfinito.cloud',
+        telephonyOrigins,
+        telephonySockets,
       }),
     ],
     // Matches the tsconfig path alias; shadcn/ui components generated in

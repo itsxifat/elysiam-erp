@@ -7,9 +7,41 @@
  *
  * The phone exchanges the ERP's short-lived token for the extension's SIP credentials at Envo
  * (`POST <base>/api/embed/session`, allowed only from the origins on Envo's API key) and
- * registers over Envo's WebSocket. `headless` hides Envo's floating button; Envo's panel still
- * opens on a call unless the console closes it, which it does, showing its own card instead.
+ * registers over the WebSocket that answer names, `wss://<Envo's SIP domain>/ws`: on the owner's
+ * Envo that is `call.enfinito.cloud`, not the dashboard's host, so the console's policy lists the
+ * phone's sockets on their own (`VITE_CSP_TELEPHONY_SOCKETS`, D-844). `headless` hides Envo's
+ * floating button; Envo's panel still opens on a call unless the console closes it, which it
+ * does, showing its own card instead.
  */
+
+/** Why the phone's script did not load, for the console to say in its own words. */
+export class EnvoLoadError extends Error {
+  constructor(
+    readonly reason: 'blocked' | 'missing',
+    readonly host: string,
+  ) {
+    super(reason);
+    this.name = 'EnvoLoadError';
+  }
+}
+
+declare const __TELEPHONY_SOCKETS__: readonly string[] | undefined;
+
+/**
+ * The `wss:` origins this build's Content-Security-Policy lets the phone open (vite.config.ts
+ * writes the same list into the policy and here), or null when the build named none (a test).
+ */
+export function allowedPhoneSockets(): readonly string[] | null {
+  return typeof __TELEPHONY_SOCKETS__ === 'undefined' ? null : __TELEPHONY_SOCKETS__;
+}
+
+/** Whether the phone may open its SIP socket on Envo's SIP domain under this build's policy. */
+export function phoneSocketAllowed(sipDomain: string | null): boolean {
+  const allowed = allowedPhoneSockets();
+  if (sipDomain === null || allowed === null) return true;
+  const socket = `wss://${sipDomain.toLowerCase()}`;
+  return allowed.some((source) => source.toLowerCase() === socket);
+}
 
 export interface EnvoPhoneEvent {
   readonly type:
@@ -59,12 +91,14 @@ export function loadEnvo(baseUrl: string): Promise<EnvoGlobal> {
     script.async = true;
     script.addEventListener('load', () => {
       const loaded = (window as unknown as { Envo?: EnvoGlobal }).Envo;
-      if (loaded?.phone === undefined) reject(new Error('Envo’s phone did not load.'));
-      else resolve(loaded);
+      if (loaded?.phone === undefined) {
+        loading.delete(origin);
+        reject(new EnvoLoadError('missing', new URL(origin).host));
+      } else resolve(loaded);
     });
     script.addEventListener('error', () => {
       loading.delete(origin);
-      reject(new Error(`The phone could not be loaded from ${new URL(origin).host}.`));
+      reject(new EnvoLoadError('blocked', new URL(origin).host));
     });
     document.head.append(script);
   });

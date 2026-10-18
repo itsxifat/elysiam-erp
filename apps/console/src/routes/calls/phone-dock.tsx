@@ -1,12 +1,15 @@
+import type { MessageKey } from '@elysium/i18n';
 import { Button, Monogram, Money, StatusBadge, cn } from '@elysium/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Grid3x3, Phone, PhoneIncoming, PhoneOff, RotateCcw } from 'lucide-react';
+import { Grid3x3, Phone, PhoneIncoming, PhoneOff, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '../../alive/alive.css';
 import { alertIfHidden } from '../../alive/notify.js';
+import { ApiError } from '../../api.js';
 import { useAbility, useSession } from '../../auth/session.js';
+import { useLocale } from '../../i18n/locale.js';
 import { ordersPath } from '../orders/paths.js';
 import {
   answeredHere,
@@ -17,26 +20,40 @@ import {
   TELEPHONY_KEY,
   type MyPhone,
 } from './api.js';
-import { useTelT } from './messages.js';
+import { useTelT, type TelT } from './messages.js';
 import { nationalDigits, takeRingBack } from './phone-store.js';
-import { loadEnvo, type EnvoPhone, type EnvoPhoneEvent } from './widget.js';
+import {
+  EnvoLoadError,
+  loadEnvo,
+  phoneSocketAllowed,
+  type EnvoPhone,
+  type EnvoPhoneEvent,
+} from './widget.js';
 
 /**
  * The console's phone (M47, D-843): loaded after the shell paints, only for a person who places
- * calls and has an extension on a switched-on connection. It runs Envo's embedded phone headless
- * (no floating button), with a token the ERP mints for the person's own extension, and shows its
- * own card in the console's look:
+ * calls and has an extension on a switched-on connection whose extension has Envo's web phone. It
+ * runs Envo's embedded phone headless (no floating button), with a token the ERP mints for the
+ * person's own extension, and shows its own card in the console's look:
  *
  * - an incoming call is a ringing card (M44a's ring motion; Envo's phone plays the ring itself,
  *   the same two-tone burst as M44a's `ring`, so the console does not ring a second time) with the
  *   caller's customer and their open orders, found by the number (the screen pop), Answer and
  *   Decline, and a desktop alert when the tab is hidden;
- * - the ring-back of the person's own Call (Envo rings them first, showing the customer's number)
- *   is answered at once and says whom it is connecting to;
- * - a call in progress shows its clock, Keypad (Envo's own panel, for digits) and Hang up;
- * - a phone that could not start says why and offers to start again with a fresh token.
+ * - the ring-back of the person's own Call (Envo rings them first, showing the customer's number
+ *   and `Envo call <number>` as the name) is answered at once and says whom it is connecting to;
+ * - a call in progress shows its clock, Envo's own panel for the keypad, mute and hold, and
+ *   Hang up;
+ * - a phone that is offline, still connecting after a few seconds, or could not start says so,
+ *   and offers to start again with a fresh token or to be left alone for this visit.
+ *
+ * The widget lives as long as its connection, extension and start attempt: never one render. A
+ * widget the console has let go of is destroyed once Envo's phone has finished starting (its
+ * `connect()` does not stop for a `destroy()` made meanwhile), and nothing it says afterwards
+ * reaches the card.
  */
 export function PhoneDock() {
+  const t = useTelT();
   const ability = useAbility();
   const session = useSession();
   const allowed = session.context !== null && ability.can('create', 'PhoneCall');
@@ -46,9 +63,23 @@ export function PhoneDock() {
     enabled: allowed,
     staleTime: 60_000,
   });
+  const [dismissed, setDismissed] = useDismissed();
   const phone = mine.data?.phone ?? null;
-  if (!allowed || phone?.ready !== true) return null;
-  return <Dock phone={phone} />;
+  if (!allowed || phone === null) return null;
+  if (phone.ready) return <Dock phone={phone} />;
+  // A connection switched off, a key that no longer opens or an extension Envo has switched off:
+  // the person's Call buttons fail too, so say so, once a visit. An extension with no web phone
+  // (a desk phone) or the stand-in for Envo is no fault: nothing is shown.
+  const text =
+    phone.notReady === 'switched_off'
+      ? t('tel.phone.notReady')
+      : phone.notReady === 'no_key'
+        ? t('tel.phone.noKey')
+        : phone.notReady === 'extension_off'
+          ? t('tel.phone.extensionOff', { extension: phone.extension })
+          : null;
+  if (text === null || dismissed) return null;
+  return <StatusBar t={t} text={text} onDismiss={() => setDismissed(true)} tone="muted" />;
 }
 
 type Registration = 'starting' | 'connecting' | 'online' | 'offline' | 'error';
@@ -75,6 +106,43 @@ type Card =
     }
   | { readonly kind: 'ended'; readonly from: string; readonly label: string | null };
 
+/** A phone still connecting after this long is said to be. */
+const CONNECTING_GRACE_MS = 10_000;
+
+/** The open statuses the screen pop lists, with the order list's own labels. */
+const ORDER_STATUSES = new Set([
+  'pending',
+  'on_hold',
+  'confirmed',
+  'packed',
+  'shipped',
+  'return_in_transit',
+  'exchange',
+]);
+
+const DISMISSED_KEY = 'tel.phone.dismissed';
+
+/** "Leave me alone" for this visit (this tab's session); storage denied, for this page. */
+function useDismissed(): [boolean, (value: boolean) => void] {
+  const [dismissed, setDismissedState] = useState(() => {
+    try {
+      return window.sessionStorage.getItem(DISMISSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setDismissed = useCallback((value: boolean) => {
+    setDismissedState(value);
+    try {
+      if (value) window.sessionStorage.setItem(DISMISSED_KEY, '1');
+      else window.sessionStorage.removeItem(DISMISSED_KEY);
+    } catch {
+      // Storage denied: the choice holds for this page.
+    }
+  }, []);
+  return [dismissed, setDismissed];
+}
+
 function clock(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
   return `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, '0')}`;
@@ -85,12 +153,79 @@ function displayNumber(raw: string): string {
   return national === '' ? raw : national;
 }
 
+/** Why the phone could not start, in the console's words where it knows them. */
+function startProblem(error: unknown, t: TelT): string {
+  if (error instanceof EnvoLoadError) {
+    return t(error.reason === 'blocked' ? 'tel.phone.loadBlocked' : 'tel.phone.loadMissing', {
+      host: error.host,
+    });
+  }
+  if (error instanceof ApiError) return error.message;
+  return t('tel.failed');
+}
+
+/**
+ * Envo's phone could not get its session. Envo refuses an origin missing from its API key's
+ * allowed browser origins with no CORS header, so the browser reports only that the request
+ * failed: say what to check.
+ */
+function sessionProblem(message: string, t: TelT): string {
+  if (/fetch|network|load failed|origin/i.test(message)) return t('tel.phone.sessionRefused');
+  return message === '' ? t('tel.failed') : message;
+}
+
+function StatusBar({
+  t,
+  text,
+  onRestart,
+  onDismiss,
+  tone,
+}: {
+  readonly t: TelT;
+  readonly text: string;
+  readonly onRestart?: () => void;
+  readonly onDismiss: () => void;
+  readonly tone: 'error' | 'muted';
+}) {
+  return (
+    <div className="pointer-events-none fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md justify-center">
+      <div
+        role="status"
+        className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-popover"
+      >
+        <PhoneOff
+          aria-hidden="true"
+          className={cn('size-4', tone === 'error' ? 'text-destructive' : 'text-muted-foreground')}
+        />
+        <span className="min-w-0 flex-1">{text}</span>
+        {onRestart === undefined ? null : (
+          <Button size="sm" variant="outline" onClick={onRestart}>
+            <RotateCcw aria-hidden="true" />
+            {t('tel.phone.restart')}
+          </Button>
+        )}
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t('tel.phone.dismiss')}
+          onClick={onDismiss}
+        >
+          <X aria-hidden="true" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function Dock({ phone }: { readonly phone: MyPhone }) {
   const t = useTelT();
+  const { t: appT } = useLocale();
   const queryClient = useQueryClient();
   const widget = useRef<EnvoPhone | null>(null);
   const [registration, setRegistration] = useState<Registration>('starting');
   const [problem, setProblem] = useState<string | null>(null);
+  const [slow, setSlow] = useState(false);
+  const [dismissed, setDismissed] = useDismissed();
   const [card, setCard] = useState<Card | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -132,6 +267,7 @@ function Dock({ phone }: { readonly phone: MyPhone }) {
         case 'registered':
           setRegistration('online');
           setProblem(null);
+          setDismissed(false);
           break;
         case 'offline':
         case 'failed':
@@ -139,18 +275,19 @@ function Dock({ phone }: { readonly phone: MyPhone }) {
           break;
         case 'error':
           setRegistration('error');
-          setProblem(text('message'));
+          setProblem(sessionProblem(text('message'), t));
           break;
         case 'incoming': {
           // Envo's own panel opens for every call; the console's card stands in for it.
           widget.current?.close();
           const from = text('from');
-          const label = takeRingBack(from);
+          const name = text('name');
+          const label = takeRingBack(from, name);
           if (label !== null) {
             setCard({ kind: 'ringBack', from, label, at: Date.now() });
             widget.current?.answer();
           } else {
-            setCard({ kind: 'incoming', from, name: text('name') || null, at: Date.now() });
+            setCard({ kind: 'incoming', from, name: name === '' ? null : name, at: Date.now() });
             alertIfHidden({
               title: t('tel.phone.alertTitle'),
               body: t('tel.phone.alertBody', { number: displayNumber(from) }),
@@ -161,65 +298,113 @@ function Dock({ phone }: { readonly phone: MyPhone }) {
           break;
         }
         case 'accepted': {
+          // Envo says `accepted` twice for one call (JsSIP's accepted and confirmed): the second
+          // changes nothing, so the ring-back keeps its label and the clock its start.
           const current = cardNow.current;
-          if (current === null) break;
+          if (current === null || current.kind === 'active' || current.kind === 'ended') break;
           const incoming = current.kind === 'incoming';
-          setCard({
+          const next: Card = {
             kind: 'active',
             from: current.from,
-            label: current.kind === 'ringBack' ? current.label : null,
+            label: current.kind === 'ringBack' ? current.label : current.name,
             since: Date.now(),
             incoming,
-          });
+          };
+          cardNow.current = next;
+          setCard(next);
           if (incoming) claim(current.from);
           break;
         }
         case 'ended': {
+          // Envo's panel falls back to its own dialer after a call: close it, so every call goes
+          // through the console's Call buttons.
+          widget.current?.close();
           const current = cardNow.current;
-          setCard(
+          const next: Card | null =
             current === null
               ? null
               : {
                   kind: 'ended',
                   from: current.from,
-                  label: current.kind === 'incoming' ? null : (current.label ?? null),
-                },
-          );
+                  label: current.kind === 'incoming' ? current.name : current.label,
+                };
+          cardNow.current = next;
+          setCard(next);
           void queryClient.invalidateQueries({ queryKey: TELEPHONY_KEY });
           break;
         }
       }
     },
-    [claim, queryClient, t],
+    [claim, queryClient, setDismissed, t],
   );
+  // The widget is given a relay that reads the newest handler: the widget outlives renders.
+  const handler = useRef(onEvent);
+  useEffect(() => {
+    handler.current = onEvent;
+  }, [onEvent]);
 
-  // Start Envo's phone: its script from the connection's host, a fresh token, headless.
+  // Start Envo's phone: its script from the connection's host, a fresh token, headless. Runs
+  // again only for another connection, another extension or a new start.
   useEffect(() => {
     let cancelled = false;
+    let instance: EnvoPhone | null = null;
+    let settled = false;
+    let destroyWhenSettled = false;
+    const relay = (event: EnvoPhoneEvent) => {
+      if (event.type === 'ready' || event.type === 'error') {
+        settled = true;
+        if (destroyWhenSettled) {
+          instance?.destroy();
+          return;
+        }
+      }
+      if (cancelled || widget.current !== instance) return;
+      handler.current(event);
+    };
     void (async () => {
       try {
         const envo = await loadEnvo(phone.baseUrl);
         const minted = await phoneToken();
         if (cancelled) return;
-        widget.current = envo.phone({
+        // The phone registers over `wss://<Envo's SIP domain>/ws`: a host this console's policy
+        // does not list would be refused by the browser without a word, so say it here.
+        if (!phoneSocketAllowed(minted.sipDomain)) {
+          setRegistration('error');
+          setProblem(t('tel.phone.socketBlocked', { host: minted.sipDomain ?? '' }));
+          return;
+        }
+        instance = envo.phone({
           token: minted.token,
           baseUrl: phone.baseUrl,
           headless: true,
           position: 'bottom-right',
-          onEvent,
+          onEvent: relay,
         });
+        widget.current = instance;
       } catch (error) {
         if (cancelled) return;
         setRegistration('error');
-        setProblem(error instanceof Error ? error.message : String(error));
+        setProblem(startProblem(error, t));
       }
     })();
     return () => {
       cancelled = true;
-      widget.current?.destroy();
-      widget.current = null;
+      if (widget.current === instance) widget.current = null;
+      if (instance !== null) {
+        if (settled) instance.destroy();
+        else destroyWhenSettled = true;
+      }
     };
-  }, [phone.baseUrl, phone.extension, attempt, onEvent]);
+    // `t` is the same from render to render (useTelT): the phone starts again only for another
+    // connection, another extension or a new attempt.
+  }, [phone.baseUrl, phone.extension, attempt, t]);
+
+  // Still connecting after a few seconds: say so.
+  useEffect(() => {
+    if (registration !== 'starting' && registration !== 'connecting') return;
+    const timer = window.setTimeout(() => setSlow(true), CONNECTING_GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, [registration, attempt]);
 
   // A finished call's card goes after a few seconds; a call's clock ticks.
   useEffect(() => {
@@ -240,53 +425,69 @@ function Dock({ phone }: { readonly phone: MyPhone }) {
     staleTime: 30_000,
   });
 
+  const restart = () => {
+    setProblem(null);
+    setRegistration('starting');
+    setSlow(false);
+    setAttempt((value) => value + 1);
+  };
+
   if (card === null) {
-    if (registration !== 'error') return null;
-    return (
-      <div className="pointer-events-none fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md justify-center">
-        <div
-          role="status"
-          className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-popover"
-        >
-          <PhoneOff aria-hidden="true" className="size-4 text-destructive" />
-          <span>{t('tel.phone.error', { reason: problem ?? t('tel.failed') })}</span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setRegistration('starting');
-              setAttempt((value) => value + 1);
-            }}
-          >
-            <RotateCcw aria-hidden="true" />
-            {t('tel.phone.restart')}
-          </Button>
-        </div>
-      </div>
-    );
+    if (dismissed) return null;
+    if (registration === 'error') {
+      return (
+        <StatusBar
+          t={t}
+          tone="error"
+          text={t('tel.phone.error', { reason: problem ?? t('tel.failed') })}
+          onRestart={restart}
+          onDismiss={() => setDismissed(true)}
+        />
+      );
+    }
+    if (registration === 'offline') {
+      return (
+        <StatusBar
+          t={t}
+          tone="error"
+          text={t('tel.phone.offlineDetail', { extension: phone.extension })}
+          onRestart={restart}
+          onDismiss={() => setDismissed(true)}
+        />
+      );
+    }
+    if ((registration === 'starting' || registration === 'connecting') && slow) {
+      return (
+        <StatusBar
+          t={t}
+          tone="muted"
+          text={t('tel.phone.connectingDetail', { extension: phone.extension })}
+          onRestart={restart}
+          onDismiss={() => setDismissed(true)}
+        />
+      );
+    }
+    return null;
   }
 
   const lookup = caller.data;
   const name =
-    lookup?.customer?.name ??
-    (card.kind === 'ringBack' || card.kind === 'active' || card.kind === 'ended'
-      ? card.label
-      : card.name) ??
-    null;
+    lookup?.customer?.name ?? (card.kind === 'incoming' ? card.name : card.label) ?? null;
   const ringing = card.kind === 'incoming';
-  const heading =
+  const state =
     card.kind === 'incoming'
       ? t('tel.phone.incoming')
       : card.kind === 'ringBack'
         ? t('tel.phone.ringBack', { name: card.label })
         : card.kind === 'active'
-          ? `${t('tel.phone.onCall')} · ${clock(now - card.since)}`
+          ? t('tel.phone.onCall')
           : t('tel.phone.ended');
+  const orderStatus = (status: string): string | null =>
+    ORDER_STATUSES.has(status) ? appT(`orders.status.${status}` as MessageKey) : null;
 
   return (
     <div className="pointer-events-none fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md justify-center">
       <section
-        aria-live="assertive"
         aria-label={t('tel.phone.title')}
         className={cn(
           'pointer-events-auto w-full rounded-xl border border-border bg-card p-4 shadow-popover',
@@ -299,7 +500,15 @@ function Dock({ phone }: { readonly phone: MyPhone }) {
           <div className="min-w-0 flex-1 space-y-0.5">
             <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <PhoneIncoming aria-hidden="true" className="size-3.5" />
-              {heading}
+              {/* Only the state is announced: the clock below ticks every second. */}
+              <span role="status" aria-live="polite">
+                {state}
+              </span>
+              {card.kind === 'active' ? (
+                <span aria-hidden="true" className="tabular-nums">
+                  · {clock(now - card.since)}
+                </span>
+              ) : null}
             </p>
             <p className="truncate text-base font-semibold">
               {name ??
@@ -336,7 +545,7 @@ function Dock({ phone }: { readonly phone: MyPhone }) {
                     >
                       {order.orderNo}
                     </Link>
-                    <span className="text-muted-foreground">{order.status.replace(/_/g, ' ')}</span>
+                    <span className="text-muted-foreground">{orderStatus(order.status)}</span>
                     <Money poisha={order.codAmountPoisha} />
                   </li>
                 ))}

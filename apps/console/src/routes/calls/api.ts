@@ -68,18 +68,13 @@ export interface CallFilters {
   readonly limit?: number | undefined;
 }
 
-function query(filters: CallFilters): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== '') search.set(key, String(value));
-  }
-  const text = search.toString();
-  return text === '' ? '' : `?${text}`;
-}
-
+/** The call log, its filters in the body: a phone filter stays out of URLs and access logs. */
 export const listCalls = (filters: CallFilters) =>
-  api.get<{ readonly items: readonly PhoneCallView[]; readonly nextCursor: string | null }>(
-    `/v1/telephony/calls${query(filters)}`,
+  api.post<{ readonly items: readonly PhoneCallView[]; readonly nextCursor: string | null }>(
+    '/v1/telephony/calls/search',
+    Object.fromEntries(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''),
+    ),
   );
 
 export const getCall = (id: string) => api.get<PhoneCallView>(`/v1/telephony/calls/${id}`);
@@ -140,7 +135,10 @@ export interface MyPhone {
   readonly connectionName: string;
   readonly extension: string;
   readonly baseUrl: string;
+  /** Whether the web phone can start (D-843); else why not. */
   readonly ready: boolean;
+  readonly notReady:
+    'switched_off' | 'no_key' | 'stand_in' | 'extension_off' | 'no_web_phone' | null;
 }
 
 export const myPhone = () => api.get<{ readonly phone: MyPhone | null }>('/v1/telephony/me');
@@ -178,8 +176,9 @@ export interface CallerLookup {
   } | null;
 }
 
+/** A POST, so the caller's number stays out of URLs and access logs (invariant 10). */
 export const lookupCaller = (phone: string) =>
-  api.get<CallerLookup>(`/v1/telephony/lookup?phone=${encodeURIComponent(phone)}`);
+  api.post<CallerLookup>('/v1/telephony/lookup', { phone });
 
 // --- Settings → Calls ---------------------------------------------------------------------------
 
@@ -251,7 +250,8 @@ export interface ExtensionRow {
   readonly online: boolean;
   readonly status: string;
   readonly inEnvo: boolean;
-  readonly assignee: PersonRef | null;
+  /** `current: false` when they no longer place calls here (D-846). */
+  readonly assignee: (PersonRef & { readonly current: boolean }) | null;
 }
 
 export interface ExtensionsView {

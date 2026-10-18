@@ -8,7 +8,7 @@ import { useAbility } from '../../auth/session.js';
 import { useOwnerGuard } from '../orders/owner-guard.js';
 import { placeCall, TELEPHONY_KEY } from './api.js';
 import { useTelT } from './messages.js';
-import { expectRingBack } from './phone-store.js';
+import { expectRingBack, forgetRingBack } from './phone-store.js';
 
 /**
  * Call a customer from your own extension (M47, D-834): Envo rings your phone, then dials them.
@@ -31,7 +31,10 @@ export function CallButton({
     readonly customerId?: string;
     readonly phone?: string;
   };
-  /** The number shown beside the button, for its accessible name and the ring-back. */
+  /**
+   * The number this button dials, shown beside it, for its accessible name and the ring-back.
+   * About an order, pass it in `target` too, so the server dials exactly this number.
+   */
   readonly phone: string;
   /** Who is being called, for the phone's card (a name or an order number). */
   readonly label: string;
@@ -48,13 +51,16 @@ export function CallButton({
 
   const call = useMutation({
     mutationFn: (acknowledge: boolean) => placeCall(target, acknowledge),
+    // Armed before the request: Envo may ring the person's web phone before its 202 is back.
     onMutate: () => {
       expectRingBack(phone, label);
       setSaid(null);
     },
     onSuccess: () => setSaid({ tone: 'ok', text: t('tel.ringingYou') }),
-    onError: (error) =>
-      setSaid({ tone: 'error', text: error instanceof ApiError ? error.message : t('tel.failed') }),
+    onError: (error) => {
+      forgetRingBack(phone);
+      setSaid({ tone: 'error', text: error instanceof ApiError ? error.message : t('tel.failed') });
+    },
     onSettled: () => void queryClient.invalidateQueries({ queryKey: TELEPHONY_KEY }),
   });
 
