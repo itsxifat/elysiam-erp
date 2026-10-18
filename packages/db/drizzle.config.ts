@@ -70,6 +70,8 @@ export default defineConfig({
     'supply',
     // M41. Presence at the desks and each person's desk profile.
     'team',
+    // M47. Envo connections, extensions, calls and their recordings, Envo's webhook bodies.
+    'telephony',
     'wallets',
   ],
   strict: true,

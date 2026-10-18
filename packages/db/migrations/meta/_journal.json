@@ -1072,6 +1072,20 @@
       "when": 1792190641770,
       "tag": "0154_m46_labels_packaging_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1792319069511,
+      "tag": "0155_m47_telephony_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1792319073421,
+      "tag": "0156_m47_telephony_policies",
+      "breakpoints": true
     }
   ]
 }

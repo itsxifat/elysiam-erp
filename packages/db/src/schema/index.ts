@@ -45,6 +45,8 @@ export * from './ref/index.js';
 export * from './storefront/index.js';
 export * from './supply/index.js';
 export * from './targets/index.js';
+// M47: phone calls through Envo.
+export * from './telephony/index.js';
 // M41: presence and desk profiles.
 export * from './team/index.js';
 export * from './wallets/index.js';
