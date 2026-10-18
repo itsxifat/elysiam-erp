@@ -62,7 +62,7 @@ interface EnvoRequest {
 }
 
 const envoRequests: EnvoRequest[] = [];
-let history: { readonly startedAt: string }[] = [];
+let history: (Readonly<Record<string, unknown>> & { readonly startedAt: string })[] = [];
 /** What the stand-in's `/api/v1/calls/live` answers, as Envo's `liveCalls` shapes it. */
 let live: unknown[] = [];
 let envo: Server;
