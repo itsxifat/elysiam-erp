@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
+import type { MembershipRole } from '@elysium/contracts';
 import type {
-  MembershipRole,
   TelephonyConnectionCreateInput,
   TelephonyConnectionUpdateInput,
-} from '@elysium/contracts';
+} from '@elysium/contracts/telephony';
 import { withOrg } from '@elysium/db';
 import { envoBaseUrl, type BaseUrlProblem } from '@elysium/domain/telephony';
 

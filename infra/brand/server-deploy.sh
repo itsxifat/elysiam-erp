@@ -67,6 +67,8 @@ deploy_brand() {
   HOST=$(setting BRAND_ADMIN_HOST)
   PORT=$(setting BRAND_API_PORT)
   CSP_EXTRA=$(setting BRAND_CSP_CONNECT_SRC)
+  # M47 (D-844): another Envo host for the web phone; empty keeps the console's default.
+  CSP_TELEPHONY=$(setting BRAND_CSP_TELEPHONY_ORIGINS)
   BEHIND_CF=$(setting BRAND_BEHIND_CLOUDFLARE)
   [ -n "$HOST" ] && [ -n "$PORT" ] || fail "$ENV_FILE has no BRAND_ADMIN_HOST or BRAND_API_PORT"
   ID=$(printf '%s' "$SLUG" | tr '-' '_')
@@ -120,6 +122,7 @@ deploy_brand() {
   docker build -f "$SRC/infra/docker/web.Dockerfile" --target dist \
     --build-arg "VITE_API_URL=https://$HOST" \
     --build-arg "VITE_CSP_CONNECT_SRC=$CSP_EXTRA" \
+    --build-arg "VITE_CSP_TELEPHONY_ORIGINS=$CSP_TELEPHONY" \
     --output "type=local,dest=$WEB/releases/$SHA" "$SRC"
   [ -f "$WEB/releases/$SHA/www/index.html" ] || fail "$SLUG's SPA build wrote no index.html"
   chmod -R u=rwX,go=rX "$WEB/releases/$SHA"

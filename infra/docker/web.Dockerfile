@@ -33,8 +33,11 @@ RUN pnpm --filter "@elysium/console^..." --filter "@elysium/portal^..." --filter
 
 ARG VITE_API_URL
 ARG VITE_CSP_CONNECT_SRC=
+# M47 (D-844): the web phone's Envo hosts; empty keeps the console's default (the owner's Envo).
+ARG VITE_CSP_TELEPHONY_ORIGINS=
 ENV VITE_API_URL=${VITE_API_URL} \
-    VITE_CSP_CONNECT_SRC=${VITE_CSP_CONNECT_SRC}
+    VITE_CSP_CONNECT_SRC=${VITE_CSP_CONNECT_SRC} \
+    VITE_CSP_TELEPHONY_ORIGINS=${VITE_CSP_TELEPHONY_ORIGINS}
 
 RUN cd apps/console && pnpm exec vite build --base / \
  && cd ../portal && pnpm exec vite build --base /portal/ \

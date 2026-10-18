@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./telephony": {
+      "types": "./dist/telephony.d.ts",
+      "default": "./dist/telephony.js"
     }
   },
   "files": [

@@ -28,12 +28,6 @@ import {
   inboxStageSchema,
   inboxTagsSchema,
   packingCameraCreateSchema,
-  phoneCallAnsweredSchema,
-  phoneCallOutcomeSchema,
-  phoneCallPlaceSchema,
-  telephonyAssignSchema,
-  telephonyConnectionCreateSchema,
-  telephonyConnectionUpdateSchema,
   packingCameraUpdateSchema,
   partyBalanceQuerySchema,
   reopenPeriodSchema,
@@ -46,6 +40,14 @@ import {
   twoFactorPolicySchema,
   updateProfileSchema,
 } from '@elysium/contracts';
+import {
+  phoneCallAnsweredSchema,
+  phoneCallOutcomeSchema,
+  phoneCallPlaceSchema,
+  telephonyAssignSchema,
+  telephonyConnectionCreateSchema,
+  telephonyConnectionUpdateSchema,
+} from '@elysium/contracts/telephony';
 import { z } from 'zod';
 
 /**

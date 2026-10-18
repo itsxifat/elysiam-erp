@@ -1,10 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { CallAttemptInput } from '@elysium/contracts';
 import type {
-  CallAttemptInput,
   PhoneCallAnsweredInput,
   PhoneCallListQuery,
   PhoneCallPlaceInput,
-} from '@elysium/contracts';
+} from '@elysium/contracts/telephony';
 import { withOrg, type Tx } from '@elysium/db';
 import { isNormalizableBdPhone, maskPhone, normalizeBdPhone } from '@elysium/domain';
 import { customerPhoneFrom, envoDialNumber, storedNumber } from '@elysium/domain/telephony';

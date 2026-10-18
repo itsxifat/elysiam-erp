@@ -100,3 +100,30 @@ describe('pagesHeadersFile', () => {
     expect(Math.max(...lines.map((line) => line.length))).toBeLessThan(2_000);
   });
 });
+
+describe('the web phone (M47, D-844)', () => {
+  it('lets the console load Envo’s phone from its host and talk to it over https and wss', () => {
+    const policy = contentSecurityPolicy('', {
+      ...API,
+      telephonyOrigins: 'https://envo.enfinito.cloud',
+    });
+    expect(policy).toMatch(/script-src 'self'[^;]* https:\/\/envo\.enfinito\.cloud/);
+    expect(policy).toMatch(
+      /connect-src [^;]*https:\/\/envo\.enfinito\.cloud wss:\/\/envo\.enfinito\.cloud/,
+    );
+    for (const bad of ['http://envo.example', "https://x.example; script-src 'unsafe-inline'", '*']) {
+      expect(() => contentSecurityPolicy('', { ...API, telephonyOrigins: bad }), bad).toThrow(
+        /VITE_CSP_TELEPHONY_ORIGINS/,
+      );
+    }
+  });
+
+  it('lets only an app that asks use the microphone, on its own origin', () => {
+    const permissions = (allowMicrophone: boolean) =>
+      pagesHeadersFile('', { ...API, allowMicrophone })
+        .split('\n')
+        .find((line) => line.includes('Permissions-Policy'));
+    expect(permissions(true)).toContain('microphone=(self)');
+    expect(permissions(false)).toContain('microphone=()');
+  });
+});

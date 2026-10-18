@@ -21,7 +21,7 @@ import {
   telephonyAssignSchema,
   telephonyConnectionCreateSchema,
   telephonyConnectionUpdateSchema,
-} from '@elysium/contracts';
+} from '@elysium/contracts/telephony';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 

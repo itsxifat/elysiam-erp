@@ -22,10 +22,14 @@ export default defineConfig(({ mode }) => {
       // `dist/_headers` for Cloudflare Pages, and the same headers under `vite preview`
       // (M14b, D-347). `VITE_CSP_CONNECT_SRC` adds the R2 upload endpoint in production. The
       // camera for this origin (M38b, D-616): the packing video and scanning with a phone.
+      // M47 (D-844): Envo's web phone from its host (`VITE_CSP_TELEPHONY_ORIGINS`, the owner's
+      // Envo by default), and the microphone for it and for M45's voice messages.
       pagesHeaders({
         apiUrl: env.VITE_API_URL,
         extraConnectSrc: raw.VITE_CSP_CONNECT_SRC,
         allowCamera: true,
+        allowMicrophone: true,
+        telephonyOrigins: raw.VITE_CSP_TELEPHONY_ORIGINS || 'https://envo.enfinito.cloud',
       }),
     ],
     // Matches the tsconfig path alias; shadcn/ui components generated in

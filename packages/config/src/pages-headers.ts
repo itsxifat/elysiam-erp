@@ -26,7 +26,13 @@ import path from 'node:path';
  *   the extra origins (R2's signed URLs), plus `blob:` for a recording played back in place.
  * - `Permissions-Policy`: the camera only for an app that asks for it (`allowCamera`, the
  *   console: the packing video and scanning stickers with a phone's camera, D-605, D-611), and
- *   then only for this origin. Microphone, location, payment and USB stay off everywhere.
+ *   then only for this origin; the microphone likewise (`allowMicrophone`, the console: the web
+ *   phone through Envo, M47 D-844, and M45's voice messages and call answering). Location,
+ *   payment and USB stay off everywhere.
+ * - The phone's origins (M47, D-844, `telephonyOrigins`, `VITE_CSP_TELEPHONY_ORIGINS`): Envo's
+ *   embedded phone is a script served by the brand's Envo host (`<host>/embed/phone.js`), which
+ *   then asks that host for its SIP session and registers over its WebSocket, so each origin is
+ *   added to `script-src` and, with its `wss:` twin, to `connect-src`. Only https origins.
  * - `frame-ancestors 'none'` and `X-Frame-Options: DENY`: no page is meant to be framed.
  */
 
@@ -37,6 +43,10 @@ export interface PagesHeadersOptions {
   readonly extraConnectSrc?: string | undefined;
   /** Let this origin use the camera (M38b): the console's packing station and camera scans. */
   readonly allowCamera?: boolean;
+  /** Let this origin use the microphone (M47, D-844): the web phone and M45's voice messages. */
+  readonly allowMicrophone?: boolean;
+  /** The web phone's hosts, space-separated https origins (`VITE_CSP_TELEPHONY_ORIGINS`). */
+  readonly telephonyOrigins?: string | undefined;
 }
 
 const INLINE_SCRIPT = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
@@ -67,16 +77,26 @@ export function contentSecurityPolicy(html: string, options: PagesHeadersOptions
       throw new Error(`VITE_CSP_CONNECT_SRC: "${source}" is not an https or wss origin`);
     }
   }
+  const phones = (options.telephonyOrigins ?? '').split(/\s+/).filter(Boolean);
+  for (const source of phones) {
+    if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(source)) {
+      throw new Error(`VITE_CSP_TELEPHONY_ORIGINS: "${source}" is not an https origin`);
+    }
+  }
+  const phoneSockets = phones.map((source) => `wss://${source.slice('https://'.length)}`);
   const apiOrigin = new URL(options.apiUrl).origin;
   const extraHttps = extra.filter((source) => source.toLowerCase().startsWith('https:'));
   const directives: [string, string[]][] = [
     ['default-src', ["'self'"]],
-    ['script-src', ["'self'", ...inlineScriptHashes(html)]],
+    ['script-src', ["'self'", ...inlineScriptHashes(html), ...phones]],
     ['style-src', ["'self'", "'unsafe-inline'"]],
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
     ['media-src', ["'self'", 'blob:', apiOrigin, ...extraHttps]],
     ['font-src', ["'self'"]],
-    ['connect-src', ["'self'", ...apiSources(options.apiUrl), ...extra]],
+    [
+      'connect-src',
+      ["'self'", ...apiSources(options.apiUrl), ...extra, ...phones, ...phoneSockets],
+    ],
     ['worker-src', ["'self'"]],
     ['manifest-src', ["'self'"]],
     ['object-src', ["'none'"]],
@@ -96,7 +116,7 @@ export function documentHeaders(html: string, options: PagesHeadersOptions): [st
     ['Referrer-Policy', 'strict-origin-when-cross-origin'],
     [
       'Permissions-Policy',
-      `camera=${options.allowCamera === true ? '(self)' : '()'}, microphone=(), geolocation=(), payment=(), usb=()`,
+      `camera=${options.allowCamera === true ? '(self)' : '()'}, microphone=${options.allowMicrophone === true ? '(self)' : '()'}, geolocation=(), payment=(), usb=()`,
     ],
     ['Cross-Origin-Opener-Policy', 'same-origin'],
   ];
