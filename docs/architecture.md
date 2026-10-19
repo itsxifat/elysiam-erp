@@ -846,23 +846,24 @@ used it), and the answer says what uses it. Branches and ledger accounts are nev
   - optional: birthday, anniversary, gender, age band, profession
   - tags
 - The same person appears as separate rows in different orgs. The only cross-org link is the fraud phone hash (D-032).
+- **Numbers and people (M48, D-870 to D-889).** A buyer has several numbers in `sales.customer_phones`, ranked (1 is the primary, whose copy is `customers.phone_e164`), each with its kind, whose it is (own, household, relative, work, someone_else, other), the staff's note ("Needs details" until written) and its source; a retired number stays in the history and finds nobody. One number may be several people's: `phone_e164` is not unique. `ORDERS_API.buyerCandidates` lists everyone a number names; screens with a person in front of them let the staff choose, and automatic paths take the person whose primary own number it is, else whoever ordered last, flagging the order `buyer_check = 'shared_number'` when they had to choose. Supervisors change an order's buyer (the counts move with it) and merge two records of one person (`merged_into_customer_id`, never deleted; `customer.merged` moves calls, inbox contacts and website accounts).
 
 ### Orders (`sales.orders`)
 
-| Group                | Fields                                                                                               |
-| -------------------- | ---------------------------------------------------------------------------------------------------- |
-| Identity             | `org_id, branch_id`, `order_no` (per-org sequence, e.g. `OUR-2609-00042`)                            |
-| Channel              | `channel` (`facebook, whatsapp, instagram, tiktok, landing_page, website, phone, walk_in, reseller`) |
-| Source               | `source` jsonb: page id, campaign id, ad id, UTMs, landing page id, inbox conversation id (M42)      |
-| Customer and address | `customer_id`, shipping address snapshot, `delivery_zone_id`                                         |
-| Amounts              | `delivery_charge_poisha, discount_poisha, promo_code_id, advance_paid_poisha, cod_amount_poisha`     |
-| Status               | `status, hold_reason`                                                                                |
-| Fraud                | `trust_score, fraud_decision`                                                                        |
-| People               | `assigned_to, created_by`                                                                            |
-| Timestamps           | `confirmed_by/at, packed_at, handed_over_at, delivered_at, returned_at, cancelled_at, cancel_reason` |
-| Reseller             | `reseller_id`                                                                                        |
-| Links                | `exchange_of_order_id`                                                                               |
-| Other                | `notes`                                                                                              |
+| Group                | Fields                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity             | `org_id, branch_id`, `order_no` (per-org sequence, e.g. `OUR-2609-00042`)                                                                                                       |
+| Channel              | `channel` (`facebook, whatsapp, instagram, tiktok, landing_page, website, phone, walk_in, reseller`)                                                                            |
+| Source               | `source` jsonb: page id, campaign id, ad id, UTMs, landing page id, inbox conversation id (M42)                                                                                 |
+| Customer and address | `customer_id` (the buyer), the recipient's snapshot (`ship_*`, its own phone), `delivery_zone_id`; M48: `placed_for`, `recipient_customer_id`, `placed_for_note`, `buyer_check` |
+| Amounts              | `delivery_charge_poisha, discount_poisha, promo_code_id, advance_paid_poisha, cod_amount_poisha`                                                                                |
+| Status               | `status, hold_reason`                                                                                                                                                           |
+| Fraud                | `trust_score, fraud_decision`                                                                                                                                                   |
+| People               | `assigned_to, created_by`                                                                                                                                                       |
+| Timestamps           | `confirmed_by/at, packed_at, handed_over_at, delivered_at, returned_at, cancelled_at, cancel_reason`                                                                            |
+| Reseller             | `reseller_id`                                                                                                                                                                   |
+| Links                | `exchange_of_order_id`                                                                                                                                                          |
+| Other                | `notes`                                                                                                                                                                         |
 
 - **Order lines:** `sku_id, qty, unit_price_poisha` (the selling price, or the reseller's customer price), `discount_poisha, delivered_qty, returned_qty`. Reseller lines also carry `reseller_price_poisha`.
 - **Totals** are computed in the domain layer: `COD = items − discount + delivery − advance`. The domain rejects a negative COD.

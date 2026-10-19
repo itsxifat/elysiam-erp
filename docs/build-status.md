@@ -1,6 +1,6 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-19** (Phone calls through Envo (M47) live on both brands (2026-10-19, e70fe2e9), with the owner's answers of 2026-10-19 (recordings played from Envo, a wrap-up after every call, the caller panel); Labels and Packaging, with terminals, printers and lots (M46), live on both brands; order ownership and auto-assign, the unified inbox, the English-only slips, the alive inbox, selling from the chat and voice messages and calls (M41 to M45) are live too; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
+Last updated: **2026-10-19** (Customer numbers and people (M48) built 2026-10-19 on its branch, not merged or deployed; phone calls through Envo (M47) live on both brands (2026-10-19, e70fe2e9), with the owner's answers of 2026-10-19 (recordings played from Envo, a wrap-up after every call, the caller panel); Labels and Packaging, with terminals, printers and lots (M46), live on both brands; order ownership and auto-assign, the unified inbox, the English-only slips, the alive inbox, selling from the chat and voice messages and calls (M41 to M45) are live too; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
@@ -104,6 +104,7 @@ Wave 4         [###################-]  99%   (M40 to M47; broad tests deferred, 
 | M44  | A fast, alive inbox; selling from the chat      |  100% | Live 2026-10-12: full-window inbox, names and photos, motion and sounds, saved replies, size and quantity spotting in English and Bangla, product picker, order placed from the chat                                                                           |
 | M45  | Voice messages and calls                        |  100% | Live 2026-10-12: voice messages both ways, calls ringing in the browser; untested against Meta until the owner tries them (Messenger calling is not offered in Bangladesh)                                                                                     |
 | M46  | Labels and Packaging, terminals, printers, lots |  100% | Live 2026-10-17: label and packing terminals with people and cameras, network and browser printers, automatic labels on booking, a print log with reprint reasons, orders in several lots; untested on real printers                                           |
+| M48  | Customer numbers and people                     |   90% | Built 2026-10-19 on `m48-customer-numbers`, not merged or deployed: several numbers per buyer with staff notes, shared numbers, orders for someone else, change buyer and merge, the caller panel's numbers                                                    |
 | M47  | Phone calls through Envo                        |   95% | Live 2026-10-19 (e70fe2e9) on both brands, the owner's answers included: Envo connections, extensions for staff, Call buttons, the phone in the console, call logs, recordings played from Envo, wrap-ups and the caller panel; untested against the live Envo |
 
 ## Being built now
@@ -112,7 +113,7 @@ Wave 4         [###################-]  99%   (M40 to M47; broad tests deferred, 
    `https://erp.beownz.com`, with the packing station and video; the website at
    `https://demo.elysium-lifestyle.bd`.
 2. **Built, waiting to be merged and deployed:** phone calls through Envo (M47, branch
-   `m47-envo-calls`).
+   `m47-envo-calls`) and customer numbers and people (M48, branch `m48-customer-numbers`).
 3. **Ready, waiting for the owner:** the mother ERP needs its own server and domain.
 4. **Then:** the final addresses (M37). Removing a super admin, and stepping down, is built
    (2026-10-10, branch `superadmin-removal`, not merged or deployed).

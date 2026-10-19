@@ -3580,3 +3580,29 @@ dry-run|commit --file <users.json>`.
   (D-862); component tests for the wrap-up form and the caller panel (D-758); Envo's answering
   extension (D-836); verify against the live Envo.
 - **New dependencies:** none.
+
+## 2026-10-19 · M48 · customer numbers and people (not merged or deployed)
+
+- **Branch:** `m48-customer-numbers` in `D:/Projects/elysium-erp-m47`, from `m47-envo-calls`
+  (f112a9cf). Decisions D-870 to D-889; architecture "Customers"; plan `docs/plans/M48.md`.
+- **What changed:** several numbers per buyer (`sales.customer_phones`, the Numbers card), one
+  number on several people (the buyer's phone no longer unique; `ORDERS_API.buyerCandidates` and
+  the automatic pick, the desk's and the inbox's chooser, the "Check buyer" flag and filter, search
+  by any number), orders for someone else (`placed_for`, `recipient_customer_id`,
+  `placed_for_note`; the desk's "For someone else"; ncom's two phones; Call buyer and Call
+  recipient), a supervisor's Change buyer and Merge with… (`customer.merged` moves calls, inbox
+  contacts and website accounts; promo's personal codes move in the merge), the caller panel's
+  numbers and people. Six new routes, four error codes, one event. Migrations
+  `0159_m48_customer_numbers_schema` and `0160_m48_customer_numbers_policies`.
+- **Commits:** ab740567 (feature), f0358b7b (tests), and this docs commit.
+- **Gates** (heavy lock): format, lint, typecheck, build, `check:bundle` (249.8 KB of 250 KB),
+  `check:white-label`, `check:migrations`, `check:schema`, `check:routes` (657), `check:i18n`,
+  `check:api-client` (regenerated): all pass. Not run: the full verify.
+- **Tests** (2 workers): `buyers.test.ts` 17/17; `numbers.e2e.test.ts` 7/7 and
+  `numbers.lists.test.ts` 1/1 on real Postgres; `telephony.e2e.test.ts` and
+  `route-matrix.e2e.test.ts` 46/46; `orders.e2e`, `desk.e2e`, `orders.db` 58/58 (with the module's
+  route gate counting the M47 and M48 controllers); `marketplace.e2e`, `migration.db` pass;
+  `buying.e2e`, `inbox.e2e`, `intake.e2e` 75/75; the console's calls, sell-logic and orders-ui
+  tests 43/43.
+- **Follow-ups:** in `docs/plans/M48.md`.
+- **New dependencies:** none.

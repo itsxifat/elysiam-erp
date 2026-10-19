@@ -1382,3 +1382,25 @@ The owner's brief of 2026-10-18. Staff call customers from the ERP through Envo,
 3. A signed `call.ended` webhook is logged against the customer and order with its person; a bad signature or an old timestamp is refused; a repeated delivery is logged once.
 4. The recording is played through from Envo, never stored in the ERP, from the order page and the Calls page, only for roles that may hear it (D-858).
 5. No call to Envo runs inside a database transaction, and no API key, webhook secret or full phone number reaches a log.
+
+## M48: Customer numbers and people
+
+Phase 7 · Effort MAX · Depends on: M47 · Decisions D-870 to D-889
+
+The owner's ask of 2026-10-19: "a customer can have multiple numbers like primary, secondary, tertiary and so on but each number must have a details written by staff like why this customer use that. also some time this can happen with same number another person ordered from the same home or their relatives. also this can happen someone ordered on behalf of them and put the address and number someone else. please find all possibilities and solve them."
+
+**Build**
+
+- **Several numbers per person:** `sales.customer_phones`, ranked, each with its kind, whose it is, the staff's note, its source and who added it; Add (with a required note), Make primary, Edit and Retire with a reason on the buyer page's Numbers card; automatic numbers marked "Needs details".
+- **One number, several people:** the buyer's phone no longer unique; a resolver in `ORDERS_API` (candidates and the automatic pick); the desk's and the inbox's chooser; the shared-number flag on the desk; search by any number.
+- **Orders for someone else:** the buyer apart from the recipient (`placed_for`, `recipient_customer_id`, `placed_for_note`); the desk's "For someone else"; ncom's two phones; Call buyer and Call recipient on the order page.
+- **Correcting mistakes:** a supervisor's Change buyer (counts moved) and Merge with… (numbers, addresses, orders, notes; other modules follow on `customer.merged`).
+- **The caller panel:** the person's numbers with their notes, and everyone on the calling number with a switch.
+
+**Acceptance checks**
+
+1. A buyer gets a second number with a note; a number without a note is refused from the Numbers card; Make primary moves the buyer's phone to it; another brand sees none of it (RLS).
+2. A number on two people lists both at the desk; an order by that phone alone goes to the primary own number's person and is flagged "check the buyer: shared number"; "Buyer is right" clears it; a retired number finds nobody.
+3. An order for someone else keeps the buyer and the recipient apart, and the recipient's number joins the buyer's only when ticked.
+4. A supervisor changes an order's buyer and the counts move; a sales agent is refused. A merge moves the other record's orders, numbers and a telephony call to the kept record.
+5. Every new route is in the route matrix with a fixture; no number or note text reaches an audit row.
