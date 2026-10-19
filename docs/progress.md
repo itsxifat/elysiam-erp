@@ -3632,3 +3632,5 @@ dry-run|commit --file <users.json>`.
   tests 54/54; `inbox.stack.ts` 6/6 with screenshots in `docs/review/M42/` and axe in both themes.
 - **Follow-ups:** in `docs/plans/M49.md`.
 - **New dependencies:** none.
+- **Live:** deployed to both brands on 2026-10-19 (3270008c, `infra/brand/deploy.sh … all`):
+  160 migrations applied on each (0161 the last), every container healthy, both consoles answer.
