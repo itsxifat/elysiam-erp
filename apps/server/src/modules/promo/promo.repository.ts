@@ -522,3 +522,21 @@ export async function campaignsOfCodes(
   `);
   return new Map([...rows].map((row) => [row.id, row.campaign_id]));
 }
+
+/**
+ * M48 (D-885): the personal codes of a buyer merged into another become the kept record's.
+ * Redemptions are not moved: they are history, and immutable (0079).
+ */
+export async function moveCustomerCodes(
+  tx: Tx,
+  orgId: string,
+  fromCustomerId: string,
+  toCustomerId: string,
+): Promise<number> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update promo.codes set customer_id = ${toCustomerId}, updated_at = now()
+    where org_id = ${orgId} and customer_id = ${fromCustomerId}
+    returning id
+  `);
+  return rows.length;
+}

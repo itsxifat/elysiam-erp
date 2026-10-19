@@ -56,6 +56,17 @@ import { useInboxT } from '../inbox/messages.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrdersNav, OrderStatusBadge, ShortcutsHelp, type Shortcut } from './parts.js';
 import { ordersPath } from './paths.js';
+import {
+  AUTO,
+  BuyerChooser,
+  ForSomeoneElse,
+  NO_BEHALF,
+  behalfFields,
+  behalfReady,
+  buyerFields,
+  type Behalf,
+  type BuyerChoice,
+} from '../people/desk-people.js';
 
 /**
  * The order desk (M11 Build list; acceptance check 1).
@@ -198,6 +209,9 @@ function Desk() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [attempted, setAttempted] = useState(false);
+  // M48 (D-875, D-878): who on a shared number is ordering, and an order for someone else.
+  const [buyerChoice, setBuyerChoice] = useState<BuyerChoice>(AUTO);
+  const [behalf, setBehalf] = useState<Behalf>(NO_BEHALF);
 
   const phoneRef = useRef<HTMLInputElement>(null);
   const areaRef = useRef<HTMLInputElement>(null);
@@ -222,6 +236,7 @@ function Desk() {
   });
 
   const customer = lookup.data?.customer ?? null;
+  const candidates = lookup.data?.candidates ?? [];
 
   /*
    * A returning buyer fills the form — but only the fields the agent has not typed in.
@@ -543,17 +558,22 @@ function Desk() {
     !moneyInvalid &&
     // A code that does not apply would make the server refuse the whole order, so the
     // desk holds the save until the agent removes it or fixes the basket.
-    (promoState.kind === 'none' || promoState.kind === 'ok');
+    (promoState.kind === 'none' || promoState.kind === 'ok') &&
+    behalfReady(behalf);
 
   // --- saving ------------------------------------------------------------------------------
   const save = useMutation({
     mutationFn: async (confirm: boolean): Promise<Outcome> => {
       if (area === null || normalized === null) throw new Error(t('orders.desk.missing'));
+      const forSomeoneElse = behalfFields(behalf);
+      const { recipient, ...behalfRest } = forSomeoneElse ?? { recipient: null };
       const created = await createOrder({
         channel,
-        customer: { phone: normalized, name: name.trim() },
+        ...buyerFields(buyerChoice, normalized, name.trim()),
+        ...behalfRest,
         shipTo: {
-          name: name.trim(),
+          name: recipient?.name ?? name.trim(),
+          ...(recipient === null ? {} : { phone: recipient.phone }),
           districtId: area.districtId,
           thanaId: area.thanaId,
           ...(areaDetail.trim() === '' ? {} : { area: areaDetail.trim() }),
@@ -616,6 +636,8 @@ function Desk() {
     setDeliveryTaka('');
     setDeliveryTouched(false);
     setNotes('');
+    setBuyerChoice(AUTO);
+    setBehalf(NO_BEHALF);
     setOutcome(null);
     setAttempted(false);
     save.reset();
@@ -726,6 +748,7 @@ function Desk() {
                   const typed = toAsciiDigits(event.target.value);
                   setPhone(typed);
                   const whole = deskPhone(typed);
+                  if (whole !== normalized) setBuyerChoice(AUTO);
                   if (whole !== null && whole !== normalized) prefillFor(whole);
                 }}
                 aria-invalid={phoneError}
@@ -761,6 +784,13 @@ function Desk() {
                 </p>
               )}
             </div>
+            {/* M48 (D-875): a number several people use, or a new person on a known number. */}
+            <BuyerChooser
+              idBase={ids}
+              candidates={candidates}
+              value={buyerChoice}
+              onChange={setBuyerChoice}
+            />
           </section>
 
           {/* Where it goes ----------------------------------------------------------- */}
@@ -768,6 +798,13 @@ function Desk() {
             <h2 className="text-sm font-semibold tracking-tight text-foreground sm:col-span-2">
               {t('orders.detail.shipTo')}
             </h2>
+            {/* M48 (D-878): the buyer orders; the parcel may be someone else's. */}
+            <ForSomeoneElse
+              idBase={ids}
+              value={behalf}
+              onChange={setBehalf}
+              attempted={attempted}
+            />
             <div className="relative space-y-1.5 sm:col-span-2">
               <Label htmlFor={`${ids}-area`} required>
                 {t('orders.desk.area')}

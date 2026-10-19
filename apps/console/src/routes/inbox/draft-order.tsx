@@ -23,6 +23,8 @@ import { useLocale } from '../../i18n/locale.js';
 import { recordAdvance } from '../orders/advances-api.js';
 import { checkPromo, createOrder, getOrder, listAreas } from '../orders/api.js';
 import { ordersPath } from '../orders/paths.js';
+import { peopleOnNumber } from '../people/api.js';
+import { AUTO, BuyerChooser, buyerFields, type BuyerChoice } from '../people/desk-people.js';
 import { addNote, INBOX_KEY, type ConversationItem } from './api.js';
 import { fillComposer } from './composer-bridge.js';
 import { districtsOf, thanasOf } from './logic.js';
@@ -92,6 +94,21 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
+  // M48 (D-875): who on the chat's number is ordering, when it is somebody's already.
+  // The choice is the number's it was made for: another number starts at the automatic pick.
+  const draftPhone = typedPhone(draft.customer.phone);
+  const [choiceFor, setChoiceFor] = useState<{
+    readonly phone: string | null;
+    readonly choice: BuyerChoice;
+  }>({ phone: null, choice: AUTO });
+  const buyerChoice = choiceFor.phone === draftPhone ? choiceFor.choice : AUTO;
+  const setBuyerChoice = (choice: BuyerChoice) => setChoiceFor({ phone: draftPhone, choice });
+  const people = useQuery({
+    queryKey: ['people', 'on-number', draftPhone],
+    queryFn: () => peopleOnNumber(draftPhone ?? ''),
+    enabled: draftPhone !== null,
+    staleTime: 60_000,
+  });
 
   const areas = useQuery({
     queryKey: ['orders', 'areas'],
@@ -184,7 +201,11 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
         throw new Error(t('inbox.sell.missing', { fields: '' }));
       }
       // The draft's own key: a retry after a lost answer is this order again, not a second.
-      const created = await createOrder(body, { 'Idempotency-Key': draft.placeKey });
+      const { customer, ...rest } = body;
+      const created = await createOrder(
+        { ...rest, ...buyerFields(buyerChoice, customer.phone, customer.name) },
+        { 'Idempotency-Key': draft.placeKey },
+      );
 
       // A dated note in the chat's panel. On someone else's conversation it carries the
       // acknowledgement the person just gave, so the owner is told and the audit names them
@@ -489,6 +510,12 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
         ) : (
           <span id={`${ids}-phone-hint`} hidden />
         )}
+        <BuyerChooser
+          idBase={ids}
+          candidates={people.data?.candidates ?? []}
+          value={buyerChoice}
+          onChange={setBuyerChoice}
+        />
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <Label htmlFor={`${ids}-district`}>{t('inbox.sell.draft.district')}</Label>

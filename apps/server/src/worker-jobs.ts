@@ -206,6 +206,7 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
   // M47: Envo's webhooks, the five-minute sync and the nightly webhook-body retention.
   await registerTelephonyJobs({
     jobs,
+    dispatcher,
     webhooks: context.get(TelephonyWebhookService),
     sync: context.get(TelephonySyncService),
     report,

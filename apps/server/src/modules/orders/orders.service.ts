@@ -31,9 +31,11 @@ import {
   orderExchangeDraft,
   orderPeriodFor,
   orderPrefixFor,
+  placedForOf,
   poisha,
   sub,
   TRANSITIONS,
+  type PlacedFor,
   type DiscountedOrder,
   withinPostingWindow,
   type OrderStatus,
@@ -51,6 +53,7 @@ import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { CustomersService } from './customers.service.js';
+import { addNumber, sourceForOrder } from './numbers.helpers.js';
 import { HandoverGuardRegistry } from './ports/handover-guard.port.js';
 import { PROMO_PORT, type PricedPromo, type PromoPort } from './ports/promo.port.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
@@ -151,6 +154,15 @@ export interface OrderView {
     readonly area: string | null;
     readonly addressLine: string;
   };
+  /**
+   * M48 (D-878): whom it was placed for. The buyer (`customer`) ordered; the recipient is
+   * `shipTo`, with their own record when the staff linked one.
+   */
+  readonly placedFor: string;
+  readonly placedForNote: string | null;
+  readonly recipientCustomerId: string | null;
+  /** M48 (D-876): "check the buyer: shared number", until confirmed or changed. */
+  readonly buyerCheck: string | null;
   readonly deliveryZoneId: string | null;
   readonly courierId: string | null;
   readonly locationId: string | null;
@@ -236,6 +248,10 @@ function toOrderView(row: repo.OrderRow): OrderView {
       area: row.ship_area,
       addressLine: row.ship_address_line,
     },
+    placedFor: row.placed_for,
+    placedForNote: row.placed_for_note,
+    recipientCustomerId: row.recipient_customer_id,
+    buyerCheck: row.buyer_check,
     deliveryZoneId: row.delivery_zone_id,
     courierId: row.courier_id,
     locationId: row.location_id,
@@ -453,6 +469,7 @@ export class OrdersService {
           channel: query.channel,
           assignedTo: query.assignedTo,
           zoneId: query.zoneId,
+          buyerCheck: query.buyerCheck,
           limit: query.limit + 1,
           offset: query.offset,
         });
@@ -685,6 +702,10 @@ export class OrdersService {
            */
           await this.customers.assertReachable(tx, context, request, input.customerId);
         }
+        if (input.recipientCustomerId !== undefined) {
+          // The same test for the recipient's record (M48, D-880): naming it reads it.
+          await this.customers.assertReachable(tx, context, request, input.recipientCustomerId);
+        }
         const created = await this.createIn(tx, context, request, input, {});
         return created;
       }),
@@ -710,6 +731,7 @@ export class OrdersService {
     const at = new Date();
     const buyer = await this.resolveBuyer(tx, context, input);
     const shipTo = await this.resolveShipTo(tx, context, input, buyer, options);
+    const behalf = await this.resolveRecipient(tx, context, input, buyer, shipTo);
     const zone = await this.resolveZone(tx, context, input, shipTo, options);
     const lines = await this.priceLines(tx, context, input.lines);
     if (options.systemPricing !== true) {
@@ -862,6 +884,11 @@ export class OrdersService {
       createdBy: context.userId,
       notes: input.notes ?? null,
       exchangeOfOrderId: options.exchangeOfOrderId ?? null,
+      placedFor: behalf.placedFor,
+      recipientCustomerId: behalf.recipientCustomerId,
+      placedForNote: behalf.placedFor === 'someone_else' ? (input.placedForNote ?? null) : null,
+      // D-876: an automatic pick among several people on one number is the desk's to check.
+      buyerCheck: buyer.shared ? 'shared_number' : null,
     });
 
     // The order row now exists, so the redemption's foreign key has something to name.
@@ -954,6 +981,9 @@ export class OrdersService {
         codAmountPoisha: BigInt(totals.codAmountPoisha).toString(),
         lines: lines.length,
         exchangeOfOrderId: options.exchangeOfOrderId ?? null,
+        placedFor: behalf.placedFor,
+        recipientCustomerId: behalf.recipientCustomerId,
+        buyerCheck: buyer.shared ? 'shared_number' : null,
       },
       request,
     });
@@ -1131,7 +1161,11 @@ export class OrdersService {
           }
         : {
             name: patch.shipTo.name ?? order.ship_name,
-            phoneE164: order.ship_phone_e164,
+            // M48 (D-878): the recipient's number, when the parcel is someone else's.
+            phoneE164:
+              patch.shipTo.phone === undefined
+                ? order.ship_phone_e164
+                : normalizeBdPhone(patch.shipTo.phone),
             districtId: patch.shipTo.districtId,
             thanaId: patch.shipTo.thanaId,
             area: patch.shipTo.area ?? null,
@@ -1969,10 +2003,17 @@ export class OrdersService {
     tx: Tx,
     context: ActiveContext,
     input: CreateOrderInput,
-  ): Promise<{ id: string; name: string; phoneE164: string }> {
+  ): Promise<{ id: string; name: string; phoneE164: string; shared: boolean }> {
     if (input.customerId !== undefined) {
       const row = await this.customers.require(tx, context.orgId, input.customerId);
-      return { id: row.id, name: row.name, phoneE164: row.phone_e164 };
+      if (row.merged_into_customer_id !== null) {
+        throw new OrdersError(
+          'CUSTOMER_MERGE_INVALID',
+          'That buyer was merged into another record; take the order for that one.',
+        );
+      }
+      // Chosen by a person (the desk's chooser): nothing for the desk to check (D-875).
+      return { id: row.id, name: row.name, phoneE164: row.phone_e164, shared: false };
     }
 
     if (input.customer === undefined) {
@@ -1981,8 +2022,76 @@ export class OrdersService {
         'An order needs a buyer: name an existing customer or supply one.',
       );
     }
-    const upserted = await this.customers.upsert(tx, context, input.customer);
-    return { id: upserted.id, name: upserted.name, phoneE164: upserted.phoneE164 };
+    const upserted = await this.customers.upsert(tx, context, input.customer, {
+      source: sourceForOrder(input.channel, input.source),
+    });
+    return {
+      id: upserted.id,
+      name: upserted.name,
+      phoneE164: upserted.phoneE164,
+      shared: upserted.shared,
+    };
+  }
+
+  /**
+   * Whom the order is for (M48, D-878 to D-881). The buyer is who ordered; the recipient is the
+   * parcel's name, phone and address. `someone_else` when the caller says so, or when the parcel's
+   * phone is not the buyer's; it needs the recipient's name and phone. The recipient's record is the
+   * one named (checked by the caller), or with `saveRecipient` the person their number names (the
+   * automatic pick) or a new one. The recipient's number joins the buyer's numbers only when the
+   * staff ticked it, as `someone_else`, with the order's note.
+   */
+  private async resolveRecipient(
+    tx: Tx,
+    context: ActiveContext,
+    input: CreateOrderInput,
+    buyer: { id: string; name: string; phoneE164: string },
+    shipTo: ShipTo,
+  ): Promise<{ placedFor: PlacedFor; recipientCustomerId: string | null }> {
+    const placedFor = input.placedFor ?? placedForOf(buyer.phoneE164, shipTo.phoneE164);
+    if (placedFor === 'self') return { placedFor, recipientCustomerId: null };
+    if (input.shipTo?.name === undefined || input.shipTo.phone === undefined) {
+      throw new OrdersError(
+        'VALIDATION_FAILED',
+        'An order for someone else needs the recipient’s name and phone.',
+      );
+    }
+    let recipientCustomerId: string | null = null;
+    if (input.recipientCustomerId !== undefined) {
+      const row = await this.customers.require(tx, context.orgId, input.recipientCustomerId);
+      recipientCustomerId = row.id;
+    } else if (input.saveRecipient === true) {
+      const saved = await this.customers.upsert(
+        tx,
+        context,
+        {
+          phone: shipTo.phoneE164,
+          name: shipTo.name,
+          // The recipient's own address is theirs: the parcel's, saved as their default.
+          address: {
+            districtId: shipTo.districtId,
+            thanaId: shipTo.thanaId,
+            ...(shipTo.area === null ? {} : { area: shipTo.area }),
+            addressLine: shipTo.addressLine,
+          },
+        },
+        { source: 'order' },
+      );
+      recipientCustomerId = saved.id;
+    }
+    if (recipientCustomerId === buyer.id) recipientCustomerId = null;
+    if (input.addRecipientNumberToBuyer === true && shipTo.phoneE164 !== buyer.phoneE164) {
+      await addNumber(tx, {
+        orgId: context.orgId,
+        customerId: buyer.id,
+        phoneE164: shipTo.phoneE164,
+        relation: 'someone_else',
+        note: input.placedForNote ?? null,
+        source: 'order',
+        addedByUserId: context.userId,
+      });
+    }
+    return { placedFor, recipientCustomerId };
   }
 
   /** A district and thana the reference data has, the thana inside the district (D2). */
@@ -2017,7 +2126,8 @@ export class OrdersService {
       await this.assertArea(tx, input.shipTo);
       return {
         name: input.shipTo.name ?? buyer.name,
-        phoneE164: normalizeBdPhone(buyer.phoneE164),
+        // M48 (D-878): the recipient's phone when the parcel is someone else's.
+        phoneE164: normalizeBdPhone(input.shipTo.phone ?? buyer.phoneE164),
         districtId: input.shipTo.districtId,
         thanaId: input.shipTo.thanaId,
         area: input.shipTo.area ?? null,

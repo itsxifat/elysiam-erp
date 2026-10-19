@@ -65,6 +65,12 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   ORDER_CALL_INVALID: 400,
   // M46 (D-808): scan every lot's label at the handover first.
   ORDER_LOTS_NOT_HANDED: 409,
+  // M48 (D-870 to D-889): a buyer's numbers, merges and an order's buyer.
+  CUSTOMER_PHONE_NOT_FOUND: 404,
+  CUSTOMER_PHONE_INVALID: 400,
+  CUSTOMER_MERGE_INVALID: 409,
+  // About who is asking: a supervisor changes a buyer or merges two (D-886).
+  CUSTOMER_SUPERVISOR_ONLY: 403,
 };
 
 export class OrdersError extends Error {
@@ -143,6 +149,18 @@ const CHECK_MESSAGES: Readonly<Record<string, { code: ErrorCode; message: string
     code: 'ORDER_PHONE_INVALID',
     message: 'That is not a Bangladeshi mobile number.',
   },
+  customer_phones_phone_e164: {
+    code: 'ORDER_PHONE_INVALID',
+    message: 'That is not a Bangladeshi mobile number.',
+  },
+  customer_phones_note: {
+    code: 'CUSTOMER_PHONE_INVALID',
+    message: 'A number’s note is at most 500 characters.',
+  },
+  customer_phones_staff_note: {
+    code: 'CUSTOMER_PHONE_INVALID',
+    message: 'Write why and when this person uses the number.',
+  },
   order_advances_four_eyes: {
     code: 'ADVANCE_SELF_VERIFY',
     message: 'The person who recorded an advance cannot also decide it.',
@@ -169,9 +187,13 @@ const UNIQUE_MESSAGES: Readonly<Record<string, { code: ErrorCode; message: strin
     code: 'ORDER_TRANSITION_INVALID',
     message: 'That order number was just taken; try again.',
   },
-  customers_org_phone_idx: {
-    code: 'ORDER_PHONE_INVALID',
-    message: 'A buyer with that phone number already exists in this brand.',
+  customer_phones_org_customer_phone_idx: {
+    code: 'CUSTOMER_PHONE_INVALID',
+    message: 'This person already has that number.',
+  },
+  customer_phones_org_primary_idx: {
+    code: 'CUSTOMER_PHONE_INVALID',
+    message: 'The numbers changed while this was saved; reload and try again.',
   },
   order_lines_org_order_sku_idx: {
     code: 'ORDER_LINES_INVALID',

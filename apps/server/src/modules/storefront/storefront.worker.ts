@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
+import { onCustomerMerged } from '../../platform/events/customer-merged.js';
 import type { OutboxDispatcher } from '../../platform/events/dispatcher.js';
 import type { JobFailureReporter, JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import type { OrderMail } from './order-mail.js';
+import { moveAccountsToCustomer } from './storefront.repository.js';
 import type { PaymentsService } from './payments.service.js';
 import { STOREFRONT_QUEUES } from './storefront.queues.js';
 import type { TrackingService } from './tracking.service.js';
@@ -34,6 +36,11 @@ export async function registerStorefrontJobs(deps: StorefrontWorkerDependencies)
   const { jobs, dispatcher, payments, mail, tracking, report } = deps;
 
   dispatcher.on('order.status_changed', (event) => mail.onStatusChanged(event));
+  // M48 (D-885): website accounts follow a merged buyer.
+  dispatcher.on(
+    'customer.merged',
+    onCustomerMerged('system:customer-merge', moveAccountsToCustomer),
+  );
 
   await jobs.work(
     STOREFRONT_QUEUES.openSession.name,

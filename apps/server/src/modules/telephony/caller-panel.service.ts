@@ -6,6 +6,7 @@ import type {
   CallerPanelFull,
   CallerPanelMinimal,
   CallerPanelOrder,
+  CallerPanelPerson,
   CallerPanelPhone,
   CallerPanelQuery,
   CustomerPinnedNoteAnswer,
@@ -112,11 +113,24 @@ export class CallerPanelService {
             customerPhoneFrom(call.direction === 'inbound' ? call.from_number : call.to_number);
           customerId = call.customer_id;
           namedByCall = call.customer_id !== null;
-        } else if (query.customerId !== undefined) {
+        } else if (query.customerId !== undefined && query.phone === undefined) {
           customerId = query.customerId;
         } else {
           phone = customerPhoneFrom(query.phone);
           if (phone === null) return minimal(null, null, []);
+        }
+        // M48 (D-875, D-887): everyone this number names. A call stays with the person it was
+        // linked to (the automatic pick); the panel offers the others, and `customerId` beside a
+        // call or a phone switches to one of them (and only to one of them).
+        const people = phone === null ? [] : await this.orders.buyerCandidates(tx, orgId, phone);
+        if (
+          query.customerId !== undefined &&
+          (query.callId !== undefined || query.phone !== undefined)
+        ) {
+          if (!people.some((person) => person.customerId === query.customerId)) {
+            throw new TelephonyError('TELEPHONY_NOT_FOUND', 'Nobody else uses this number.');
+          }
+          customerId = query.customerId;
         }
         if (customerId === null && phone !== null) {
           customerId = (await this.orders.buyerIdByPhone(tx, orgId, phone)) ?? null;
@@ -162,11 +176,17 @@ export class CallerPanelService {
                 this.orders.customerAddresses(tx, orgId, customer.id),
                 this.orders.customerOtherPhones(tx, orgId, customer.id),
                 this.storefront.accountsOfCustomer(tx, orgId, customer.id),
+                this.orders.customerNumbers(tx, orgId, customer.id),
               ]);
+        const own = facts?.[4] ?? [];
 
-        // The order's recipients first, then the phones saved on their inbox contacts.
+        // The order's recipients first, then the phones saved on their inbox contacts; never one
+        // of the person's own numbers, which are listed with their notes (M48).
         const otherPhones: CallerPanelPhone[] = [];
-        const seen = new Set(phone === null ? [] : [phone]);
+        const seen = new Set([
+          ...(phone === null ? [] : [phone]),
+          ...own.map((number) => number.phoneE164),
+        ]);
         for (const other of facts?.[2] ?? []) {
           if (seen.has(other)) continue;
           seen.add(other);
@@ -227,6 +247,30 @@ export class CallerPanelService {
             addressLine: address.addressLine,
             isDefault: address.isDefault,
           })),
+          numbers: own.map((number) => ({
+            id: number.id,
+            phone: number.phoneE164,
+            rank: number.rank,
+            kind: number.kind,
+            relation: number.relation,
+            note: number.note,
+            needsDetails: number.note === null,
+          })),
+          // "This number is used by …" (D-887): only when it is more than one person's.
+          sharedWith:
+            people.length > 1
+              ? people.map((person): CallerPanelPerson => ({
+                  customerId: person.customerId,
+                  name: person.name,
+                  rank: person.rank,
+                  relation: person.relation,
+                  note: person.note,
+                  lastOrderAt: iso(person.lastOrderAt),
+                  orders: person.orders,
+                  suggested: person.suggested,
+                  current: person.customerId === customer?.id,
+                }))
+              : [],
           otherPhones,
           emails: facts?.[3] ?? [],
           socials: inbox.profiles.map((profile) => {

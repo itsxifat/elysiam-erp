@@ -487,7 +487,12 @@ export class TelephonyCallsService {
       // M41's lock and owner gate (D-710): a colleague's order needs `x-acknowledge-owner: 1`.
       const order = await this.orders.phoneCallTarget(tx, context, request, input.orderId);
       const phone = given ?? order.customerPhoneE164;
-      if (phone !== order.customerPhoneE164 && phone !== order.recipientPhoneE164) {
+      if (
+        phone !== order.customerPhoneE164 &&
+        phone !== order.recipientPhoneE164 &&
+        // M48: or another number the buyer uses now.
+        !(await this.orders.customerUsesPhone(tx, context.orgId, order.customerId, phone))
+      ) {
         throw new TelephonyError(
           'TELEPHONY_NUMBER_INVALID',
           `That number is not the buyer’s or the recipient’s on order ${order.orderNo}.`,
@@ -518,11 +523,16 @@ export class TelephonyCallsService {
         ? await this.orders.customerPanel(tx, context.orgId, input.customerId, 0, context)
         : undefined;
       if (panel === undefined) throw new TelephonyError('TELEPHONY_NOT_FOUND', 'No such customer.');
-      if (given !== null && given !== panel.phoneE164) {
+      // M48: any number the customer uses now, not only their primary.
+      if (
+        given !== null &&
+        given !== panel.phoneE164 &&
+        !(await this.orders.customerUsesPhone(tx, context.orgId, panel.id, given))
+      ) {
         throw new TelephonyError('TELEPHONY_NUMBER_INVALID', 'That is not this customer’s number.');
       }
       return {
-        phone: panel.phoneE164,
+        phone: given ?? panel.phoneE164,
         customerId: panel.id,
         customerName: panel.name,
         order: null,

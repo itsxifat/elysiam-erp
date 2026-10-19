@@ -17,6 +17,10 @@ import type {
   ConfirmWithCode,
   CreateUser,
   CredentialResetInput,
+  CustomerMergeInput,
+  CustomerPhoneAddInput,
+  CustomerPhoneRetireInput,
+  CustomerPhoneUpdateInput,
   CustomerPinnedNoteInput,
   DeactivateUser,
   DeskProfileInput,
@@ -31,6 +35,7 @@ import type {
   InboxStageInput,
   InboxTagsInput,
   MarkPrintedInput,
+  OrderBuyerChangeInput,
   PackingCameraCreateInput,
   PackingCameraUpdateInput,
   PhoneCallAnsweredInput,
@@ -66,6 +71,11 @@ export const OPERATIONS = {
     path: '/v1/ledger/accounts/{id}/ledger',
     ability: 'read:LedgerReport',
   },
+  addCustomerPhone: {
+    method: 'POST',
+    path: '/v1/customers/{id}/phones',
+    ability: 'update:Customer',
+  },
   addInboxInterest: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/interests',
@@ -89,6 +99,7 @@ export const OPERATIONS = {
   },
   cashBook: { method: 'GET', path: '/v1/ledger/wallets/{id}/cash-book', ability: 'read:Wallet' },
   cashIn: { method: 'POST', path: '/v1/ledger/cash-in', ability: 'update:Wallet' },
+  changeOrderBuyer: { method: 'POST', path: '/v1/orders/{id}/buyer', ability: 'update:Order' },
   closeInboxConversation: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/close',
@@ -1203,11 +1214,17 @@ export const OPERATIONS = {
   lookupPhoneCaller: { method: 'POST', path: '/v1/telephony/lookup', ability: 'create:PhoneCall' },
   markSlipsPrinted: { method: 'POST', path: '/v1/orders/mark-printed', ability: 'update:Order' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
+  mergeCustomer: { method: 'POST', path: '/v1/customers/{id}/merge', ability: 'update:Customer' },
   myOrderOffers: { method: 'GET', path: '/v1/orders/offers/mine', ability: 'read:Order' },
   newMyRecoveryCodes: {
     method: 'POST',
     path: '/v1/account/two-factor/recovery-codes',
     ability: 'authenticated',
+  },
+  orderBuyerChecked: {
+    method: 'POST',
+    path: '/v1/orders/{id}/buyer-checked',
+    ability: 'update:Order',
   },
   packingCameraPreview: {
     method: 'GET',
@@ -2391,6 +2408,11 @@ export const OPERATIONS = {
     path: '/v1/users/{id}/two-factor/reset',
     ability: 'update:User',
   },
+  retireCustomerPhone: {
+    method: 'POST',
+    path: '/v1/customers/{id}/phones/{phoneId}/retire',
+    ability: 'update:Customer',
+  },
   saveDeskProfile: { method: 'PUT', path: '/v1/team/profiles/{userId}', ability: 'update:User' },
   saveInboxChannel: {
     method: 'PUT',
@@ -2478,6 +2500,11 @@ export const OPERATIONS = {
     path: '/v1/users/{id}/two-factor/turn-off',
     ability: 'update:User',
   },
+  updateCustomerPhone: {
+    method: 'PATCH',
+    path: '/v1/customers/{id}/phones/{phoneId}',
+    ability: 'update:Customer',
+  },
   updateMyProfile: { method: 'PATCH', path: '/v1/account/profile', ability: 'authenticated' },
   updatePackingCamera: {
     method: 'PUT',
@@ -2549,6 +2576,11 @@ export function createApiClient(runtime: ApiRuntime) {
       },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.accountLedger, input, options),
+    /** Add a number to a buyer, with the staff's note on why and when they use it. */
+    addCustomerPhone: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerPhoneAddInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.addCustomerPhone, input, options),
     /** A product (and optionally a size) the contact asked about. */
     addInboxInterest: (
       input: { readonly path: { readonly id: string }; readonly body: InboxInterestInput },
@@ -2588,6 +2620,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Record money received into a wallet. */
     cashIn: (input: { readonly body: CashInInput }, options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.cashIn, input, options),
+    /** Put an order on the right buyer (supervisors); the order's own buyer confirms them and clears the shared-number check. */
+    changeOrderBuyer: (
+      input: { readonly path: { readonly id: string }; readonly body: OrderBuyerChangeInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.changeOrderBuyer, input, options),
     /** Close a conversation; a new message reopens it. */
     closeInboxConversation: (
       input: { readonly path: { readonly id: string } },
@@ -3878,6 +3915,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The signed-in user, their roles and active org. */
     me: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.me, undefined, options),
+    /** Merge another record of the same person into this buyer (supervisors): numbers, addresses, orders and notes move. */
+    mergeCustomer: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerMergeInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.mergeCustomer, input, options),
     /** The orders offered to you right now, with their countdown. */
     myOrderOffers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.myOrderOffers, undefined, options),
@@ -3886,6 +3928,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: ConfirmWithCode },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.newMyRecoveryCodes, input, options),
+    /** The buyer is right: clear an order's "check the buyer: shared number". */
+    orderBuyerChecked: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.orderBuyerChecked, input, options),
     /** The newest JPEG frame of a packing camera's live preview; 204 when none is live. */
     packingCameraPreview: (
       input: { readonly path: { readonly id: string } },
@@ -5191,6 +5238,14 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.resetUserTwoFactor, input, options),
+    /** Retire a number (changed or recycled SIM, wrong number): it stops matching, stays in history. */
+    retireCustomerPhone: (
+      input: {
+        readonly path: { readonly id: string; readonly phoneId: string };
+        readonly body: CustomerPhoneRetireInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.retireCustomerPhone, input, options),
     /** Set a staff member's work types and hub location. */
     saveDeskProfile: (
       input: { readonly path: { readonly userId: string }; readonly body: DeskProfileInput },
@@ -5300,6 +5355,14 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.turnOffUserTwoFactor, input, options),
+    /** Change a buyer's number: its kind, relation, note, or its rank (1 makes it primary). */
+    updateCustomerPhone: (
+      input: {
+        readonly path: { readonly id: string; readonly phoneId: string };
+        readonly body: CustomerPhoneUpdateInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updateCustomerPhone, input, options),
     /** Change the name you go by. */
     updateMyProfile: (
       input: { readonly body: UpdateProfile },

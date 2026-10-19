@@ -37,6 +37,8 @@ export const orderListSearchSchema = tableSearchSchema.extend({
   zone: z.string().uuid().optional().catch(undefined),
   from: isoDate,
   to: isoDate,
+  /** M48 (D-876): only the orders whose buyer the desk should check. */
+  check: z.literal('shared_number').optional().catch(undefined),
 });
 
 export type OrderListSearch = z.infer<typeof orderListSearchSchema>;

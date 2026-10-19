@@ -37,6 +37,8 @@ import { deliveredNetItems } from './revenue.js';
 import type { CreateOrderInput, UpdateOrderInput } from './orders.schemas.js';
 import * as references from './references.repository.js';
 import { buyerReachScopeFor, orderReadScopeFor } from './orders.scope.js';
+import { peopleOnPhone, pickPersonByPhone } from './numbers.helpers.js';
+import * as numbers from './numbers.repository.js';
 
 /** How many of a buyer's newest orders the caller panel reads addresses from (D-860). */
 const CALLER_PANEL_RECENT_ORDERS = 20;
@@ -530,8 +532,9 @@ export interface OrdersApi {
    * A brand's existing buyers with their history (M14a, D-218), inside the caller's
    * transaction: one `sales.customers` row each, its counters set from the file —
    * `orders_total` is delivered + returned + cancelled, and `ltv_poisha` is what they
-   * spent. A phone that is already a buyer is refused by the unique index rather than
-   * merged, which rolls the whole import back; the importer skips those before calling.
+   * spent — and its phone as the buyer's rank-1 own number (M48). A phone some buyer already
+   * uses, or one twice in the batch, is refused (`CUSTOMER_PHONE_INVALID`) rather than merged,
+   * which rolls the whole import back; the importer skips those before calling.
    */
   importBuyers(tx: Tx, actor: OrdersActor, buyers: readonly ImportedBuyer[]): Promise<number>;
 
@@ -632,8 +635,39 @@ export interface OrdersApi {
 
   // --- M34: the website ------------------------------------------------------------
 
-  /** The buyer this E.164 phone names, or undefined: per-buyer discount limits (D-541). */
+  /**
+   * The buyer this E.164 phone names, or undefined: per-buyer discount limits (D-541). M48
+   * (D-876): one number may be several people's, and this is the automatic pick among them (the
+   * person whose primary own number it is, else whoever ordered last). A screen with a person in
+   * front of it asks `buyerCandidates` instead.
+   */
   buyerIdByPhone(tx: Tx, orgId: string, phoneE164: string): Promise<string | undefined>;
+
+  // --- M48: customer numbers and people (D-870 to D-889) -------------------------------------
+
+  /**
+   * Everyone an E.164 number names now, the automatic pick first (D-875): each with the number's
+   * rank, kind and relation on them, the staff's note and their last order. No scope: the caller
+   * decides who may see whom (the caller panel shows them to whoever sees the whole panel).
+   */
+  buyerCandidates(tx: Tx, orgId: string, phoneE164: string): Promise<readonly BuyerCandidateFact[]>;
+
+  /** The automatic pick for a number, and whether it had to choose among several (D-876). */
+  pickBuyerByPhone(
+    tx: Tx,
+    orgId: string,
+    phoneE164: string,
+  ): Promise<{ readonly customerId: string; readonly shared: boolean } | undefined>;
+
+  /** A buyer's numbers in use, by rank, with the staff's notes (the caller panel's list). */
+  customerNumbers(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+  ): Promise<readonly CustomerNumberFact[]>;
+
+  /** Whether the buyer uses this number now (a Call to one of their numbers, D-834). */
+  customerUsesPhone(tx: Tx, orgId: string, customerId: string, phoneE164: string): Promise<boolean>;
 
   /**
    * Whether this thana is in this district (the reference data), and the brand's delivery zone
@@ -957,6 +991,30 @@ export interface CallerCustomerFacts {
   readonly pinnedNote: PinnedNoteFact | null;
 }
 
+/** M48 (D-875): one person a number names. */
+export interface BuyerCandidateFact {
+  readonly customerId: string;
+  readonly name: string;
+  readonly rank: number;
+  readonly kind: string;
+  readonly relation: string;
+  readonly note: string | null;
+  readonly lastOrderAt: Date | null;
+  readonly orders: number;
+  /** The automatic pick among them (D-876). */
+  readonly suggested: boolean;
+}
+
+/** M48 (D-870): one of a buyer's numbers in use. */
+export interface CustomerNumberFact {
+  readonly id: string;
+  readonly phoneE164: string;
+  readonly rank: number;
+  readonly kind: string;
+  readonly relation: string;
+  readonly note: string | null;
+}
+
 /** M47 (D-860): the note pinned on a buyer, with who wrote it and when. */
 export interface PinnedNoteFact {
   readonly body: string;
@@ -1225,7 +1283,60 @@ export class OrdersApiService implements OrdersApi {
   async customerOtherPhones(tx: Tx, orgId: string, customerId: string): Promise<readonly string[]> {
     const row = await repo.customerById(tx, orgId, customerId);
     if (row === undefined) return [];
-    return repo.otherShipPhonesOf(tx, orgId, customerId, row.phone_e164, CALLER_PANEL_OTHER_PHONES);
+    return repo.otherShipPhonesOf(tx, orgId, customerId, CALLER_PANEL_OTHER_PHONES);
+  }
+
+  async buyerCandidates(
+    tx: Tx,
+    orgId: string,
+    phoneE164: string,
+  ): Promise<readonly BuyerCandidateFact[]> {
+    const people = await peopleOnPhone(tx, orgId, phoneE164);
+    const suggested = people[0]?.customerId ?? null;
+    return people.map((person) => ({
+      customerId: person.customerId,
+      name: person.row.name,
+      rank: person.rank,
+      kind: person.row.kind,
+      relation: person.relation,
+      note: person.row.note,
+      lastOrderAt: person.lastOrderAt,
+      orders: person.row.orders_total,
+      suggested: person.customerId === suggested,
+    }));
+  }
+
+  pickBuyerByPhone(
+    tx: Tx,
+    orgId: string,
+    phoneE164: string,
+  ): Promise<{ readonly customerId: string; readonly shared: boolean } | undefined> {
+    return pickPersonByPhone(tx, orgId, phoneE164);
+  }
+
+  async customerNumbers(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+  ): Promise<readonly CustomerNumberFact[]> {
+    const rows = await numbers.activePhonesOf(tx, orgId, customerId);
+    return rows.map((row) => ({
+      id: row.id,
+      phoneE164: row.phone_e164,
+      rank: row.rank,
+      kind: row.kind,
+      relation: row.relation,
+      note: row.note,
+    }));
+  }
+
+  customerUsesPhone(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+    phoneE164: string,
+  ): Promise<boolean> {
+    return numbers.personUsesPhone(tx, orgId, customerId, phoneE164);
   }
 
   async setPinnedNote(
@@ -1359,7 +1470,7 @@ export class OrdersApiService implements OrdersApi {
     orgId: string,
     phones: readonly string[],
   ): Promise<ReadonlySet<string>> {
-    return new Set(await repo.existingBuyerPhones(tx, orgId, [...new Set(phones)]));
+    return new Set(await numbers.phonesInUse(tx, orgId, [...new Set(phones)]));
   }
 
   async importBuyers(
@@ -1370,9 +1481,28 @@ export class OrdersApiService implements OrdersApi {
     // In slices, so a brand's tens of thousands of buyers are a few hundred statements
     // rather than one statement over PostgreSQL's 65,535-parameter limit.
     const SLICE = 500;
+    // M48: no unique phone on the buyer row any more, so the refusal it gave is asked here.
+    const phones = buyers.map((buyer) => buyer.phoneE164);
+    if (new Set(phones).size !== phones.length) {
+      throw new OrdersError(
+        'CUSTOMER_PHONE_INVALID',
+        'The same phone is on two buyers in this batch.',
+      );
+    }
+    for (let start = 0; start < phones.length; start += SLICE) {
+      const taken = await numbers.phonesInUse(tx, actor.orgId, phones.slice(start, start + SLICE));
+      if (taken.length > 0) {
+        throw new OrdersError(
+          'CUSTOMER_PHONE_INVALID',
+          `${String(taken.length)} of these phones already belong to a buyer of this brand.`,
+        );
+      }
+    }
     for (let start = 0; start < buyers.length; start += SLICE) {
       await repo.insertImportedBuyers(tx, actor.orgId, buyers.slice(start, start + SLICE));
     }
+    // Each new buyer's phone becomes their rank-1 own number, from the import (D-870).
+    await numbers.insertImportedPhones(tx, actor.orgId);
     return buyers.length;
   }
 
@@ -1691,7 +1821,7 @@ export class OrdersApiService implements OrdersApi {
   }
 
   async buyerIdByPhone(tx: Tx, orgId: string, phoneE164: string): Promise<string | undefined> {
-    return repo.buyerIdByPhone(tx, orgId, phoneE164);
+    return (await pickPersonByPhone(tx, orgId, phoneE164))?.customerId;
   }
 
   async deliveryZoneForArea(

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
+import { onCustomerMerged } from '../../platform/events/customer-merged.js';
+import type { OutboxDispatcher } from '../../platform/events/dispatcher.js';
 import type { JobFailureReporter, JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
+import { moveCallsToCustomer } from './telephony.repository.js';
 import type { TelephonySyncService } from './sync.service.js';
 import { TELEPHONY_QUEUES } from './telephony.queues.js';
 import type { TelephonyWebhookService } from './webhook.service.js';
@@ -14,6 +17,8 @@ const syncPayload = z.object({ connectionId: z.string().uuid() }).strict();
 
 export interface TelephonyWorkerDependencies {
   readonly jobs: JobsRuntime;
+  /** M48 (D-885): calls follow a merged buyer. Absent where a test runs telephony without it. */
+  readonly dispatcher?: OutboxDispatcher;
   readonly webhooks: TelephonyWebhookService;
   readonly sync: TelephonySyncService;
   readonly report: JobFailureReporter;
@@ -21,6 +26,11 @@ export interface TelephonyWorkerDependencies {
 
 export async function registerTelephonyJobs(deps: TelephonyWorkerDependencies): Promise<void> {
   const { jobs, webhooks, sync, report } = deps;
+
+  deps.dispatcher?.on(
+    'customer.merged',
+    onCustomerMerged('system:customer-merge', moveCallsToCustomer),
+  );
 
   await jobs.work(
     TELEPHONY_QUEUES.processWebhook.name,

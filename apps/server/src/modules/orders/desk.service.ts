@@ -1,6 +1,7 @@
 import { HttpException, Injectable } from '@nestjs/common';
+import type { BuyerCandidateView } from '@elysium/contracts/customers';
 import { withOrg } from '@elysium/db';
-import { normalizeBdPhone } from '@elysium/domain';
+import { normalizeBdPhone, rankCandidates } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -8,6 +9,7 @@ import { scopeHasNoRowDimension, scopeWhere } from '../../platform/auth/scope.js
 import type { ActiveContext } from '../../platform/http/context.js';
 import { CustomersService } from './customers.service.js';
 import * as desk from './desk.repository.js';
+import { peopleOnPhone } from './numbers.helpers.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import { OrdersService, orderScopeSql } from './orders.service.js';
 import * as repo from './orders.repository.js';
@@ -111,7 +113,12 @@ export class DeskService {
    * used to learn which numbers another agent sells to. The order that follows still lands
    * on the right buyer: `create` finds them by phone either way.
    */
-  async lookup(context: ActiveContext, request: object, phone: string) {
+  async lookup(
+    context: ActiveContext,
+    request: object,
+    phone: string,
+    chosenId: string | undefined = undefined,
+  ) {
     return mapOrderErrors(async () => {
       const phoneE164 = normalizeBdPhone(phone);
       // Marked applied up front: an unknown number returns before any buyer is checked,
@@ -124,17 +131,44 @@ export class DeskService {
       const recentScope = orderScopeSql(context, request);
 
       return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const row = await repo.customerByPhone(tx, context.orgId, phoneE164);
-        if (row === undefined) return { phone: phoneE164, customer: null };
-
-        try {
-          await this.customers.assertReachable(tx, context, request, row.id);
-        } catch (error) {
-          if (error instanceof OrdersError && error.code === 'CUSTOMER_NOT_FOUND') {
-            return { phone: phoneE164, customer: null };
+        /*
+         * M48 (D-875): one number may be several people's. The desk lists every one of them the
+         * agent may open (the same reach rule, one by one), the automatic pick first, and shows
+         * the one asked for (`customerId`, the chooser's) or else the first.
+         */
+        const people = await peopleOnPhone(tx, context.orgId, phoneE164);
+        const reachable: typeof people = [];
+        for (const person of people) {
+          try {
+            await this.customers.assertReachable(tx, context, request, person.customerId);
+            reachable.push(person);
+          } catch (error) {
+            if (!(error instanceof OrdersError && error.code === 'CUSTOMER_NOT_FOUND')) throw error;
           }
-          throw error;
         }
+        const ranked = rankCandidates(reachable);
+        const shown =
+          ranked.find((person) => person.customerId === chosenId) ?? ranked[0] ?? undefined;
+        if (shown === undefined) return { phone: phoneE164, customer: null, candidates: [] };
+        const row = await repo.customerById(tx, context.orgId, shown.customerId);
+        if (row === undefined) return { phone: phoneE164, customer: null, candidates: [] };
+        const suggested = ranked[0]?.customerId ?? null;
+        const candidates: BuyerCandidateView[] = ranked.map((person) => ({
+          customerId: person.customerId,
+          name: person.row.name,
+          rank: person.rank,
+          kind: person.row.kind as BuyerCandidateView['kind'],
+          relation: person.relation,
+          note: person.row.note,
+          lastOrderAt:
+            person.row.last_order_at === null
+              ? null
+              : new Date(person.row.last_order_at).toISOString(),
+          orders: person.row.orders_total,
+          delivered: person.row.delivered_count,
+          returned: person.row.returned_count,
+          suggested: person.customerId === suggested,
+        }));
 
         const [addresses, recent] = await Promise.all([
           repo.listAddresses(tx, context.orgId, row.id),
@@ -169,6 +203,7 @@ export class DeskService {
               createdAt: new Date(order.created_at).toISOString(),
             })),
           },
+          candidates,
         };
       });
     });

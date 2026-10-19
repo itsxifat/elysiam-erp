@@ -37,6 +37,8 @@ import {
   type CallerPanelOrder,
   type CallerPanelTarget,
 } from './api.js';
+import { peopleKey, usePeopleT } from '../people/messages.js';
+import { openCallerPanel } from './caller-panel-store.js';
 import { ChannelMark } from './channel-mark.js';
 import { useTelT, type TelT } from './messages.js';
 import { RecordingPlayer } from './recording-player.js';
@@ -206,7 +208,7 @@ function FullPanel({
             )}
           </Block>
         </div>
-        <SideColumn answer={answer} />
+        <SideColumn answer={answer} target={target} />
       </div>
     </div>
   );
@@ -514,11 +516,20 @@ function Listen({ callId }: { readonly callId: string }) {
 
 // --- the side column ----------------------------------------------------------------------------
 
-function SideColumn({ answer }: { readonly answer: CallerPanelFull }) {
+function SideColumn({
+  answer,
+  target,
+}: {
+  readonly answer: CallerPanelFull;
+  readonly target: CallerPanelTarget;
+}) {
   const t = useTelT();
   const customer = answer.customer;
   return (
     <div className="min-w-0 space-y-5">
+      {/* M48 (D-887): a number several people use, each with how they use it. */}
+      <SharedNumber answer={answer} target={target} />
+      <PersonNumbers numbers={answer.numbers} />
       <Block title={t('tel.panel.contact.title')}>
         <dl className="space-y-2 text-sm">
           {answer.phone === null ? null : (
@@ -723,4 +734,92 @@ function Facts({
 /** A Bangladeshi mobile as people write it (01…); anything else as it came. */
 function localNumber(phone: string): string {
   return /^\+8801\d{9}$/.test(phone) ? `0${phone.slice(4)}` : phone;
+}
+
+// --- M48: the person's numbers, and the others on this number (D-870, D-887) --------------------
+
+function PersonNumbers({ numbers }: { readonly numbers: CallerPanelFull['numbers'] }) {
+  const t = usePeopleT();
+  if (numbers.length === 0) return null;
+  return (
+    <Block title={t('people.panel.numbers')}>
+      <ul className="space-y-2 text-sm">
+        {numbers.map((number) => {
+          const relation = peopleKey('relation', number.relation);
+          return (
+            <li key={number.id}>
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span className="tabular-nums">{localNumber(number.phone)}</span>
+                {number.rank === 1 ? (
+                  <StatusBadge tone="info">{t('people.numbers.primary')}</StatusBadge>
+                ) : null}
+                <span className="text-xs text-muted-foreground">
+                  {relation === null ? number.relation : t(relation)}
+                </span>
+                {number.needsDetails ? (
+                  <StatusBadge tone="warning">{t('people.numbers.needsDetails')}</StatusBadge>
+                ) : null}
+              </span>
+              {number.note === null ? null : (
+                <span className="block text-xs text-muted-foreground">{number.note}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Block>
+  );
+}
+
+function SharedNumber({
+  answer,
+  target,
+}: {
+  readonly answer: CallerPanelFull;
+  readonly target: CallerPanelTarget;
+}) {
+  const t = usePeopleT();
+  if (answer.sharedWith.length < 2) return null;
+  // The panel's own call or number, with the person to show beside it.
+  const base: { readonly callId: string } | { readonly phone: string } | null =
+    'callId' in target
+      ? { callId: target.callId }
+      : answer.phone === null
+        ? null
+        : { phone: answer.phone };
+  return (
+    <Block title={t('people.panel.sharedTitle', { count: answer.sharedWith.length })}>
+      <ul className="space-y-2 text-sm">
+        {answer.sharedWith.map((person) => {
+          const relation = peopleKey('relation', person.relation);
+          return (
+            <li key={person.customerId} className="space-y-0.5">
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span className="font-medium">{person.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {relation === null ? person.relation : t(relation)}
+                </span>
+              </span>
+              {person.note === null ? null : (
+                <span className="block text-xs text-muted-foreground">{person.note}</span>
+              )}
+              {person.current ? (
+                <span className="block text-xs text-muted-foreground">
+                  {t('people.panel.showing')}
+                </span>
+              ) : base === null ? null : (
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => openCallerPanel({ ...base, customerId: person.customerId })}
+                >
+                  {t('people.panel.switch', { name: person.name })}
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Block>
+  );
 }

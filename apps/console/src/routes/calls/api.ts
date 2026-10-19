@@ -238,7 +238,10 @@ export const lookupCaller = (phone: string) =>
 
 /** Whose caller panel: an incoming or placed call's number, a buyer, or a call in the log. */
 export type CallerPanelTarget =
-  { readonly phone: string } | { readonly customerId: string } | { readonly callId: string };
+  | { readonly phone: string; readonly customerId?: string }
+  | { readonly customerId: string }
+  // M48 (D-887): `customerId` beside a call or a phone shows another person on that number.
+  | { readonly callId: string; readonly customerId?: string };
 
 /**
  * The panel, as the server shapes it (`@elysium/contracts/telephony`, types only). A POST, so a

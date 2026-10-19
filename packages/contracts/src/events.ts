@@ -257,6 +257,14 @@ export const orderEditedPayload = z
   .strict();
 
 /**
+ * M48 (D-885): one buyer record was merged into another. Ids only. The modules that store a buyer
+ * (calls, inbox contacts, website accounts) move their rows to the kept record when they hear it.
+ */
+export const customerMergedPayload = z
+  .object({ keptId: uuid, mergedId: uuid, at: z.string() })
+  .strict();
+
+/**
  * §19: id, from, to, at.
  *
  * No amount at all, deliberately. This event drives live lists and dashboards for sales,
@@ -634,6 +642,9 @@ export const EVENTS = {
   }),
   'order.edited': defineEvent('order.edited', orderEditedPayload, {
     roles: ['sales', 'warehouse'],
+  }),
+  'customer.merged': defineEvent('customer.merged', customerMergedPayload, {
+    roles: ['org_admin', 'branch_manager'],
   }),
   'delivery.booking_failed': defineEvent('delivery.booking_failed', deliveryBookingFailedPayload, {
     roles: ['org_admin'],

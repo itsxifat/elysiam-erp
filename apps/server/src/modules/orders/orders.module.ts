@@ -43,6 +43,8 @@ import { PROMO_PORT } from './ports/promo.port.js';
 import { TeamModule } from '../team/team.module.js';
 import { OffersService } from './offers.service.js';
 import { OwnershipGate } from './ownership.gate.js';
+import { CustomerNumbersController, OrderBuyerController } from './numbers.controller.js';
+import { CustomerNumbersService } from './numbers.service.js';
 
 /**
  * Orders, customers, delivery zones and the state machine (architecture §9, §7).
@@ -111,6 +113,9 @@ import { OwnershipGate } from './ownership.gate.js';
     AdvancesController,
     // M41: offers, the workflow settings and the team board.
     WorkflowController,
+    // M48: a buyer's numbers, merges and an order's buyer (D-870 to D-889).
+    CustomerNumbersController,
+    OrderBuyerController,
   ],
   providers: [
     CustomersService,
@@ -149,6 +154,7 @@ import { OwnershipGate } from './ownership.gate.js';
     // M41: the owner's gate on every desk write, and auto-assign (D-710, D-717).
     OwnershipGate,
     OffersService,
+    CustomerNumbersService,
   ],
   exports: [
     ORDERS_API,

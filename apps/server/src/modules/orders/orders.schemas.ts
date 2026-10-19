@@ -1,5 +1,12 @@
 import { ORDER_CHANNELS } from '@elysium/contracts';
-import { ADVANCE_METHODS, ADVANCE_STATUSES, RETURN_REASON_CODES } from '@elysium/domain';
+import {
+  ADVANCE_METHODS,
+  ADVANCE_STATUSES,
+  BUYER_CHECKS,
+  PHONE_RELATIONS,
+  PLACED_FOR,
+  RETURN_REASON_CODES,
+} from '@elysium/domain';
 import { RFM_SEGMENTS } from '@elysium/domain/crm';
 import { z } from 'zod';
 
@@ -86,6 +93,14 @@ export const createCustomerSchema = z
     tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
     notes: z.string().trim().max(2000).optional(),
     address: addressSchema.optional(),
+    /**
+     * M48 (D-875): a new person on this number even though someone already uses it (a relative, a
+     * colleague on the shop's phone). Left out, the number names whoever the resolver picks.
+     */
+    newPerson: z.boolean().optional(),
+    /** Whose the number is from this person's side, and why they use it (D-871). */
+    phoneRelation: z.enum(PHONE_RELATIONS).optional(),
+    phoneNote: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
 
@@ -93,7 +108,7 @@ export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 
 export const updateCustomerSchema = createCustomerSchema
   .partial()
-  .omit({ phone: true })
+  .omit({ phone: true, newPerson: true, phoneRelation: true, phoneNote: true })
   .extend({
     /**
      * `null` removes a date; leaving the field out keeps it (M16). A birthday typed on the
@@ -141,8 +156,25 @@ export const createOrderSchema = z
     /** One of the two: an existing buyer, or enough to create one. */
     customerId: uuid.optional(),
     customer: createCustomerSchema.optional(),
-    /** Left out, the buyer's default address is snapshotted. */
-    shipTo: addressSchema.extend({ name: z.string().trim().min(1).max(200).optional() }).optional(),
+    /**
+     * Left out, the buyer's default address is snapshotted. M48 (D-878): `phone` is the
+     * recipient's, when the parcel goes to someone other than the buyer; left out, the buyer's.
+     */
+    shipTo: addressSchema
+      .extend({ name: z.string().trim().min(1).max(200).optional(), phone: phoneInput.optional() })
+      .optional(),
+    /**
+     * M48 (D-878): whom the order is for. `someone_else` needs the recipient's name and phone on
+     * `shipTo`; left out, it is `someone_else` when `shipTo.phone` is not the buyer's.
+     */
+    placedFor: z.enum(PLACED_FOR).optional(),
+    placedForNote: z.string().trim().min(1).max(500).optional(),
+    /** The recipient's own customer record, when the staff linked one (D-880). */
+    recipientCustomerId: uuid.optional(),
+    /** Make a customer record for the recipient, or link the one their number names (D-880). */
+    saveRecipient: z.boolean().optional(),
+    /** Put the recipient's number on the buyer too, as `someone_else` (D-881). */
+    addRecipientNumberToBuyer: z.boolean().optional(),
     branchId: uuid.optional(),
     locationId: uuid.optional(),
     deliveryZoneId: uuid.optional(),
@@ -178,9 +210,9 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
  *
  * Narrower than `createOrderSchema` on purpose, and the omissions are the design:
  *
- * * **No buyer.** Moving an order to a different customer would take its history with
- *   it, so a reassigned order silently rewrites two people's delivery history. A wrong buyer is
- *   fixed by cancelling and re-entering.
+ * * **No buyer.** Moving an order to a different customer moves its history with it, so it
+ *   is not an edit: a supervisor's `POST /v1/orders/:id/buyer` (M48, D-882), audited, with
+ *   both buyers' counts moved through the stats path.
  * * **No branch.** The branch is what `branch` scope is evaluated against, so a caller
  *   who could change it could move an order out of their own reach and into somebody
  *   else's — or, worse, take one from another branch by claiming it into theirs.
@@ -193,7 +225,9 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
  */
 export const updateOrderSchema = z
   .object({
-    shipTo: addressSchema.extend({ name: z.string().trim().min(1).max(200).optional() }).optional(),
+    shipTo: addressSchema
+      .extend({ name: z.string().trim().min(1).max(200).optional(), phone: phoneInput.optional() })
+      .optional(),
     locationId: uuid.optional(),
     deliveryZoneId: uuid.optional(),
     courierId: uuid.optional(),
@@ -248,6 +282,8 @@ export const orderQuerySchema = z
     /** M41: the hub's stock location. Narrows; never widens. */
     locationId: uuid.optional(),
     customerId: uuid.optional(),
+    /** M48 (D-876): only the orders whose buyer the desk should check. */
+    buyerCheck: z.enum(BUYER_CHECKS).optional(),
     q: z.string().trim().min(2).max(64).optional(),
     from: z.string().date().optional(),
     to: z.string().date().optional(),
@@ -288,8 +324,13 @@ export const duplicatesQuerySchema = z
 
 export type DuplicatesQuery = z.infer<typeof duplicatesQuerySchema>;
 
-/** `GET /v1/customers/lookup?phone=` — the desk's first keystrokes. */
-export const customerLookupSchema = z.object({ phone: phoneInput }).strict();
+/**
+ * `GET /v1/customers/lookup?phone=` — the desk's first keystrokes. M48 (D-875): `customerId`
+ * picks one of the people the number names, for the desk's chooser.
+ */
+export const customerLookupSchema = z
+  .object({ phone: phoneInput, customerId: uuid.optional() })
+  .strict();
 
 /**
  * Bulk confirm (M11 Build list). A hundred at a time, and each one on its own.

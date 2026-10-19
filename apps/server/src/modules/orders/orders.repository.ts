@@ -40,6 +40,8 @@ export interface CustomerRow extends Record<string, unknown> {
   readonly ltv_poisha: string;
   readonly first_order_at: string | null;
   readonly last_order_at: string | null;
+  /** M48 (D-884): the record this one was merged into, or null. */
+  readonly merged_into_customer_id: string | null;
 }
 
 /**
@@ -54,33 +56,13 @@ export interface CustomerRow extends Record<string, unknown> {
 
 const CUSTOMER_COLUMNS = sql`c.id, c.phone_e164, c.name, c.birthday, c.anniversary, c.gender,
   c.age_band, c.profession, c.tags, c.notes, c.orders_total, c.delivered_count,
-  c.returned_count, c.cancelled_count, c.ltv_poisha, c.first_order_at, c.last_order_at`;
+  c.returned_count, c.cancelled_count, c.ltv_poisha, c.first_order_at, c.last_order_at,
+  c.merged_into_customer_id`;
 
-export async function customerByPhone(
-  tx: Tx,
-  orgId: string,
-  phoneE164: string,
-): Promise<CustomerRow | undefined> {
-  const rows = await tx.execute<CustomerRow>(sql`
-    select ${CUSTOMER_COLUMNS} from sales.customers c
-    where c.org_id = ${orgId} and c.phone_e164 = ${phoneE164}
-  `);
-  return rows[0];
-}
-
-/** Of these phones, the ones already a buyer of this org (M14a's customers importer). */
-export async function existingBuyerPhones(
-  tx: Tx,
-  orgId: string,
-  phones: readonly string[],
-): Promise<string[]> {
-  if (phones.length === 0) return [];
-  const rows = await tx.execute<{ phone_e164: string }>(sql`
-    select phone_e164 from sales.customers
-    where org_id = ${orgId} and phone_e164 = any (${sql.param([...phones])}::text[])
-  `);
-  return rows.map((row) => row.phone_e164);
-}
+/*
+ * M48 (D-875): no single-answer phone lookup here any more. One number may be several people's;
+ * `numbers.repository.ts` lists them and `numbers.helpers.ts` holds the automatic pick.
+ */
 
 /** Buyers with their imported history, one statement per slice (M14a, D-218). */
 export async function insertImportedBuyers(
@@ -204,8 +186,15 @@ export async function listCustomers(
   const pattern = filters.q === undefined ? undefined : `%${filters.q}%`;
   const rows = await tx.execute<CustomerRow>(sql`
     select ${CUSTOMER_COLUMNS} from sales.customers c
-    where c.org_id = ${orgId}
-      and ${pattern === undefined ? sql`true` : sql`(c.phone_e164 ilike ${pattern} or c.name ilike ${pattern})`}
+    where c.org_id = ${orgId} and c.merged_into_customer_id is null
+      and ${
+        pattern === undefined
+          ? sql`true`
+          : sql`(c.name ilike ${pattern} or exists (
+              select 1 from sales.customer_phones p
+              where p.org_id = c.org_id and p.customer_id = c.id and p.retired_at is null
+                and p.phone_e164 ilike ${pattern}))`
+      }
     order by c.last_order_at desc nulls last, c.created_at desc
     limit ${filters.limit} offset ${filters.offset}
   `);
@@ -569,6 +558,11 @@ export interface OrderRow extends Record<string, unknown> {
   readonly last_call_at: string | null;
   readonly call_back_at: string | null;
   readonly slip_printed_at: string | null;
+  /** M48 (D-878, D-876): whom it was placed for, the recipient's record, the desk's check. */
+  readonly placed_for: string;
+  readonly recipient_customer_id: string | null;
+  readonly placed_for_note: string | null;
+  readonly buyer_check: string | null;
 }
 
 const ORDER_COLUMNS = sql`o.id, o.branch_id, o.order_no, o.channel::text as channel, o.source,
@@ -580,7 +574,8 @@ const ORDER_COLUMNS = sql`o.id, o.branch_id, o.order_no, o.channel::text as chan
   o.confirmed_at, o.packed_at, o.handed_over_at, o.delivered_at, o.returned_at,
   o.cancelled_at, o.cancel_reason, o.reseller_id, o.exchange_of_order_id, o.promo_code_id,
   o.stock_held_at, o.notes, o.created_at, o.assigned_at, o.call_attempts, o.last_call_outcome,
-  o.last_call_at, o.call_back_at, o.slip_printed_at`;
+  o.last_call_at, o.call_back_at, o.slip_printed_at, o.placed_for, o.recipient_customer_id,
+  o.placed_for_note, o.buyer_check`;
 
 export async function insertOrder(
   tx: Tx,
@@ -612,6 +607,11 @@ export async function insertOrder(
     readonly exchangeOfOrderId: string | null;
     /** Set when the caller reserves the stock in this transaction (M34, D-532). */
     readonly stockHeldAt?: Date | null;
+    /** M48 (D-878, D-880, D-876). */
+    readonly placedFor?: string;
+    readonly recipientCustomerId?: string | null;
+    readonly placedForNote?: string | null;
+    readonly buyerCheck?: string | null;
   },
 ): Promise<string> {
   const rows = await tx.execute<{ id: string }>(sql`
@@ -621,7 +621,7 @@ export async function insertOrder(
       delivery_zone_id, courier_id, location_id,
       items_poisha, discount_poisha, delivery_charge_poisha, advance_paid_poisha, cod_amount_poisha,
       promo_code_id, assigned_to, assigned_at, created_by, notes, exchange_of_order_id,
-      stock_held_at
+      stock_held_at, placed_for, recipient_customer_id, placed_for_note, buyer_check
     ) values (
       ${input.orgId}, ${input.branchId}::uuid, ${input.orderNo},
       ${input.channel}::sales.order_channel, ${JSON.stringify(input.source)}::jsonb,
@@ -635,7 +635,9 @@ export async function insertOrder(
       ${input.promoCodeId}::uuid, ${input.assignedTo},
       case when ${input.assignedTo}::text is null then null else now() end,
       ${input.createdBy}, ${input.notes},
-      ${input.exchangeOfOrderId}::uuid, ${input.stockHeldAt?.toISOString() ?? null}::timestamptz
+      ${input.exchangeOfOrderId}::uuid, ${input.stockHeldAt?.toISOString() ?? null}::timestamptz,
+      ${input.placedFor ?? 'self'}, ${input.recipientCustomerId ?? null}::uuid,
+      ${input.placedForNote ?? null}, ${input.buyerCheck ?? null}
     )
     returning id
   `);
@@ -830,6 +832,8 @@ export async function listOrders(
     readonly queue?: SQL | undefined;
     /** M41: the queue's order; newest first when absent. */
     readonly orderBy?: SQL | undefined;
+    /** M48 (D-876): only the orders whose buyer the desk should check. */
+    readonly buyerCheck?: string | undefined;
   },
 ): Promise<ListedOrderRow[]> {
   const pattern = filters.q === undefined ? undefined : `%${filters.q}%`;
@@ -855,6 +859,7 @@ export async function listOrders(
             : sql`o.location_id = ${filters.locationId}::uuid`
       }
       and ${filters.queue ?? sql`true`}
+      and ${filters.buyerCheck === undefined ? sql`true` : sql`o.buyer_check = ${filters.buyerCheck}`}
       and ${
         pattern === undefined
           ? sql`true`
@@ -1724,18 +1729,6 @@ export async function standingOrderCount(
 
 // --- M34: the website's questions (through `OrdersApi`) --------------------------------------
 
-/** The buyer this E.164 phone names in the brand, or undefined. */
-export async function buyerIdByPhone(
-  tx: Tx,
-  orgId: string,
-  phoneE164: string,
-): Promise<string | undefined> {
-  const rows = await tx.execute<{ id: string }>(sql`
-    select id from sales.customers where org_id = ${orgId} and phone_e164 = ${phoneE164}
-  `);
-  return rows[0]?.id;
-}
-
 /** Order headers by id, for the website's order list and view: selling-side money only. */
 export interface ShopperOrderRow extends Record<string, unknown> {
   readonly id: string;
@@ -2139,19 +2132,25 @@ export async function namedAddressesOf(
   return [...rows];
 }
 
-/** The distinct recipient phones on a buyer's orders other than `ownPhone`, newest first. */
+/**
+ * The distinct recipient phones on a buyer's orders that are none of their own numbers in use
+ * (M48: the numbers are listed on their own), newest first.
+ */
 export async function otherShipPhonesOf(
   tx: Tx,
   orgId: string,
   customerId: string,
-  ownPhone: string,
   limit: number,
 ): Promise<string[]> {
   const rows = await tx.execute<{ phone: string }>(sql`
     select o.ship_phone_e164 as phone
     from sales.orders o
     where o.org_id = ${orgId} and o.customer_id = ${customerId}
-      and o.ship_phone_e164 <> ${ownPhone}
+      and not exists (
+        select 1 from sales.customer_phones p
+        where p.org_id = o.org_id and p.customer_id = o.customer_id
+          and p.phone_e164 = o.ship_phone_e164 and p.retired_at is null
+      )
     group by o.ship_phone_e164
     order by max(o.created_at) desc
     limit ${limit}

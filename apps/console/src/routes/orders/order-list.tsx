@@ -13,6 +13,7 @@ import {
   dataTableColumns,
   type ActiveFilter,
   type DataTableColumn,
+  StatusBadge,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -47,6 +48,7 @@ import {
 import { LabelSheetDialog } from './label-sheet.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { LiveIndicator, OrdersNav, OrderStatusBadge, useOrderEvents } from './parts.js';
+import { usePeopleT } from '../people/messages.js';
 import { ordersPath, useSchemaSearch } from './paths.js';
 import { mergeOrderSearch, orderListSearchSchema } from './search.js';
 import { DateRangePicker } from '../../ui/date-picker.js';
@@ -81,6 +83,7 @@ export function OrderListPage() {
 function OrderList() {
   const t = useOrdersT();
   const common = useT();
+  const tPeople = usePeopleT();
   const { locale } = useLocale();
   const ability = useAbility();
   const queryClient = useQueryClient();
@@ -114,6 +117,7 @@ function OrderList() {
         q: search.q,
         from: search.from,
         to: search.to,
+        buyerCheck: search.check,
         limit: search.pageSize,
         offset: (search.page - 1) * search.pageSize,
       }),
@@ -221,7 +225,13 @@ function OrderList() {
         header: t('orders.col.customer'),
         cell: (cell) => (
           <span className="block leading-tight">
-            <span className="block">{cell.getValue()}</span>
+            <span className="flex flex-wrap items-center gap-1.5">
+              {cell.getValue()}
+              {/* M48 (D-876): an automatic pick on a shared number, for the desk to check. */}
+              {cell.row.original.buyerCheck === 'shared_number' ? (
+                <StatusBadge tone="warning">{tPeople('people.flag.shared')}</StatusBadge>
+              ) : null}
+            </span>
             <span className="block text-xs text-muted-foreground tabular-nums">
               {cell.row.original.shipTo.phone}
             </span>
@@ -281,7 +291,7 @@ function OrderList() {
     ]);
     // `selected` and `allChosen` change the checkbox cells; the rest is stable per locale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, locale, selected, allChosen, agentName, zoneName, rows]);
+  }, [t, tPeople, locale, selected, allChosen, agentName, zoneName, rows]);
 
   const mayConfirm = ability.can('update', 'Order');
 
@@ -551,6 +561,20 @@ function OrderList() {
                   )
                 }
               />
+              <Button
+                variant={search.check === undefined ? 'outline' : 'secondary'}
+                size="sm"
+                aria-pressed={search.check !== undefined}
+                onClick={() =>
+                  setSearch(
+                    mergeOrderSearch(search, {
+                      check: search.check === undefined ? 'shared_number' : undefined,
+                    }),
+                  )
+                }
+              >
+                {tPeople('people.flag.filter')}
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"

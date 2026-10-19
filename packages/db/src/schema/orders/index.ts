@@ -285,12 +285,36 @@ export const customers = sales.table(
       .default(sql`0`),
     firstOrderAt: timestamp('first_order_at', { withTimezone: true, mode: 'date' }),
     lastOrderAt: timestamp('last_order_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * M48 (D-884): this record was the same person as another and was merged into it. Kept,
+     * never deleted, so whatever still names it can follow the link; no lookup or list shows it.
+     */
+    mergedIntoCustomerId: uuid('merged_into_customer_id'),
+    mergedAt: timestamp('merged_at', { withTimezone: true, mode: 'date' }),
+    mergedByUserId: text('merged_by_user_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
     ...timestamps,
   },
   (table) => [
     unique('customers_org_id_id_key').on(table.orgId, table.id),
     index('customers_org_idx').on(table.orgId),
-    uniqueIndex('customers_org_phone_idx').on(table.orgId, table.phoneE164),
+    /*
+     * Not unique since M48 (D-874): one number may be several people's (a home phone, a shop's).
+     * `phone_e164` is the primary number's copy; every number a person has, and who else shares
+     * it, is `customer_phones`.
+     */
+    index('customers_org_phone_idx').on(table.orgId, table.phoneE164),
+    foreignKey({
+      name: 'customers_org_id_merged_into_fk',
+      columns: [table.orgId, table.mergedIntoCustomerId],
+      foreignColumns: [table.orgId, table.id],
+    }).onDelete('restrict'),
+    check(
+      'customers_merged_whole',
+      sql`(${table.mergedIntoCustomerId} is null) = (${table.mergedAt} is null)
+          and ${table.mergedIntoCustomerId} is distinct from ${table.id}`,
+    ),
     index('customers_org_last_order_idx').on(table.orgId, table.lastOrderAt),
     /*
      * The E.164 shape, in the database.
@@ -361,6 +385,105 @@ export const customerAddresses = sales.table(
       foreignColumns: [customers.orgId, customers.id],
     }).onDelete('restrict'),
     check('customer_addresses_line_length', sql`length(${table.addressLine}) between 3 and 500`),
+  ],
+);
+
+/**
+ * A buyer's numbers (M48, D-870 to D-873).
+ *
+ * A person may use several numbers, ranked (1 is their primary, then secondary, tertiary and so
+ * on), each with what kind of line it is, whose it is from this person's side and the staff's note
+ * on why and when they use it. One number may sit on several people (a home phone, relatives, a
+ * shop), each link with its own relation and note: the uniqueness is per person, among the
+ * numbers still in use. A retired number stops naming the person but stays in their history.
+ *
+ * `customers.phone_e164` is the primary's copy, kept in step in the same transaction.
+ */
+export const customerPhones = sales.table(
+  'customer_phones',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    customerId: uuid('customer_id').notNull(),
+    /** E.164, as `customers.phone_e164`. Masked in logs and audit rows (invariant 10). */
+    phoneE164: text('phone_e164').notNull(),
+    rank: integer('rank').notNull(),
+    kind: text('kind').notNull().default('mobile'),
+    relation: text('relation').notNull().default('own'),
+    /** The staff's details: why and when this person uses the number. Null is "needs details". */
+    note: text('note'),
+    source: text('source').notNull(),
+    addedByUserId: text('added_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+    addedAt: timestamp('added_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    retiredAt: timestamp('retired_at', { withTimezone: true, mode: 'date' }),
+    retiredByUserId: text('retired_by_user_id').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    retireReason: text('retire_reason'),
+    retireNote: text('retire_note'),
+    ...timestamps,
+  },
+  (table) => [
+    unique('customer_phones_org_id_id_key').on(table.orgId, table.id),
+    index('customer_phones_org_idx').on(table.orgId),
+    index('customer_phones_org_customer_idx').on(table.orgId, table.customerId),
+    // The resolver's question: who uses this number now.
+    index('customer_phones_org_phone_idx')
+      .on(table.orgId, table.phoneE164)
+      .where(sql`${table.retiredAt} is null`),
+    uniqueIndex('customer_phones_org_customer_phone_idx')
+      .on(table.orgId, table.customerId, table.phoneE164)
+      .where(sql`${table.retiredAt} is null`),
+    // One primary per person among the numbers in use.
+    uniqueIndex('customer_phones_org_primary_idx')
+      .on(table.orgId, table.customerId)
+      .where(sql`${table.rank} = 1 and ${table.retiredAt} is null`),
+    foreignKey({
+      name: 'customer_phones_org_id_customer_id_fk',
+      columns: [table.orgId, table.customerId],
+      foreignColumns: [customers.orgId, customers.id],
+    }).onDelete('restrict'),
+    check('customer_phones_phone_e164', sql`${table.phoneE164} ~ '^\\+8801[13456789][0-9]{8}$'`),
+    check('customer_phones_rank', sql`${table.rank} >= 1`),
+    check(
+      'customer_phones_kind',
+      sql`${table.kind} in ('mobile', 'whatsapp', 'home', 'office', 'shop', 'other')`,
+    ),
+    check(
+      'customer_phones_relation',
+      sql`${table.relation} in ('own', 'household', 'relative', 'work', 'someone_else', 'other')`,
+    ),
+    check(
+      'customer_phones_source',
+      sql`${table.source} in ('staff', 'order', 'website', 'inbox', 'call', 'import')`,
+    ),
+    check(
+      'customer_phones_note',
+      sql`${table.note} is null
+          or (char_length(${table.note}) <= 500 and char_length(btrim(${table.note})) >= 1)`,
+    ),
+    // Staff adding a number write why (D-871).
+    check(
+      'customer_phones_staff_note',
+      sql`${table.source} <> 'staff' or ${table.note} is not null`,
+    ),
+    check(
+      'customer_phones_retired_whole',
+      sql`(${table.retiredAt} is null) = (${table.retireReason} is null)
+          and (${table.retiredAt} is not null
+               or (${table.retiredByUserId} is null and ${table.retireNote} is null))`,
+    ),
+    check(
+      'customer_phones_retire_reason',
+      sql`${table.retireReason} is null
+          or ${table.retireReason} in ('changed_number', 'wrong_number', 'not_theirs', 'other')`,
+    ),
+    check(
+      'customer_phones_retire_note',
+      sql`${table.retireNote} is null or char_length(${table.retireNote}) <= 500`,
+    ),
   ],
 );
 
@@ -506,6 +629,21 @@ export const orders = sales.table(
     /** The order this one replaces (§9's `delivered → exchange`). */
     exchangeOfOrderId: uuid('exchange_of_order_id'),
     notes: text('notes'),
+    /**
+     * M48 (D-878): whom the order was placed for. The buyer (`customer_id`) is who ordered and
+     * whom the brand deals with; the recipient is the `ship_*` snapshot on the parcel, and, when
+     * the staff linked or created one, their own customer record.
+     */
+    placedFor: text('placed_for').notNull().default('self'),
+    recipientCustomerId: uuid('recipient_customer_id'),
+    /** The staff's note on it: "son ordering for his mother". */
+    placedForNote: text('placed_for_note'),
+    /**
+     * M48 (D-876): the desk should check the buyer, because an automatic path had to choose one
+     * of several people on a shared number. Not a status: cleared when the buyer is confirmed
+     * or changed.
+     */
+    buyerCheck: text('buyer_check'),
     ...timestamps,
   },
   (table) => [
@@ -564,6 +702,24 @@ export const orders = sales.table(
       columns: [table.orgId, table.exchangeOfOrderId],
       foreignColumns: [table.orgId, table.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'orders_org_id_recipient_customer_id_fk',
+      columns: [table.orgId, table.recipientCustomerId],
+      foreignColumns: [customers.orgId, customers.id],
+    }).onDelete('restrict'),
+    // M48: the desk's "check the buyer" filter.
+    index('orders_org_buyer_check_idx')
+      .on(table.orgId, table.createdAt)
+      .where(sql`${table.buyerCheck} is not null`),
+    check('orders_placed_for', sql`${table.placedFor} in ('self', 'someone_else')`),
+    check(
+      'orders_placed_for_note',
+      sql`${table.placedForNote} is null or char_length(${table.placedForNote}) <= 500`,
+    ),
+    check(
+      'orders_buyer_check',
+      sql`${table.buyerCheck} is null or ${table.buyerCheck} in ('shared_number')`,
+    ),
     check('orders_no_format', sql`${table.orderNo} ~ '^[A-Z][A-Z0-9]{1,5}-[0-9]{4}-[0-9]{5,}$'`),
     check('orders_ship_phone_e164', sql`${table.shipPhoneE164} ~ '^\\+8801[13456789][0-9]{8}$'`),
     check(

@@ -1,3 +1,5 @@
+import type { BuyerCandidateView } from '@elysium/contracts/customers';
+
 import { api } from '../../api.js';
 import { env } from '../../env.js';
 import { ackHeaders } from './owner-ack.js';
@@ -98,6 +100,11 @@ export interface OrderRow {
     readonly callBackAt: string | null;
   };
   readonly hubStage?: 'to_print' | 'packing' | 'packed' | 'handed_over' | null;
+  /** M48 (D-878, D-880, D-876): whom it was placed for, and the desk's buyer check. */
+  readonly placedFor?: 'self' | 'someone_else';
+  readonly placedForNote?: string | null;
+  readonly recipientCustomerId?: string | null;
+  readonly buyerCheck?: 'shared_number' | null;
 }
 
 export interface OrderLine {
@@ -176,6 +183,8 @@ export interface OrderListQuery {
   readonly q?: string | undefined;
   readonly from?: string | undefined;
   readonly to?: string | undefined;
+  /** M48 (D-876): only the orders whose buyer the desk should check. */
+  readonly buyerCheck?: 'shared_number' | undefined;
   readonly limit: number;
   readonly offset: number;
 }
@@ -197,12 +206,25 @@ export const getOrder = (id: string) => api.get<OrderDetail>(`/v1/orders/${id}`)
 
 export interface CreateOrderBody {
   readonly channel: OrderChannel;
-  readonly customer: {
+  /** M48 (D-875): a person the desk chose on a shared number, in place of `customer`. */
+  readonly customerId?: string;
+  readonly customer?: {
     readonly phone: string;
     readonly name: string;
+    /** A new person on a number someone already uses, with whose it is for them. */
+    readonly newPerson?: true;
+    readonly phoneRelation?: string;
+    readonly phoneNote?: string;
   };
+  /** M48 (D-878 to D-881): an order placed for someone else. */
+  readonly placedFor?: 'self' | 'someone_else';
+  readonly placedForNote?: string;
+  readonly saveRecipient?: true;
+  readonly addRecipientNumberToBuyer?: true;
   readonly shipTo: {
     readonly name: string;
+    /** The recipient's phone, when the parcel is someone else's. */
+    readonly phone?: string;
     readonly districtId: number;
     readonly thanaId: number;
     readonly area?: string;
@@ -373,10 +395,13 @@ export interface LookedUpCustomer {
     readonly createdAt: string;
   }[];
 }
-export const lookupCustomer = (phone: string) =>
-  api.get<{ phone: string; customer: LookedUpCustomer | null }>(
-    `/v1/customers/lookup${query({ phone })}`,
-  );
+export const lookupCustomer = (phone: string, customerId?: string) =>
+  api.get<{
+    phone: string;
+    customer: LookedUpCustomer | null;
+    /** M48 (D-875): everyone the number names that the caller may open, the suggested first. */
+    candidates?: readonly BuyerCandidateView[];
+  }>(`/v1/customers/lookup${query({ phone, customerId })}`);
 
 export interface Area {
   readonly thanaId: number;

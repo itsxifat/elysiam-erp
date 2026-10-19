@@ -724,6 +724,15 @@ export const ERROR_CODES = [
   'TELEPHONY_WRAP_UP_INVALID',
   /** This installation has no credentials key, so an Envo key or secret cannot be kept. */
   'TELEPHONY_CREDENTIALS_MISSING',
+  // M48: a buyer's numbers and the people one number names (D-870 to D-889)
+  /** That person has no such number. */
+  'CUSTOMER_PHONE_NOT_FOUND',
+  /** The number cannot be added or changed as asked (no note, already theirs, their last one). */
+  'CUSTOMER_PHONE_INVALID',
+  /** Those two records cannot be merged (the same record, or one already merged). */
+  'CUSTOMER_MERGE_INVALID',
+  /** Changing an order's buyer and merging buyers are a supervisor's (D-886). */
+  'CUSTOMER_SUPERVISOR_ONLY',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

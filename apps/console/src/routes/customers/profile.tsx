@@ -25,6 +25,7 @@ import { isCustomersKey, useCustomersT } from './messages.js';
 import { DatePicker } from '../../ui/date-picker.js';
 import { listAccounts } from '../website/api.js';
 import { CallButton } from '../calls/call-button.js';
+import { NumbersCard } from '../people/numbers-card.js';
 
 /** A birthday or an anniversary can be decades back: the calendar lists the years. */
 const OCCASION_YEARS = { from: 1930, to: new Date().getUTCFullYear() } as const;
@@ -172,6 +173,9 @@ function ProfileBody({ profile }: { readonly profile: BuyerProfile }) {
           <Tile label={t('customers.profile.cancelled')}>{stats.cancelled}</Tile>
         </dl>
       </section>
+
+      {/* M48 (D-870): every number the buyer uses, with the staff's details; Merge with… */}
+      <NumbersCard customerId={customer.id} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel title={t('customers.profile.favourites')}>

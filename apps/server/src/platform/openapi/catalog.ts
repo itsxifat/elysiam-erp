@@ -52,6 +52,13 @@ import {
   telephonyConnectionCreateSchema,
   telephonyConnectionUpdateSchema,
 } from '@elysium/contracts/telephony';
+import {
+  customerMergeSchema,
+  customerPhoneAddSchema,
+  customerPhoneRetireSchema,
+  customerPhoneUpdateSchema,
+  orderBuyerChangeSchema,
+} from '@elysium/contracts/customers';
 import { z } from 'zod';
 
 /**
@@ -631,6 +638,39 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     operationId: 'pinCustomerNote',
     summary: "Pin a note on top of a buyer's caller panel, or clear it with an empty body.",
     body: named('CustomerPinnedNote', customerPinnedNoteSchema, 'CustomerPinnedNoteInput'),
+  },
+  // M48 (D-870 to D-886): a buyer's numbers, merges and an order's buyer.
+  'POST /v1/customers/:id/phones': {
+    operationId: 'addCustomerPhone',
+    summary: "Add a number to a buyer, with the staff's note on why and when they use it.",
+    body: named('CustomerPhoneAdd', customerPhoneAddSchema, 'CustomerPhoneAddInput'),
+  },
+  'PATCH /v1/customers/:id/phones/:phoneId': {
+    operationId: 'updateCustomerPhone',
+    summary: "Change a buyer's number: its kind, relation, note, or its rank (1 makes it primary).",
+    body: named('CustomerPhoneUpdate', customerPhoneUpdateSchema, 'CustomerPhoneUpdateInput'),
+  },
+  'POST /v1/customers/:id/phones/:phoneId/retire': {
+    operationId: 'retireCustomerPhone',
+    summary:
+      'Retire a number (changed or recycled SIM, wrong number): it stops matching, stays in history.',
+    body: named('CustomerPhoneRetire', customerPhoneRetireSchema, 'CustomerPhoneRetireInput'),
+  },
+  'POST /v1/customers/:id/merge': {
+    operationId: 'mergeCustomer',
+    summary:
+      'Merge another record of the same person into this buyer (supervisors): numbers, addresses, orders and notes move.',
+    body: named('CustomerMerge', customerMergeSchema, 'CustomerMergeInput'),
+  },
+  'POST /v1/orders/:id/buyer': {
+    operationId: 'changeOrderBuyer',
+    summary:
+      "Put an order on the right buyer (supervisors); the order's own buyer confirms them and clears the shared-number check.",
+    body: named('OrderBuyerChange', orderBuyerChangeSchema, 'OrderBuyerChangeInput'),
+  },
+  'POST /v1/orders/:id/buyer-checked': {
+    operationId: 'orderBuyerChecked',
+    summary: 'The buyer is right: clear an order\'s "check the buyer: shared number".',
   },
   'POST /v1/telephony/calls/search': {
     operationId: 'searchPhoneCalls',

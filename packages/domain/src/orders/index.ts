@@ -22,3 +22,5 @@ export * from './returns.js';
 export * from './discount-ceiling.js';
 // M41: who handles an order, its verification calls and its stage at the hub (D-710 to D-719).
 export * from './ownership.js';
+// M48: a buyer's numbers, the people one number names, and orders for someone else (D-870 to D-889).
+export * from './buyers.js';

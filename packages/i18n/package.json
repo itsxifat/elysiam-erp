@@ -76,6 +76,10 @@
     "./locales/sections/telephony.en": {
       "types": "./dist/locales/sections/telephony.en.d.ts",
       "default": "./dist/locales/sections/telephony.en.js"
+    },
+    "./locales/sections/people.en": {
+      "types": "./dist/locales/sections/people.en.d.ts",
+      "default": "./dist/locales/sections/people.en.js"
     }
   },
   "files": [

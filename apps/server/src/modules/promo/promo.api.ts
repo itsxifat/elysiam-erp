@@ -131,6 +131,17 @@ export interface PromoApi {
   ): Promise<{ readonly codeId: string; readonly code: string }>;
 
   /**
+   * M48 (D-885): a merged buyer's personal codes become the kept record's, in the caller's
+   * transaction. Redemptions are history and stay where they were recorded. The codes moved.
+   */
+  moveCustomerCodes(
+    tx: Tx,
+    orgId: string,
+    fromCustomerId: string,
+    toCustomerId: string,
+  ): Promise<number>;
+
+  /**
    * The campaign each of these codes was made for, when it was made for one (M18).
    *
    * §11's first attribution rule is "a campaign set explicitly on the order", and a code
@@ -376,6 +387,15 @@ export class PromoApiService implements PromoApi {
 
   async releaseForOrder(tx: Tx, orgId: string, orderId: string): Promise<boolean> {
     return this.promo.releaseForOrder(tx, orgId, orderId);
+  }
+
+  moveCustomerCodes(
+    tx: Tx,
+    orgId: string,
+    fromCustomerId: string,
+    toCustomerId: string,
+  ): Promise<number> {
+    return repo.moveCustomerCodes(tx, orgId, fromCustomerId, toCustomerId);
   }
 
   async campaignsOfCodes(

@@ -12,6 +12,10 @@
     "./telephony": {
       "types": "./dist/telephony.d.ts",
       "default": "./dist/telephony.js"
+    },
+    "./customers": {
+      "types": "./dist/customers.d.ts",
+      "default": "./dist/customers.js"
     }
   },
   "files": [

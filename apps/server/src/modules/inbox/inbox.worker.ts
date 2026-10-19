@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
+import { onCustomerMerged } from '../../platform/events/customer-merged.js';
 import type { OutboxDispatcher } from '../../platform/events/dispatcher.js';
 import type { JobFailureReporter, JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import type { ConversationOffersService } from './conversation-offers.service.js';
+import { moveContactsToCustomer } from './inbox.repository.js';
 import { INBOX_QUEUES } from './inbox.queues.js';
 import type { InboxOrderListener } from './order-listener.service.js';
 import type { InboxProfileService } from './profile.service.js';
@@ -39,6 +41,11 @@ export async function registerInboxJobs(deps: InboxWorkerDependencies): Promise<
 
   // An order placed for a contact makes them a Customer (D-738).
   dispatcher.on('order.created', (event) => orders.onOrderCreated(event));
+  // M48 (D-885): contacts follow a merged buyer.
+  dispatcher.on(
+    'customer.merged',
+    onCustomerMerged('system:customer-merge', moveContactsToCustomer),
+  );
 
   await jobs.work(
     INBOX_QUEUES.processWebhook.name,

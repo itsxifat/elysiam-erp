@@ -26,6 +26,8 @@ export async function buyersWithOccasions(tx: Tx, orgId: string): Promise<Occasi
     select id, name, phone_e164, birthday::text as birthday, anniversary::text as anniversary
     from sales.customers
     where org_id = ${orgId} and (birthday is not null or anniversary is not null)
+      -- M48 (D-884): a merged record's occasions are the kept record's now.
+      and merged_into_customer_id is null
   `);
   return [...rows];
 }
@@ -104,7 +106,7 @@ export async function buyerActivity(tx: Tx, orgId: string): Promise<ActivityRow[
            c.delivered_count,
            c.ltv_poisha::text as ltv_poisha
     from sales.customers c
-    where c.org_id = ${orgId}
+    where c.org_id = ${orgId} and c.merged_into_customer_id is null
   `);
   return [...rows];
 }

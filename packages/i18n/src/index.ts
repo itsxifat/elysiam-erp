@@ -45,6 +45,7 @@ import { en as voiceEn, type VoiceKey } from './locales/sections/voice.en.js';
 import { en as labelsEn, type LabelsKey } from './locales/sections/labels.en.js';
 import { en as posEn, type PosKey } from './locales/sections/pos.en.js';
 import { en as telephonyEn, type TelephonyKey } from './locales/sections/telephony.en.js';
+import { en as peopleEn, type PeopleKey } from './locales/sections/people.en.js';
 
 export { DEFAULT_LOCALE, LOCALES, isLocale, type Locale } from './locale.js';
 
@@ -89,13 +90,15 @@ export type MessageKey =
   | VoiceKey
   | LabelsKey
   | PosKey
-  | TelephonyKey;
+  | TelephonyKey
+  | PeopleKey;
 export type {
   AccountKey,
   AliveKey,
   InboxKey,
   LabelsKey,
   PosKey,
+  PeopleKey,
   TelephonyKey,
   InboxSellKey,
   WorkflowKey,
@@ -140,6 +143,7 @@ export const messages: Record<Locale, Record<MessageKey, string>> = {
     ...labelsEn,
     ...posEn,
     ...telephonyEn,
+    ...peopleEn,
   },
 };
 

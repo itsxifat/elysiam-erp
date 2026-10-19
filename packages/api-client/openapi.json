@@ -441,6 +441,90 @@
         },
         "required": ["reason"]
       },
+      "CustomerMerge": {
+        "type": "object",
+        "properties": {
+          "otherCustomerId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        },
+        "required": ["otherCustomerId", "reason"],
+        "additionalProperties": false
+      },
+      "CustomerPhoneAdd": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 32
+          },
+          "kind": {
+            "default": "mobile",
+            "type": "string",
+            "enum": ["mobile", "whatsapp", "home", "office", "shop", "other"]
+          },
+          "relation": {
+            "default": "own",
+            "type": "string",
+            "enum": ["own", "household", "relative", "work", "someone_else", "other"]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": ["phone", "note"],
+        "additionalProperties": false
+      },
+      "CustomerPhoneRetire": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": ["changed_number", "wrong_number", "not_theirs", "other"]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": ["reason"],
+        "additionalProperties": false
+      },
+      "CustomerPhoneUpdate": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["mobile", "whatsapp", "home", "office", "shop", "other"]
+          },
+          "relation": {
+            "type": "string",
+            "enum": ["own", "household", "relative", "work", "someone_else", "other"]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
       "CustomerPinnedNote": {
         "type": "object",
         "properties": {
@@ -662,6 +746,23 @@
           }
         },
         "required": ["ids"],
+        "additionalProperties": false
+      },
+      "OrderBuyerChange": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        },
+        "required": ["customerId", "reason"],
         "additionalProperties": false
       },
       "PackingCameraCreate": {
@@ -1219,7 +1320,11 @@
               "TELEPHONY_NUMBER_INVALID",
               "TELEPHONY_RECORDING_UNAVAILABLE",
               "TELEPHONY_WRAP_UP_INVALID",
-              "TELEPHONY_CREDENTIALS_MISSING"
+              "TELEPHONY_CREDENTIALS_MISSING",
+              "CUSTOMER_PHONE_NOT_FOUND",
+              "CUSTOMER_PHONE_INVALID",
+              "CUSTOMER_MERGE_INVALID",
+              "CUSTOMER_SUPERVISOR_ONLY"
             ]
           },
           "detail": {
@@ -15415,6 +15520,470 @@
         ],
         "responses": {
           "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customers/{id}/merge": {
+      "post": {
+        "operationId": "mergeCustomer",
+        "summary": "Merge another record of the same person into this buyer (supervisors): numbers, addresses, orders and notes move.",
+        "tags": ["customers"],
+        "x-ability": "update:Customer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerMerge"
+              }
+            }
+          },
+          "x-body-type": "CustomerMergeInput"
+        },
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customers/{id}/phones": {
+      "post": {
+        "operationId": "addCustomerPhone",
+        "summary": "Add a number to a buyer, with the staff's note on why and when they use it.",
+        "tags": ["customers"],
+        "x-ability": "update:Customer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerPhoneAdd"
+              }
+            }
+          },
+          "x-body-type": "CustomerPhoneAddInput"
+        },
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customers/{id}/phones/{phoneId}": {
+      "patch": {
+        "operationId": "updateCustomerPhone",
+        "summary": "Change a buyer's number: its kind, relation, note, or its rank (1 makes it primary).",
+        "tags": ["customers"],
+        "x-ability": "update:Customer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "phoneId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerPhoneUpdate"
+              }
+            }
+          },
+          "x-body-type": "CustomerPhoneUpdateInput"
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customers/{id}/phones/{phoneId}/retire": {
+      "post": {
+        "operationId": "retireCustomerPhone",
+        "summary": "Retire a number (changed or recycled SIM, wrong number): it stops matching, stays in history.",
+        "tags": ["customers"],
+        "x-ability": "update:Customer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "phoneId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerPhoneRetire"
+              }
+            }
+          },
+          "x-body-type": "CustomerPhoneRetireInput"
+        },
+        "responses": {
+          "201": {
             "description": "Success.",
             "content": {
               "application/json": {
@@ -36801,6 +37370,219 @@
       "post": {
         "operationId": "postV1OrdersByIdAssign",
         "summary": "POST /v1/orders/:id/assign",
+        "tags": ["orders"],
+        "x-ability": "update:Order",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orders/{id}/buyer": {
+      "post": {
+        "operationId": "changeOrderBuyer",
+        "summary": "Put an order on the right buyer (supervisors); the order's own buyer confirms them and clears the shared-number check.",
+        "tags": ["orders"],
+        "x-ability": "update:Order",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderBuyerChange"
+              }
+            }
+          },
+          "x-body-type": "OrderBuyerChangeInput"
+        },
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record, or none this caller may see.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orders/{id}/buyer-checked": {
+      "post": {
+        "operationId": "orderBuyerChecked",
+        "summary": "The buyer is right: clear an order's \"check the buyer: shared number\".",
         "tags": ["orders"],
         "x-ability": "update:Order",
         "parameters": [

@@ -4,6 +4,7 @@ import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import {
   add,
   mulQty,
+  isNormalizableBdPhone,
   normalizeBdPhone,
   OrderError,
   poisha,
@@ -296,6 +297,18 @@ export class NcomOrdersService {
         throw new NcomRefusal(400, { error: 'The phone is not a Bangladeshi mobile number' });
       }
       const name = str(customer.name, 200) || str(address.name, 200) || 'Customer';
+      /*
+       * M48 (D-879): ncom carries the customer's phone and the shipping address's. Two different
+       * numbers are an order placed for someone else: the customer's names the buyer, and the
+       * parcel goes to the address's name and phone. One number, or the same twice, changes
+       * nothing.
+       */
+      const shipRaw = str(address.phone, 40);
+      const shipPhone =
+        str(customer.phone, 40) !== '' && shipRaw !== '' && isNormalizableBdPhone(shipRaw)
+          ? normalizeBdPhone(shipRaw)
+          : null;
+      const forSomeoneElse = shipPhone !== null && shipPhone !== phone;
       const warnings = [...rebuilt.warnings];
       const place = await this.placeOf(tx, address, warnings);
       const money = priced;
@@ -329,8 +342,10 @@ export class NcomOrdersService {
         channel: 'marketplace',
         source: { utmSource: 'ncom' },
         customer: { phone, name },
+        ...(forSomeoneElse ? { placedFor: 'someone_else' as const } : {}),
         shipTo: {
           name: str(address.name, 200) || name,
+          ...(forSomeoneElse && shipPhone !== null ? { phone: shipPhone } : {}),
           districtId: place.districtId,
           thanaId: place.thanaId,
           ...(place.area === '' ? {} : { area: place.area }),

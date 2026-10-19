@@ -29,7 +29,7 @@ import {
 } from './api.js';
 import { AdvancesPanel } from './advances-panel.js';
 import { CallsPanel } from './calls-panel.js';
-import { CallButton } from '../calls/call-button.js';
+import { OrderPeople } from '../people/order-people.js';
 import { OwnerGuardProvider, OwnershipBanner } from './owner-guard.js';
 import { OrderActions } from './order-actions.js';
 import { ParcelPanel } from './parcel-panel.js';
@@ -227,28 +227,11 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="space-y-5">
             <section className="grid gap-5 rounded-lg border border-border bg-card p-5 sm:grid-cols-2">
-              <div>
-                <h2 className="text-xs font-medium text-muted-foreground">
-                  {t('orders.detail.buyer')}
-                </h2>
-                {/* The buyer's profile (M16): their history across every order, not just this one. */}
-                <Link
-                  to={ordersPath(`/customers/${order.customer.id}`)}
-                  className="mt-1 inline-block text-sm font-medium underline-offset-4 hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                >
-                  {order.customer.name}
-                </Link>
-                <p className="flex flex-wrap items-center gap-2 text-sm tabular-nums">
-                  {order.shipTo.phone}
-                  {/* M47 (D-834): ring your own extension, then this number. */}
-                  <CallButton
-                    target={{ orderId: order.id, phone: order.shipTo.phone }}
-                    phone={order.shipTo.phone}
-                    label={order.orderNo}
-                    size="icon"
-                  />
-                </p>
-              </div>
+              {/*
+               * M48 (D-878): the buyer (their profile, M16) apart from the parcel's recipient,
+               * each with M47's Call; the desk's buyer check and a supervisor's Change buyer.
+               */}
+              <OrderPeople order={order} />
               <div>
                 <h2 className="text-xs font-medium text-muted-foreground">
                   {t('orders.detail.shipTo')}

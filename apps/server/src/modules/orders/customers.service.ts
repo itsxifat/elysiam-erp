@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
-import { maskPhone, normalizeBdPhone, poisha } from '@elysium/domain';
+import { maskPhone, normalizeBdPhone, poisha, type PhoneSource } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeOf, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
+import { addNumber, phoneViews, pickPersonByPhone } from './numbers.helpers.js';
 import * as repo from './orders.repository.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import type { CreateCustomerInput, CustomerQuery, UpdateCustomerInput } from './orders.schemas.js';
@@ -39,6 +41,8 @@ export interface CustomerView {
   readonly profession: string | null;
   readonly tags: readonly string[];
   readonly notes: string | null;
+  /** M48 (D-884): set on a record merged into another, which the screens follow. */
+  readonly mergedIntoCustomerId: string | null;
   readonly stats: {
     readonly orders: number;
     readonly delivered: number;
@@ -63,6 +67,7 @@ export function toCustomerView(row: repo.CustomerRow): CustomerView {
     profession: row.profession,
     tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
     notes: row.notes,
+    mergedIntoCustomerId: row.merged_into_customer_id,
     stats: {
       orders: row.orders_total,
       delivered: row.delivered_count,
@@ -78,7 +83,10 @@ export function toCustomerView(row: repo.CustomerRow): CustomerView {
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    @Inject(IAM_API) private readonly iam: IamApi,
+  ) {}
 
   async list(context: ActiveContext, request: object, query: CustomerQuery) {
     /*
@@ -116,13 +124,20 @@ export class CustomersService {
       const rows = await tx.execute<repo.CustomerRow>(sql`
         select c.id, c.phone_e164, c.name, c.birthday, c.anniversary, c.gender,
                c.age_band, c.profession, c.tags, c.notes, c.orders_total, c.delivered_count,
-               c.returned_count, c.cancelled_count, c.ltv_poisha, c.first_order_at, c.last_order_at
+               c.returned_count, c.cancelled_count, c.ltv_poisha, c.first_order_at, c.last_order_at,
+               c.merged_into_customer_id
         from sales.customers c
         where c.org_id = ${context.orgId}
+          -- M48 (D-884): a merged record is reached through the one it joined.
+          and c.merged_into_customer_id is null
           and ${
             query.q === undefined
               ? sql`true`
-              : sql`(c.phone_e164 ilike ${`%${query.q}%`} or c.name ilike ${`%${query.q}%`})`
+              : // M48 (D-877): any number the person uses now, not only the primary.
+                sql`(c.name ilike ${`%${query.q}%`} or exists (
+                    select 1 from sales.customer_phones p
+                    where p.org_id = c.org_id and p.customer_id = c.id and p.retired_at is null
+                      and p.phone_e164 ilike ${`%${query.q}%`}))`
           }
           and ${visible}
         order by c.last_order_at desc nulls last, c.created_at desc
@@ -213,6 +228,8 @@ export class CustomersService {
         if (row === undefined) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
         return {
           ...toCustomerView(row),
+          // M48 (D-870): every number, with its rank, kind, relation and the staff's note.
+          phones: await phoneViews(tx, this.iam, context.orgId, id),
           addresses: (await repo.listAddresses(tx, context.orgId, id)).map((address) => ({
             id: address.id,
             label: address.label,
@@ -238,7 +255,10 @@ export class CustomersService {
          * later without thinking about it.
          */
         assertInScope(request, { createdBy: context.userId, assignedTo: context.userId });
-        const customer = await this.upsert(tx, context, input);
+        // The first number is the staff's when they wrote why; else as the desk's (D-871).
+        const customer = await this.upsert(tx, context, input, {
+          source: input.phoneNote === undefined ? 'order' : 'staff',
+        });
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
@@ -322,20 +342,37 @@ export class CustomersService {
    * **not** overwritten by whatever the caller typed on this call. An agent taking a
    * rushed order types "Rahim" for a buyer saved as "Md. Rahim Uddin"; an upsert would
    * quietly degrade every buyer record over time, in a column nobody audits.
+   *
+   * M48 (D-875, D-876): one number may be several people's. "Find" is the automatic pick (the
+   * person whose primary own number it is, else whoever ordered last); `shared` says it had to
+   * choose, so the order is flagged for the desk. `newPerson` is the desk's "a new person on this
+   * number": a new buyer even though someone already uses it.
    */
   async upsert(
     tx: Tx,
     context: ActiveContext,
     input: CreateCustomerInput,
-  ): Promise<{ id: string; phoneE164: string; created: boolean; name: string }> {
+    options: { readonly source?: PhoneSource } = {},
+  ): Promise<{
+    id: string;
+    phoneE164: string;
+    created: boolean;
+    name: string;
+    shared: boolean;
+  }> {
     const phoneE164 = normalizeBdPhone(input.phone);
-    const existing = await repo.customerByPhone(tx, context.orgId, phoneE164);
-    if (existing !== undefined) {
+    const existing =
+      input.newPerson === true ? undefined : await pickPersonByPhone(tx, context.orgId, phoneE164);
+    const existingRow =
+      existing === undefined
+        ? undefined
+        : await repo.customerById(tx, context.orgId, existing.customerId);
+    if (existing !== undefined && existingRow !== undefined) {
       if (input.address !== undefined) {
         await assertArea(tx, input.address);
         await repo.insertAddress(tx, {
           orgId: context.orgId,
-          customerId: existing.id,
+          customerId: existingRow.id,
           label: null,
           districtId: input.address.districtId,
           thanaId: input.address.thanaId,
@@ -344,7 +381,13 @@ export class CustomersService {
           isDefault: true,
         });
       }
-      return { id: existing.id, phoneE164, created: false, name: existing.name };
+      return {
+        id: existingRow.id,
+        phoneE164,
+        created: false,
+        name: existingRow.name,
+        shared: existing.shared,
+      };
     }
 
     const id = await repo.insertCustomer(tx, {
@@ -359,6 +402,16 @@ export class CustomersService {
       tags: input.tags ?? [],
       notes: input.notes ?? null,
     });
+    // The new person's first number (D-870): theirs unless the desk said whose it is.
+    await addNumber(tx, {
+      orgId: context.orgId,
+      customerId: id,
+      phoneE164,
+      relation: input.phoneRelation ?? 'own',
+      note: input.phoneNote,
+      source: options.source ?? 'order',
+      addedByUserId: context.userId,
+    });
     if (input.address !== undefined) {
       await assertArea(tx, input.address);
       await repo.insertAddress(tx, {
@@ -372,7 +425,7 @@ export class CustomersService {
         isDefault: true,
       });
     }
-    return { id, phoneE164, created: true, name: input.name };
+    return { id, phoneE164, created: true, name: input.name, shared: false };
   }
 
   /** The buyer a caller named, or a clear refusal that names no number. */

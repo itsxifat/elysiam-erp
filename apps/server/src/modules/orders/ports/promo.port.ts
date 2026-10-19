@@ -96,6 +96,17 @@ export interface PromoPort {
       readonly actorUserId: string;
     },
   ): Promise<{ readonly codeId: string; readonly code: string }>;
+
+  /**
+   * M48 (D-885): a merged buyer's personal codes become the kept record's, in the caller's
+   * transaction. Redemptions are history and stay where they were recorded. The codes moved.
+   */
+  moveCustomerCodes(
+    tx: Tx,
+    orgId: string,
+    fromCustomerId: string,
+    toCustomerId: string,
+  ): Promise<number>;
 }
 
 export const PROMO_PORT = Symbol('OrdersPromoPort');

@@ -195,9 +195,10 @@ export const callerPanelQuerySchema = z
   })
   .strict()
   .refine(
+    // M48 (D-887): a customer beside a phone or a call switches to another person on that number.
     (input) =>
-      [input.phone, input.customerId, input.callId].filter((value) => value !== undefined)
-        .length === 1,
+      (input.phone === undefined || input.callId === undefined) &&
+      [input.phone, input.customerId, input.callId].some((value) => value !== undefined),
     'Say whose panel: a phone, a customer or a call.',
   );
 export type CallerPanelQuery = z.infer<typeof callerPanelQuerySchema>;
@@ -362,6 +363,32 @@ export interface CallerPanelPhone {
   readonly source: 'order' | 'inbox';
 }
 
+/** M48 (D-870): one of the person's own numbers in use, with the staff's note. */
+export interface CallerPanelNumber {
+  readonly id: string;
+  readonly phone: string;
+  readonly rank: number;
+  readonly kind: string;
+  readonly relation: string;
+  readonly note: string | null;
+  readonly needsDetails: boolean;
+}
+
+/** M48 (D-887): one of the people the calling number names, with how they use it. */
+export interface CallerPanelPerson {
+  readonly customerId: string;
+  readonly name: string;
+  readonly rank: number;
+  readonly relation: string;
+  readonly note: string | null;
+  readonly lastOrderAt: string | null;
+  readonly orders: number;
+  /** The automatic pick among them (D-876). */
+  readonly suggested: boolean;
+  /** The person the panel is showing. */
+  readonly current: boolean;
+}
+
 /** A website account of the buyer's (M34). */
 export interface CallerPanelEmail {
   readonly email: string;
@@ -424,6 +451,10 @@ export interface CallerPanelFull {
     readonly nextCursor: string | null;
   };
   readonly addresses: readonly CallerPanelAddress[];
+  /** M48: the person's own numbers in use, by rank, with the staff's notes. */
+  readonly numbers: readonly CallerPanelNumber[];
+  /** M48: everyone the panel's number names, when it is more than one person's. */
+  readonly sharedWith: readonly CallerPanelPerson[];
   readonly otherPhones: readonly CallerPanelPhone[];
   readonly emails: readonly CallerPanelEmail[];
   readonly socials: readonly CallerPanelSocial[];

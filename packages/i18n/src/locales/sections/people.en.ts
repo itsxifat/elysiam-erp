@@ -1,0 +1,131 @@
+/**
+ * Customer numbers and people (M48; D-607's pattern): the buyer page's Numbers card and Merge,
+ * the desk's chooser for a shared number and its "For someone else", the order page's buyer and
+ * recipient, the desk's shared-number flag and the caller panel's numbers. The English section,
+ * shipped with those screens. No string names a brand: the console is white-label (M31).
+ */
+const en = {
+  'people.numbers.title': 'Numbers',
+  'people.numbers.add': 'Add number',
+  'people.numbers.primary': 'Primary',
+  'people.numbers.rank': 'No. {rank}',
+  'people.numbers.needsDetails': 'Needs details',
+  'people.numbers.needsDetailsHint': 'Nobody has written why this person uses this number yet.',
+  'people.numbers.addedBy': 'Added by {name}',
+  'people.numbers.addedBySystem': 'Added automatically',
+  'people.numbers.makePrimary': 'Make primary',
+  'people.numbers.edit': 'Edit',
+  'people.numbers.retire': 'Retire',
+  'people.numbers.retired': 'Retired numbers ({count})',
+  'people.numbers.retiredOn': 'Retired',
+  'people.numbers.phone': 'Number',
+  'people.numbers.kind': 'Kind',
+  'people.numbers.relation': 'Whose number',
+  'people.numbers.note': 'Details',
+  'people.numbers.noteHint': 'Why and when this person uses this number, for whoever calls next.',
+  'people.numbers.addTitle': 'Add a number',
+  'people.numbers.editTitle': 'Edit this number',
+  'people.numbers.retireTitle': 'Retire this number',
+  'people.numbers.retireDetail':
+    'A retired number no longer finds this person. It stays in their history.',
+  'people.numbers.reason': 'Why',
+  'people.numbers.retireNote': 'Anything to add (optional)',
+  'people.numbers.save': 'Save',
+  'people.numbers.saving': 'Saving…',
+  'people.numbers.cancel': 'Cancel',
+  'people.numbers.close': 'Close',
+  'people.numbers.failed': 'That did not work. Try again.',
+  'people.numbers.none': 'No numbers in use.',
+
+  'people.kind.mobile': 'Mobile',
+  'people.kind.whatsapp': 'WhatsApp',
+  'people.kind.home': 'Home',
+  'people.kind.office': 'Office',
+  'people.kind.shop': 'Shop',
+  'people.kind.other': 'Other',
+
+  'people.relation.own': 'Their own',
+  'people.relation.household': 'Same home',
+  'people.relation.relative': 'A relative’s',
+  'people.relation.work': 'Work',
+  'people.relation.someone_else': 'Someone else’s',
+  'people.relation.other': 'Other',
+
+  'people.source.staff': 'Added by staff',
+  'people.source.order': 'From an order',
+  'people.source.website': 'From the website',
+  'people.source.inbox': 'From an inbox chat',
+  'people.source.call': 'From a call',
+  'people.source.import': 'From the records',
+
+  'people.retire.changed_number': 'Changed their number',
+  'people.retire.wrong_number': 'Wrong number',
+  'people.retire.not_theirs': 'Not theirs any more',
+  'people.retire.other': 'Other',
+
+  'people.merge.button': 'Merge with…',
+  'people.merge.title': 'Merge another record into this one',
+  'people.merge.detail':
+    'Use this when the same person was entered twice. The other record’s numbers, addresses, orders and notes move here; it is kept as merged.',
+  'people.merge.find': 'The other record’s phone',
+  'people.merge.reason': 'Why they are the same person',
+  'people.merge.confirm': 'Merge into this record',
+  'people.merge.pick': 'Choose the other record',
+  'people.merge.noneFound': 'Nobody else uses that number.',
+  'people.merge.done': 'Merged. {orders} orders moved here.',
+  'people.merge.mergedInto': 'This record was merged into another.',
+  'people.merge.open': 'Open that record',
+
+  'people.chooser.one': 'This number belongs to {name}.',
+  'people.chooser.many': 'This number is used by {count} people. Who is ordering?',
+  'people.chooser.auto': 'Decide later (the order is flagged for checking)',
+  'people.chooser.suggested': 'Suggested',
+  'people.chooser.lastOrder': 'Last order',
+  'people.chooser.noOrders': 'No orders yet',
+  'people.chooser.orders': '{count} orders',
+  'people.chooser.newPerson': 'Someone new on this number',
+  'people.chooser.newRelation': 'Whose number it is for them',
+  'people.chooser.newNote': 'Details (optional)',
+
+  'people.behalf.toggle': 'For someone else',
+  'people.behalf.hint':
+    'The buyer ordered; the parcel goes to the person below. The courier gets their name, phone and the address above.',
+  'people.behalf.name': 'Recipient’s name',
+  'people.behalf.phone': 'Recipient’s phone',
+  'people.behalf.note': 'Note',
+  'people.behalf.notePlaceholder': 'For example: son ordering for his mother',
+  'people.behalf.save': 'Save the recipient as a customer',
+  'people.behalf.addNumber': 'Add this number to the buyer’s numbers',
+  'people.behalf.missing': 'Write the recipient’s name and a Bangladeshi mobile number.',
+
+  'people.order.buyer': 'Buyer',
+  'people.order.recipient': 'Recipient',
+  'people.order.forSomeoneElse': 'Ordered for someone else',
+  'people.order.callBuyer': 'Call buyer',
+  'people.order.callRecipient': 'Call recipient',
+  'people.order.recipientRecord': 'Recipient’s record',
+  'people.order.check': 'Check the buyer: shared number',
+  'people.order.checkDetail':
+    'This number is used by more than one person and the order was put on one of them automatically. Ask who is ordering.',
+  'people.order.buyerRight': 'Buyer is right',
+  'people.order.changeBuyer': 'Change buyer',
+  'people.order.changeTitle': 'Change this order’s buyer',
+  'people.order.changeDetail':
+    'The order and its counts move to the person you choose. Only supervisors can do this.',
+  'people.order.changeFind': 'Their phone',
+  'people.order.changeReason': 'Why',
+  'people.order.changeConfirm': 'Change buyer',
+  'people.order.changed': 'The buyer was changed.',
+
+  'people.flag.shared': 'Check buyer',
+  'people.flag.filter': 'Check the buyer',
+
+  'people.panel.numbers': 'Their numbers',
+  'people.panel.sharedTitle': 'This number is used by {count} people',
+  'people.panel.showing': 'Showing',
+  'people.panel.switch': 'Show {name}',
+} as const;
+
+export type PeopleKey = keyof typeof en;
+
+export { en };

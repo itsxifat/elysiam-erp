@@ -866,3 +866,22 @@ export async function markWebhookProcessed(
     where org_id = ${orgId} and id = ${id} and processed_at is null
   `);
 }
+
+/**
+ * M48 (D-885): a buyer record was merged into another, so its calls name the kept one. The call's
+ * other facts (the name it rang under, its number) are history and stay; 0160's trigger lets the
+ * customer move only this way.
+ */
+export async function moveCallsToCustomer(
+  tx: Tx,
+  orgId: string,
+  fromCustomerId: string,
+  toCustomerId: string,
+): Promise<number> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update telephony.calls set customer_id = ${toCustomerId}, updated_at = now()
+    where org_id = ${orgId} and customer_id = ${fromCustomerId}
+    returning id
+  `);
+  return rows.length;
+}

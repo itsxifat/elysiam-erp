@@ -583,8 +583,8 @@ export class CustomersController {
   @RequireAbility('read', 'Customer')
   @Get('lookup')
   async lookup(@Req() request: FastifyRequest, @Query() query: unknown) {
-    const { phone } = parse(customerLookupSchema, query ?? {});
-    return this.desk.lookup(requireContext(request), request, phone);
+    const { phone, customerId } = parse(customerLookupSchema, query ?? {});
+    return this.desk.lookup(requireContext(request), request, phone, customerId);
   }
 
   @RequireAbility('create', 'Customer')

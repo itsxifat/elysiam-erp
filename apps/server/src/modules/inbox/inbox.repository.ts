@@ -1129,3 +1129,18 @@ export async function conversationsOfContacts(
   `);
   return [...rows];
 }
+
+/** M48 (D-885): a buyer record was merged into another, so its contacts name the kept one. */
+export async function moveContactsToCustomer(
+  tx: Tx,
+  orgId: string,
+  fromCustomerId: string,
+  toCustomerId: string,
+): Promise<number> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update inbox.contacts set customer_id = ${toCustomerId}, updated_at = now()
+    where org_id = ${orgId} and customer_id = ${fromCustomerId}
+    returning id
+  `);
+  return rows.length;
+}
