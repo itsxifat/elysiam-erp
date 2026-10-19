@@ -325,10 +325,14 @@ export async function seedShippedOrder(
       const customer = await tx.execute<{ id: string }>(sql`
         insert into sales.customers (org_id, name, phone_e164)
         values (${orgId}, 'Rahim Uddin', ${`+88017${String(10_000_000 + sequence)}`})
-        on conflict (org_id, phone_e164) do update set name = excluded.name
         returning id
       `);
       const customerId = customer[0]?.id ?? '';
+      // M48: the buyer's number, as every buyer has one.
+      await tx.execute(sql`
+        insert into sales.customer_phones (org_id, customer_id, phone_e164, rank, source)
+        values (${orgId}, ${customerId}, ${`+88017${String(10_000_000 + sequence)}`}, 1, 'import')
+      `);
 
       const orderNo = `CUR-2609-${String(sequence).padStart(5, '0')}`;
       const order = await tx.execute<{ id: string }>(sql`

@@ -298,14 +298,36 @@ export async function seedCustomer(
 ): Promise<string> {
   return withSystem(
     async (tx) => {
-      const rows = await tx.execute<{ id: string }>(sql`
-        insert into sales.customers (org_id, phone_e164, name)
-        values (${orgId}, ${input.phoneE164}, ${input.name})
-        on conflict (org_id, phone_e164) do update set name = excluded.name
-        returning id
+      // M48: a phone no longer names one buyer, so "the buyer with this phone" is the first
+      // unmerged one, renamed; else a new one. Either way the phone is their rank-1 number.
+      const found = await tx.execute<{ id: string }>(sql`
+        select c.id from sales.customers c
+        where c.org_id = ${orgId} and c.phone_e164 = ${input.phoneE164}
+          and c.merged_into_customer_id is null
+        order by c.created_at, c.id
+        limit 1
       `);
+      const rows =
+        found[0] === undefined
+          ? await tx.execute<{ id: string }>(sql`
+              insert into sales.customers (org_id, phone_e164, name)
+              values (${orgId}, ${input.phoneE164}, ${input.name})
+              returning id
+            `)
+          : await tx.execute<{ id: string }>(sql`
+              update sales.customers set name = ${input.name}
+              where org_id = ${orgId} and id = ${found[0].id}
+              returning id
+            `);
       const id = rows[0]?.id;
       if (id === undefined) throw new Error('seeding a customer returned no id');
+      await tx.execute(sql`
+        insert into sales.customer_phones (org_id, customer_id, phone_e164, rank, source)
+        select ${orgId}, ${id}, ${input.phoneE164}, 1, 'import'
+        where not exists (select 1 from sales.customer_phones p
+                          where p.org_id = ${orgId} and p.customer_id = ${id}
+                            and p.retired_at is null)
+      `);
 
       const area = await tx.execute<{ district_id: number; thana_id: number }>(sql`
         select t.district_id, t.id as thana_id from ref.thanas t order by t.id limit 1

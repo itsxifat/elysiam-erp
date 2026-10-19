@@ -151,6 +151,14 @@ async function seedCustomers(
         select ${orgId}, ${LOAD_PHONE_PREFIX} || lpad(n::text, 6, '0'), 'Load Buyer ' || n::text
         from generate_series(1, ${LOAD_CUSTOMERS}) as n
       `);
+      // M48: each buyer's number, as the resolver reads it.
+      await tx.execute(sql`
+        insert into sales.customer_phones (org_id, customer_id, phone_e164, rank, source)
+        select c.org_id, c.id, c.phone_e164, 1, 'import' from sales.customers c
+        where c.org_id = ${orgId}
+          and not exists (select 1 from sales.customer_phones p
+                          where p.org_id = c.org_id and p.customer_id = c.id)
+      `);
       await tx.execute(sql`
         insert into sales.customer_addresses
           (org_id, customer_id, district_id, thana_id, address_line, is_default)

@@ -208,6 +208,13 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/customers/:id/profile',
   'PATCH /v1/customers/:id',
   'PUT /v1/customers/:id/pinned-note',
+  // M48: a buyer's numbers, merges and an order's buyer (D-870 to D-886).
+  'POST /v1/customers/:id/phones',
+  'PATCH /v1/customers/:id/phones/:phoneId',
+  'POST /v1/customers/:id/phones/:phoneId/retire',
+  'POST /v1/customers/:id/merge',
+  'POST /v1/orders/:id/buyer',
+  'POST /v1/orders/:id/buyer-checked',
   'GET /v1/delivery-zones',
   'GET /v1/delivery-zones/for-area',
   'PUT /v1/delivery-zones',

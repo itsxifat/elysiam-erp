@@ -181,6 +181,36 @@ async function freshOffer(): Promise<string> {
   return id;
 }
 
+/** A number nobody else has, so each admitted role's call meets a fresh buyer (M48). */
+function freshPhone(): string {
+  return `+88017${String(Math.floor(Math.random() * 90_000_000) + 10_000_000)}`;
+}
+
+/** A fresh buyer with no orders (so nobody's: every role with `update Customer` reaches them). */
+async function freshPerson(extraPhones = 0): Promise<{ customerId: string; phoneIds: string[] }> {
+  const customerId = await seedCustomer(ORG_A, { phoneE164: freshPhone(), name: 'Matrix person' });
+  for (let index = 0; index < extraPhones; index += 1) {
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into sales.customer_phones (org_id, customer_id, phone_e164, rank, source)
+          values (${ORG_A}, ${customerId}, ${freshPhone()}, ${index + 2}, 'import')
+        `),
+      { orgId: ORG_A },
+    );
+  }
+  const rows = await withSystem(
+    (tx) =>
+      tx.execute<{ id: string }>(sql`
+        select id from sales.customer_phones
+        where org_id = ${ORG_A} and customer_id = ${customerId} and retired_at is null
+        order by rank
+      `),
+    { orgId: ORG_A },
+  );
+  return { customerId, phoneIds: [...rows].map((row) => row.id) };
+}
+
 /** A line as a shipped order carries it: the dispatch cost is already recorded. */
 function dispatched(index: number, overrides: Partial<SeedOrderLine> = {}): SeedOrderLine {
   return line(index, { dispatchUnitCostPoisha: UNIT_COST, ...overrides });
@@ -471,8 +501,8 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
 
   'POST /v1/customers': () => ({
     url: '/v1/customers',
-    // A fresh number per call: the unique index on `(org_id, phone_e164)` would make the
-    // second admitted role's create a 400 about a buyer that already exists.
+    // A fresh number per call, so every admitted role's create makes a new buyer rather than
+    // finding the first role's (M48: the number names whoever uses it).
     body: {
       phone: `+88017${String(Math.floor(Math.random() * 90_000_000) + 10_000_000)}`,
       name: 'Route matrix buyer',
@@ -488,6 +518,47 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
   'PATCH /v1/customers/:id': () => ({
     url: `/v1/customers/${state().customerId}`,
     body: { name: 'Route matrix buyer' },
+  }),
+
+  // M48 (D-870 to D-886): a buyer's numbers, merges and an order's buyer.
+  'POST /v1/customers/:id/phones': async () => ({
+    url: `/v1/customers/${(await freshPerson()).customerId}/phones`,
+    body: { phone: freshPhone(), relation: 'work', note: 'Office line, weekdays' },
+  }),
+
+  'PATCH /v1/customers/:id/phones/:phoneId': async () => {
+    const person = await freshPerson(1);
+    return {
+      url: `/v1/customers/${person.customerId}/phones/${person.phoneIds[1] ?? ''}`,
+      body: { note: 'Her sister’s phone, evenings', rank: 1 },
+    };
+  },
+
+  'POST /v1/customers/:id/phones/:phoneId/retire': async () => {
+    const person = await freshPerson(1);
+    return {
+      url: `/v1/customers/${person.customerId}/phones/${person.phoneIds[1] ?? ''}/retire`,
+      body: { reason: 'changed_number' },
+    };
+  },
+
+  'POST /v1/customers/:id/merge': async () => {
+    // Supervisors only (D-886): the others with `update Customer` meet the service's refusal.
+    const kept = await freshPerson();
+    const other = await freshPerson();
+    return {
+      url: `/v1/customers/${kept.customerId}/merge`,
+      body: { otherCustomerId: other.customerId, reason: 'The same person, entered twice' },
+    };
+  },
+
+  'POST /v1/orders/:id/buyer': async () => ({
+    url: `/v1/orders/${await freshOrder('pending')}/buyer`,
+    body: { customerId: (await freshPerson()).customerId, reason: 'Ordered by her husband' },
+  }),
+
+  'POST /v1/orders/:id/buyer-checked': async () => ({
+    url: `/v1/orders/${await freshOrder('pending')}/buyer-checked`,
   }),
 
   'PUT /v1/customers/:id/pinned-note': () => ({

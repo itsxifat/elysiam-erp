@@ -754,6 +754,11 @@ describe('the route gate (D-070), scoped to this module', () => {
         'AdvancesController',
         // M41's offers, workflow settings and team board.
         'WorkflowController',
+        // M47's pinned note, served by telephony with its fixture here (D-860).
+        'CustomerPinnedNoteController',
+        // M48's buyer numbers, merges and an order's buyer.
+        'CustomerNumbersController',
+        'OrderBuyerController',
       ].includes(route.controller),
     );
 
