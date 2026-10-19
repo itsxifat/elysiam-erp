@@ -237,8 +237,13 @@ test('an agent takes a conversation, saves the phone, sees the customer’s orde
   // The phone the customer typed, offered and saved in one click; it is the lapsed buyer's.
   const phone = stack().lapsedBuyer.phone;
   await page.getByRole('button', { name: `Save ${shown(phone)}` }).click();
-  await expect(page.getByText('Lapsed Buyer', { exact: true })).toBeVisible();
-  await expect(page.getByText('Recent orders')).toBeVisible();
+  // M49: the linked buyer's card, in the panel's Customer tab.
+  const panel = page.getByRole('complementary', { name: 'Customer' });
+  await expect(panel.getByText('Lapsed Buyer', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: /Recent orders/ })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: /Numbers/ })).toBeVisible();
+  // A chat Meta gave no name takes the linked buyer's (D-892).
+  await expect(list.getByRole('button', { name: /Lapsed Buyer/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Take', exact: true }).click();
   await expect(page.getByText('You have this conversation')).toBeVisible();
@@ -248,20 +253,25 @@ test('an agent takes a conversation, saves the phone, sees the customer’s orde
   await expect(thread.getByText('Ji, black kurti available in M.')).toBeVisible();
   await expect(thread.getByText('Sent', { exact: true })).toBeVisible({ timeout: 30_000 });
 
+  await bothThemes(page, 'c1-customer-card');
+
+  await page.getByRole('tab', { name: /Notes/ }).click();
   await page
     .getByLabel('What we talked about today')
     .fill('Wants the black kurti in M; call after 6 pm.');
   await page.getByRole('button', { name: 'Add note' }).click();
   await expect(page.getByText('Wants the black kurti in M; call after 6 pm.')).toBeVisible();
 
-  await page.getByLabel('Find a product').fill(stack().productName);
+  await page.getByRole('tab', { name: /Order/ }).click();
+  await page.getByLabel('Find a product they like').fill(stack().productName);
   await page.getByRole('button', { name: 'Add', exact: true }).first().click();
   await expect(page.getByText(stack().productName, { exact: true })).toBeVisible();
   await expect(page.getByText(/in stock/).first()).toBeVisible();
   await bothThemes(page, 'c-conversation');
 
-  // Create order: the desk opens on the chat's phone.
-  await page.getByRole('link', { name: 'Create order' }).click();
+  // The order desk opens on the chat's phone (the screenshots reloaded the page: Order again).
+  await page.getByRole('tab', { name: /Order/ }).click();
+  await page.getByRole('link', { name: 'Open in the order desk' }).click();
   await expect(page).toHaveURL(/\/orders\/new\?conversation=/);
   await expect(page.getByText('Filled in from the chat')).toBeVisible();
   await expect(page.getByLabel('Phone', { exact: false }).first()).toHaveValue(national(phone));
@@ -284,6 +294,7 @@ test('another agent acts in it only after acknowledging the owner, who is told l
   await expect(other.getByRole('button', { name: 'Account' })).toBeVisible();
   await other.goto(messengerUrl.replace(/^https?:\/\/[^/]+/, ''));
   await expect(other.getByText(/E2E agent agent has this conversation/)).toBeVisible();
+  await other.getByRole('tab', { name: /Notes/ }).click();
   await other.getByLabel('What we talked about today').fill('Covering while they are at lunch.');
   await other.getByRole('button', { name: 'Add note' }).click();
   const dialog = other.getByRole('dialog', { name: /This conversation is .*’s/ });
@@ -328,8 +339,8 @@ test('Fraud shows red in the inbox and on the order desk for that phone', async 
   const phone = `+${WA_ID}`;
   await page.getByRole('button', { name: `Save ${shown(phone)}` }).click();
   await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
-  await page.getByRole('combobox', { name: 'Stage', exact: true }).click();
-  await page.getByRole('option', { name: 'Fraud' }).click();
+  await page.getByRole('button', { name: /^Stage:/ }).click();
+  await page.getByRole('menuitem', { name: 'Fraud' }).click();
   await expect(
     page.getByText('Marked as fraud. Check before taking an order or sending anything.'),
   ).toBeVisible();
