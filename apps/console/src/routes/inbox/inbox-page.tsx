@@ -441,7 +441,7 @@ function ConversationList({
           </label>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="relative min-h-0 flex-1 overflow-y-auto">
         {list.isPending ? (
           <ul className="space-y-1 p-2" aria-busy="true" aria-label={t('inbox.loading')}>
             {[0, 1, 2, 3, 4, 5].map((n) => (

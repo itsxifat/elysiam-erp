@@ -5,6 +5,10 @@
  * Three panes fill the window under the shell's header: the list, the thread and the customer
  * panel, each scrolling on its own. Below the large breakpoint they take turns: the list, or the
  * open conversation's thread, or its customer (`data-open` on the grid).
+ *
+ * Each pane's scroller is `relative`. Screen-reader-only text is absolutely placed, and without
+ * a positioned box above it, it sits against the page at its spot in the pane's content, which
+ * makes the page as tall as the longest pane and lets it scroll past the window.
  */
 
 .inbox-grid {

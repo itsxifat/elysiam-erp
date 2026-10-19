@@ -66,7 +66,9 @@ function readRail(): boolean {
 /**
  * Screens that fill the window rather than scroll as a page (M44a, D-760): the inbox's three
  * panes each scroll on their own, so the sheet is exactly the viewport's height and the outlet
- * has no padding or measure of its own.
+ * has no padding or measure of its own. The sheet is `relative` so that nothing absolutely
+ * placed inside it (screen-reader-only text deep in a pane, say) is placed against the page
+ * instead: that stretched the page past the window and let the inbox scroll into empty space.
  */
 const FILL_PATHS: ReadonlySet<string> = new Set(['/inbox']);
 
@@ -180,7 +182,7 @@ export function AppShell() {
           <div
             className={cn(
               'flex flex-1 flex-col bg-background md:rounded-xl md:border md:border-border',
-              fill ? 'min-h-0 overflow-hidden' : 'min-h-dvh md:min-h-[calc(100dvh-1rem)]',
+              fill ? 'relative min-h-0 overflow-hidden' : 'min-h-dvh md:min-h-[calc(100dvh-1rem)]',
             )}
           >
             <Topbar

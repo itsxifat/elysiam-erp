@@ -434,7 +434,7 @@ function Messages({
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto px-4 py-3">
+      <div ref={scroller} onScroll={onScroll} className="relative h-full overflow-y-auto px-4 py-3">
         <ol aria-label={t('inbox.thread.label')} className="inbox-messages">
           {items.map((item) =>
             item.kind === 'day' ? (

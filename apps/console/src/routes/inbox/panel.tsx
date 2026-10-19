@@ -67,7 +67,7 @@ export function ContactPanel({
   return (
     <aside
       aria-labelledby={`${ids}-title`}
-      className="min-h-0 overflow-y-auto border-l border-border md:max-h-[calc(100dvh-14rem)]"
+      className="relative min-h-0 overflow-y-auto border-l border-border md:max-h-[calc(100dvh-14rem)]"
     >
       <h2 id={`${ids}-title`} className="sr-only">
         {t('inbox.panel.label')}
