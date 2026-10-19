@@ -3,6 +3,14 @@ import {
   type InboxChannelKindName,
   type InboxContactStage,
 } from '@elysium/contracts';
+import type {
+  CustomerAddressInput,
+  CustomerCardView,
+  CustomerDetailsInput,
+  CustomerPhoneAddInput,
+  CustomerPhoneRetireInput,
+  CustomerPhoneUpdateInput,
+} from '@elysium/contracts/customers';
 
 import { api, request } from '../../api.js';
 // M45: a kept voice message or picture (`fileId`, `media`) and a call entry (`call`).
@@ -127,7 +135,19 @@ export interface PanelView {
       readonly codAmountPoisha: string;
       readonly createdAt: string;
     }[];
+    /** M49 (D-890): the whole buyer, seen and edited from the chat. */
+    readonly card: CustomerCardView | null;
   } | null;
+  /** M49 (D-892): not linked yet, the people already on the saved number, the suggested first. */
+  readonly candidates: readonly {
+    readonly customerId: string;
+    readonly name: string;
+    readonly relation: string;
+    readonly note: string | null;
+    readonly orders: number;
+    readonly lastOrderAt: string | null;
+    readonly suggested: boolean;
+  }[];
   readonly notes: readonly {
     readonly id: string;
     readonly body: string;
@@ -192,7 +212,7 @@ function query(params: Readonly<Record<string, string | undefined>>): string {
 
 /** A write that may land on someone else's conversation: the header only once confirmed. */
 function send<T>(
-  method: 'POST' | 'PUT' | 'DELETE',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body: unknown,
   acknowledged: boolean,
@@ -281,11 +301,91 @@ export const removeInterest = (id: string, interestId: string, acknowledged: boo
     acknowledged,
   );
 
-/** The catalog's product search, for "Interested in" (`read Catalog`). */
-export const searchProducts = (q: string) =>
-  api.get<{ items: { id: string; name: string; status: string }[] }>(
-    `/v1/catalog/products${query({ q, limit: '8' })}`,
+// --- M49: the customer card, through the conversation (D-890 to D-895) ------------------------
+
+/** Save the chat's person as a new customer and link the chat to them. */
+export const saveCustomer = (
+  id: string,
+  body: { readonly name: string; readonly phone?: string },
+  acknowledged: boolean,
+) => send<{ customerId: string }>('POST', at(id, '/customer'), body, acknowledged);
+/** This chat is one of the people on the saved number. */
+export const linkCustomer = (id: string, customerId: string, acknowledged: boolean) =>
+  send<{ customerId: string }>('PUT', at(id, '/customer/link'), { customerId }, acknowledged);
+export const unlinkCustomer = (id: string, acknowledged: boolean) =>
+  send<unknown>('DELETE', at(id, '/customer/link'), undefined, acknowledged);
+export const updateCustomer = (id: string, body: CustomerDetailsInput, acknowledged: boolean) =>
+  send<unknown>('PATCH', at(id, '/customer'), body, acknowledged);
+export const addCustomerPhone = (id: string, body: CustomerPhoneAddInput, acknowledged: boolean) =>
+  send<unknown>('POST', at(id, '/customer/phones'), body, acknowledged);
+export const updateCustomerPhone = (
+  id: string,
+  phoneId: string,
+  body: CustomerPhoneUpdateInput,
+  acknowledged: boolean,
+) =>
+  send<unknown>(
+    'PATCH',
+    at(id, `/customer/phones/${encodeURIComponent(phoneId)}`),
+    body,
+    acknowledged,
   );
+export const retireCustomerPhone = (
+  id: string,
+  phoneId: string,
+  body: CustomerPhoneRetireInput,
+  acknowledged: boolean,
+) =>
+  send<unknown>(
+    'POST',
+    at(id, `/customer/phones/${encodeURIComponent(phoneId)}/retire`),
+    body,
+    acknowledged,
+  );
+export const addCustomerAddress = (id: string, body: CustomerAddressInput, acknowledged: boolean) =>
+  send<unknown>('POST', at(id, '/customer/addresses'), body, acknowledged);
+export const replaceCustomerAddress = (
+  id: string,
+  addressId: string,
+  body: CustomerAddressInput,
+  acknowledged: boolean,
+) =>
+  send<unknown>(
+    'PUT',
+    at(id, `/customer/addresses/${encodeURIComponent(addressId)}`),
+    body,
+    acknowledged,
+  );
+export const removeCustomerAddress = (id: string, addressId: string, acknowledged: boolean) =>
+  send<unknown>(
+    'DELETE',
+    at(id, `/customer/addresses/${encodeURIComponent(addressId)}`),
+    undefined,
+    acknowledged,
+  );
+
+/** A buyer's chats and the notes written in them (the buyer page's Chats card). */
+export interface CustomerChats {
+  readonly conversations: readonly {
+    readonly id: string;
+    readonly channel: ChannelKind;
+    readonly status: 'open' | 'closed';
+    readonly name: string | null;
+    readonly lastMessageAt: string;
+    readonly lastPreview: string | null;
+    readonly lastDirection: 'inbound' | 'outbound' | null;
+    readonly assignedTo: PersonRef | null;
+  }[];
+  readonly notes: readonly {
+    readonly id: string;
+    readonly body: string;
+    readonly at: string;
+    readonly author: PersonRef;
+    readonly conversationId: string | null;
+  }[];
+}
+export const customerChats = (customerId: string) =>
+  api.get<CustomerChats>(`/v1/inbox/customers/${encodeURIComponent(customerId)}/chats`);
 
 // --- Settings → Inbox --------------------------------------------------------------------------
 

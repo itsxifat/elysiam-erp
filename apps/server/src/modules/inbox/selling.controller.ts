@@ -4,13 +4,21 @@ import { z } from 'zod';
 
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
-import { InboxSellingService, PICKER_IDS_LIMIT } from './selling.service.js';
+import { InboxSellingService, PICKER_IDS_LIMIT, PICKER_MAX_OFFSET } from './selling.service.js';
 
 const idSchema = z.string().uuid('No such record.');
 
-/** Something typed, or the customer's interests by id; never both, never neither. */
+/**
+ * Something typed (and which page of it, M49: `offset` is the previous page's `nextOffset`), or the
+ * customer's interests by id; never both, never neither.
+ */
 const productQuerySchema = z.union([
-  z.object({ q: z.string().trim().min(1).max(100) }).strict(),
+  z
+    .object({
+      q: z.string().trim().min(1).max(100),
+      offset: z.coerce.number().int().min(0).max(PICKER_MAX_OFFSET).optional(),
+    })
+    .strict(),
   z
     .object({
       ids: z
@@ -53,7 +61,10 @@ export class InboxSellingController {
     return this.selling.context(requireContext(request));
   }
 
-  /** The picker: `?q=` what was typed (name, SKU, parent SKU, barcode, slug), or `?ids=`. */
+  /**
+   * The picker: `?q=` what was typed (name, SKU, parent SKU, barcode, slug) with `&offset=` for the
+   * next page, or `?ids=`. Answers `{ items, nextOffset }`; `nextOffset` is null on the last page.
+   */
   @RequireAbility('read', 'Conversation')
   @Get('products')
   async products(@Req() request: FastifyRequest, @Query() query: unknown) {

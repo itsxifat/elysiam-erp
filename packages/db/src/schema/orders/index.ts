@@ -246,6 +246,12 @@ export const customers = sales.table(
     /** E.164, always `+8801XXXXXXXXX`. Masked in logs and audit rows (invariant 10). */
     phoneE164: text('phone_e164').notNull(),
     name: text('name').notNull(),
+    /**
+     * M49 (D-893): the email the staff wrote down for this buyer, from a chat, a call or the
+     * buyer page. Optional and theirs to correct; a website account's own email stays the
+     * storefront's (M34). Never written to logs or audit rows (invariant 10).
+     */
+    email: text('email'),
     /** Optional, and all of it is §9's list. Occasions drive M14's greeting job. */
     birthday: date('birthday'),
     anniversary: date('anniversary'),
@@ -310,6 +316,11 @@ export const customers = sales.table(
       columns: [table.orgId, table.mergedIntoCustomerId],
       foreignColumns: [table.orgId, table.id],
     }).onDelete('restrict'),
+    check(
+      'customers_email',
+      sql`${table.email} is null
+          or (char_length(${table.email}) between 3 and 254 and ${table.email} ~ '^[^@[:space:]]+@[^@[:space:]]+$')`,
+    ),
     check(
       'customers_merged_whole',
       sql`(${table.mergedIntoCustomerId} is null) = (${table.mergedAt} is null)

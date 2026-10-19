@@ -15,8 +15,8 @@ import {
 } from '@elysium/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { BellRing, Keyboard, MessagesSquare } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { BellRing, Check, Keyboard, MessagesSquare, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import '../../alive/alive.css';
 import { useArrivals, useFlip, useNow } from '../../alive/motion.js';
@@ -163,24 +163,23 @@ function Inbox() {
   const open = search.c !== undefined;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2.5">
-        <h1 className="text-base font-semibold">{t('inbox.title')}</h1>
-        <StatusBadge
-          tone={status === 'connected' ? 'success' : 'warning'}
-          className={status === 'connected' ? 'alive-presence' : undefined}
-        >
-          {status === 'connected' ? t('inbox.live') : t('inbox.offline')}
-        </StatusBadge>
-        <MyStatus />
-        <div className="ml-auto flex items-center gap-2">
-          <AlertsOffer />
-          <ShortcutsHelp />
-        </div>
-      </header>
+    <div className="flex min-h-0 flex-1 flex-col bg-canvas">
       {notice === null ? null : (
-        <p role="status" className="border-b border-border bg-muted px-4 py-2 text-sm">
-          {notice}
+        <p
+          role="status"
+          className="mx-2 mt-2 flex items-center gap-2 rounded-lg border border-border bg-info-subtle px-3 py-2 text-sm text-info-subtle-foreground"
+        >
+          <BellRing aria-hidden="true" className="size-4 shrink-0" />
+          <span className="flex-1">{notice}</span>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="rounded-full"
+            aria-label={t('inbox.cancel')}
+            onClick={() => setNotice(null)}
+          >
+            <X aria-hidden="true" />
+          </Button>
         </p>
       )}
       <div className="inbox-grid" data-open={open ? pane : 'list'}>
@@ -188,6 +187,7 @@ function Inbox() {
           filters={filters}
           selected={search.c ?? null}
           me={me}
+          live={status === 'connected'}
           onSelect={select}
           onOrder={(ids) => {
             order.current = ids;
@@ -195,7 +195,7 @@ function Inbox() {
           onFilters={(next) => navigate((prev) => ({ ...prev, ...next }))}
         />
         {search.c === undefined ? (
-          <div className="inbox-thread flex items-center justify-center p-6">
+          <div className="inbox-thread inbox-chat flex items-center justify-center p-6">
             <EmptyState
               icon={MessagesSquare}
               title={t('inbox.thread.pick')}
@@ -213,8 +213,13 @@ function Inbox() {
         )}
       </div>
       {open && pane === 'customer' ? (
-        <div className="inbox-small-only border-t border-border p-2">
-          <Button variant="outline" size="sm" className="w-full" onClick={() => setPane('thread')}>
+        <div className="inbox-small-only border-t border-border bg-background p-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full rounded-full"
+            onClick={() => setPane('thread')}
+          >
             {t('inbox.thread.showMessages')}
           </Button>
         </div>
@@ -238,9 +243,8 @@ function MyStatus() {
   const tone =
     presence.state === 'active' ? 'success' : presence.state === 'idle' ? 'warning' : 'neutral';
   return (
-    <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <span className="sr-only">{t('inbox.you')}:</span>
-      <span aria-hidden="true">{t('alive.presence.you')}</span>
       <StatusBadge
         tone={tone}
         className={presence.state === 'active' ? 'alive-presence' : undefined}
@@ -257,9 +261,9 @@ function AlertsOffer() {
   const [offer, setOffer] = useState(shouldOfferAlerts);
   if (!offer) return null;
   return (
-    <div className="alive-in flex items-center gap-2 rounded-md bg-info-subtle px-2.5 py-1 text-xs text-info-subtle-foreground">
+    <div className="alive-in flex flex-wrap items-center gap-2 rounded-xl bg-info-subtle px-3 py-2 text-xs text-info-subtle-foreground">
       <BellRing aria-hidden="true" className="size-3.5 shrink-0" />
-      <span className="hidden max-w-80 md:block">{t('alive.notify.ask')}</span>
+      <span className="min-w-0 flex-1">{t('alive.notify.ask')}</span>
       <Button
         size="sm"
         variant="outline"
@@ -296,7 +300,12 @@ function ShortcutsHelp() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={t('inbox.shortcuts.title')}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="rounded-full"
+          aria-label={t('inbox.shortcuts.title')}
+        >
           <Keyboard aria-hidden="true" />
         </Button>
       </PopoverTrigger>
@@ -323,6 +332,7 @@ function ConversationList({
   filters,
   selected,
   me,
+  live,
   onSelect,
   onOrder,
   onFilters,
@@ -330,6 +340,8 @@ function ConversationList({
   readonly filters: Omit<InboxSearch, 'c'>;
   readonly selected: string | null;
   readonly me: string | null;
+  /** The realtime socket is up: the dot beside the title breathes. */
+  readonly live: boolean;
   readonly onSelect: (id: string) => void;
   readonly onOrder: (ids: readonly string[]) => void;
   readonly onFilters: (next: Partial<InboxSearch>) => void;
@@ -366,22 +378,54 @@ function ConversationList({
       <h2 id={`${ids}-title`} className="sr-only">
         {t('inbox.list.label')}
       </h2>
-      <div className="space-y-2 border-b border-border p-3">
-        <div role="group" aria-label={t('inbox.view.label')} className="flex gap-1">
+      <div className="space-y-2.5 border-b border-border p-3">
+        <div className="flex items-center gap-2">
+          <h1 className="text-base font-semibold">{t('inbox.title')}</h1>
+          <span
+            role="status"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            title={live ? t('inbox.live') : t('inbox.offline')}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'size-2 rounded-full',
+                live ? 'alive-presence bg-success' : 'bg-destructive',
+              )}
+            />
+            <span className="sr-only">{live ? t('inbox.live') : t('inbox.offline')}</span>
+          </span>
+          <div className="ml-auto flex items-center gap-1">
+            <MyStatus />
+            <ShortcutsHelp />
+          </div>
+        </div>
+        <AlertsOffer />
+        <div
+          role="group"
+          aria-label={t('inbox.view.label')}
+          className="grid grid-cols-3 gap-0.5 rounded-lg bg-muted p-0.5"
+        >
           {views.map(([view, label]) => (
-            <Button
+            <button
               key={view}
-              size="sm"
-              variant={filters.view === view ? 'secondary' : 'ghost'}
+              type="button"
               aria-pressed={filters.view === view}
               onClick={() => onFilters({ view })}
+              className={cn(
+                'motion-safe:duration-fast h-7 rounded-md text-sm motion-safe:transition-colors',
+                'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                filters.view === view
+                  ? 'border-border bg-background font-medium text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
             >
               {label}
-            </Button>
+            </button>
           ))}
         </div>
         <SearchInput
-          className="sm:w-full"
+          className="inbox-search sm:w-full"
           value={text}
           onChange={(event) => setText(event.target.value)}
           onClear={() => setText('')}
@@ -389,12 +433,13 @@ function ConversationList({
           placeholder={t('inbox.filter.search')}
           aria-label={t('inbox.filter.search')}
         />
-        <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Select
             size="sm"
             variant="filter"
             aria-label={t('inbox.filter.channel')}
             value={filters.channel ?? ''}
+            className="w-auto min-w-0 rounded-full"
             onValueChange={(value) =>
               onFilters({ channel: value === '' ? undefined : (value as InboxSearch['channel']) })
             }
@@ -408,6 +453,7 @@ function ConversationList({
             variant="filter"
             aria-label={t('inbox.filter.stage')}
             value={filters.stage ?? ''}
+            className="w-auto min-w-0 rounded-full"
             onValueChange={(value) =>
               onFilters({ stage: value === '' ? undefined : (value as InboxSearch['stage']) })
             }
@@ -419,34 +465,26 @@ function ConversationList({
               })),
             ]}
           />
-        </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="size-4 rounded-sm accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              checked={filters.unread === true}
-              onChange={(event) => onFilters({ unread: event.target.checked ? true : undefined })}
-            />
+          <FilterToggle
+            pressed={filters.unread === true}
+            onPressed={(on) => onFilters({ unread: on ? true : undefined })}
+          >
             {t('inbox.filter.unread')}
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="size-4 rounded-sm accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              checked={filters.closed === true}
-              onChange={(event) => onFilters({ closed: event.target.checked ? true : undefined })}
-            />
+          </FilterToggle>
+          <FilterToggle
+            pressed={filters.closed === true}
+            onPressed={(on) => onFilters({ closed: on ? true : undefined })}
+          >
             {t('inbox.filter.closed')}
-          </label>
+          </FilterToggle>
         </div>
       </div>
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {list.isPending ? (
           <ul className="space-y-1 p-2" aria-busy="true" aria-label={t('inbox.loading')}>
             {[0, 1, 2, 3, 4, 5].map((n) => (
-              <li key={n} className="flex items-center gap-3 px-2 py-2.5">
-                <Skeleton className="size-9 shrink-0 rounded-full" />
+              <li key={n} className="flex items-center gap-3 rounded-xl px-2.5 py-2.5">
+                <Skeleton className="size-10 shrink-0 rounded-full" />
                 <span className="flex-1 space-y-1.5">
                   <Skeleton className="h-4 w-2/3" />
                   <Skeleton className="h-3 w-full" />
@@ -497,7 +535,7 @@ function Rows({
   const [counts] = useState(() => new Map(items.map((item) => [item.id, item.unreadCount])));
   useFlip(listRef, items.map((item) => item.id).join(','));
   return (
-    <ul ref={listRef} aria-label={t('inbox.list.label')}>
+    <ul ref={listRef} aria-label={t('inbox.list.label')} className="space-y-0.5 p-2">
       {items.map((item) => (
         <ConversationRow
           key={item.id}
@@ -542,19 +580,32 @@ function ConversationRow({
         : (item.assignedTo.name ?? t('inbox.someone'));
   const preview = item.lastPreview ?? '';
   return (
-    <li data-flip-key={item.id} className={cn('border-b border-border', arrived && 'alive-in')}>
+    <li data-flip-key={item.id} className={cn(arrived && 'alive-in')}>
       <button
         type="button"
         onClick={onSelect}
         aria-current={selected ? 'true' : undefined}
         className={cn(
-          'alive-press flex w-full items-start gap-3 px-3 py-2.5 text-left',
-          'motion-safe:duration-fast hover:bg-accent motion-safe:transition-colors',
+          'alive-press flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left',
+          'motion-safe:duration-fast motion-safe:transition-colors',
           'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset',
-          selected && 'bg-selected text-selected-foreground',
+          selected ? 'bg-selected text-selected-foreground' : 'hover:bg-accent',
         )}
       >
-        <ContactAvatar id={item.contact.id} name={item.contact.name} url={item.contact.avatarUrl} />
+        <span className="relative shrink-0">
+          <ContactAvatar
+            id={item.contact.id}
+            name={item.contact.name}
+            url={item.contact.avatarUrl}
+            size="lg"
+          />
+          {unread ? (
+            <span
+              aria-hidden="true"
+              className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-primary"
+            />
+          ) : null}
+        </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
             <span
@@ -566,8 +617,8 @@ function ConversationRow({
             <time
               dateTime={item.lastMessageAt}
               className={cn(
-                'ml-auto shrink-0 text-xs',
-                unread ? 'font-medium text-primary' : 'text-muted-foreground',
+                'ml-auto shrink-0 text-2xs',
+                unread ? 'font-semibold text-foreground' : 'text-muted-foreground',
               )}
             >
               {timeText(relativeTime(item.lastMessageAt, now), t)}
@@ -589,7 +640,7 @@ function ConversationRow({
               <span
                 key={item.unreadCount}
                 className={cn(
-                  'ml-auto shrink-0 rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground tabular-nums',
+                  'ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-2xs font-semibold text-primary-foreground tabular-nums',
                   countChanged && 'alive-pop',
                 )}
                 aria-label={t('inbox.list.unread', { n: String(item.unreadCount) })}
@@ -598,17 +649,48 @@ function ConversationRow({
               </span>
             ) : null}
           </span>
-          <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <StatusBadge tone="neutral">{t(`inbox.channel.${item.channel}`)}</StatusBadge>
+          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
+            <span className="shrink-0 font-medium">{t(`inbox.channel.${item.channel}`)}</span>
             {item.contact.stage === 'visitor' ? null : (
-              <StatusBadge tone={stageTone(item.contact.stage)}>
+              <StatusBadge tone={stageTone(item.contact.stage)} className="shrink-0">
                 {t(`inbox.stage.${item.contact.stage}`)}
               </StatusBadge>
             )}
+            <span aria-hidden="true">·</span>
             <span className="truncate">{owner}</span>
           </span>
         </span>
       </button>
     </li>
+  );
+}
+
+/** A filter that is on or off, as a pill beside the selects. */
+function FilterToggle({
+  pressed,
+  onPressed,
+  children,
+}: {
+  readonly pressed: boolean;
+  readonly onPressed: (on: boolean) => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={() => onPressed(!pressed)}
+      className={cn(
+        'inline-flex h-control-sm items-center gap-1 rounded-full border px-3 text-sm',
+        'motion-safe:duration-fast motion-safe:transition-colors',
+        'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        pressed
+          ? 'border-transparent bg-primary text-primary-foreground'
+          : 'border-input bg-background text-foreground hover:bg-accent',
+      )}
+    >
+      {pressed ? <Check aria-hidden="true" className="size-3.5" /> : null}
+      {children}
+    </button>
   );
 }

@@ -211,6 +211,38 @@ async function freshPerson(extraPhones = 0): Promise<{ customerId: string; phone
   return { customerId, phoneIds: [...rows].map((row) => row.id) };
 }
 
+/** M49 (D-894): a district and a thana in it, from the reference data. */
+async function anyArea(): Promise<{ districtId: number; thanaId: number }> {
+  const rows = await withSystem(
+    (tx) =>
+      tx.execute<{ district_id: number; thana_id: number }>(sql`
+        select district_id, id as thana_id from ref.thanas order by id limit 1
+      `),
+    { orgId: ORG_A },
+  );
+  return { districtId: rows[0]?.district_id ?? 1, thanaId: rows[0]?.thana_id ?? 1 };
+}
+
+/**
+ * M49 (D-894): a fresh buyer with a saved address of their own (not the default the seed gives
+ * them), for replacing or removing it.
+ */
+async function personWithAddress(): Promise<{ customerId: string; addressId: string }> {
+  const { customerId } = await freshPerson();
+  const area = await anyArea();
+  const rows = await withSystem(
+    (tx) =>
+      tx.execute<{ id: string }>(sql`
+        insert into sales.customer_addresses
+          (org_id, customer_id, district_id, thana_id, address_line, is_default)
+        values (${ORG_A}, ${customerId}, ${area.districtId}, ${area.thanaId}, 'House 1, Road 2', false)
+        returning id
+      `),
+    { orgId: ORG_A },
+  );
+  return { customerId, addressId: rows[0]?.id ?? '' };
+}
+
 /** A line as a shipped order carries it: the dispatch cost is already recorded. */
 function dispatched(index: number, overrides: Partial<SeedOrderLine> = {}): SeedOrderLine {
   return line(index, { dispatchUnitCostPoisha: UNIT_COST, ...overrides });
@@ -540,6 +572,25 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
       url: `/v1/customers/${person.customerId}/phones/${person.phoneIds[1] ?? ''}/retire`,
       body: { reason: 'changed_number' },
     };
+  },
+
+  // M49 (D-894): the address book. A fresh buyer each call, so every admitted role succeeds.
+  'POST /v1/customers/:id/addresses': async () => ({
+    url: `/v1/customers/${(await freshPerson()).customerId}/addresses`,
+    body: { ...(await anyArea()), addressLine: 'House 12, Road 5', label: 'Home' },
+  }),
+
+  'PUT /v1/customers/:id/addresses/:addressId': async () => {
+    const person = await personWithAddress();
+    return {
+      url: `/v1/customers/${person.customerId}/addresses/${person.addressId}`,
+      body: { ...(await anyArea()), addressLine: 'House 14, Road 5', label: 'Office' },
+    };
+  },
+
+  'DELETE /v1/customers/:id/addresses/:addressId': async () => {
+    const person = await personWithAddress();
+    return { url: `/v1/customers/${person.customerId}/addresses/${person.addressId}` };
   },
 
   'POST /v1/customers/:id/merge': async () => {

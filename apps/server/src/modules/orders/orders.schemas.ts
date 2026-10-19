@@ -1,4 +1,5 @@
 import { ORDER_CHANNELS } from '@elysium/contracts';
+import { customerDetailsSchema } from '@elysium/contracts/customers';
 import {
   ADVANCE_METHODS,
   ADVANCE_STATUSES,
@@ -106,17 +107,14 @@ export const createCustomerSchema = z
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 
-export const updateCustomerSchema = createCustomerSchema
-  .partial()
-  .omit({ phone: true, newPerson: true, phoneRelation: true, phoneNote: true })
-  .extend({
-    /**
-     * `null` removes a date; leaving the field out keeps it (M16). A birthday typed on the
-     * wrong buyer must be removable, or the occasions job greets them every year for it.
-     */
-    birthday: z.string().date().nullable().optional(),
-    anniversary: z.string().date().nullable().optional(),
-  })
+/**
+ * `PATCH /v1/customers/:id`: the buyer's details (M49, D-891: the contracts' schema, shared with
+ * the inbox's customer card) and, as before, a new default address. `null` removes a value;
+ * leaving a field out keeps it (M16): a birthday typed on the wrong buyer must be removable, or
+ * the occasions job greets them every year for it.
+ */
+export const updateCustomerSchema = customerDetailsSchema
+  .extend({ address: addressSchema.optional() })
   .strict();
 
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;

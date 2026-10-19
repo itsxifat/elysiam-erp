@@ -26,6 +26,7 @@ import { DatePicker } from '../../ui/date-picker.js';
 import { listAccounts } from '../website/api.js';
 import { CallButton } from '../calls/call-button.js';
 import { NumbersCard } from '../people/numbers-card.js';
+import { ChatsCard, PersonCards } from '../people/profile-cards.js';
 
 /** A birthday or an anniversary can be decades back: the calendar lists the years. */
 const OCCASION_YEARS = { from: 1930, to: new Date().getUTCFullYear() } as const;
@@ -177,6 +178,9 @@ function ProfileBody({ profile }: { readonly profile: BuyerProfile }) {
       {/* M48 (D-870): every number the buyer uses, with the staff's details; Merge with… */}
       <NumbersCard customerId={customer.id} />
 
+      {/* M49 (D-891, D-894): the details with the email, and the address book. */}
+      <PersonCards customerId={customer.id} />
+
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel title={t('customers.profile.favourites')}>
           {profile.favourites.categories.length === 0 && profile.favourites.sizes.length === 0 ? (
@@ -250,6 +254,9 @@ function ProfileBody({ profile }: { readonly profile: BuyerProfile }) {
       </div>
 
       <WebsiteAccounts customerId={customer.id} />
+
+      {/* M49 (D-895): the chats this buyer had, and the notes written in them. */}
+      <ChatsCard customerId={customer.id} />
 
       <RecentOrders profile={profile} />
     </>

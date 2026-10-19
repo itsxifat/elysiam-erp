@@ -22,6 +22,7 @@ import { INBOX_API, InboxApiService } from './inbox.api.js';
 import { InboxController } from './inbox.controller.js';
 import { InboxMediaService } from './media.service.js';
 import { InboxOrderListener } from './order-listener.service.js';
+import { InboxCustomerService } from './customer-card.service.js';
 import { ContactPanelService } from './panel.service.js';
 import { InboxProfileService } from './profile.service.js';
 import { CONVERSATION_OFFER } from './ports/conversation-offer.port.js';
@@ -100,6 +101,8 @@ const voiceCallsConfigProvider: Provider = {
     { provide: CONVERSATION_OFFER, useExisting: ConversationOffersService },
     ConversationsService,
     ContactPanelService,
+    // M49 (D-890): the customer card's writes, through the conversation.
+    InboxCustomerService,
     InboxChannelsService,
     InboxWebhookService,
     InboxSendService,

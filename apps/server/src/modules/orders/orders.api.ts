@@ -1,5 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { CallAttemptInput } from '@elysium/contracts';
+import type {
+  CustomerAddressInput,
+  CustomerCardView,
+  CustomerDetailsInput,
+  CustomerGender,
+  CustomerPhoneAddInput,
+  CustomerPhoneRetireInput,
+  CustomerPhoneUpdateInput,
+} from '@elysium/contracts/customers';
 import type { RequestContext, Tx } from '@elysium/db';
 import { sql, type SQL } from 'drizzle-orm';
 import {
@@ -25,6 +34,8 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import { CATALOG_API, type CatalogApi } from '../catalog/catalog.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { AdvancesService } from './advances.service.js';
+import { CustomersService } from './customers.service.js';
+import { CustomerNumbersService } from './numbers.service.js';
 import { OffersService, type WorkflowSettings } from './offers.service.js';
 import { OrdersService, type CreateOrderOptions, type CreatedOrder } from './orders.service.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
@@ -968,6 +979,102 @@ export interface OrdersApi {
     customerId: string,
     body: string,
   ): Promise<PinnedNoteFact | null>;
+
+  // --- M49: the inbox's customer card (D-890 to D-895) ---------------------------------------
+
+  /**
+   * The buyer as the inbox's customer card shows and edits them: the details, every number with
+   * the staff's notes (in use and retired), the address book, the segment and the pinned note (who
+   * wrote it as an id). Undefined for a buyer not of this brand. No scope: the inbox decides who
+   * may, through the conversation the buyer is linked to (D-890), as the caller panel does.
+   */
+  customerCard(tx: Tx, orgId: string, customerId: string): Promise<CustomerCardFacts | undefined>;
+
+  /**
+   * The writes behind the card, each in the caller's transaction, audited as the buyer page's own
+   * (`customer.updated`, `customer.phone_*`, `customer.address_*`) and refused on a merged record.
+   * The caller has decided who may (D-890); the inputs are the contracts' (`customers.ts`).
+   */
+  updateCustomerDetails(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    patch: CustomerDetailsInput,
+  ): Promise<void>;
+  addCustomerPhone(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    input: CustomerPhoneAddInput,
+  ): Promise<void>;
+  updateCustomerPhone(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    phoneId: string,
+    input: CustomerPhoneUpdateInput,
+  ): Promise<void>;
+  retireCustomerPhone(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    phoneId: string,
+    input: CustomerPhoneRetireInput,
+  ): Promise<void>;
+  addCustomerAddress(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    input: CustomerAddressInput,
+  ): Promise<void>;
+  replaceCustomerAddress(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    addressId: string,
+    input: CustomerAddressInput,
+  ): Promise<void>;
+  removeCustomerAddress(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    addressId: string,
+  ): Promise<void>;
+
+  /**
+   * Save a chat's person as a buyer (the inbox's Save as customer, D-892): their name and number,
+   * the number theirs and noted as from the chat. `newPerson` makes a new record even when the
+   * number is already someone's (a relative on the same phone); otherwise the number's automatic
+   * pick is answered and nothing is created. Audited `customer.created` when made.
+   */
+  saveChatCustomer(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    input: {
+      readonly name: string;
+      readonly phoneE164: string;
+      readonly newPerson: boolean;
+      readonly address?: {
+        readonly districtId: number;
+        readonly thanaId: number;
+        readonly area?: string | undefined;
+        readonly addressLine: string;
+      };
+    },
+  ): Promise<{ readonly id: string; readonly created: boolean }>;
+}
+
+/** M49 (D-890): the inbox's customer card, with the pinned note's author as an id. */
+export interface CustomerCardFacts extends Omit<CustomerCardView, 'pinnedNote'> {
+  readonly pinnedNote: PinnedNoteFact | null;
 }
 
 /** M47 (D-860): a buyer as the caller panel shows them. No address, nothing near a cost. */
@@ -1134,7 +1241,155 @@ export class OrdersApiService implements OrdersApi {
     private readonly documents: DocumentsService,
     // M47 (D-860): the pinned note's audit row, in the caller's transaction.
     private readonly audit: AuditService,
+    // M49 (D-890): the inbox's customer card writes through the buyer page's own logic.
+    private readonly customers: CustomersService,
+    private readonly numbersService: CustomerNumbersService,
   ) {}
+
+  // --- M49: the inbox's customer card (D-890 to D-895) ----------------------------------------
+
+  async customerCard(
+    tx: Tx,
+    orgId: string,
+    customerId: string,
+  ): Promise<CustomerCardFacts | undefined> {
+    const [row, caller] = await Promise.all([
+      repo.customerById(tx, orgId, customerId),
+      repo.callerCustomerById(tx, orgId, customerId),
+    ]);
+    if (row === undefined || caller === undefined) return undefined;
+    const facts = callerCustomerFacts(caller);
+    const [phones, addresses] = await Promise.all([
+      this.numbersService.viewsOf(tx, orgId, customerId),
+      this.customers.addressViews(tx, orgId, customerId),
+    ]);
+    return {
+      id: row.id,
+      name: row.name,
+      phone: row.phone_e164,
+      email: row.email,
+      gender: isGender(row.gender) ? row.gender : null,
+      ageBand: row.age_band,
+      profession: row.profession,
+      birthday: row.birthday,
+      anniversary: row.anniversary,
+      tags: facts.tags,
+      notes: row.notes,
+      segment: facts.segment,
+      phones,
+      addresses,
+      pinnedNote: facts.pinnedNote,
+    };
+  }
+
+  async updateCustomerDetails(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    patch: CustomerDetailsInput,
+  ): Promise<void> {
+    await mapOrderErrors(() => this.customers.updateIn(tx, context, request, customerId, patch));
+  }
+
+  async addCustomerPhone(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    input: CustomerPhoneAddInput,
+  ): Promise<void> {
+    await mapOrderErrors(() =>
+      this.numbersService.addIn(tx, context, request, customerId, input, 'decided'),
+    );
+  }
+
+  async updateCustomerPhone(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    phoneId: string,
+    input: CustomerPhoneUpdateInput,
+  ): Promise<void> {
+    await mapOrderErrors(() =>
+      this.numbersService.updateIn(tx, context, request, customerId, phoneId, input, 'decided'),
+    );
+  }
+
+  async retireCustomerPhone(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    phoneId: string,
+    input: CustomerPhoneRetireInput,
+  ): Promise<void> {
+    await mapOrderErrors(() =>
+      this.numbersService.retireIn(tx, context, request, customerId, phoneId, input, 'decided'),
+    );
+  }
+
+  async addCustomerAddress(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    input: CustomerAddressInput,
+  ): Promise<void> {
+    await mapOrderErrors(() =>
+      this.customers.addAddressIn(tx, context, request, customerId, input),
+    );
+  }
+
+  async replaceCustomerAddress(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    addressId: string,
+    input: CustomerAddressInput,
+  ): Promise<void> {
+    await mapOrderErrors(() =>
+      this.customers.replaceAddressIn(tx, context, request, customerId, addressId, input),
+    );
+  }
+
+  async removeCustomerAddress(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    addressId: string,
+  ): Promise<void> {
+    await mapOrderErrors(() =>
+      this.customers.removeAddressIn(tx, context, request, customerId, addressId),
+    );
+  }
+
+  async saveChatCustomer(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    input: Parameters<OrdersApi['saveChatCustomer']>[3],
+  ): Promise<{ readonly id: string; readonly created: boolean }> {
+    return mapOrderErrors(async () => {
+      const saved = await this.customers.createIn(
+        tx,
+        context,
+        request,
+        {
+          phone: input.phoneE164,
+          name: input.name,
+          newPerson: input.newPerson,
+          phoneRelation: 'own',
+          ...(input.address === undefined ? {} : { address: input.address }),
+        },
+        { source: 'inbox' },
+      );
+      return { id: saved.id, created: saved.created };
+    });
+  }
 
   workflowSettings(tx: Tx, orgId: string): Promise<WorkflowSettings> {
     return this.offers.settingsIn(tx, orgId);
@@ -2261,6 +2516,13 @@ function instant(value: Date | string | null): Date | null {
 }
 
 /** M47 (D-860): the caller panel's buyer, from their row. */
+const GENDERS: readonly string[] = ['female', 'male', 'other'];
+
+/** A stored gender the contracts name (an imported value they do not is shown as none). */
+function isGender(value: string | null): value is CustomerGender {
+  return value !== null && GENDERS.includes(value);
+}
+
 function callerCustomerFacts(row: repo.CallerCustomerRow): CallerCustomerFacts {
   const rate = returnRateBps(row.delivered_count, row.returned_count);
   const noteAt = instant(row.pinned_note_at);

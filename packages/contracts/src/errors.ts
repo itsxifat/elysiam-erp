@@ -671,6 +671,8 @@ export const ERROR_CODES = [
   'INBOX_OFFER_GONE',
   /** M44a (D-763): another saved reply of this brand already has that shortcut. */
   'INBOX_SHORTCUT_TAKEN',
+  /** M49 (D-890): the chat is not linked to a customer yet, or already is (Save as customer). */
+  'INBOX_NO_CUSTOMER',
   // M45: voice messages and calls in the inbox (D-780 to D-788)
   /** The recording is not a stored voice message of the caller's (type, size, or someone else's). */
   'INBOX_MEDIA_INVALID',
@@ -731,6 +733,8 @@ export const ERROR_CODES = [
   'CUSTOMER_PHONE_INVALID',
   /** Those two records cannot be merged (the same record, or one already merged). */
   'CUSTOMER_MERGE_INVALID',
+  // M49 (D-894): a saved address the buyer does not have.
+  'CUSTOMER_ADDRESS_NOT_FOUND',
   /** Changing an order's buyer and merging buyers are a supervisor's (D-886). */
   'CUSTOMER_SUPERVISOR_ONLY',
 ] as const;

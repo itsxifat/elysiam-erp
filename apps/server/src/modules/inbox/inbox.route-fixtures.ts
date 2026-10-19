@@ -104,6 +104,108 @@ async function freshConversation(hoursAgo = 1): Promise<{ id: string; contactId:
   );
 }
 
+function freshPhone(): string {
+  return `+88017${String(Math.floor(Math.random() * 90_000_000) + 10_000_000)}`;
+}
+
+/**
+ * M49 (D-890): a conversation whose customer gave their number in the chat, a buyer on that number
+ * with a second number and a saved address, and the contact linked to them unless `linked` is
+ * false (then the number is saved but nobody is linked yet).
+ */
+async function chatWithBuyer(linked = true): Promise<{
+  id: string;
+  customerId: string;
+  phoneIds: string[];
+  addressId: string;
+}> {
+  const phone = freshPhone();
+  return withSystem(
+    async (tx) => {
+      const customerId =
+        (
+          await tx.execute<{ id: string }>(sql`
+            insert into sales.customers (org_id, phone_e164, name)
+            values (${ORG_A}, ${phone}, 'Matrix buyer')
+            returning id
+          `)
+        )[0]?.id ?? '';
+      const phoneIds: string[] = [];
+      for (const [rank, number] of [phone, freshPhone()].entries()) {
+        const row = await tx.execute<{ id: string }>(sql`
+          insert into sales.customer_phones (org_id, customer_id, phone_e164, rank, source)
+          values (${ORG_A}, ${customerId}, ${number}, ${rank + 1}, 'import')
+          returning id
+        `);
+        phoneIds.push(row[0]?.id ?? '');
+      }
+      const area = (
+        await tx.execute<{ district_id: number; thana_id: number }>(sql`
+          select district_id, id as thana_id from ref.thanas order by id limit 1
+        `)
+      )[0];
+      const addressId =
+        (
+          await tx.execute<{ id: string }>(sql`
+            insert into sales.customer_addresses
+              (org_id, customer_id, district_id, thana_id, address_line, is_default)
+            values (${ORG_A}, ${customerId}, ${area?.district_id ?? 1}, ${area?.thana_id ?? 1},
+                    'House 1, Road 2', true)
+            returning id
+          `)
+        )[0]?.id ?? '';
+      const channel = (
+        await tx.execute<{ id: string }>(sql`
+          select id from inbox.channels where org_id = ${ORG_A} and kind = 'messenger'
+        `)
+      )[0]?.id;
+      const contact = (
+        await tx.execute<{ id: string }>(sql`
+          insert into inbox.contacts (org_id, display_name, phone_e164, customer_id)
+          values (${ORG_A}, 'Matrix buyer', ${phone}, ${linked ? customerId : null})
+          returning id
+        `)
+      )[0]?.id;
+      const identity = (
+        await tx.execute<{ id: string }>(sql`
+          insert into inbox.identities (org_id, contact_id, channel_id, external_user_id)
+          values (${ORG_A}, ${contact}, ${channel}, ${`psid-${randomUUID()}`})
+          returning id
+        `)
+      )[0]?.id;
+      const conversation = (
+        await tx.execute<{ id: string }>(sql`
+          insert into inbox.conversations
+            (org_id, channel_id, contact_id, identity_id, last_inbound_at, last_message_at,
+             last_preview, last_direction, unread_count)
+          values (${ORG_A}, ${channel}, ${contact}, ${identity}, now() - interval '1 hour',
+                  now() - interval '1 hour', 'my number', 'inbound', 1)
+          returning id
+        `)
+      )[0]?.id;
+      await tx.execute(sql`
+        insert into inbox.messages
+          (org_id, conversation_id, direction, body, provider_message_id, status, occurred_at)
+        values (${ORG_A}, ${conversation}, 'inbound', ${`my number is 0${phone.slice(4)}`},
+                ${`m_${randomUUID()}`}, 'received', now() - interval '1 hour')
+      `);
+      return { id: conversation ?? '', customerId, phoneIds, addressId };
+    },
+    { orgId: ORG_A },
+  );
+}
+
+async function anyArea(): Promise<{ districtId: number; thanaId: number }> {
+  const rows = await withSystem(
+    (tx) =>
+      tx.execute<{ district_id: number; thana_id: number }>(sql`
+        select district_id, id as thana_id from ref.thanas order by id limit 1
+      `),
+    { orgId: ORG_A },
+  );
+  return { districtId: rows[0]?.district_id ?? 1, thanaId: rows[0]?.thana_id ?? 1 };
+}
+
 async function anyProductId(): Promise<string> {
   return withSystem(
     async (tx) =>
@@ -213,6 +315,61 @@ export const INBOX_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> |
   },
   'PUT /v1/inbox/conversations/:id/contact/phone': () =>
     at('/contact/phone', { phone: '01712345678' }),
+  // M49 (D-890 to D-895): the customer card, each call on a chat and a buyer of its own.
+  'GET /v1/inbox/customers/:customerId/chats': async () => ({
+    url: `/v1/inbox/customers/${(await chatWithBuyer()).customerId}/chats`,
+  }),
+  'POST /v1/inbox/conversations/:id/customer': () =>
+    at('/customer', { name: 'Matrix new buyer', phone: freshPhone() }),
+  'PUT /v1/inbox/conversations/:id/customer/link': async () => {
+    const chat = await chatWithBuyer(false);
+    return {
+      url: `/v1/inbox/conversations/${chat.id}/customer/link`,
+      body: { customerId: chat.customerId },
+    };
+  },
+  'DELETE /v1/inbox/conversations/:id/customer/link': async () => ({
+    url: `/v1/inbox/conversations/${(await chatWithBuyer()).id}/customer/link`,
+  }),
+  'PATCH /v1/inbox/conversations/:id/customer': async () => ({
+    url: `/v1/inbox/conversations/${(await chatWithBuyer()).id}/customer`,
+    body: { email: 'matrix.buyer@example.com', profession: 'Teacher' },
+  }),
+  'POST /v1/inbox/conversations/:id/customer/phones': async () => ({
+    url: `/v1/inbox/conversations/${(await chatWithBuyer()).id}/customer/phones`,
+    body: { phone: freshPhone(), relation: 'household', note: 'Her husband’s phone, evenings' },
+  }),
+  'PATCH /v1/inbox/conversations/:id/customer/phones/:phoneId': async () => {
+    const chat = await chatWithBuyer();
+    return {
+      url: `/v1/inbox/conversations/${chat.id}/customer/phones/${chat.phoneIds[1] ?? ''}`,
+      body: { note: 'Office phone, weekdays', rank: 1 },
+    };
+  },
+  'POST /v1/inbox/conversations/:id/customer/phones/:phoneId/retire': async () => {
+    const chat = await chatWithBuyer();
+    return {
+      url: `/v1/inbox/conversations/${chat.id}/customer/phones/${chat.phoneIds[1] ?? ''}/retire`,
+      body: { reason: 'changed_number' },
+    };
+  },
+  'POST /v1/inbox/conversations/:id/customer/addresses': async () => ({
+    url: `/v1/inbox/conversations/${(await chatWithBuyer()).id}/customer/addresses`,
+    body: { ...(await anyArea()), addressLine: 'House 9, Road 3', label: 'Office' },
+  }),
+  'PUT /v1/inbox/conversations/:id/customer/addresses/:addressId': async () => {
+    const chat = await chatWithBuyer();
+    return {
+      url: `/v1/inbox/conversations/${chat.id}/customer/addresses/${chat.addressId}`,
+      body: { ...(await anyArea()), addressLine: 'House 10, Road 3' },
+    };
+  },
+  'DELETE /v1/inbox/conversations/:id/customer/addresses/:addressId': async () => {
+    const chat = await chatWithBuyer();
+    return {
+      url: `/v1/inbox/conversations/${chat.id}/customer/addresses/${chat.addressId}`,
+    };
+  },
   'PUT /v1/inbox/conversations/:id/contact/address': async () => {
     const area = await withSystem(async (tx) => {
       const rows = await tx.execute<{ district_id: number; thana_id: number }>(sql`

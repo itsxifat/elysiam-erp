@@ -301,15 +301,16 @@ export interface CatalogApi {
    * The inbox's product picker: active products for what an agent typed (a name, a SKU or
    * parent SKU, a barcode, a website slug), best first, or these ids in their order. Each with
    * its size chart, first photo and, for an exact SKU or barcode, the SKU it named. No price
-   * (`webSkus` has the selling prices) and never a cost.
+   * (`webSkus` has the selling prices) and never a cost. A search is paged (M49, D-890): `offset`
+   * is the previous page's `nextOffset`, null when nothing follows.
    */
   pickerProducts(
     tx: Tx,
     orgId: string,
     query:
-      | { readonly q: string; readonly limit: number }
+      | { readonly q: string; readonly limit: number; readonly offset?: number }
       | { readonly ids: readonly string[]; readonly limit: number },
-  ): Promise<PickerProduct[]>;
+  ): Promise<{ readonly items: PickerProduct[]; readonly nextOffset: number | null }>;
 
   /** The brand's colour names, for reading a colour in a chat. */
   colourNames(tx: Tx, orgId: string): Promise<string[]>;
@@ -931,24 +932,29 @@ export class CatalogApiService implements CatalogApi {
     tx: Tx,
     orgId: string,
     query:
-      | { readonly q: string; readonly limit: number }
+      | { readonly q: string; readonly limit: number; readonly offset?: number }
       | { readonly ids: readonly string[]; readonly limit: number },
-  ): Promise<PickerProduct[]> {
+  ): Promise<{ readonly items: PickerProduct[]; readonly nextOffset: number | null }> {
+    const offset = 'q' in query ? (query.offset ?? 0) : 0;
     const found =
       'q' in query
-        ? await picker.pickerProductIds(tx, orgId, query.q, query.limit)
+        ? await picker.pickerProductIds(tx, orgId, query.q, query.limit, offset)
         : {
             ids: [...new Set(query.ids)].slice(0, query.limit),
             matchedSkus: new Map<string, string>(),
+            more: false,
           };
     const rows = await picker.pickerProductsByIds(tx, orgId, found.ids);
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      imageFileId: row.image_file_id,
-      sizeChartId: row.size_chart_id,
-      matchedSkuId: found.matchedSkus.get(row.id) ?? null,
-    }));
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        imageFileId: row.image_file_id,
+        sizeChartId: row.size_chart_id,
+        matchedSkuId: found.matchedSkus.get(row.id) ?? null,
+      })),
+      nextOffset: found.more ? offset + query.limit : null,
+    };
   }
 
   colourNames(tx: Tx, orgId: string): Promise<string[]> {

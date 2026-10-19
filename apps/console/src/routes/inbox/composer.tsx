@@ -291,40 +291,39 @@ export function Composer({ conversation, disabled, onSend, actions, describedBy 
         <label htmlFor={`${ids}-compose`} className="sr-only">
           {t('inbox.thread.compose')}
         </label>
-        <textarea
-          ref={box}
-          id={`${ids}-compose`}
-          data-inbox-composer=""
-          value={text}
-          onChange={onChange}
-          onSelect={onSelect}
-          onKeyDown={onKeyDown}
-          onBlur={() => setPicker(null)}
-          rows={2}
-          maxLength={MAX_CHARS * 2}
-          disabled={disabled}
-          lang={hasBangla(text) ? 'bn' : undefined}
-          placeholder={t('inbox.thread.composePlaceholder')}
-          aria-describedby={describedBy}
-          aria-autocomplete={mayUseSaved ? 'list' : undefined}
-          aria-controls={picker === null ? undefined : listbox}
-          aria-activedescendant={active === null ? undefined : optionId(active)}
-          className={cn(
-            'flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm',
-            'motion-safe:duration-fast motion-safe:transition-colors',
-            'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50',
-            over && 'border-destructive',
-          )}
-        />
-        {actions}
-        <Button
-          type="submit"
-          className="alive-press"
-          disabled={disabled || send.isPending || text.trim() === '' || over}
-        >
-          <Send aria-hidden className="size-4" />
-          {t('inbox.thread.send')}
-        </Button>
+        <div className="inbox-composer" data-disabled={disabled} data-over={over}>
+          <textarea
+            ref={box}
+            id={`${ids}-compose`}
+            data-inbox-composer=""
+            value={text}
+            onChange={onChange}
+            onSelect={onSelect}
+            onKeyDown={onKeyDown}
+            onBlur={() => setPicker(null)}
+            rows={2}
+            maxLength={MAX_CHARS * 2}
+            disabled={disabled}
+            lang={hasBangla(text) ? 'bn' : undefined}
+            placeholder={t('inbox.thread.composePlaceholder')}
+            aria-describedby={describedBy}
+            aria-autocomplete={mayUseSaved ? 'list' : undefined}
+            aria-controls={picker === null ? undefined : listbox}
+            aria-activedescendant={active === null ? undefined : optionId(active)}
+            className="flex-1 bg-transparent px-1.5 py-2 text-sm focus-visible:outline-none disabled:cursor-not-allowed"
+          />
+          {actions}
+          <Button
+            type="submit"
+            size="icon"
+            className="alive-press shrink-0 rounded-full"
+            aria-label={t('inbox.thread.send')}
+            title={t('inbox.thread.send')}
+            disabled={disabled || send.isPending || text.trim() === '' || over}
+          >
+            <Send aria-hidden className="size-4" />
+          </Button>
+        </div>
       </form>
 
       {showCount ? (

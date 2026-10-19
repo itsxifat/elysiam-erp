@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -27,6 +28,15 @@ import {
   inboxTagsSchema,
   inboxThreadQuerySchema,
 } from '@elysium/contracts';
+import {
+  customerAddressSchema,
+  customerDetailsSchema,
+  customerPhoneAddSchema,
+  customerPhoneRetireSchema,
+  customerPhoneUpdateSchema,
+  inboxLinkCustomerSchema,
+  inboxSaveCustomerSchema,
+} from '@elysium/contracts/customers';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
@@ -36,6 +46,7 @@ import { requireContext } from '../../platform/http/context.js';
 import { InboxChannelsService } from './channels.service.js';
 import { ConversationOffersService } from './conversation-offers.service.js';
 import { ConversationsService } from './conversations.service.js';
+import { InboxCustomerService } from './customer-card.service.js';
 import { acknowledgedIn } from './ownership.js';
 import { ContactPanelService } from './panel.service.js';
 
@@ -77,6 +88,7 @@ export class InboxController {
     private readonly panel: ContactPanelService,
     private readonly channels: InboxChannelsService,
     private readonly offers: ConversationOffersService,
+    private readonly customer: InboxCustomerService,
   ) {}
 
   @RequireAbility('read', 'Conversation')
@@ -269,6 +281,180 @@ export class InboxController {
       auditable(request),
       parse(idSchema, id),
       parse(inboxAddressSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  // --- M49: the customer card (D-890 to D-895), through the conversation --------------------
+
+  /** A buyer's chats and the notes written in them, for the buyer page (D-895). */
+  @RequireAbility('read', 'Conversation')
+  @Get('customers/:customerId/chats')
+  async customerChats(@Req() request: FastifyRequest, @Param('customerId') customerId: string) {
+    return this.panel.customerChats(requireContext(request), parse(idSchema, customerId));
+  }
+
+  /** Save the chat's person as a new customer and link them (D-892). */
+  @RequireAbility('update', 'Conversation')
+  @Post('conversations/:id/customer')
+  async saveCustomer(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.customer.save(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(inboxSaveCustomerSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  /** This chat is one of the people on the saved number (D-892). */
+  @RequireAbility('update', 'Conversation')
+  @Put('conversations/:id/customer/link')
+  async linkCustomer(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.customer.link(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(inboxLinkCustomerSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  /** Not this customer after all: the link goes, the number stays (D-892). */
+  @RequireAbility('update', 'Conversation')
+  @Delete('conversations/:id/customer/link')
+  async unlinkCustomer(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.customer.unlink(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      acknowledged(request),
+    );
+  }
+
+  /** The linked buyer's details (D-891): name, email, gender, profession, dates, notes, tags. */
+  @RequireAbility('update', 'Conversation')
+  @Patch('conversations/:id/customer')
+  async updateCustomer(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.customer.updateDetails(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(customerDetailsSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  @RequireAbility('update', 'Conversation')
+  @Post('conversations/:id/customer/phones')
+  async addCustomerPhone(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.customer.addPhone(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(customerPhoneAddSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  @RequireAbility('update', 'Conversation')
+  @Patch('conversations/:id/customer/phones/:phoneId')
+  async updateCustomerPhone(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Param('phoneId') phoneId: string,
+    @Body() body: unknown,
+  ) {
+    return this.customer.updatePhone(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(idSchema, phoneId),
+      parse(customerPhoneUpdateSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  @RequireAbility('update', 'Conversation')
+  @Post('conversations/:id/customer/phones/:phoneId/retire')
+  async retireCustomerPhone(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Param('phoneId') phoneId: string,
+    @Body() body: unknown,
+  ) {
+    return this.customer.retirePhone(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(idSchema, phoneId),
+      parse(customerPhoneRetireSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  @RequireAbility('update', 'Conversation')
+  @Post('conversations/:id/customer/addresses')
+  async addCustomerAddress(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.customer.addAddress(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(customerAddressSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  @RequireAbility('update', 'Conversation')
+  @Put('conversations/:id/customer/addresses/:addressId')
+  async replaceCustomerAddress(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+    @Body() body: unknown,
+  ) {
+    return this.customer.replaceAddress(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(idSchema, addressId),
+      parse(customerAddressSchema, body),
+      acknowledged(request),
+    );
+  }
+
+  @RequireAbility('update', 'Conversation')
+  @Delete('conversations/:id/customer/addresses/:addressId')
+  async removeCustomerAddress(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+  ) {
+    return this.customer.removeAddress(
+      requireContext(request),
+      auditable(request),
+      parse(idSchema, id),
+      parse(idSchema, addressId),
       acknowledged(request),
     );
   }

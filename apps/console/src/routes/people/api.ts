@@ -1,5 +1,9 @@
 import type {
   BuyerCandidateView,
+  CustomerAddressInput,
+  CustomerAddressView,
+  CustomerDetailsInput,
+  CustomerGender,
   CustomerPhoneAddInput,
   CustomerPhoneRetireInput,
   CustomerPhoneUpdateInput,
@@ -13,7 +17,7 @@ import { api } from '../../api.js';
  * desk's lookup with everyone a number names. Typed by the contracts the server validates with.
  */
 
-export type { BuyerCandidateView, CustomerPhoneView };
+export type { BuyerCandidateView, CustomerAddressView, CustomerPhoneView };
 
 export const PHONE_KINDS = ['mobile', 'whatsapp', 'home', 'office', 'shop', 'other'] as const;
 export const PHONE_RELATIONS = [
@@ -26,13 +30,26 @@ export const PHONE_RELATIONS = [
 ] as const;
 export const RETIRE_REASONS = ['changed_number', 'wrong_number', 'not_theirs', 'other'] as const;
 
-/** A buyer as `GET /v1/customers/:id` returns them, with their numbers. */
+export const GENDERS = ['female', 'male', 'other'] as const satisfies readonly CustomerGender[];
+
+/** A buyer as `GET /v1/customers/:id` returns them, with their numbers and address book. */
 export interface PersonDetail {
   readonly id: string;
   readonly name: string;
   readonly phone: string;
+  /** M49 (D-893). */
+  readonly email: string | null;
+  readonly gender: string | null;
+  readonly ageBand: string | null;
+  readonly profession: string | null;
+  readonly birthday: string | null;
+  readonly anniversary: string | null;
+  readonly tags: readonly string[];
+  readonly notes: string | null;
   readonly mergedIntoCustomerId: string | null;
   readonly phones: readonly CustomerPhoneView[];
+  /** M49 (D-894): the address book, the default first. */
+  readonly addresses: readonly CustomerAddressView[];
 }
 
 const path = (id: string) => `/v1/customers/${encodeURIComponent(id)}`;
@@ -52,6 +69,23 @@ export const retirePhone = (id: string, phoneId: string, body: CustomerPhoneReti
   api.post<{ phones: CustomerPhoneView[] }>(
     `${path(id)}/phones/${encodeURIComponent(phoneId)}/retire`,
     body,
+  );
+
+/** M49 (D-891): the buyer's details; a field left out is kept, `null` clears it. */
+export const updatePerson = (id: string, body: CustomerDetailsInput) =>
+  api.patch<unknown>(path(id), body);
+
+/** M49 (D-894): the address book. */
+export const addAddress = (id: string, body: CustomerAddressInput) =>
+  api.post<{ addresses: CustomerAddressView[] }>(`${path(id)}/addresses`, body);
+export const replaceAddress = (id: string, addressId: string, body: CustomerAddressInput) =>
+  api.put<{ addresses: CustomerAddressView[] }>(
+    `${path(id)}/addresses/${encodeURIComponent(addressId)}`,
+    body,
+  );
+export const removeAddress = (id: string, addressId: string) =>
+  api.delete<{ addresses: CustomerAddressView[] }>(
+    `${path(id)}/addresses/${encodeURIComponent(addressId)}`,
   );
 
 export const mergePerson = (keptId: string, otherCustomerId: string, reason: string) =>
@@ -78,6 +112,13 @@ export const buyerChecked = (orderId: string) =>
 /** The supervisors (D-886): org_admin, branch_manager, a super admin. */
 export function isSupervisor(roles: readonly string[], isSuperAdmin: boolean): boolean {
   return isSuperAdmin || roles.includes('org_admin') || roles.includes('branch_manager');
+}
+
+/** An E.164 Bangladeshi mobile as people read it, `01712-345678`; anything else as it is. */
+export function nationalPhone(e164: string): string {
+  if (!/^\+8801\d{9}$/.test(e164)) return e164;
+  const national = `0${e164.slice(4)}`;
+  return `${national.slice(0, 5)}-${national.slice(5)}`;
 }
 
 /** A Bangladeshi mobile as typed, in E.164, or null (the server decides; this only gates Save). */

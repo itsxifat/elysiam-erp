@@ -47,10 +47,18 @@ export const SELL_KEY = ['inbox', 'sell'] as const;
 
 export const getSellingContext = () => api.get<SellingContext>('/v1/inbox/selling-context');
 
-export const pickProducts = (query: { readonly q: string } | { readonly ids: readonly string[] }) =>
-  api.get<{ items: PickerProduct[] }>(
+/**
+ * The picker's search, a page at a time (M49, D-890: every match, as the agent scrolls), or the
+ * customer's interests by id. `nextOffset` is the next page's start, null on the last one.
+ */
+export const pickProducts = (
+  query: { readonly q: string; readonly offset?: number } | { readonly ids: readonly string[] },
+) =>
+  api.get<{ items: PickerProduct[]; nextOffset: number | null }>(
     'q' in query
-      ? `/v1/inbox/products?q=${encodeURIComponent(query.q)}`
+      ? `/v1/inbox/products?q=${encodeURIComponent(query.q)}${
+          query.offset === undefined || query.offset === 0 ? '' : `&offset=${String(query.offset)}`
+        }`
       : `/v1/inbox/products?ids=${query.ids.map(encodeURIComponent).join(',')}`,
   );
 

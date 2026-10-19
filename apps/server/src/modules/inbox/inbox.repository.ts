@@ -430,6 +430,39 @@ export async function conversationById(
   return rows[0];
 }
 
+/** M49 (D-895): the chats whose contact is linked to this buyer, the newest first. */
+export async function conversationsOfCustomer(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  limit: number,
+): Promise<ConversationRow[]> {
+  const rows = await tx.execute<ConversationRow>(sql`
+    ${CONVERSATION_SELECT}
+    where v.org_id = ${orgId} and c.customer_id = ${customerId}
+    order by v.last_message_at desc
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
+/** M49 (D-895): the newest notes on any of these contacts. */
+export async function notesOfContacts(
+  tx: Tx,
+  orgId: string,
+  contactIds: readonly string[],
+  limit: number,
+): Promise<(NoteRow & { readonly contact_id: string })[]> {
+  if (contactIds.length === 0) return [];
+  const rows = await tx.execute<NoteRow & { readonly contact_id: string }>(sql`
+    select id, contact_id, body, author_user_id, created_at from inbox.notes
+    where org_id = ${orgId} and contact_id = any (${sql.param([...contactIds])}::uuid[])
+    order by created_at desc
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
 export interface ListFilter {
   readonly view: 'all' | 'mine' | 'unassigned';
   readonly userId: string;
@@ -827,6 +860,30 @@ export async function linkCustomer(
     update inbox.contacts
     set customer_id = ${customerId}, phone_e164 = coalesce(phone_e164, ${phoneE164}),
         updated_at = now()
+    where org_id = ${orgId} and id = ${id}
+  `);
+}
+
+/**
+ * M49 (D-892): a contact with no name of its own (Meta gave none) takes the buyer's it is linked
+ * to, so the list and the thread stop saying "Unknown". A name it has is kept.
+ */
+export async function nameContactIfUnnamed(
+  tx: Tx,
+  orgId: string,
+  id: string,
+  name: string,
+): Promise<void> {
+  await tx.execute(sql`
+    update inbox.contacts set display_name = ${name}, updated_at = now()
+    where org_id = ${orgId} and id = ${id} and display_name is null
+  `);
+}
+
+/** M49 (D-892): the chat is not that customer after all; the contact keeps its number. */
+export async function unlinkCustomer(tx: Tx, orgId: string, id: string): Promise<void> {
+  await tx.execute(sql`
+    update inbox.contacts set customer_id = null, updated_at = now()
     where org_id = ${orgId} and id = ${id}
   `);
 }

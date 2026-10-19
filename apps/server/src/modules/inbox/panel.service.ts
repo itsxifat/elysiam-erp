@@ -59,6 +59,9 @@ function geographyIn(tx: Tx) {
 const PHONE_SCAN_MESSAGES = 50;
 /** How many of the customer's orders the panel lists. */
 const RECENT_ORDERS = 10;
+/** How many of a buyer's chats, and of the notes in them, the buyer page lists (D-895). */
+const CUSTOMER_CHATS = 20;
+const CUSTOMER_NOTES = 30;
 
 /** Messenger, Instagram and WhatsApp, as §9's order channels name them (`channels.ts`, D-742). */
 export const ORDER_CHANNEL_FOR = {
@@ -156,6 +159,24 @@ export class ContactPanelService {
         ]);
         const names = new Map(members.map((member) => [member.userId, member.name]));
 
+        // M49 (D-890): the linked buyer's whole card, edited from here through the conversation.
+        const card =
+          contact.customer_id === null
+            ? undefined
+            : await this.orders.customerCard(tx, context.orgId, contact.customer_id);
+        // Not linked yet: the people already on the saved number, to link one or add a new person
+        // (D-892). Names only for a number the customer gave in this chat, or a buyer the agent
+        // may open anyway: the panel is not a phone-to-buyer lookup (D-740).
+        const candidates =
+          contact.customer_id !== null || contact.phone_e164 === null
+            ? []
+            : await this.candidatesFor(
+                tx,
+                context,
+                contact.phone_e164,
+                found.some((phone) => phone === contact.phone_e164),
+              );
+
         return {
           conversationId,
           channel: conversation.channel_kind,
@@ -201,7 +222,25 @@ export class ContactPanelService {
                     codAmountPoisha: order.codAmountPoisha,
                     createdAt: order.createdAt.toISOString(),
                   })),
+                  card:
+                    card === undefined
+                      ? null
+                      : {
+                          ...card,
+                          pinnedNote:
+                            card.pinnedNote === null
+                              ? null
+                              : {
+                                  body: card.pinnedNote.body,
+                                  at: card.pinnedNote.at.toISOString(),
+                                  by: {
+                                    id: card.pinnedNote.byUserId,
+                                    name: names.get(card.pinnedNote.byUserId) ?? null,
+                                  },
+                                },
+                        },
                 },
+          candidates,
           notes: notes.map((note) => ({
             id: note.id,
             body: note.body,
@@ -212,6 +251,73 @@ export class ContactPanelService {
         };
       }),
     );
+  }
+
+  /**
+   * The chats a buyer had (M49, D-895), for the buyer page: each linked conversation with its
+   * channel, state, who has it and its last message, and the newest notes written in them. Under
+   * `read Conversation`, which already lists every conversation of the brand (D-736).
+   */
+  async customerChats(context: ActiveContext, customerId: string) {
+    return mapInboxErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const [rows, members] = await Promise.all([
+          repo.conversationsOfCustomer(tx, context.orgId, customerId, CUSTOMER_CHATS),
+          this.iam.activeMembers(tx, context.orgId),
+        ]);
+        const names = new Map(members.map((member) => [member.userId, member.name]));
+        const contactIds = [...new Set(rows.map((row) => row.contact_id))];
+        const notes = await repo.notesOfContacts(tx, context.orgId, contactIds, CUSTOMER_NOTES);
+        return {
+          conversations: rows.map((row) => ({
+            id: row.id,
+            channel: row.channel_kind,
+            status: row.status,
+            name: row.display_name ?? row.profile_name,
+            lastMessageAt: new Date(row.last_message_at).toISOString(),
+            lastPreview: row.last_preview,
+            lastDirection: row.last_direction,
+            assignedTo:
+              row.assigned_to === null
+                ? null
+                : { userId: row.assigned_to, name: names.get(row.assigned_to) ?? null },
+          })),
+          notes: notes.map((note) => ({
+            id: note.id,
+            body: note.body,
+            at: new Date(note.created_at).toISOString(),
+            author: { userId: note.author_user_id, name: names.get(note.author_user_id) ?? null },
+            conversationId: rows.find((row) => row.contact_id === note.contact_id)?.id ?? null,
+          })),
+        };
+      }),
+    );
+  }
+
+  /**
+   * The people on a number, the automatic pick first, for the panel's "Who is this?" (D-892): all
+   * of them when the customer gave the number in this chat, else only those the agent may open.
+   */
+  private async candidatesFor(tx: Tx, context: ActiveContext, phone: string, fromChat: boolean) {
+    const people = await this.orders.buyerCandidates(tx, context.orgId, phone);
+    const shown = [];
+    for (const person of people) {
+      if (
+        fromChat ||
+        (await this.orders.customerReachable(tx, context.orgId, person.customerId, context))
+      ) {
+        shown.push({
+          customerId: person.customerId,
+          name: person.name,
+          relation: person.relation,
+          note: person.note,
+          orders: person.orders,
+          lastOrderAt: person.lastOrderAt?.toISOString() ?? null,
+          suggested: person.suggested,
+        });
+      }
+    }
+    return shown;
   }
 
   /** Each interest with today's catalog: name, photo, and each size's price and stock (D-741). */
@@ -306,11 +412,15 @@ export class ContactPanelService {
         await repo.setContactPhone(tx, context.orgId, contact.id, phone, customerId);
         // A buyer who has ordered makes the contact a Customer now, not at their next order
         // (D-738), so the list's stage filter and the thread agree with the panel.
-        const ordered =
+        const linked =
           customerId === null
-            ? false
-            : ((await this.orders.customerPanel(tx, context.orgId, customerId, 0, context))
-                ?.orders ?? 0) > 0;
+            ? undefined
+            : await this.orders.customerPanel(tx, context.orgId, customerId, 0, context);
+        // M49 (D-892): a chat with no name takes the linked buyer's.
+        if (linked !== undefined) {
+          await repo.nameContactIfUnnamed(tx, context.orgId, contact.id, linked.name);
+        }
+        const ordered = (linked?.orders ?? 0) > 0;
         const stage = reconcileStage(contact.stage, { hasOrdered: ordered });
         if (stage !== contact.stage) {
           await repo.setContactStage(tx, context.orgId, contact.id, stage, 'system');

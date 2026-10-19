@@ -138,7 +138,8 @@ export function VoiceRecorder({
       <Button
         type="button"
         size="icon"
-        variant="outline"
+        variant="ghost"
+        className="rounded-full"
         disabled={disabled}
         aria-label={t('voice.record.start')}
         title={t('voice.record.limit')}

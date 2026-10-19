@@ -7,8 +7,13 @@ import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { STOREFRONT_API, type StorefrontApi } from '../storefront/storefront.api.js';
 import { InboxError, mapInboxErrors } from './inbox.errors.js';
 
-/** How many products one picker answer lists: a screenful, fast. */
-export const PICKER_LIMIT = 8;
+/**
+ * How many products one page of the picker lists (M49, D-890): every match is reachable, a page at
+ * a time as the agent scrolls, because many products share a name.
+ */
+export const PICKER_LIMIT = 20;
+/** The furthest a search pages: well past any real catalogue's matches for one phrase. */
+export const PICKER_MAX_OFFSET = 5_000;
 /** How many interests `?ids=` lists: what the route accepts (`selling.controller.ts`). */
 export const PICKER_IDS_LIMIT = 20;
 
@@ -62,18 +67,21 @@ export class InboxSellingService {
    */
   async products(
     context: ActiveContext,
-    query: { readonly q: string } | { readonly ids: readonly string[] },
+    query:
+      | { readonly q: string; readonly offset?: number | undefined }
+      | { readonly ids: readonly string[] },
   ) {
     return mapInboxErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const products = await this.catalog.pickerProducts(
+        const page = await this.catalog.pickerProducts(
           tx,
           context.orgId,
           'q' in query
-            ? { q: query.q, limit: PICKER_LIMIT }
+            ? { q: query.q, limit: PICKER_LIMIT, offset: query.offset ?? 0 }
             : { ids: query.ids, limit: PICKER_IDS_LIMIT },
         );
-        if (products.length === 0) return { items: [] };
+        const products = page.items;
+        if (products.length === 0) return { items: [], nextOffset: page.nextOffset };
         const skus = await this.catalog.webSkus(
           tx,
           context.orgId,
@@ -112,6 +120,7 @@ export class InboxSellingService {
               variants,
             };
           }),
+          nextOffset: page.nextOffset,
         };
       }),
     );

@@ -53,10 +53,14 @@ import {
   telephonyConnectionUpdateSchema,
 } from '@elysium/contracts/telephony';
 import {
+  customerAddressSchema,
+  customerDetailsSchema,
   customerMergeSchema,
   customerPhoneAddSchema,
   customerPhoneRetireSchema,
   customerPhoneUpdateSchema,
+  inboxLinkCustomerSchema,
+  inboxSaveCustomerSchema,
   orderBuyerChangeSchema,
 } from '@elysium/contracts/customers';
 import { z } from 'zod';
@@ -507,6 +511,59 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
       'Reply. Refused outside the 24-hour window (INBOX_WINDOW_CLOSED); sent by a job after the commit.',
     body: named('InboxReply', inboxReplySchema, 'InboxReplyInput'),
   },
+  // M49 (D-890 to D-895): the customer card, through the conversation.
+  'GET /v1/inbox/customers/:customerId/chats': {
+    operationId: 'listInboxCustomerChats',
+    summary: "A buyer's chats and the notes written in them, for the buyer page.",
+  },
+  'POST /v1/inbox/conversations/:id/customer': {
+    operationId: 'saveInboxCustomer',
+    summary: "Save the chat's person as a new customer and link the chat to them.",
+    body: named('InboxSaveCustomer', inboxSaveCustomerSchema, 'InboxSaveCustomerInput'),
+  },
+  'PUT /v1/inbox/conversations/:id/customer/link': {
+    operationId: 'linkInboxCustomer',
+    summary: 'Link the chat to one of the people on its saved number.',
+    body: named('InboxLinkCustomer', inboxLinkCustomerSchema, 'InboxLinkCustomerInput'),
+  },
+  'DELETE /v1/inbox/conversations/:id/customer/link': {
+    operationId: 'unlinkInboxCustomer',
+    summary: 'The chat is not that customer: remove the link, keep the number.',
+  },
+  'PATCH /v1/inbox/conversations/:id/customer': {
+    operationId: 'updateInboxCustomer',
+    summary: "Change the linked buyer's details: name, email, gender, profession, dates, notes.",
+    body: named('CustomerDetails', customerDetailsSchema, 'CustomerDetailsInput'),
+  },
+  'POST /v1/inbox/conversations/:id/customer/phones': {
+    operationId: 'addInboxCustomerPhone',
+    summary: 'Add a number to the linked buyer, with the note on why they use it.',
+    body: named('CustomerPhoneAdd', customerPhoneAddSchema, 'CustomerPhoneAddInput'),
+  },
+  'PATCH /v1/inbox/conversations/:id/customer/phones/:phoneId': {
+    operationId: 'updateInboxCustomerPhone',
+    summary: "Change one of the linked buyer's numbers, or make it primary.",
+    body: named('CustomerPhoneUpdate', customerPhoneUpdateSchema, 'CustomerPhoneUpdateInput'),
+  },
+  'POST /v1/inbox/conversations/:id/customer/phones/:phoneId/retire': {
+    operationId: 'retireInboxCustomerPhone',
+    summary: "Retire one of the linked buyer's numbers.",
+    body: named('CustomerPhoneRetire', customerPhoneRetireSchema, 'CustomerPhoneRetireInput'),
+  },
+  'POST /v1/inbox/conversations/:id/customer/addresses': {
+    operationId: 'addInboxCustomerAddress',
+    summary: "Add an address to the linked buyer's address book.",
+    body: named('CustomerAddress', customerAddressSchema, 'CustomerAddressInput'),
+  },
+  'PUT /v1/inbox/conversations/:id/customer/addresses/:addressId': {
+    operationId: 'replaceInboxCustomerAddress',
+    summary: "Replace one of the linked buyer's saved addresses, or make it their default.",
+    body: named('CustomerAddress', customerAddressSchema, 'CustomerAddressInput'),
+  },
+  'DELETE /v1/inbox/conversations/:id/customer/addresses/:addressId': {
+    operationId: 'removeInboxCustomerAddress',
+    summary: "Remove one of the linked buyer's saved addresses.",
+  },
   'PUT /v1/inbox/conversations/:id/contact/phone': {
     operationId: 'saveInboxContactPhone',
     summary: "Save the contact's phone; links the brand's buyer with that number.",
@@ -655,6 +712,21 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
     summary:
       'Retire a number (changed or recycled SIM, wrong number): it stops matching, stays in history.',
     body: named('CustomerPhoneRetire', customerPhoneRetireSchema, 'CustomerPhoneRetireInput'),
+  },
+  // M49 (D-894): a buyer's address book.
+  'POST /v1/customers/:id/addresses': {
+    operationId: 'addCustomerAddress',
+    summary: "Add an address to a buyer's address book; the first one is their default.",
+    body: named('CustomerAddress', customerAddressSchema, 'CustomerAddressInput'),
+  },
+  'PUT /v1/customers/:id/addresses/:addressId': {
+    operationId: 'replaceCustomerAddress',
+    summary: "Replace one of a buyer's saved addresses, or make it their default.",
+    body: named('CustomerAddress', customerAddressSchema, 'CustomerAddressInput'),
+  },
+  'DELETE /v1/customers/:id/addresses/:addressId': {
+    operationId: 'removeCustomerAddress',
+    summary: "Remove one of a buyer's saved addresses; orders keep where they went.",
   },
   'POST /v1/customers/:id/merge': {
     operationId: 'mergeCustomer',

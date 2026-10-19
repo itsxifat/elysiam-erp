@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -12,6 +13,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { callAttemptSchema, markPrintedSchema, workflowSettingsSchema } from '@elysium/contracts';
+import { customerAddressSchema } from '@elysium/contracts/customers';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
@@ -619,6 +621,51 @@ export class CustomersController {
       auditable(request),
       parse(orderIdSchema, id),
       patch,
+    );
+  }
+
+  // --- M49: the address book (D-894), under who may update the buyer ---------------------------
+
+  @RequireAbility('update', 'Customer')
+  @Post(':id/addresses')
+  async addAddress(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.customers.addAddress(
+      requireContext(request),
+      auditable(request),
+      parse(orderIdSchema, id),
+      parse(customerAddressSchema, body),
+    );
+  }
+
+  @RequireAbility('update', 'Customer')
+  @Put(':id/addresses/:addressId')
+  async replaceAddress(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+    @Body() body: unknown,
+  ) {
+    return this.customers.replaceAddress(
+      requireContext(request),
+      auditable(request),
+      parse(orderIdSchema, id),
+      parse(orderIdSchema, addressId),
+      parse(customerAddressSchema, body),
+    );
+  }
+
+  @RequireAbility('update', 'Customer')
+  @Delete(':id/addresses/:addressId')
+  async removeAddress(
+    @Req() request: FastifyRequest,
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+  ) {
+    return this.customers.removeAddress(
+      requireContext(request),
+      auditable(request),
+      parse(orderIdSchema, id),
+      parse(orderIdSchema, addressId),
     );
   }
 }

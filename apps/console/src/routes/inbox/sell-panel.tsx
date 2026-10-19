@@ -42,10 +42,16 @@ export function SellPanel({
   conversation,
   me,
   view,
+  onShow,
+  onHint,
 }: {
   readonly conversation: ConversationItem;
   readonly me: string | null;
   readonly view: PanelView;
+  /** M49: bring the panel's Order tab forward before the picker is focused. */
+  readonly onShow?: () => void;
+  /** M49: whether the side card has something the customer asked for, for the tab's dot. */
+  readonly onHint?: (has: boolean) => void;
 }) {
   const t = useSellT();
   const ids = useId();
@@ -78,8 +84,10 @@ export function SellPanel({
     [thread.data, draft.hintsSeenAt, detector, draft.customer.phone],
   );
 
-  // The delivery name, phone and address, from the chat, into whatever is still empty.
+  // The delivery name, phone and address into whatever is still empty: the chat's own address,
+  // else the linked buyer's default saved one (M49, D-894), else one the customer typed.
   const firstFound = view.addressesFound[0];
+  const saved = view.customer?.card?.addresses.find((address) => address.isDefault);
   useEffect(() => {
     update((current) =>
       prefillCustomer(current, {
@@ -87,6 +95,14 @@ export function SellPanel({
         phone: view.contact.phone ?? view.customer?.phone ?? view.phonesFound[0]?.phone ?? null,
         address:
           view.contact.address ??
+          (saved === undefined
+            ? null
+            : {
+                districtId: saved.districtId,
+                thanaId: saved.thanaId,
+                area: saved.area,
+                addressLine: saved.addressLine,
+              }) ??
           (firstFound === undefined
             ? null
             : {
@@ -97,7 +113,7 @@ export function SellPanel({
               }),
       }),
     );
-  }, [view, firstFound, update]);
+  }, [view, saved, firstFound, update]);
 
   // The product the card's size applies to: one the chat links to, else the last one picked,
   // else the only product the customer asked about.
@@ -151,10 +167,16 @@ export function SellPanel({
     );
   };
 
+  /** The picker's box, focused once its tab is on screen (a hidden box takes no focus). */
+  const focusPicker = () => {
+    onShow?.();
+    window.requestAnimationFrame(() => pickerInput.current?.focus());
+  };
+
   const openPicker = (next: Want | null, q: string) => {
     setPreset(next);
     setPushed((current) => ({ q, n: (current?.n ?? 0) + 1 }));
-    pickerInput.current?.focus();
+    focusPicker();
   };
 
   const seen = (current: SellDraft): SellDraft =>
@@ -210,12 +232,19 @@ export function SellPanel({
   });
   const showCard = !card.empty && draft.placed === null;
   useEffect(() => {
+    onHint?.(showCard);
+  }, [showCard, onHint]);
+  const latestFocus = useRef(focusPicker);
+  useEffect(() => {
+    latestFocus.current = focusPicker;
+  });
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!event.altKey || event.ctrlKey || event.metaKey) return;
       const key = event.key.toLowerCase();
       if (key === 'p' || event.code === 'KeyP') {
         event.preventDefault();
-        pickerInput.current?.focus();
+        latestFocus.current();
       } else if ((key === 'a' || event.code === 'KeyA') && showCard) {
         event.preventDefault();
         latestAdd.current();
@@ -226,10 +255,7 @@ export function SellPanel({
   }, [showCard]);
 
   return (
-    <section
-      aria-labelledby={`${ids}-title`}
-      className="space-y-3 border-b border-border px-4 py-3"
-    >
+    <section aria-labelledby={`${ids}-title`} className="space-y-3">
       <h3 id={`${ids}-title`} className="sr-only">
         {t('inbox.sell.region')}
       </h3>

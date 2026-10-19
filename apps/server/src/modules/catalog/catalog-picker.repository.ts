@@ -26,19 +26,27 @@ const likeEscape = (text: string) => text.replace(/[\\%_]/g, (char) => `\\${char
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** The product ids for what was typed, best first, and the SKU it named exactly, if one. */
+/**
+ * One page of the product ids for what was typed, best first, the SKU it named exactly (if one)
+ * and whether more follow (M49, D-890: every match, a page at a time, not a screenful).
+ *
+ * The exact hits (a barcode or SKU code, a website slug) lead the first page only and are left
+ * out of the word search, so no product appears twice across pages; the word search's order ends
+ * on the id, so a page boundary never moves between two requests.
+ */
 export async function pickerProductIds(
   tx: Tx,
   orgId: string,
   q: string,
   limit: number,
-): Promise<{ ids: string[]; matchedSkus: Map<string, string> }> {
+  offset = 0,
+): Promise<{ ids: string[]; matchedSkus: Map<string, string>; more: boolean }> {
   const raw = q.trim();
   const lower = raw.toLowerCase();
-  const ids: string[] = [];
+  const pinned: string[] = [];
   const matchedSkus = new Map<string, string>();
-  const add = (id: string) => {
-    if (!ids.includes(id)) ids.push(id);
+  const pin = (id: string) => {
+    if (!pinned.includes(id)) pinned.push(id);
   };
 
   const exact = await tx.execute<{ id: string; product_id: string }>(sql`
@@ -51,7 +59,7 @@ export async function pickerProductIds(
     limit 1
   `);
   for (const row of exact) {
-    add(row.product_id);
+    pin(row.product_id);
     matchedSkus.set(row.product_id, row.id);
   }
 
@@ -62,14 +70,16 @@ export async function pickerProductIds(
         and (p.slug = ${lower} or p.previous_slugs @> array[${lower}]::text[])
       limit 2
     `);
-    for (const row of bySlug) add(row.id);
+    for (const row of bySlug) pin(row.id);
   }
 
   const words = [...new Set(lower.split(/\s+/).filter((word) => [...word].length >= 2))].slice(
     0,
     6,
   );
-  if (words.length > 0 && ids.length < limit) {
+  let found: string[] = [];
+  let more = false;
+  if (words.length > 0) {
     const phrase = likeEscape(lower);
     const conditions = words.map((word) => sql`p.search_text like ${'%' + likeEscape(word) + '%'}`);
     const rows = await tx.execute<{ id: string }>(sql`
@@ -77,6 +87,7 @@ export async function pickerProductIds(
       from catalog.products p
       where p.org_id = ${orgId} and p.status = 'active'
         and ${sql.join(conditions, sql` and `)}
+        and ${pinned.length === 0 ? sql`true` : sql`not (p.id = any (${sql.param(pinned)}::uuid[]))`}
       order by
         case
           when lower(p.name) like ${phrase + '%'} then 0
@@ -84,12 +95,14 @@ export async function pickerProductIds(
           when lower(p.name) like ${'%' + phrase + '%'} then 2
           else 3
         end,
-        p.sequence desc
-      limit ${limit}
+        p.sequence desc,
+        p.id
+      limit ${limit + 1} offset ${offset}
     `);
-    for (const row of rows) add(row.id);
+    found = rows.slice(0, limit).map((row) => row.id);
+    more = rows.length > limit;
   }
-  return { ids: ids.slice(0, limit), matchedSkus };
+  return { ids: offset === 0 ? [...pinned, ...found] : found, matchedSkus, more };
 }
 
 /** These products, active ones only, with their size chart and first photo; order kept. */

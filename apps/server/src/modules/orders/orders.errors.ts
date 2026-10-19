@@ -69,6 +69,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   CUSTOMER_PHONE_NOT_FOUND: 404,
   CUSTOMER_PHONE_INVALID: 400,
   CUSTOMER_MERGE_INVALID: 409,
+  // M49 (D-894): a saved address the buyer does not have.
+  CUSTOMER_ADDRESS_NOT_FOUND: 404,
   // About who is asking: a supervisor changes a buyer or merges two (D-886).
   CUSTOMER_SUPERVISOR_ONLY: 403,
 };

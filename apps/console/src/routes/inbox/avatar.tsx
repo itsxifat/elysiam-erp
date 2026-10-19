@@ -26,6 +26,8 @@ const SIZES = {
   sm: 'size-7 text-2xs',
   md: 'size-9 text-xs',
   lg: 'size-10 text-sm',
+  // M49: the customer panel's header.
+  xl: 'size-14 text-base',
 } as const;
 
 export function ContactAvatar({

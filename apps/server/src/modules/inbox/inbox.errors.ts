@@ -38,6 +38,7 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   INBOX_CREDENTIALS_MISSING: 409,
   INBOX_OFFER_GONE: 409,
   INBOX_SHORTCUT_TAKEN: 409,
+  INBOX_NO_CUSTOMER: 409,
 };
 
 export function inboxHttpError(error: InboxError): HttpException {

@@ -11,6 +11,7 @@ import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { addNumber, phoneViews, pickPersonByPhone } from './numbers.helpers.js';
 import * as repo from './orders.repository.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
+import type { CustomerAddressInput, CustomerAddressView } from '@elysium/contracts/customers';
 import type { CreateCustomerInput, CustomerQuery, UpdateCustomerInput } from './orders.schemas.js';
 
 /**
@@ -34,6 +35,8 @@ export interface CustomerView {
   readonly id: string;
   readonly phone: string;
   readonly name: string;
+  /** M49 (D-893): the email the staff wrote down, or null. */
+  readonly email: string | null;
   readonly birthday: string | null;
   readonly anniversary: string | null;
   readonly gender: string | null;
@@ -60,6 +63,7 @@ export function toCustomerView(row: repo.CustomerRow): CustomerView {
     id: row.id,
     phone: row.phone_e164,
     name: row.name,
+    email: row.email,
     birthday: row.birthday,
     anniversary: row.anniversary,
     gender: row.gender,
@@ -230,15 +234,8 @@ export class CustomersService {
           ...toCustomerView(row),
           // M48 (D-870): every number, with its rank, kind, relation and the staff's note.
           phones: await phoneViews(tx, this.iam, context.orgId, id),
-          addresses: (await repo.listAddresses(tx, context.orgId, id)).map((address) => ({
-            id: address.id,
-            label: address.label,
-            districtId: address.district_id,
-            thanaId: address.thana_id,
-            area: address.area,
-            addressLine: address.address_line,
-            isDefault: address.is_default,
-          })),
+          // M49 (D-894): the address book, with the place names the screens show.
+          addresses: await this.addressViews(tx, context.orgId, id),
         };
       }),
     );
@@ -256,24 +253,43 @@ export class CustomersService {
          */
         assertInScope(request, { createdBy: context.userId, assignedTo: context.userId });
         // The first number is the staff's when they wrote why; else as the desk's (D-871).
-        const customer = await this.upsert(tx, context, input, {
+        return this.createIn(tx, context, request, input, {
           source: input.phoneNote === undefined ? 'order' : 'staff',
+          auditFound: true,
         });
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'create',
-          action: 'customer.created',
-          entityType: 'customer',
-          entityId: customer.id,
-          // Named `phone` on purpose: the audit redactor masks by field name, so calling
-          // it anything else is how a full number ends up in an append-only table.
-          after: { phone: input.phone, name: input.name },
-          request,
-        });
-        return { id: customer.id, phone: customer.phoneE164, created: customer.created };
       }),
     );
+  }
+
+  /**
+   * Find or create the buyer inside the caller's transaction, once the caller has decided who may
+   * (the endpoint above through its scope; the inbox's Save as customer through the conversation,
+   * M49, D-892). Audited `customer.created` when a new record was made, and also for one found
+   * when `auditFound` (the endpoint's behaviour since M10).
+   */
+  async createIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    input: CreateCustomerInput,
+    options: { readonly source: PhoneSource; readonly auditFound?: boolean },
+  ): Promise<{ id: string; phone: string; created: boolean }> {
+    const customer = await this.upsert(tx, context, input, { source: options.source });
+    if (customer.created || options.auditFound === true) {
+      await this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'create',
+        action: 'customer.created',
+        entityType: 'customer',
+        entityId: customer.id,
+        // Named `phone` on purpose: the audit redactor masks by field name, so calling
+        // it anything else is how a full number ends up in an append-only table.
+        after: { phone: input.phone, name: input.name },
+        request,
+      });
+    }
+    return { id: customer.id, phone: customer.phoneE164, created: customer.created };
   }
 
   async update(
@@ -285,50 +301,292 @@ export class CustomersService {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         await this.assertVisible(tx, context, request, id);
-        const before = await repo.customerById(tx, context.orgId, id);
-        if (before === undefined) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
-
-        const changed = await repo.updateCustomer(tx, context.orgId, id, {
-          name: patch.name,
-          birthday: patch.birthday,
-          anniversary: patch.anniversary,
-          gender: patch.gender,
-          ageBand: patch.ageBand,
-          profession: patch.profession,
-          tags: patch.tags,
-          notes: patch.notes,
-        });
-        if (!changed) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
-
-        if (patch.address !== undefined) {
-          await assertArea(tx, patch.address);
-          await repo.insertAddress(tx, {
-            orgId: context.orgId,
-            customerId: id,
-            label: null,
-            districtId: patch.address.districtId,
-            thanaId: patch.address.thanaId,
-            area: patch.address.area ?? null,
-            addressLine: patch.address.addressLine,
-            isDefault: true,
-          });
-        }
-
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'update',
-          action: 'customer.updated',
-          entityType: 'customer',
-          entityId: id,
-          before: { name: before.name },
-          after: { name: patch.name ?? before.name },
-          request,
-        });
-        const row = await repo.customerById(tx, context.orgId, id);
-        return row === undefined ? { id } : toCustomerView(row);
+        return this.updateIn(tx, context, request, id, patch);
       }),
     );
+  }
+
+  /**
+   * Change a buyer's details inside the caller's transaction, once the caller has decided who may:
+   * the buyer page through `assertVisible` above, the inbox through the conversation the buyer is
+   * linked to (M49, D-890). A merged record is refused. Audited `customer.updated` with the name
+   * and which fields changed; an email, a note or an address line never reaches the audit row
+   * (invariant 10).
+   */
+  async updateIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    patch: UpdateCustomerInput,
+  ) {
+    const before = await this.requireLive(tx, context.orgId, id);
+    const changed = await repo.updateCustomer(tx, context.orgId, id, {
+      name: patch.name,
+      email: patch.email,
+      birthday: patch.birthday,
+      anniversary: patch.anniversary,
+      gender: patch.gender,
+      ageBand: patch.ageBand,
+      profession: patch.profession,
+      tags: patch.tags,
+      notes: patch.notes,
+    });
+    if (!changed) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
+
+    if (patch.address !== undefined) {
+      await assertArea(tx, patch.address);
+      await repo.insertAddress(tx, {
+        orgId: context.orgId,
+        customerId: id,
+        label: null,
+        districtId: patch.address.districtId,
+        thanaId: patch.address.thanaId,
+        area: patch.address.area ?? null,
+        addressLine: patch.address.addressLine,
+        isDefault: true,
+      });
+    }
+
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: 'customer.updated',
+      entityType: 'customer',
+      entityId: id,
+      before: { name: before.name },
+      after: {
+        name: patch.name ?? before.name,
+        fields: Object.entries(patch)
+          .filter(([, value]) => value !== undefined)
+          .map(([field]) => field),
+      },
+      requestId: context.requestId,
+      request,
+    });
+    const row = await repo.customerById(tx, context.orgId, id);
+    return row === undefined ? { id } : toCustomerView(row);
+  }
+
+  // --- M49: the address book (D-894) ---------------------------------------------------------
+
+  /** The buyer's saved addresses, the default first, with their place names. */
+  async addressViews(tx: Tx, orgId: string, customerId: string): Promise<CustomerAddressView[]> {
+    const rows = await repo.savedAddressesNamed(tx, orgId, customerId);
+    return rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      districtId: row.district_id,
+      districtName: row.district_name,
+      thanaId: row.thana_id,
+      thanaName: row.thana_name,
+      area: row.area,
+      addressLine: row.address_line,
+      isDefault: row.is_default,
+    }));
+  }
+
+  async addAddress(
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    input: CustomerAddressInput,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        await this.assertVisible(tx, context, request, customerId);
+        return this.addAddressIn(tx, context, request, customerId, input);
+      }),
+    );
+  }
+
+  async replaceAddress(
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    addressId: string,
+    input: CustomerAddressInput,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        await this.assertVisible(tx, context, request, customerId);
+        return this.replaceAddressIn(tx, context, request, customerId, addressId, input);
+      }),
+    );
+  }
+
+  async removeAddress(
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    addressId: string,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        await this.assertVisible(tx, context, request, customerId);
+        return this.removeAddressIn(tx, context, request, customerId, addressId);
+      }),
+    );
+  }
+
+  /**
+   * Add an address to the book, inside the caller's transaction (the caller decided who may). The
+   * buyer's first address is their default whatever was asked. Answers the whole book.
+   */
+  async addAddressIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    input: CustomerAddressInput,
+  ): Promise<{ addresses: CustomerAddressView[] }> {
+    await this.requireLive(tx, context.orgId, customerId);
+    await assertArea(tx, input);
+    const existing = await repo.listAddresses(tx, context.orgId, customerId);
+    const isDefault = existing.length === 0 || input.isDefault === true;
+    const addressId = await repo.insertAddress(tx, {
+      orgId: context.orgId,
+      customerId,
+      label: input.label ?? null,
+      districtId: input.districtId,
+      thanaId: input.thanaId,
+      area: emptyToNull(input.area),
+      addressLine: input.addressLine,
+      isDefault,
+    });
+    await this.auditAddress(tx, context, request, 'customer.address_added', customerId, {
+      after: { addressId, districtId: input.districtId, thanaId: input.thanaId, isDefault },
+    });
+    return { addresses: await this.addressViews(tx, context.orgId, customerId) };
+  }
+
+  /** Replace one address of the book (the caller decided who may). Answers the whole book. */
+  async replaceAddressIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    addressId: string,
+    input: CustomerAddressInput,
+  ): Promise<{ addresses: CustomerAddressView[] }> {
+    await this.requireLive(tx, context.orgId, customerId);
+    await assertArea(tx, input);
+    const existing = await repo.listAddresses(tx, context.orgId, customerId);
+    const current = existing.find((row) => row.id === addressId);
+    // The default stays the default until another is made it: the desk always has one to fill.
+    const isDefault = input.isDefault === true || current?.is_default === true;
+    const before = await repo.replaceAddress(tx, {
+      orgId: context.orgId,
+      customerId,
+      addressId,
+      label: input.label ?? null,
+      districtId: input.districtId,
+      thanaId: input.thanaId,
+      area: emptyToNull(input.area),
+      addressLine: input.addressLine,
+      isDefault,
+    });
+    if (before === undefined) {
+      throw new OrdersError('CUSTOMER_ADDRESS_NOT_FOUND', 'This person has no such address.');
+    }
+    await this.auditAddress(tx, context, request, 'customer.address_updated', customerId, {
+      before: {
+        addressId,
+        districtId: before.district_id,
+        thanaId: before.thana_id,
+        isDefault: before.is_default,
+      },
+      after: { addressId, districtId: input.districtId, thanaId: input.thanaId, isDefault },
+    });
+    return { addresses: await this.addressViews(tx, context.orgId, customerId) };
+  }
+
+  /**
+   * Remove one address from the book (the caller decided who may). Removing the default makes the
+   * oldest remaining address the default, so the desk still has one to fill. Answers the book.
+   */
+  async removeAddressIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    addressId: string,
+  ): Promise<{ addresses: CustomerAddressView[] }> {
+    await this.requireLive(tx, context.orgId, customerId);
+    const removed = await repo.deleteAddress(tx, context.orgId, customerId, addressId);
+    if (removed === undefined) {
+      throw new OrdersError('CUSTOMER_ADDRESS_NOT_FOUND', 'This person has no such address.');
+    }
+    if (removed.is_default) {
+      const next = (await repo.listAddresses(tx, context.orgId, customerId))[0];
+      if (next !== undefined) {
+        await repo.replaceAddress(tx, {
+          orgId: context.orgId,
+          customerId,
+          addressId: next.id,
+          label: next.label,
+          districtId: next.district_id,
+          thanaId: next.thana_id,
+          area: next.area,
+          addressLine: next.address_line,
+          isDefault: true,
+        });
+      }
+    }
+    await this.auditAddress(tx, context, request, 'customer.address_removed', customerId, {
+      before: {
+        addressId,
+        districtId: removed.district_id,
+        thanaId: removed.thana_id,
+        isDefault: removed.is_default,
+      },
+    });
+    return { addresses: await this.addressViews(tx, context.orgId, customerId) };
+  }
+
+  /** The place's ids and the default flag only: an address line is personal data (invariant 10). */
+  private async auditAddress(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    action: 'customer.address_added' | 'customer.address_updated' | 'customer.address_removed',
+    customerId: string,
+    change: {
+      readonly before?: Record<string, unknown>;
+      readonly after?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation:
+        action === 'customer.address_added'
+          ? 'create'
+          : action === 'customer.address_removed'
+            ? 'delete'
+            : 'update',
+      action,
+      entityType: 'customer',
+      entityId: customerId,
+      before: change.before ?? null,
+      after: change.after ?? null,
+      requestId: context.requestId,
+      request,
+    });
+  }
+
+  /** The buyer exists and is not a merged record (M48, D-884): changes go to the kept one. */
+  private async requireLive(tx: Tx, orgId: string, id: string): Promise<repo.CustomerRow> {
+    const row = await repo.customerById(tx, orgId, id);
+    if (row === undefined) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
+    if (row.merged_into_customer_id !== null) {
+      throw new OrdersError(
+        'CUSTOMER_MERGE_INVALID',
+        'This record was merged into another; change that one instead.',
+      );
+    }
+    return row;
   }
 
   /**
@@ -464,6 +722,11 @@ export class CustomersService {
   static asPoisha(value: string) {
     return poisha(BigInt(value));
   }
+}
+
+/** A typed area left empty is no area. */
+function emptyToNull(value: string | null | undefined): string | null {
+  return value === undefined || value === null || value.trim() === '' ? null : value.trim();
 }
 
 /** An address's district and thana, checked against the reference data (M30, D2). */

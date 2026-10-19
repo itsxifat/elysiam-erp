@@ -48,6 +48,10 @@ const en = {
   'inbox.sell.picker.noRecent': 'Type a name, a SKU or a barcode.',
   'inbox.sell.picker.searching': 'Searching',
   'inbox.sell.picker.failed': 'The search did not answer. Try again.',
+  // M49 (D-890): every match, a page at a time.
+  'inbox.sell.picker.shown': '{n} shown, scroll for more',
+  'inbox.sell.picker.all': '{n} found',
+  'inbox.sell.picker.loadingMore': 'Loading more…',
   'inbox.sell.picker.keys':
     'Down arrow to the results; up and down for the product, left and right for the size, 1 to 9 for the quantity, Enter adds, Esc returns.',
   'inbox.sell.picker.inStock': '{n} in stock',

@@ -67,42 +67,58 @@ export class CustomerNumbersService {
     input: CustomerPhoneAddInput,
   ) {
     return mapOrderErrors(async () =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        await this.requirePerson(tx, context, request, customerId);
-        const phone = normalizeBdPhone(input.phone);
-        const active = await numbers.activePhonesOf(tx, context.orgId, customerId);
-        if (active.some((row) => row.phone_e164 === phone)) {
-          throw new OrdersError('CUSTOMER_PHONE_INVALID', 'This person already has that number.');
-        }
-        const added = await addNumber(tx, {
-          orgId: context.orgId,
-          customerId,
-          phoneE164: phone,
-          kind: input.kind ?? 'mobile',
-          relation: input.relation ?? 'own',
-          note: input.note,
-          source: 'staff',
-          addedByUserId: context.userId,
-        });
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'create',
-          action: 'customer.phone_added',
-          entityType: 'customer',
-          entityId: customerId,
-          after: {
-            phoneId: added.id,
-            phone,
-            kind: input.kind ?? 'mobile',
-            relation: input.relation ?? 'own',
-            noteLength: input.note.trim().length,
-          },
-          request,
-        });
-        return { phones: await this.viewsOf(tx, context.orgId, customerId) };
-      }),
+      withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
+        this.addIn(tx, context, request, customerId, input, 'reach'),
+      ),
     );
+  }
+
+  /**
+   * Add a number inside the caller's transaction. `who`: `reach` checks the caller's reach on the
+   * buyer (the buyer page); `decided` trusts the calling module's own rule (the inbox's linked
+   * buyer, M49, D-890).
+   */
+  async addIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    input: CustomerPhoneAddInput,
+    who: 'reach' | 'decided',
+  ) {
+    await this.requirePerson(tx, context, request, customerId, who);
+    const phone = normalizeBdPhone(input.phone);
+    const active = await numbers.activePhonesOf(tx, context.orgId, customerId);
+    if (active.some((row) => row.phone_e164 === phone)) {
+      throw new OrdersError('CUSTOMER_PHONE_INVALID', 'This person already has that number.');
+    }
+    const added = await addNumber(tx, {
+      orgId: context.orgId,
+      customerId,
+      phoneE164: phone,
+      kind: input.kind ?? 'mobile',
+      relation: input.relation ?? 'own',
+      note: input.note,
+      source: 'staff',
+      addedByUserId: context.userId,
+    });
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'create',
+      action: 'customer.phone_added',
+      entityType: 'customer',
+      entityId: customerId,
+      after: {
+        phoneId: added.id,
+        phone,
+        kind: input.kind ?? 'mobile',
+        relation: input.relation ?? 'own',
+        noteLength: input.note.trim().length,
+      },
+      request,
+    });
+    return { phones: await this.viewsOf(tx, context.orgId, customerId) };
   }
 
   async update(
@@ -113,70 +129,77 @@ export class CustomerNumbersService {
     input: CustomerPhoneUpdateInput,
   ) {
     return mapOrderErrors(async () =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        await this.requirePerson(tx, context, request, customerId);
-        const active = await numbers.activePhonesOf(tx, context.orgId, customerId, {
-          forUpdate: true,
-        });
-        const phone = active.find((row) => row.id === phoneId);
-        if (phone === undefined) {
-          throw new OrdersError(
-            'CUSTOMER_PHONE_NOT_FOUND',
-            'This person has no such number in use.',
-          );
-        }
-        if (input.note !== undefined) {
-          const note = checkPhoneNote(input.note, 'staff');
-          if (!note.ok) {
-            throw new OrdersError(
-              'CUSTOMER_PHONE_INVALID',
-              'A number’s note is 1 to 500 characters.',
-            );
-          }
-        }
-        await numbers.updatePhoneDetails(tx, context.orgId, phoneId, {
-          kind: input.kind,
-          relation: input.relation,
-          note: input.note?.trim(),
-        });
-        if (input.rank !== undefined && input.rank !== phone.rank) {
-          const order = moveToRank(
-            active.map((row) => row.id),
-            phoneId,
-            input.rank,
-          );
-          if (order !== null) {
-            await numbers.renumber(tx, context.orgId, customerId, order);
-            await numbers.syncPrimaryCopy(tx, context.orgId, customerId);
-          }
-        }
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'update',
-          action: input.rank === 1 ? 'customer.phone_made_primary' : 'customer.phone_updated',
-          entityType: 'customer',
-          entityId: customerId,
-          before: {
-            phoneId,
-            phone: phone.phone_e164,
-            rank: phone.rank,
-            kind: phone.kind,
-            relation: phone.relation,
-            noteLength: phone.note?.length ?? 0,
-          },
-          after: {
-            phoneId,
-            rank: input.rank ?? phone.rank,
-            kind: input.kind ?? phone.kind,
-            relation: input.relation ?? phone.relation,
-            noteLength: input.note?.trim().length ?? phone.note?.length ?? 0,
-          },
-          request,
-        });
-        return { phones: await this.viewsOf(tx, context.orgId, customerId) };
-      }),
+      withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
+        this.updateIn(tx, context, request, customerId, phoneId, input, 'reach'),
+      ),
     );
+  }
+
+  /** Change a number's details or place inside the caller's transaction (`who` as `addIn`). */
+  async updateIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    phoneId: string,
+    input: CustomerPhoneUpdateInput,
+    who: 'reach' | 'decided',
+  ) {
+    await this.requirePerson(tx, context, request, customerId, who);
+    const active = await numbers.activePhonesOf(tx, context.orgId, customerId, {
+      forUpdate: true,
+    });
+    const phone = active.find((row) => row.id === phoneId);
+    if (phone === undefined) {
+      throw new OrdersError('CUSTOMER_PHONE_NOT_FOUND', 'This person has no such number in use.');
+    }
+    if (input.note !== undefined) {
+      const note = checkPhoneNote(input.note, 'staff');
+      if (!note.ok) {
+        throw new OrdersError('CUSTOMER_PHONE_INVALID', 'A number’s note is 1 to 500 characters.');
+      }
+    }
+    await numbers.updatePhoneDetails(tx, context.orgId, phoneId, {
+      kind: input.kind,
+      relation: input.relation,
+      note: input.note?.trim(),
+    });
+    if (input.rank !== undefined && input.rank !== phone.rank) {
+      const order = moveToRank(
+        active.map((row) => row.id),
+        phoneId,
+        input.rank,
+      );
+      if (order !== null) {
+        await numbers.renumber(tx, context.orgId, customerId, order);
+        await numbers.syncPrimaryCopy(tx, context.orgId, customerId);
+      }
+    }
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: input.rank === 1 ? 'customer.phone_made_primary' : 'customer.phone_updated',
+      entityType: 'customer',
+      entityId: customerId,
+      before: {
+        phoneId,
+        phone: phone.phone_e164,
+        rank: phone.rank,
+        kind: phone.kind,
+        relation: phone.relation,
+        noteLength: phone.note?.length ?? 0,
+      },
+      after: {
+        phoneId,
+        rank: input.rank ?? phone.rank,
+        kind: input.kind ?? phone.kind,
+        relation: input.relation ?? phone.relation,
+        noteLength: input.note?.trim().length ?? phone.note?.length ?? 0,
+      },
+      request,
+    });
+    return { phones: await this.viewsOf(tx, context.orgId, customerId) };
   }
 
   async retire(
@@ -187,45 +210,58 @@ export class CustomerNumbersService {
     input: CustomerPhoneRetireInput,
   ) {
     return mapOrderErrors(async () =>
-      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        await this.requirePerson(tx, context, request, customerId);
-        const active = await numbers.activePhonesOf(tx, context.orgId, customerId, {
-          forUpdate: true,
-        });
-        const plan = retirePlan(
-          active.map((row) => row.id),
-          phoneId,
-        );
-        if (!plan.ok) {
-          throw plan.reason === 'not_active'
-            ? new OrdersError('CUSTOMER_PHONE_NOT_FOUND', 'This person has no such number in use.')
-            : new OrdersError(
-                'CUSTOMER_PHONE_INVALID',
-                'This is the person’s last number: add the new one first, then retire this.',
-              );
-        }
-        const phone = active.find((row) => row.id === phoneId);
-        await numbers.retirePhone(tx, context.orgId, phoneId, {
-          byUserId: context.userId,
-          reason: input.reason,
-          note: input.note ?? null,
-        });
-        await numbers.renumber(tx, context.orgId, customerId, plan.remaining);
-        await numbers.syncPrimaryCopy(tx, context.orgId, customerId);
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'update',
-          action: 'customer.phone_retired',
-          entityType: 'customer',
-          entityId: customerId,
-          before: { phoneId, phone: phone?.phone_e164 ?? null, rank: phone?.rank ?? null },
-          after: { phoneId, reason: input.reason, noteLength: input.note?.length ?? 0 },
-          request,
-        });
-        return { phones: await this.viewsOf(tx, context.orgId, customerId) };
-      }),
+      withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
+        this.retireIn(tx, context, request, customerId, phoneId, input, 'reach'),
+      ),
     );
+  }
+
+  /** Retire a number inside the caller's transaction (`who` as `addIn`). */
+  async retireIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    customerId: string,
+    phoneId: string,
+    input: CustomerPhoneRetireInput,
+    who: 'reach' | 'decided',
+  ) {
+    await this.requirePerson(tx, context, request, customerId, who);
+    const active = await numbers.activePhonesOf(tx, context.orgId, customerId, {
+      forUpdate: true,
+    });
+    const plan = retirePlan(
+      active.map((row) => row.id),
+      phoneId,
+    );
+    if (!plan.ok) {
+      throw plan.reason === 'not_active'
+        ? new OrdersError('CUSTOMER_PHONE_NOT_FOUND', 'This person has no such number in use.')
+        : new OrdersError(
+            'CUSTOMER_PHONE_INVALID',
+            'This is the person’s last number: add the new one first, then retire this.',
+          );
+    }
+    const phone = active.find((row) => row.id === phoneId);
+    await numbers.retirePhone(tx, context.orgId, phoneId, {
+      byUserId: context.userId,
+      reason: input.reason,
+      note: input.note ?? null,
+    });
+    await numbers.renumber(tx, context.orgId, customerId, plan.remaining);
+    await numbers.syncPrimaryCopy(tx, context.orgId, customerId);
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: 'customer.phone_retired',
+      entityType: 'customer',
+      entityId: customerId,
+      before: { phoneId, phone: phone?.phone_e164 ?? null, rank: phone?.rank ?? null },
+      after: { phoneId, reason: input.reason, noteLength: input.note?.length ?? 0 },
+      request,
+    });
+    return { phones: await this.viewsOf(tx, context.orgId, customerId) };
   }
 
   /**
@@ -457,14 +493,18 @@ export class CustomerNumbersService {
     }
   }
 
-  /** The buyer exists, is not a merged record, and is within the caller's reach. */
+  /**
+   * The buyer exists, is not a merged record, and is within the caller's reach, unless the calling
+   * module has already decided who may (`decided`: the inbox's linked buyer, D-890).
+   */
   private async requirePerson(
     tx: Tx,
     context: ActiveContext,
     request: object,
     customerId: string,
+    who: 'reach' | 'decided' = 'reach',
   ): Promise<void> {
-    await this.customers.assertReachable(tx, context, request, customerId);
+    if (who === 'reach') await this.customers.assertReachable(tx, context, request, customerId);
     const row = await this.customers.require(tx, context.orgId, customerId);
     if (row.merged_into_customer_id !== null) {
       throw new OrdersError(

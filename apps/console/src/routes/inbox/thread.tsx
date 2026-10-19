@@ -17,6 +17,7 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
+  CircleCheck,
   Clock,
   Paperclip,
   UserRound,
@@ -133,7 +134,7 @@ export function Conversation({
             <Skeleton className="h-3 w-24" />
           </div>
         </div>
-        <div className="flex-1 space-y-3 px-4 py-4">
+        <div className="inbox-chat flex-1 space-y-3 px-4 py-4">
           <Skeleton className="h-10 w-2/3 rounded-xl" />
           <Skeleton className="ml-auto h-10 w-48 rounded-xl" />
           <Skeleton className="h-16 w-2/3 rounded-xl" />
@@ -238,12 +239,12 @@ function Thread({
 
   return (
     <section aria-labelledby={`${ids}-name`} className="inbox-thread flex min-h-0 min-w-0 flex-col">
-      <header className="space-y-2 border-b border-border px-4 py-3">
+      <header className="space-y-2 border-b border-border bg-background px-4 py-2.5">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="icon-sm"
-            className="inbox-small-only"
+            className="inbox-small-only rounded-full"
             aria-label={t('inbox.thread.back')}
             onClick={onBack}
           >
@@ -256,51 +257,51 @@ function Thread({
             size="lg"
           />
           <div className="min-w-0 flex-1">
-            <h2
-              id={`${ids}-name`}
-              lang={hasBangla(name) ? 'bn' : undefined}
-              className="truncate text-base font-semibold"
-            >
-              {name}
-            </h2>
-            <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              {conversation.contact.handle === null ? null : (
-                <span>@{conversation.contact.handle}</span>
-              )}
-              <StatusBadge tone="neutral">{t(`inbox.channel.${conversation.channel}`)}</StatusBadge>
-              <StatusBadge tone={stageTone(conversation.contact.stage)}>
+            <div className="flex min-w-0 items-center gap-2">
+              <h2
+                id={`${ids}-name`}
+                lang={hasBangla(name) ? 'bn' : undefined}
+                className="truncate text-base font-semibold"
+              >
+                {name}
+              </h2>
+              <StatusBadge tone={stageTone(conversation.contact.stage)} className="shrink-0">
                 {t(`inbox.stage.${conversation.contact.stage}`)}
               </StatusBadge>
               {conversation.status === 'closed' ? (
-                <StatusBadge tone="neutral">{t('inbox.thread.closed')}</StatusBadge>
+                <StatusBadge tone="neutral" className="shrink-0">
+                  {t('inbox.thread.closed')}
+                </StatusBadge>
               ) : null}
+            </div>
+            <p className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
+              <span>{t(`inbox.channel.${conversation.channel}`)}</span>
+              {conversation.contact.handle === null ? null : (
+                <span className="truncate">@{conversation.contact.handle}</span>
+              )}
+              <span aria-hidden="true">·</span>
+              <span className="truncate">{ownerLine}</span>
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="inbox-small-only"
-            onClick={() => onPane('customer')}
-          >
-            <UserRound aria-hidden="true" />
-            {t('inbox.thread.showCustomer')}
-          </Button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-muted-foreground">{ownerLine}</p>
           {mayWrite ? (
-            <div className="ml-auto flex flex-wrap gap-2">
+            <div className="flex shrink-0 items-center gap-1.5">
               {owner?.userId === me ? (
                 <Button
                   size="sm"
                   variant="outline"
+                  className="rounded-full"
                   onClick={() => run((ack) => act(conversation.id, 'release', ack))}
                 >
                   {t('inbox.thread.release')}
                 </Button>
               ) : mayTake ? (
                 // Taking over a colleague's conversation is a supervisor's (D-737).
-                <Button size="sm" className="alive-press" aria-keyshortcuts="A" onClick={take}>
+                <Button
+                  size="sm"
+                  className="alive-press rounded-full"
+                  aria-keyshortcuts="A"
+                  onClick={take}
+                >
                   {t('inbox.thread.take')}
                 </Button>
               ) : null}
@@ -310,13 +311,22 @@ function Thread({
                 />
               ) : null}
               {conversation.status === 'open' ? (
-                <Button size="sm" variant="ghost" aria-keyshortcuts="E" onClick={close}>
-                  {t('inbox.thread.close')}
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="rounded-full"
+                  aria-keyshortcuts="E"
+                  aria-label={t('inbox.thread.close')}
+                  title={t('inbox.thread.close')}
+                  onClick={close}
+                >
+                  <CircleCheck aria-hidden="true" />
                 </Button>
               ) : (
                 <Button
                   size="sm"
                   variant="ghost"
+                  className="rounded-full"
                   onClick={() => run((ack) => act(conversation.id, 'reopen', ack))}
                 >
                   {t('inbox.thread.reopen')}
@@ -324,11 +334,20 @@ function Thread({
               )}
             </div>
           ) : null}
+          <Button
+            variant="outline"
+            size="icon-sm"
+            className="inbox-small-only rounded-full"
+            aria-label={t('inbox.thread.showCustomer')}
+            onClick={() => onPane('customer')}
+          >
+            <UserRound aria-hidden="true" />
+          </Button>
         </div>
         {conversation.contact.stage === 'fraud' ? (
           <p
             role="alert"
-            className="flex items-center gap-2 rounded-md bg-destructive-subtle px-3 py-2 text-sm text-destructive-subtle-foreground"
+            className="flex items-center gap-2 rounded-lg bg-destructive-subtle px-3 py-2 text-sm text-destructive-subtle-foreground"
           >
             <AlertTriangle aria-hidden className="size-4 shrink-0" />
             {t('inbox.fraudBanner')}
@@ -340,15 +359,16 @@ function Thread({
         <Messages view={view} me={me} now={now} />
       </ThreadActionsContext.Provider>
 
-      <footer className="space-y-2 border-t border-border p-3">
+      <footer className="space-y-1.5 border-t border-border bg-background px-4 pt-2 pb-2">
         <p
           className={cn(
-            'text-xs',
+            'flex items-center gap-1.5 text-xs',
             replyWindow.open
               ? 'text-muted-foreground'
-              : 'rounded-md bg-warning-subtle px-2 py-1 text-warning-subtle-foreground',
+              : 'rounded-lg bg-warning-subtle px-2.5 py-1.5 text-warning-subtle-foreground',
           )}
         >
+          <Clock aria-hidden="true" className="size-3.5 shrink-0" />
           {windowLine}
         </p>
         {error === null ? null : (
@@ -373,7 +393,7 @@ function Thread({
             }
           />
         ) : null}
-        <p id={`${ids}-hint`} className="text-xs text-muted-foreground">
+        <p id={`${ids}-hint`} className="px-1 text-2xs text-muted-foreground">
           {t('inbox.thread.sendHint')}
         </p>
       </footer>
@@ -433,13 +453,15 @@ function Messages({
   const unseen = atEnd ? 0 : Math.max(0, messages.length - seen);
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="inbox-chat relative min-h-0 flex-1">
       <div ref={scroller} onScroll={onScroll} className="relative h-full overflow-y-auto px-4 py-3">
         <ol aria-label={t('inbox.thread.label')} className="inbox-messages">
           {items.map((item) =>
             item.kind === 'day' ? (
               <li key={item.key} className="inbox-day text-xs">
-                <span>{dayText(dayLabel(item.day, now), t)}</span>
+                <span className="rounded-full border border-border bg-background px-2.5 py-0.5">
+                  {dayText(dayLabel(item.day, now), t)}
+                </span>
               </li>
             ) : (
               item.messages.map((message, index) => (
@@ -683,7 +705,7 @@ function HandOverMenu({ onPick }: { readonly onPick: (userId: string) => void })
   return (
     <Menu open={open} onOpenChange={setOpen}>
       <MenuTrigger asChild>
-        <Button size="sm" variant="outline">
+        <Button size="sm" variant="outline" className="rounded-full">
           {t('inbox.thread.handOver')}
           <ChevronDown aria-hidden className="size-4" />
         </Button>

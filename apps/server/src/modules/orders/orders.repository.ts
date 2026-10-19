@@ -26,6 +26,8 @@ export interface CustomerRow extends Record<string, unknown> {
   readonly id: string;
   readonly phone_e164: string;
   readonly name: string;
+  /** M49 (D-893): the email the staff wrote down, or null. */
+  readonly email: string | null;
   readonly birthday: string | null;
   readonly anniversary: string | null;
   readonly gender: string | null;
@@ -54,7 +56,7 @@ export interface CustomerRow extends Record<string, unknown> {
  * normalise to ISO 8601 (§23), which is what `isoOf` in `orders.service.ts` does.
  */
 
-const CUSTOMER_COLUMNS = sql`c.id, c.phone_e164, c.name, c.birthday, c.anniversary, c.gender,
+const CUSTOMER_COLUMNS = sql`c.id, c.phone_e164, c.name, c.email, c.birthday, c.anniversary, c.gender,
   c.age_band, c.profession, c.tags, c.notes, c.orders_total, c.delivered_count,
   c.returned_count, c.cancelled_count, c.ltv_poisha, c.first_order_at, c.last_order_at,
   c.merged_into_customer_id`;
@@ -140,28 +142,36 @@ export async function updateCustomer(
   id: string,
   patch: {
     readonly name?: string | undefined;
-    /** A date sets it, `null` clears it, undefined leaves it alone. */
+    /**
+     * A value sets it, `null` clears it, undefined leaves it alone (M49, D-891: a wrong email,
+     * birthday or profession must be removable, not only replaceable).
+     */
+    readonly email?: string | null | undefined;
     readonly birthday?: string | null | undefined;
     readonly anniversary?: string | null | undefined;
-    readonly gender?: string | undefined;
-    readonly ageBand?: string | undefined;
-    readonly profession?: string | undefined;
+    readonly gender?: string | null | undefined;
+    readonly ageBand?: string | null | undefined;
+    readonly profession?: string | null | undefined;
     readonly tags?: readonly string[] | undefined;
-    readonly notes?: string | undefined;
+    readonly notes?: string | null | undefined;
   },
 ): Promise<boolean> {
+  /** `column = value`, or the column kept when the patch leaves it out. */
+  const text = (column: SQL, value: string | null | undefined) =>
+    value === undefined ? column : sql`${value}`;
   const rows = await tx.execute<{ id: string }>(sql`
     update sales.customers set
       name = coalesce(${patch.name ?? null}, name),
+      email = ${text(sql`email`, patch.email)},
       birthday = ${patch.birthday === undefined ? sql`birthday` : sql`${patch.birthday}::date`},
       anniversary = ${
         patch.anniversary === undefined ? sql`anniversary` : sql`${patch.anniversary}::date`
       },
-      gender = coalesce(${patch.gender ?? null}, gender),
-      age_band = coalesce(${patch.ageBand ?? null}, age_band),
-      profession = coalesce(${patch.profession ?? null}, profession),
+      gender = ${text(sql`gender`, patch.gender)},
+      age_band = ${text(sql`age_band`, patch.ageBand)},
+      profession = ${text(sql`profession`, patch.profession)},
       tags = coalesce(${patch.tags === undefined ? null : JSON.stringify(patch.tags)}::jsonb, tags),
-      notes = coalesce(${patch.notes ?? null}, notes),
+      notes = ${text(sql`notes`, patch.notes)},
       updated_at = now()
     where org_id = ${orgId} and id = ${id}
     returning id
@@ -256,6 +266,89 @@ export async function insertAddress(
   const id = rows[0]?.id;
   if (id === undefined) throw new Error('sales.customer_addresses insert returned no id');
   return id;
+}
+
+/** M49 (D-894): a saved address with its district's and thana's English names. */
+export interface SavedAddressRow extends AddressRow {
+  readonly district_name: string | null;
+  readonly thana_name: string | null;
+}
+
+/** A buyer's address book, the default first, each with its place names (`ref` is global). */
+export async function savedAddressesNamed(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+): Promise<SavedAddressRow[]> {
+  const rows = await tx.execute<SavedAddressRow>(sql`
+    select a.id, a.label, a.district_id, a.thana_id, a.area, a.address_line, a.is_default,
+           d.name_en as district_name, t.name_en as thana_name
+    from sales.customer_addresses a
+    left join ref.districts d on d.id = a.district_id
+    left join ref.thanas t on t.id = a.thana_id
+    where a.org_id = ${orgId} and a.customer_id = ${customerId}
+    order by a.is_default desc, a.created_at
+  `);
+  return [...rows];
+}
+
+/**
+ * Replace one saved address (D-894). Making it the default clears the previous default first, as
+ * `insertAddress` does, for the partial unique index. The row as it was, or undefined when the
+ * buyer has no such address.
+ */
+export async function replaceAddress(
+  tx: Tx,
+  input: {
+    readonly orgId: string;
+    readonly customerId: string;
+    readonly addressId: string;
+    readonly label: string | null;
+    readonly districtId: number;
+    readonly thanaId: number;
+    readonly area: string | null;
+    readonly addressLine: string;
+    readonly isDefault: boolean;
+  },
+): Promise<AddressRow | undefined> {
+  const before = await tx.execute<AddressRow>(sql`
+    select a.id, a.label, a.district_id, a.thana_id, a.area, a.address_line, a.is_default
+    from sales.customer_addresses a
+    where a.org_id = ${input.orgId} and a.customer_id = ${input.customerId}
+      and a.id = ${input.addressId}
+    for update
+  `);
+  if (before[0] === undefined) return undefined;
+  if (input.isDefault) {
+    await tx.execute(sql`
+      update sales.customer_addresses set is_default = false, updated_at = now()
+      where org_id = ${input.orgId} and customer_id = ${input.customerId} and is_default
+        and id <> ${input.addressId}
+    `);
+  }
+  await tx.execute(sql`
+    update sales.customer_addresses set
+      label = ${input.label}, district_id = ${input.districtId}, thana_id = ${input.thanaId},
+      area = ${input.area}, address_line = ${input.addressLine}, is_default = ${input.isDefault},
+      updated_at = now()
+    where org_id = ${input.orgId} and customer_id = ${input.customerId} and id = ${input.addressId}
+  `);
+  return before[0];
+}
+
+/** Remove one saved address (D-894); the row as it was, or undefined when there is no such one. */
+export async function deleteAddress(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+  addressId: string,
+): Promise<AddressRow | undefined> {
+  const rows = await tx.execute<AddressRow>(sql`
+    delete from sales.customer_addresses a
+    where a.org_id = ${orgId} and a.customer_id = ${customerId} and a.id = ${addressId}
+    returning a.id, a.label, a.district_id, a.thana_id, a.area, a.address_line, a.is_default
+  `);
+  return rows[0];
 }
 
 /**
