@@ -7,6 +7,7 @@ import type { TrustTally } from '@elysium/domain/iam';
 import { isActiveOrgAdmin, lockTrust, loadTrust } from './trust.repository.js';
 import {
   activeMembers,
+  activeSuperAdmins,
   activeRoleBranches,
   membershipsOfUser,
   ownersAmong,
@@ -64,6 +65,12 @@ export interface IamApi {
     orgId: string,
     options?: { readonly roles?: readonly MembershipRole[] },
   ): Promise<readonly BrandMember[]>;
+
+  /**
+   * The enabled super admins, who hold no role in a brand but may do anything in it (D-864),
+   * for a caller letting them do what a role's holder does. An owner is named "Owner" (D-473).
+   */
+  activeSuperAdmins(tx: Tx): Promise<readonly BrandMember[]>;
 
   /**
    * Whether the brand's independent admins trust this person now (D-654 to D-656), for an
@@ -129,6 +136,16 @@ export class IamApiService implements IamApi {
       name: row.name,
       emailMasked: maskEmail(row.email),
       roles: row.roles,
+    }));
+  }
+
+  async activeSuperAdmins(tx: Tx): Promise<readonly BrandMember[]> {
+    const rows = await activeSuperAdmins(tx);
+    return rows.map((row) => ({
+      userId: row.id,
+      name: row.is_owner ? 'Owner' : row.name,
+      emailMasked: row.is_owner ? '' : maskEmail(row.email),
+      roles: [],
     }));
   }
 

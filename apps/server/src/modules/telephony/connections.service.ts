@@ -26,7 +26,7 @@ import { TELEPHONY_CONFIG, type TelephonyConfig } from './telephony.config.js';
 import { mapTelephonyErrors, TelephonyError } from './telephony.errors.js';
 import { connectionBinding, openSecret, sealSecret } from './telephony-secrets.js';
 import * as repo from './telephony.repository.js';
-import { CALLING_ROLES } from './telephony.roles.js';
+import { callingPeople } from './telephony.roles.js';
 import { ENVO_GATEWAY } from './telephony.tokens.js';
 
 /** Envo allows 120 requests a minute per key: presence is asked at most every ten seconds. */
@@ -443,7 +443,7 @@ export class TelephonyConnectionsService {
           throw new TelephonyError('TELEPHONY_NOT_FOUND', 'No such connection.');
         const [assignments, members] = await Promise.all([
           repo.assignmentsOf(tx, context.orgId),
-          this.iam.activeMembers(tx, context.orgId, { roles: CALLING_ROLES }),
+          callingPeople(this.iam, tx, context.orgId),
         ]);
         return { row, assignments, members };
       });
@@ -528,7 +528,7 @@ export class TelephonyConnectionsService {
         const row = await repo.connectionById(tx, context.orgId, id, { lock: true });
         if (row === undefined)
           throw new TelephonyError('TELEPHONY_NOT_FOUND', 'No such connection.');
-        const members = await this.iam.activeMembers(tx, context.orgId, { roles: CALLING_ROLES });
+        const members = await callingPeople(this.iam, tx, context.orgId);
         const member = members.find((candidate) => candidate.userId === userId);
         if (member === undefined) {
           throw new TelephonyError(

@@ -47,7 +47,7 @@ import {
 import { TELEPHONY_CONFIG, type TelephonyConfig } from './telephony.config.js';
 import { mapTelephonyErrors, TelephonyError } from './telephony.errors.js';
 import * as repo from './telephony.repository.js';
-import { CALLING_ROLES } from './telephony.roles.js';
+import { callingPeople } from './telephony.roles.js';
 import { ENVO_GATEWAY } from './telephony.tokens.js';
 
 /** A call's own scope (D-841): `own` is the person on it, or the order's owner when linked. */
@@ -223,7 +223,7 @@ export class TelephonyCallsService {
   private async myPhone(tx: Tx, context: ActiveContext) {
     const assignment = await repo.assignmentOfUser(tx, context.orgId, context.userId);
     if (assignment === undefined) return null;
-    const members = await this.iam.activeMembers(tx, context.orgId, { roles: CALLING_ROLES });
+    const members = await callingPeople(this.iam, tx, context.orgId);
     if (!members.some((member) => member.userId === context.userId)) return null;
     const connection = await repo.connectionById(tx, context.orgId, assignment.connection_id);
     if (connection === undefined) return null;

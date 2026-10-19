@@ -98,6 +98,19 @@ export async function activeRoleBranches(
   return [...rows];
 }
 
+/** The enabled super admins, owners among them (D-473), who act in every brand without a role. */
+export async function activeSuperAdmins(
+  tx: Tx,
+): Promise<{ id: string; name: string; email: string; is_owner: boolean }[]> {
+  const rows = await tx.execute<{ id: string; name: string; email: string; is_owner: boolean }>(sql`
+    select u.id, u.name, u.email, u.is_owner from iam.users u
+    where u.is_super_admin and u.is_active
+    order by u.name, u.id
+    limit 100
+  `);
+  return [...rows];
+}
+
 /** The owners among these people (D-473), with their names, for the caller to mask. */
 export async function ownersAmong(
   tx: Tx,

@@ -18,7 +18,7 @@ import { emit } from '../../platform/events/outbox.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
-import { CALLING_ROLES } from './telephony.roles.js';
+import { callingPeople } from './telephony.roles.js';
 import * as repo from './telephony.repository.js';
 
 /** Who the database sees acting when Envo's word is applied. Not a person. */
@@ -68,7 +68,7 @@ export class TelephonyIngestService {
     const assignment = await repo.assignmentOfExtension(tx, orgId, connectionId, extension);
     if (assignment === undefined) return null;
     if (new Date(assignment.created_at).getTime() > at.getTime()) return null;
-    const members = await this.iam.activeMembers(tx, orgId, { roles: CALLING_ROLES });
+    const members = await callingPeople(this.iam, tx, orgId);
     return members.some((member) => member.userId === assignment.user_id)
       ? assignment.user_id
       : null;
