@@ -3655,3 +3655,5 @@ dry-run|commit --file <users.json>`.
   `labels.e2e`, `pack-station.e2e`, `telephony.e2e` 126/126; `numbers.e2e` and `analytics.e2e`
   15/15.
 - **New dependencies:** none.
+- **Live:** deployed to both brands on 2026-10-19 (6c3051ab, `infra/brand/deploy.sh … all`): no
+  migration; every container healthy; `GET /v1/staff-names` answers on both APIs.
