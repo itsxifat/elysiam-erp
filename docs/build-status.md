@@ -1,21 +1,21 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-19** (Customer numbers and people (M48) live on both brands (2026-10-19, 3f8b4184); phone calls through Envo (M47) live on both brands (2026-10-19, e70fe2e9), with the owner's answers of 2026-10-19 (recordings played from Envo, a wrap-up after every call, the caller panel); Labels and Packaging, with terminals, printers and lots (M46), live on both brands; order ownership and auto-assign, the unified inbox, the English-only slips, the alive inbox, selling from the chat and voice messages and calls (M41 to M45) are live too; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
+Last updated: **2026-10-19** (The inbox workspace (M49): a rounder, messaging-style inbox, a tabbed customer panel, the customer's numbers, email and addresses edited from the chat, every product a search finds; customer numbers and people (M48) live on both brands (2026-10-19, 3f8b4184); phone calls through Envo (M47) live on both brands (2026-10-19, e70fe2e9), with the owner's answers of 2026-10-19 (recordings played from Envo, a wrap-up after every call, the caller panel); Labels and Packaging, with terminals, printers and lots (M46), live on both brands; order ownership and auto-assign, the unified inbox, the English-only slips, the alive inbox, selling from the chat and voice messages and calls (M41 to M45) are live too; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Everything     [###################-]  97%   (about 43.6 of 45 milestones)
+Everything     [###################-]  97%   (about 44.6 of 46 milestones)
 First plan     [###################-]  98%   (M00 to M30)
 Wave 3         [##################--]  93%   (M31 to M39)
-Wave 4         [###################-]  99%   (M40 to M48; broad tests deferred, D-758)
+Wave 4         [###################-]  99%   (M40 to M49; broad tests deferred, D-758)
 ```
 
 - The first plan had 33 milestones; six are out on the owner's instruction (M13, M21, M22, M27,
   M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620) and **wave 4 adds 9**
-  (M40 to M43, 2026-10-11; M44 and M45, 2026-10-12; M46, 2026-10-17; M47, 2026-10-18; M48,
-  2026-10-19), so **45 count** in all.
+  (M40 to M43, 2026-10-11; M44 and M45, 2026-10-12; M46, 2026-10-17; M47, 2026-10-18; M48 and
+  M49, 2026-10-19), so **46 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits; a part-built one counts
   for the share that is done.
 - Today: **33 done** (M32 and M38 on 2026-10-08), **3 part-built**: M14b and M30 (wait for a
@@ -106,6 +106,7 @@ Wave 4         [###################-]  99%   (M40 to M48; broad tests deferred, 
 | M46  | Labels and Packaging, terminals, printers, lots |  100% | Live 2026-10-17: label and packing terminals with people and cameras, network and browser printers, automatic labels on booking, a print log with reprint reasons, orders in several lots; untested on real printers                                           |
 | M47  | Phone calls through Envo                        |   95% | Live 2026-10-19 (e70fe2e9) on both brands, the owner's answers included: Envo connections, extensions for staff, Call buttons, the phone in the console, call logs, recordings played from Envo, wrap-ups and the caller panel; untested against the live Envo |
 | M48  | Customer numbers and people                     |   95% | Live 2026-10-19 (3f8b4184) on both brands: several numbers per buyer with staff notes, shared numbers, orders for someone else, change buyer and merge, the caller panel's numbers; no screen tests yet                                                        |
+| M49  | The inbox workspace, customer in the chat       |   95% | Built 2026-10-19: rounded messaging-style inbox, tabbed customer panel, the buyer's numbers, email and addresses edited from the chat, every product a search finds                                                                                            |
 
 ## Being built now
 

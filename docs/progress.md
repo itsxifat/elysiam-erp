@@ -3606,3 +3606,29 @@ dry-run|commit --file <users.json>`.
   tests 43/43.
 - **Follow-ups:** in `docs/plans/M48.md`.
 - **New dependencies:** none.
+
+## 2026-10-19 · M49 · the inbox workspace and the customer in the chat
+
+- **Branch:** `m49-inbox-workspace` from `integration-wave2` (5300d999), fast-forwarded into
+  `integration-wave2`. Decisions D-890 to D-897; architecture §16 "The inbox workspace" and
+  "Customers"; plan `docs/plans/M49.md`.
+- **What changed:** the inbox redesigned as three rounded panes (list, thread, panel) with a
+  segmented view switch, pill search and filter pills, rounder bubbles and a one-field composer;
+  the customer panel as a header and Customer, Order and Notes tabs with card sections; the linked
+  buyer's details (with a new email), numbers and address book seen and edited from the chat,
+  through the conversation (ten routes, `ORDERS_API` customer-card methods, the buyer page's
+  services split into transaction-level cores); Save as customer, This is them and Not this
+  customer; a nameless chat takes the buyer's name; the draft order fills the buyer's default
+  address; the picker and "Interested in" list every match a page at a time; the buyer page's
+  Details, Addresses and Chats cards. Migration `0161_m49_customer_email`; 14 new routes; two
+  error codes.
+- **Gates:** format, lint, typecheck (server and console), build, `check:bundle` (249.9 KB of
+  250 KB; the global stylesheet byte-identical to before), `check:migrations`, `check:schema`,
+  `check:i18n`, `check:api-client` (regenerated): all pass. Not run: the full verify,
+  `check:white-label`.
+- **Tests** (heavy lock, the dev stack's Postgres): `customer-card.e2e.test.ts` 5/5 (new);
+  `inbox.e2e`, `selling.e2e`, `numbers.e2e` 35/35; `crm.e2e`, `desk.e2e`, `orders.e2e`,
+  `telephony.e2e` 97/97; `route-matrix.e2e` 2/2; the console's inbox, people, customers and calls
+  tests 54/54; `inbox.stack.ts` 6/6 with screenshots in `docs/review/M42/` and axe in both themes.
+- **Follow-ups:** in `docs/plans/M49.md`.
+- **New dependencies:** none.

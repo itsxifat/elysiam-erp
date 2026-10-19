@@ -847,6 +847,7 @@ used it), and the answer says what uses it. Branches and ledger accounts are nev
   - tags
 - The same person appears as separate rows in different orgs. The only cross-org link is the fraud phone hash (D-032).
 - **Numbers and people (M48, D-870 to D-889).** A buyer has several numbers in `sales.customer_phones`, ranked (1 is the primary, whose copy is `customers.phone_e164`), each with its kind, whose it is (own, household, relative, work, someone_else, other), the staff's note ("Needs details" until written) and its source; a retired number stays in the history and finds nobody. One number may be several people's: `phone_e164` is not unique. `ORDERS_API.buyerCandidates` lists everyone a number names; screens with a person in front of them let the staff choose, and automatic paths take the person whose primary own number it is, else whoever ordered last, flagging the order `buyer_check = 'shared_number'` when they had to choose. Supervisors change an order's buyer (the counts move with it) and merge two records of one person (`merged_into_customer_id`, never deleted; `customer.merged` moves calls, inbox contacts and website accounts).
+- **Details, email and the address book (M49, D-891 to D-895).** `customers.email` (staff-written, apart from a website account's own); `customerDetailsSchema` is the one shape for the buyer page and the inbox, where `null` clears a value. The address book has its own routes (add, replace, make default, remove; the first is the default, removing the default promotes the oldest). The inbox edits the linked buyer through the conversation (D-890), and the buyer page lists the buyer's chats and their notes.
 
 ### Orders (`sales.orders`)
 
@@ -1168,6 +1169,12 @@ Messenger, Instagram and WhatsApp in one list in the brand's ERP (`apps/server/s
 - **Names and photos (D-761, D-762):** `inbox.fetch_profile` asks Meta's User Profile API (Messenger: `first_name,last_name,profile_pic`; Instagram: `name,username,profile_pic`; the Page token) after a person's message when never asked or not for three days, outside any transaction; `inbox.profile_sweep` every six hours. WhatsApp's name comes in the webhook. Kept on `inbox.contacts` (`avatar_url`, `handle`, `profile_fetched_at`); a typed name is never overwritten. `inbox.contact_updated` tells the screens. UNVERIFIED.
 - **Saved replies (D-763):** `inbox.saved_replies` (RLS), subject `SavedReply` (org_admin writes, sales reads and uses), five routes under `/v1/inbox/saved-replies`; `/` in the reply box, placeholders `{name}`, `{order_number}`, `{total}`, `{phone}` filled in the browser, usage counted.
 - **Alive (D-764 to D-767):** `GET /v1/inbox/unread` feeds the tab's title; `inbox.message_received` carries its direction. The console's live layer (`apps/console/src/alive/`): Web Audio tones, each person's mute and volume, desktop alerts while the tab is hidden, motion that stops under reduced motion, all in lazy chunks. Bangla in any text is marked `lang="bn"` (Hind Siliguri, no negative tracking).
+
+### The inbox workspace (M49, D-890 to D-897)
+
+- **Layout (D-896):** the list, thread and panel are rounded cards on the canvas (`inbox.css`, loaded with the inbox's chunk); on a phone they are the screen. The panel is a header (photo, name, stage menu, number with Call, Create order, Customer page) and three WAI-ARIA tabs, Customer, Order and Notes, kept mounted so the draft and its keys survive a switch; Alt+P brings Order forward.
+- **The customer card (D-890 to D-892):** the panel read carries the linked buyer's card (`ORDERS_API.customerCard`) or, before the link, the people on the saved number. Ten routes under `/v1/inbox/conversations/:id/customer…` edit the buyer through the conversation's rule (`update Conversation`, D-737) with the buyer page's own services in `decided` mode; each write is audited by the orders module and by the inbox, and `inbox.contact_updated` refreshes the other screens on the chat.
+- **Search (D-897):** `GET /v1/inbox/products?q&offset` pages every match (20 a page, exact hits first, stable order); the console's lists load the next page as their own scroll area nears its end.
 
 ### Agent activity
 

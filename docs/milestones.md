@@ -1404,3 +1404,26 @@ The owner's ask of 2026-10-19: "a customer can have multiple numbers like primar
 3. An order for someone else keeps the buyer and the recipient apart, and the recipient's number joins the buyer's only when ticked.
 4. A supervisor changes an order's buyer and the counts move; a sales agent is refused. A merge moves the other record's orders, numbers and a telephony call to the kept record.
 5. Every new route is in the route matrix with a fixture; no number or note text reaches an audit row.
+
+## M49: The inbox workspace and the customer in the chat
+
+Phase 7 · Effort HIGH · Depends on: M48 · Decisions D-890 to D-897
+
+The owner's ask of 2026-10-19: a rounder, organised inbox that looks like a messaging platform; a premium customer panel; every product a search finds, in its own infinite scroll; and the customer's numbers, email, addresses and other details seen and edited from the inbox, connected to customer management, products, orders and notes.
+
+**Build**
+
+- **The look:** three rounded panes on the canvas; the list's title, live dot, views, pill search and filter pills; rounded rows; a one-line thread header with round actions; rounder bubbles on the canvas; one rounded reply field. Inbox-only styles in the lazy stylesheet.
+- **The panel:** an identity header with the stage menu, number and Call, Create order and Customer page; tabs Customer, Order and Notes; each section a card.
+- **The customer card:** the linked buyer's details (with the new email), numbers and address book, edited through the conversation (D-890); Save as customer, This is them, Not this customer (D-892); the chat takes the buyer's name when it has none.
+- **The address book and the email:** on the buyer page too (D-893, D-894), with a Chats card listing the buyer's conversations and their notes (D-895).
+- **Every product:** the picker and "Interested in" page through every match as they scroll (D-897).
+
+**Acceptance checks**
+
+1. A sales agent who cannot open a buyer on the buyer page corrects that buyer's details, numbers and addresses from a chat linked to them; the buyer page shows the same record; no email or address line reaches an audit row.
+2. Someone else's chat needs the go-ahead; an unlinked chat has no card to edit; another brand sees nothing.
+3. Save as customer makes and links a new buyer with the chat's address; a person on the saved number is linked only when they use it; Not this customer unlinks and keeps the number.
+4. The buyer page's address book adds, replaces, makes default and removes, always keeping one default.
+5. A search matching 25 products lists all 25 over two pages, none twice.
+6. The inbox stack spec passes with the new panel, its screenshots in both themes and no serious or critical accessibility violation; the first download stays within 250 KB.
