@@ -3634,3 +3634,24 @@ dry-run|commit --file <users.json>`.
 - **New dependencies:** none.
 - **Live:** deployed to both brands on 2026-10-19 (3270008c, `infra/brand/deploy.sh … all`):
   160 migrations applied on each (0161 the last), every container healthy, both consoles answer.
+
+## 2026-10-19 · fix · staff by name, never by id
+
+- **Branch:** `integration-wave2`. Decision D-898.
+- **What changed:** the owner saw `usr_…` where a person's name belongs. Screens named people
+  from lists of active staff in certain roles, so a super admin, a leaver or a role outside the
+  list showed as the raw id (order page and list, staff page resets, a number's "Added by", the
+  buyer page's chats, the terminal panel) or its first eight characters (Approvals). The server
+  now names people through `IamApi.nameBook` (everyone who holds or held a role in the brand and
+  every super admin; an owner is "Owner"): the inbox, phone calls, packing, labels, scanners and
+  customer numbers. The console names any other id through the new `GET /v1/staff-names`
+  (`useStaffNames`, batched and cached per id) and never falls back to the id.
+  Analytics' agents table falls back to the same names when an agent has no employee record.
+- **Gates:** format, lint, typecheck (server and console), build, `check:bundle` (about 249.97 KB
+  of 250 KB), `check:routes` (672 routes), `check:i18n`, `check:api-client` (regenerated): all
+  pass. Not run: the full verify, the stack specs.
+- **Tests** (heavy lock, the dev stack's Postgres): `staff-names.e2e.test.ts` 3/3 (new);
+  `route-matrix.e2e`, `cost-sweep.e2e`, `inbox.e2e`, `customer-card.e2e`, `voice-calls.e2e`,
+  `labels.e2e`, `pack-station.e2e`, `telephony.e2e` 126/126; `numbers.e2e` and `analytics.e2e`
+  15/15.
+- **New dependencies:** none.

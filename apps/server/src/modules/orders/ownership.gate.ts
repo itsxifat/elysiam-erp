@@ -119,7 +119,6 @@ export class OwnershipGate {
 
   /** A colleague's name for a refusal, or a phrase that names nobody when they have left. */
   async nameOf(tx: Tx, orgId: string, userId: string): Promise<string> {
-    const members = await this.iam.activeMembers(tx, orgId);
-    return members.find((member) => member.userId === userId)?.name ?? 'A colleague';
+    return (await this.iam.nameBook(tx, orgId)).get(userId) ?? 'A colleague';
   }
 }

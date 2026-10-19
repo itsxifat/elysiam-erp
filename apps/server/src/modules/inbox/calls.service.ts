@@ -339,8 +339,7 @@ export class InboxCallsService {
   // --- the agent's side -----------------------------------------------------------------------------
 
   private async names(tx: Tx, orgId: string): Promise<Map<string, string>> {
-    const members = await this.iam.activeMembers(tx, orgId);
-    return new Map(members.map((member) => [member.userId, member.name]));
+    return new Map(await this.iam.nameBook(tx, orgId));
   }
 
   private view(

@@ -273,9 +273,7 @@ function JobsTable({
                 <p className="text-xs text-muted-foreground">{job.terminal.name}</p>
               </td>
               <td className="px-3 py-2">
-                {job.source === 'auto'
-                  ? t('lb.source.auto')
-                  : (job.requestedBy?.name ?? job.requestedBy?.id ?? '')}
+                {job.source === 'auto' ? t('lb.source.auto') : (job.requestedBy?.name ?? '—')}
                 {job.source === 'reprint' ? (
                   <p className="text-xs text-muted-foreground">
                     {`${t('lb.source.reprint')}: ${job.reason ?? ''}`}

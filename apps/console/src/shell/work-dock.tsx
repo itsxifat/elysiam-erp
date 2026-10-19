@@ -14,6 +14,7 @@ import '../i18n/alive.js';
 import { useLocale, useT } from '../i18n/locale.js';
 import '../i18n/workflow.js';
 import { useRealtime } from '../realtime/use-realtime.js';
+import { useStaffNames } from '../staff-names.js';
 import { listAgents } from '../routes/orders/api.js';
 import {
   acceptConversationOffer,
@@ -271,8 +272,12 @@ function Dock() {
     return () => window.clearTimeout(timer);
   }, [notices]);
 
+  // D-898: a super admin acting over someone is named too, not left as "A colleague".
+  const staff = useStaffNames(notices.map((notice) => notice.actorUserId));
   const nameOf = (userId: string) =>
-    agents.data?.items.find((agent) => agent.userId === userId)?.name ?? t('wf.someone');
+    agents.data?.items.find((agent) => agent.userId === userId)?.name ??
+    staff(userId) ??
+    t('wf.someone');
 
   return (
     <div

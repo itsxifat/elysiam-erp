@@ -11,26 +11,40 @@ import type {
   ApprovalDecisionInput,
   ApprovalRequestInput,
   CallAttemptInput,
+  CallerPanelQuery,
   CashInInput,
   ClosePeriodInput,
   ConfirmWithCode,
   CreateUser,
   CredentialResetInput,
+  CustomerAddressInput,
+  CustomerDetailsInput,
+  CustomerMergeInput,
+  CustomerPhoneAddInput,
+  CustomerPhoneRetireInput,
+  CustomerPhoneUpdateInput,
+  CustomerPinnedNoteInput,
   DeactivateUser,
   DeskProfileInput,
   InboxAddressInput,
   InboxChannelUpdateInput,
   InboxHandOverInput,
   InboxInterestInput,
+  InboxLinkCustomerInput,
   InboxMetaAppInput,
   InboxNoteInput,
   InboxPhoneInput,
   InboxReplyInput,
+  InboxSaveCustomerInput,
   InboxStageInput,
   InboxTagsInput,
   MarkPrintedInput,
+  OrderBuyerChangeInput,
   PackingCameraCreateInput,
   PackingCameraUpdateInput,
+  PhoneCallAnsweredInput,
+  PhoneCallPlaceInput,
+  PhoneCallWrapUpInput,
   PresenceBeat,
   PresencePause,
   ReopenPeriodInput,
@@ -38,6 +52,9 @@ import type {
   SavedReplyInput,
   SetRoles,
   SwitchOrg,
+  TelephonyAssignInput,
+  TelephonyConnectionCreateInput,
+  TelephonyConnectionUpdateInput,
   ThresholdInput,
   TwoFactorPolicyInput,
   UpdateProfile,
@@ -58,6 +75,26 @@ export const OPERATIONS = {
     path: '/v1/ledger/accounts/{id}/ledger',
     ability: 'read:LedgerReport',
   },
+  addCustomerAddress: {
+    method: 'POST',
+    path: '/v1/customers/{id}/addresses',
+    ability: 'update:Customer',
+  },
+  addCustomerPhone: {
+    method: 'POST',
+    path: '/v1/customers/{id}/phones',
+    ability: 'update:Customer',
+  },
+  addInboxCustomerAddress: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/customer/addresses',
+    ability: 'update:Conversation',
+  },
+  addInboxCustomerPhone: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/customer/phones',
+    ability: 'update:Conversation',
+  },
   addInboxInterest: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/interests',
@@ -69,8 +106,19 @@ export const OPERATIONS = {
     ability: 'update:Conversation',
   },
   addPackingCamera: { method: 'POST', path: '/v1/packing/cameras', ability: 'update:PackingVideo' },
+  answeredPhoneCall: {
+    method: 'POST',
+    path: '/v1/telephony/calls/answered',
+    ability: 'create:PhoneCall',
+  },
+  assignTelephonyExtension: {
+    method: 'PUT',
+    path: '/v1/telephony/connections/{id}/extensions/{extension}',
+    ability: 'update:PhoneExtension',
+  },
   cashBook: { method: 'GET', path: '/v1/ledger/wallets/{id}/cash-book', ability: 'read:Wallet' },
   cashIn: { method: 'POST', path: '/v1/ledger/cash-in', ability: 'update:Wallet' },
+  changeOrderBuyer: { method: 'POST', path: '/v1/orders/{id}/buyer', ability: 'update:Order' },
   closeInboxConversation: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/close',
@@ -97,6 +145,11 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/inbox/saved-replies',
     ability: 'create:SavedReply',
+  },
+  createTelephonyConnection: {
+    method: 'POST',
+    path: '/v1/telephony/connections',
+    ability: 'create:Telephony',
   },
   createUser: { method: 'POST', path: '/v1/users', ability: 'create:User' },
   dayBook: { method: 'GET', path: '/v1/ledger/day-book', ability: 'read:LedgerReport' },
@@ -166,6 +219,11 @@ export const OPERATIONS = {
     path: '/v1/inventory/stock-in-hand/drafts/{id}',
     ability: 'update:Supply',
   },
+  deleteV1LabelsPrintersById: {
+    method: 'DELETE',
+    path: '/v1/labels/printers/{id}',
+    ability: 'update:PackingTerminal',
+  },
   deleteV1MarketingCampaignsById: {
     method: 'DELETE',
     path: '/v1/marketing/campaigns/{id}',
@@ -225,6 +283,11 @@ export const OPERATIONS = {
     method: 'DELETE',
     path: '/v1/supply/suppliers/{id}',
     ability: 'delete:Supply',
+  },
+  deleteV1TelephonyConnectionsByIdExtensionsByExtension: {
+    method: 'DELETE',
+    path: '/v1/telephony/connections/{id}/extensions/{extension}',
+    ability: 'update:PhoneExtension',
   },
   endMyOtherSessions: {
     method: 'POST',
@@ -773,6 +836,34 @@ export const OPERATIONS = {
     ability: 'read:Investor',
   },
   getV1JobsFailed: { method: 'GET', path: '/v1/jobs/failed', ability: 'read:AuditLog' },
+  getV1LabelsJobs: { method: 'GET', path: '/v1/labels/jobs', ability: 'update:Order' },
+  getV1LabelsJobsExport: { method: 'GET', path: '/v1/labels/jobs/export', ability: 'update:Order' },
+  getV1LabelsOrdersByOrderId: {
+    method: 'GET',
+    path: '/v1/labels/orders/{orderId}',
+    ability: 'read:Order',
+  },
+  getV1LabelsPrinters: {
+    method: 'GET',
+    path: '/v1/labels/printers',
+    ability: 'read:PackingTerminal',
+  },
+  getV1LabelsReady: { method: 'GET', path: '/v1/labels/ready', ability: 'update:Order' },
+  getV1LabelsSettings: {
+    method: 'GET',
+    path: '/v1/labels/settings',
+    ability: 'read:PackingTerminal',
+  },
+  getV1LabelsStationJobs: {
+    method: 'GET',
+    path: '/v1/labels/station/jobs',
+    ability: 'update:Order',
+  },
+  getV1LabelsStationJobsByIdDocument: {
+    method: 'GET',
+    path: '/v1/labels/station/jobs/{id}/document',
+    ability: 'update:Order',
+  },
   getV1Loans: { method: 'GET', path: '/v1/loans', ability: 'read:CompanyLoan' },
   getV1LoansById: { method: 'GET', path: '/v1/loans/{id}', ability: 'read:CompanyLoan' },
   getV1LoansLenders: { method: 'GET', path: '/v1/loans/lenders', ability: 'read:CompanyLoan' },
@@ -862,6 +953,7 @@ export const OPERATIONS = {
     path: '/v1/orders/return-reasons',
     ability: 'read:Order',
   },
+  getV1PackingHandover: { method: 'GET', path: '/v1/packing/handover', ability: 'update:Order' },
   getV1PackingOrdersByOrderId: {
     method: 'GET',
     path: '/v1/packing/orders/{orderId}',
@@ -1060,6 +1152,44 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}/usage',
     ability: 'update:Supply',
   },
+  getV1TelephonyAssignments: {
+    method: 'GET',
+    path: '/v1/telephony/assignments',
+    ability: 'read:PhoneExtension',
+  },
+  getV1TelephonyCalls: { method: 'GET', path: '/v1/telephony/calls', ability: 'read:PhoneCall' },
+  getV1TelephonyCallsById: {
+    method: 'GET',
+    path: '/v1/telephony/calls/{id}',
+    ability: 'read:PhoneCall',
+  },
+  getV1TelephonyCallsByIdRecording: {
+    method: 'GET',
+    path: '/v1/telephony/calls/{id}/recording',
+    ability: 'read:PhoneCall',
+  },
+  getV1TelephonyCallsWrapUps: {
+    method: 'GET',
+    path: '/v1/telephony/calls/wrap-ups',
+    ability: 'create:PhoneCall',
+  },
+  getV1TelephonyConnectionsByIdExtensions: {
+    method: 'GET',
+    path: '/v1/telephony/connections/{id}/extensions',
+    ability: 'read:PhoneExtension',
+  },
+  getV1TelephonyConnectionsByIdLive: {
+    method: 'GET',
+    path: '/v1/telephony/connections/{id}/live',
+    ability: 'read:Telephony',
+  },
+  getV1TelephonyMe: { method: 'GET', path: '/v1/telephony/me', ability: 'read:PhoneCall' },
+  getV1TelephonyPhoneToken: {
+    method: 'GET',
+    path: '/v1/telephony/phone/token',
+    ability: 'create:PhoneCall',
+  },
+  getV1Terminals: { method: 'GET', path: '/v1/terminals', ability: 'read:PackingTerminal' },
   getWebhooksMetaByOrgId: { method: 'GET', path: '/webhooks/meta/{orgId}', ability: 'public' },
   getWorkflowSettings: {
     method: 'GET',
@@ -1074,6 +1204,11 @@ export const OPERATIONS = {
   healthLive: { method: 'GET', path: '/health/live', ability: 'public' },
   healthReady: { method: 'GET', path: '/health/ready', ability: 'public' },
   inboxUnreadCounts: { method: 'GET', path: '/v1/inbox/unread', ability: 'read:Conversation' },
+  linkInboxCustomer: {
+    method: 'PUT',
+    path: '/v1/inbox/conversations/{id}/customer/link',
+    ability: 'update:Conversation',
+  },
   listApprovals: { method: 'GET', path: '/v1/approvals', ability: 'read:ApprovalRequest' },
   listDemoCostedItems: { method: 'GET', path: '/v1/demo/costed-items', ability: 'read:CostedItem' },
   listDeskProfiles: { method: 'GET', path: '/v1/team/profiles', ability: 'read:User' },
@@ -1081,6 +1216,11 @@ export const OPERATIONS = {
   listInboxConversations: {
     method: 'GET',
     path: '/v1/inbox/conversations',
+    ability: 'read:Conversation',
+  },
+  listInboxCustomerChats: {
+    method: 'GET',
+    path: '/v1/inbox/customers/{customerId}/chats',
     ability: 'read:Conversation',
   },
   listInboxTeam: { method: 'GET', path: '/v1/inbox/team', ability: 'read:Conversation' },
@@ -1091,17 +1231,29 @@ export const OPERATIONS = {
   listPackingCameras: { method: 'GET', path: '/v1/packing/cameras', ability: 'update:Order' },
   listPeriods: { method: 'GET', path: '/v1/ledger/periods', ability: 'read:LedgerPeriod' },
   listSavedReplies: { method: 'GET', path: '/v1/inbox/saved-replies', ability: 'read:SavedReply' },
+  listTelephonyConnections: {
+    method: 'GET',
+    path: '/v1/telephony/connections',
+    ability: 'read:Telephony',
+  },
   listUsers: { method: 'GET', path: '/v1/users', ability: 'read:User' },
   listWallets: { method: 'GET', path: '/v1/ledger/wallets', ability: 'read:Wallet' },
   loginBranding: { method: 'GET', path: '/v1/auth/login-branding', ability: 'public' },
   logOrderCall: { method: 'POST', path: '/v1/orders/{id}/calls', ability: 'update:Order' },
+  lookupPhoneCaller: { method: 'POST', path: '/v1/telephony/lookup', ability: 'create:PhoneCall' },
   markSlipsPrinted: { method: 'POST', path: '/v1/orders/mark-printed', ability: 'update:Order' },
   me: { method: 'GET', path: '/v1/me', ability: 'authenticated' },
+  mergeCustomer: { method: 'POST', path: '/v1/customers/{id}/merge', ability: 'update:Customer' },
   myOrderOffers: { method: 'GET', path: '/v1/orders/offers/mine', ability: 'read:Order' },
   newMyRecoveryCodes: {
     method: 'POST',
     path: '/v1/account/two-factor/recovery-codes',
     ability: 'authenticated',
+  },
+  orderBuyerChecked: {
+    method: 'POST',
+    path: '/v1/orders/{id}/buyer-checked',
+    ability: 'update:Order',
   },
   packingCameraPreview: {
     method: 'GET',
@@ -1218,6 +1370,17 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}',
     ability: 'update:Supply',
   },
+  phoneCallerPanel: {
+    method: 'POST',
+    path: '/v1/telephony/caller-panel',
+    ability: 'read:PhoneCall',
+  },
+  pinCustomerNote: {
+    method: 'PUT',
+    path: '/v1/customers/{id}/pinned-note',
+    ability: 'read:PhoneCall',
+  },
+  placePhoneCall: { method: 'POST', path: '/v1/telephony/calls', ability: 'create:PhoneCall' },
   postApiAdminScannerLogin: { method: 'POST', path: '/api/admin/scanner/login', ability: 'public' },
   postNcomByOrgIdOrders: { method: 'POST', path: '/ncom/{orgId}/orders', ability: 'public' },
   postNcomByOrgIdV1Release: { method: 'POST', path: '/ncom/{orgId}/v1/release', ability: 'public' },
@@ -1726,6 +1889,32 @@ export const OPERATIONS = {
     path: '/v1/investors/withdrawals/{id}/review',
     ability: 'update:Investor',
   },
+  postV1LabelsJobsByIdCancel: {
+    method: 'POST',
+    path: '/v1/labels/jobs/{id}/cancel',
+    ability: 'update:Order',
+  },
+  postV1LabelsJobsByIdRetry: {
+    method: 'POST',
+    path: '/v1/labels/jobs/{id}/retry',
+    ability: 'update:Order',
+  },
+  postV1LabelsPrint: { method: 'POST', path: '/v1/labels/print', ability: 'update:Order' },
+  postV1LabelsPrinters: {
+    method: 'POST',
+    path: '/v1/labels/printers',
+    ability: 'create:PackingTerminal',
+  },
+  postV1LabelsPrintersByIdTest: {
+    method: 'POST',
+    path: '/v1/labels/printers/{id}/test',
+    ability: 'update:PackingTerminal',
+  },
+  postV1LabelsStationJobsByIdResult: {
+    method: 'POST',
+    path: '/v1/labels/station/jobs/{id}/result',
+    ability: 'update:Order',
+  },
   postV1Loans: { method: 'POST', path: '/v1/loans', ability: 'create:CompanyLoan' },
   postV1LoansByIdPayments: {
     method: 'POST',
@@ -1846,11 +2035,22 @@ export const OPERATIONS = {
     path: '/v1/orders/{id}/start-return',
     ability: 'update:Order',
   },
+  postV1PackingHandover: { method: 'POST', path: '/v1/packing/handover', ability: 'update:Order' },
+  postV1PackingHandoverScans: {
+    method: 'POST',
+    path: '/v1/packing/handover/scans',
+    ability: 'update:Order',
+  },
   postV1PackingLabels: { method: 'POST', path: '/v1/packing/labels', ability: 'read:Order' },
   postV1PackingSessions: { method: 'POST', path: '/v1/packing/sessions', ability: 'update:Order' },
   postV1PackingSessionsByIdComplete: {
     method: 'POST',
     path: '/v1/packing/sessions/{id}/complete',
+    ability: 'update:Order',
+  },
+  postV1PackingSessionsByIdLotsClose: {
+    method: 'POST',
+    path: '/v1/packing/sessions/{id}/lots/close',
     ability: 'update:Order',
   },
   postV1PackingSessionsByIdRemovals: {
@@ -2011,7 +2211,33 @@ export const OPERATIONS = {
     path: '/v1/supply/suppliers/{id}/notes',
     ability: 'update:Supply',
   },
+  postV1TelephonyConnectionsByIdLiveByCallIdHangup: {
+    method: 'POST',
+    path: '/v1/telephony/connections/{id}/live/{callId}/hangup',
+    ability: 'update:PhoneCall',
+  },
+  postV1Terminals: { method: 'POST', path: '/v1/terminals', ability: 'create:PackingTerminal' },
+  postV1TerminalsByIdBind: {
+    method: 'POST',
+    path: '/v1/terminals/{id}/bind',
+    ability: 'update:PackingTerminal',
+  },
+  postV1TerminalsCheckIn: {
+    method: 'POST',
+    path: '/v1/terminals/check-in',
+    ability: 'read:PackingTerminal',
+  },
+  postV1TerminalsDevicesByIdRevoke: {
+    method: 'POST',
+    path: '/v1/terminals/devices/{id}/revoke',
+    ability: 'update:PackingTerminal',
+  },
   postV1Track: { method: 'POST', path: '/v1/track', ability: 'public' },
+  postWebhooksEnvoByOrgIdByConnectionId: {
+    method: 'POST',
+    path: '/webhooks/envo/{orgId}/{connectionId}',
+    ability: 'public',
+  },
   postWebhooksMetaByOrgId: { method: 'POST', path: '/webhooks/meta/{orgId}', ability: 'public' },
   putV1CatalogAttributesByIdValuesOrder: {
     method: 'PUT',
@@ -2057,6 +2283,16 @@ export const OPERATIONS = {
     path: '/v1/inventory/reorder-levels',
     ability: 'update:Catalog',
   },
+  putV1LabelsPrintersById: {
+    method: 'PUT',
+    path: '/v1/labels/printers/{id}',
+    ability: 'update:PackingTerminal',
+  },
+  putV1LabelsSettings: {
+    method: 'PUT',
+    path: '/v1/labels/settings',
+    ability: 'update:PackingTerminal',
+  },
   putV1MarketingMetaConnection: {
     method: 'PUT',
     path: '/v1/marketing/meta-connection',
@@ -2073,6 +2309,11 @@ export const OPERATIONS = {
     ability: 'update:WebsiteCredentials',
   },
   putV1NotifyTemplates: { method: 'PUT', path: '/v1/notify/templates', ability: 'update:Campaign' },
+  putV1PackingOrdersByOrderIdLots: {
+    method: 'PUT',
+    path: '/v1/packing/orders/{orderId}/lots',
+    ability: 'update:Order',
+  },
   putV1PackingSettings: {
     method: 'PUT',
     path: '/v1/packing/settings',
@@ -2144,6 +2385,21 @@ export const OPERATIONS = {
     ability: 'update:Storefront',
   },
   putV1SupplySkuCosts: { method: 'PUT', path: '/v1/supply/sku-costs', ability: 'read:Cost' },
+  putV1TerminalsById: {
+    method: 'PUT',
+    path: '/v1/terminals/{id}',
+    ability: 'update:PackingTerminal',
+  },
+  putV1TerminalsByIdCameras: {
+    method: 'PUT',
+    path: '/v1/terminals/{id}/cameras',
+    ability: 'update:PackingTerminal',
+  },
+  putV1TerminalsByIdMembers: {
+    method: 'PUT',
+    path: '/v1/terminals/{id}/members',
+    ability: 'update:PackingTerminal',
+  },
   readInboxConversation: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/read',
@@ -2155,6 +2411,16 @@ export const OPERATIONS = {
     ability: 'update:Conversation',
   },
   releaseOrder: { method: 'POST', path: '/v1/orders/{id}/release', ability: 'update:Order' },
+  removeCustomerAddress: {
+    method: 'DELETE',
+    path: '/v1/customers/{id}/addresses/{addressId}',
+    ability: 'update:Customer',
+  },
+  removeInboxCustomerAddress: {
+    method: 'DELETE',
+    path: '/v1/inbox/conversations/{id}/customer/addresses/{addressId}',
+    ability: 'update:Conversation',
+  },
   removeInboxInterest: {
     method: 'DELETE',
     path: '/v1/inbox/conversations/{id}/interests/{interestId}',
@@ -2170,6 +2436,16 @@ export const OPERATIONS = {
     path: '/v1/ledger/periods/reopen',
     ability: 'update:LedgerPeriod',
   },
+  replaceCustomerAddress: {
+    method: 'PUT',
+    path: '/v1/customers/{id}/addresses/{addressId}',
+    ability: 'update:Customer',
+  },
+  replaceInboxCustomerAddress: {
+    method: 'PUT',
+    path: '/v1/inbox/conversations/{id}/customer/addresses/{addressId}',
+    ability: 'update:Conversation',
+  },
   replyInInboxConversation: {
     method: 'POST',
     path: '/v1/inbox/conversations/{id}/messages',
@@ -2180,6 +2456,16 @@ export const OPERATIONS = {
     method: 'POST',
     path: '/v1/users/{id}/two-factor/reset',
     ability: 'update:User',
+  },
+  retireCustomerPhone: {
+    method: 'POST',
+    path: '/v1/customers/{id}/phones/{phoneId}/retire',
+    ability: 'update:Customer',
+  },
+  retireInboxCustomerPhone: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/customer/phones/{phoneId}/retire',
+    ability: 'update:Conversation',
   },
   saveDeskProfile: { method: 'PUT', path: '/v1/team/profiles/{userId}', ability: 'update:User' },
   saveInboxChannel: {
@@ -2197,11 +2483,21 @@ export const OPERATIONS = {
     path: '/v1/inbox/conversations/{id}/contact/phone',
     ability: 'update:Conversation',
   },
+  saveInboxCustomer: {
+    method: 'POST',
+    path: '/v1/inbox/conversations/{id}/customer',
+    ability: 'update:Conversation',
+  },
   saveInboxMetaApp: { method: 'PUT', path: '/v1/inbox/meta-app', ability: 'update:InboxChannel' },
   saveWorkflowSettings: {
     method: 'PUT',
     path: '/v1/orders/workflow-settings',
     ability: 'update:OrderWorkflow',
+  },
+  searchPhoneCalls: {
+    method: 'POST',
+    path: '/v1/telephony/calls/search',
+    ability: 'read:PhoneCall',
   },
   setApprovalThresholds: {
     method: 'PUT',
@@ -2234,6 +2530,7 @@ export const OPERATIONS = {
     path: '/v1/users/{id}/sign-out-everywhere',
     ability: 'update:User',
   },
+  staffNames: { method: 'GET', path: '/v1/staff-names', ability: 'authenticated' },
   startTwoFactorReplacement: {
     method: 'POST',
     path: '/v1/account/two-factor/replace',
@@ -2247,6 +2544,11 @@ export const OPERATIONS = {
     ability: 'update:Conversation',
   },
   teamBoard: { method: 'GET', path: '/v1/orders/team-board', ability: 'read:OrderWorkflow' },
+  testTelephonyConnection: {
+    method: 'POST',
+    path: '/v1/telephony/connections/{id}/test',
+    ability: 'update:Telephony',
+  },
   trialBalance: { method: 'GET', path: '/v1/ledger/trial-balance', ability: 'read:LedgerReport' },
   turnOffMyTwoFactor: {
     method: 'POST',
@@ -2258,6 +2560,26 @@ export const OPERATIONS = {
     path: '/v1/users/{id}/two-factor/turn-off',
     ability: 'update:User',
   },
+  unlinkInboxCustomer: {
+    method: 'DELETE',
+    path: '/v1/inbox/conversations/{id}/customer/link',
+    ability: 'update:Conversation',
+  },
+  updateCustomerPhone: {
+    method: 'PATCH',
+    path: '/v1/customers/{id}/phones/{phoneId}',
+    ability: 'update:Customer',
+  },
+  updateInboxCustomer: {
+    method: 'PATCH',
+    path: '/v1/inbox/conversations/{id}/customer',
+    ability: 'update:Conversation',
+  },
+  updateInboxCustomerPhone: {
+    method: 'PATCH',
+    path: '/v1/inbox/conversations/{id}/customer/phones/{phoneId}',
+    ability: 'update:Conversation',
+  },
   updateMyProfile: { method: 'PATCH', path: '/v1/account/profile', ability: 'authenticated' },
   updatePackingCamera: {
     method: 'PUT',
@@ -2268,6 +2590,11 @@ export const OPERATIONS = {
     method: 'PUT',
     path: '/v1/inbox/saved-replies/{id}',
     ability: 'update:SavedReply',
+  },
+  updateTelephonyConnection: {
+    method: 'PUT',
+    path: '/v1/telephony/connections/{id}',
+    ability: 'update:Telephony',
   },
   userPasswordLink: {
     method: 'POST',
@@ -2292,6 +2619,11 @@ export const OPERATIONS = {
     ability: 'update:User',
   },
   withdrawUserTrust: { method: 'DELETE', path: '/v1/users/{id}/trust', ability: 'update:User' },
+  wrapUpPhoneCall: {
+    method: 'POST',
+    path: '/v1/telephony/calls/{id}/wrap-up',
+    ability: 'create:PhoneCall',
+  },
 } as const;
 
 export type OperationName = keyof typeof OPERATIONS;
@@ -2319,6 +2651,26 @@ export function createApiClient(runtime: ApiRuntime) {
       },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.accountLedger, input, options),
+    /** Add an address to a buyer's address book; the first one is their default. */
+    addCustomerAddress: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerAddressInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.addCustomerAddress, input, options),
+    /** Add a number to a buyer, with the staff's note on why and when they use it. */
+    addCustomerPhone: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerPhoneAddInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.addCustomerPhone, input, options),
+    /** Add an address to the linked buyer's address book. */
+    addInboxCustomerAddress: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerAddressInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.addInboxCustomerAddress, input, options),
+    /** Add a number to the linked buyer, with the note on why they use it. */
+    addInboxCustomerPhone: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerPhoneAddInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.addInboxCustomerPhone, input, options),
     /** A product (and optionally a size) the contact asked about. */
     addInboxInterest: (
       input: { readonly path: { readonly id: string }; readonly body: InboxInterestInput },
@@ -2334,6 +2686,19 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: PackingCameraCreateInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.addPackingCamera, input, options),
+    /** The browser's phone answered an incoming call from this number. */
+    answeredPhoneCall: (
+      input: { readonly body: PhoneCallAnsweredInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.answeredPhoneCall, input, options),
+    /** Give an extension to a person: one person per extension, one extension per person. */
+    assignTelephonyExtension: (
+      input: {
+        readonly path: { readonly extension: string; readonly id: string };
+        readonly body: TelephonyAssignInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.assignTelephonyExtension, input, options),
     /** Movements through one wallet over a date range. */
     cashBook: (
       input: {
@@ -2345,6 +2710,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Record money received into a wallet. */
     cashIn: (input: { readonly body: CashInInput }, options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.cashIn, input, options),
+    /** Put an order on the right buyer (supervisors); the order's own buyer confirms them and clears the shared-number check. */
+    changeOrderBuyer: (
+      input: { readonly path: { readonly id: string }; readonly body: OrderBuyerChangeInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.changeOrderBuyer, input, options),
     /** Close a conversation; a new message reopens it. */
     closeInboxConversation: (
       input: { readonly path: { readonly id: string } },
@@ -2378,6 +2748,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: SavedReplyInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.createSavedReply, input, options),
+    /** Add an Envo connection; the API key and webhook secret are sealed, write-only. */
+    createTelephonyConnection: (
+      input: { readonly body: TelephonyConnectionCreateInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.createTelephonyConnection, input, options),
     /** Invite a user into this organization with one or more roles. */
     createUser: (
       input: { readonly body: CreateUser },
@@ -2465,6 +2840,11 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.deleteV1InventoryStockInHandDraftsById, input, options),
+    /** DELETE /v1/labels/printers/:id */
+    deleteV1LabelsPrintersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1LabelsPrintersById, input, options),
     /** DELETE /v1/marketing/campaigns/:id */
     deleteV1MarketingCampaignsById: (
       input: { readonly path: { readonly id: string } },
@@ -2532,6 +2912,17 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.deleteV1SupplySuppliersById, input, options),
+    /** DELETE /v1/telephony/connections/:id/extensions/:extension */
+    deleteV1TelephonyConnectionsByIdExtensionsByExtension: (
+      input: { readonly path: { readonly extension: string; readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(
+        runtime,
+        OPERATIONS.deleteV1TelephonyConnectionsByIdExtensionsByExtension,
+        input,
+        options,
+      ),
     /** Sign out every device but this one. */
     endMyOtherSessions: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.endMyOtherSessions, undefined, options),
@@ -3119,6 +3510,35 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/jobs/failed */
     getV1JobsFailed: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1JobsFailed, undefined, options),
+    /** GET /v1/labels/jobs */
+    getV1LabelsJobs: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsJobs, undefined, options),
+    /** GET /v1/labels/jobs/export */
+    getV1LabelsJobsExport: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsJobsExport, undefined, options),
+    /** GET /v1/labels/orders/:orderId */
+    getV1LabelsOrdersByOrderId: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1LabelsOrdersByOrderId, input, options),
+    /** GET /v1/labels/printers */
+    getV1LabelsPrinters: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsPrinters, undefined, options),
+    /** GET /v1/labels/ready */
+    getV1LabelsReady: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsReady, undefined, options),
+    /** GET /v1/labels/settings */
+    getV1LabelsSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsSettings, undefined, options),
+    /** GET /v1/labels/station/jobs */
+    getV1LabelsStationJobs: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsStationJobs, undefined, options),
+    /** GET /v1/labels/station/jobs/:id/document */
+    getV1LabelsStationJobsByIdDocument: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1LabelsStationJobsByIdDocument, input, options),
     /** GET /v1/loans */
     getV1Loans: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1Loans, undefined, options),
@@ -3220,6 +3640,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/orders/return-reasons */
     getV1OrdersReturnReasons: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1OrdersReturnReasons, undefined, options),
+    /** GET /v1/packing/handover */
+    getV1PackingHandover: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PackingHandover, undefined, options),
     /** GET /v1/packing/orders/:orderId */
     getV1PackingOrdersByOrderId: (
       input: { readonly path: { readonly orderId: string } },
@@ -3439,6 +3862,47 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1SupplySuppliersByIdUsage, input, options),
+    /** GET /v1/telephony/assignments */
+    getV1TelephonyAssignments: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyAssignments, undefined, options),
+    /** GET /v1/telephony/calls */
+    getV1TelephonyCalls: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyCalls, undefined, options),
+    /** GET /v1/telephony/calls/:id */
+    getV1TelephonyCallsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1TelephonyCallsById, input, options),
+    /** GET /v1/telephony/calls/:id/recording */
+    getV1TelephonyCallsByIdRecording: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyCallsByIdRecording, input, options),
+    /** GET /v1/telephony/calls/wrap-ups */
+    getV1TelephonyCallsWrapUps: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyCallsWrapUps, undefined, options),
+    /** GET /v1/telephony/connections/:id/extensions */
+    getV1TelephonyConnectionsByIdExtensions: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyConnectionsByIdExtensions, input, options),
+    /** GET /v1/telephony/connections/:id/live */
+    getV1TelephonyConnectionsByIdLive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyConnectionsByIdLive, input, options),
+    /** GET /v1/telephony/me */
+    getV1TelephonyMe: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyMe, undefined, options),
+    /** GET /v1/telephony/phone/token */
+    getV1TelephonyPhoneToken: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1TelephonyPhoneToken, undefined, options),
+    /** GET /v1/terminals */
+    getV1Terminals: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1Terminals, undefined, options),
     /** GET /webhooks/meta/:orgId */
     getWebhooksMetaByOrgId: (
       input: { readonly path: { readonly orgId: string } },
@@ -3461,6 +3925,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Unread messages in the caller's open conversations and in open ones nobody has. */
     inboxUnreadCounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.inboxUnreadCounts, undefined, options),
+    /** Link the chat to one of the people on its saved number. */
+    linkInboxCustomer: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxLinkCustomerInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.linkInboxCustomer, input, options),
     /** Approval requests, filtered and cursor-paginated. */
     listApprovals: (
       input: {
@@ -3485,6 +3954,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Every channel in one list: mine, unassigned or all, by channel, stage and unread. */
     listInboxConversations: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listInboxConversations, undefined, options),
+    /** A buyer's chats and the notes written in them, for the buyer page. */
+    listInboxCustomerChats: (
+      input: { readonly path: { readonly customerId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.listInboxCustomerChats, input, options),
     /** Who can be handed a conversation: active sales and org admins. */
     listInboxTeam: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listInboxTeam, undefined, options),
@@ -3511,6 +3985,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The brand's saved replies, the most used first. */
     listSavedReplies: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listSavedReplies, undefined, options),
+    /** The brand's Envo connections: never a secret, only whether it is set and its print. */
+    listTelephonyConnections: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.listTelephonyConnections, undefined, options),
     /** This organization's staff, their roles and sign-in state, and open resets. */
     listUsers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.listUsers, undefined, options),
@@ -3525,6 +4002,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: CallAttemptInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.logOrderCall, input, options),
+    /** Who is calling: the buyer a number names (only one the caller may open, or whose call is on the caller's phone now) and their open orders. */
+    lookupPhoneCaller: (
+      input: { readonly body: unknown },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.lookupPhoneCaller, input, options),
     /** The hub printed these confirmed orders' slips. */
     markSlipsPrinted: (
       input: { readonly body: MarkPrintedInput },
@@ -3533,6 +4015,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** The signed-in user, their roles and active org. */
     me: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.me, undefined, options),
+    /** Merge another record of the same person into this buyer (supervisors): numbers, addresses, orders and notes move. */
+    mergeCustomer: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerMergeInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.mergeCustomer, input, options),
     /** The orders offered to you right now, with their countdown. */
     myOrderOffers: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.myOrderOffers, undefined, options),
@@ -3541,6 +4028,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: ConfirmWithCode },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.newMyRecoveryCodes, input, options),
+    /** The buyer is right: clear an order's "check the buyer: shared number". */
+    orderBuyerChecked: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.orderBuyerChecked, input, options),
     /** The newest JPEG frame of a packing camera's live preview; 204 when none is live. */
     packingCameraPreview: (
       input: { readonly path: { readonly id: string } },
@@ -3683,6 +4175,21 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.patchV1SupplySuppliersById, input, options),
+    /** A buyer's caller panel by phone, customer or call: their orders, contacts, inbox and every call with them (the whole panel only to a supervisor, a person who may open them or one on a call with them). */
+    phoneCallerPanel: (
+      input: { readonly body: CallerPanelQuery },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.phoneCallerPanel, input, options),
+    /** Pin a note on top of a buyer's caller panel, or clear it with an empty body. */
+    pinCustomerNote: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerPinnedNoteInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.pinCustomerNote, input, options),
+    /** Call a customer from your own extension; an order or a conversation held by someone else needs x-acknowledge-owner: 1. */
+    placePhoneCall: (
+      input: { readonly body: PhoneCallPlaceInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.placePhoneCall, input, options),
     /** POST /api/admin/scanner/login */
     postApiAdminScannerLogin: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postApiAdminScannerLogin, undefined, options),
@@ -4217,6 +4724,34 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1InvestorsWithdrawalsByIdReview, input, options),
+    /** POST /v1/labels/jobs/:id/cancel */
+    postV1LabelsJobsByIdCancel: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1LabelsJobsByIdCancel, input, options),
+    /** POST /v1/labels/jobs/:id/retry */
+    postV1LabelsJobsByIdRetry: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1LabelsJobsByIdRetry, input, options),
+    /** POST /v1/labels/print */
+    postV1LabelsPrint: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LabelsPrint, undefined, options),
+    /** POST /v1/labels/printers */
+    postV1LabelsPrinters: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LabelsPrinters, undefined, options),
+    /** POST /v1/labels/printers/:id/test */
+    postV1LabelsPrintersByIdTest: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LabelsPrintersByIdTest, input, options),
+    /** POST /v1/labels/station/jobs/:id/result */
+    postV1LabelsStationJobsByIdResult: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1LabelsStationJobsByIdResult, input, options),
     /** POST /v1/loans */
     postV1Loans: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Loans, undefined, options),
@@ -4364,6 +4899,12 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdStartReturn, input, options),
+    /** POST /v1/packing/handover */
+    postV1PackingHandover: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingHandover, undefined, options),
+    /** POST /v1/packing/handover/scans */
+    postV1PackingHandoverScans: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingHandoverScans, undefined, options),
     /** POST /v1/packing/labels */
     postV1PackingLabels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PackingLabels, undefined, options),
@@ -4376,6 +4917,12 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PackingSessionsByIdComplete, input, options),
+    /** POST /v1/packing/sessions/:id/lots/close */
+    postV1PackingSessionsByIdLotsClose: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingSessionsByIdLotsClose, input, options),
     /** POST /v1/packing/sessions/:id/removals */
     postV1PackingSessionsByIdRemovals: (
       input: { readonly path: { readonly id: string } },
@@ -4553,9 +5100,38 @@ export function createApiClient(runtime: ApiRuntime) {
       options?: RequestOptions,
     ): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1SupplySuppliersByIdNotes, input, options),
+    /** POST /v1/telephony/connections/:id/live/:callId/hangup */
+    postV1TelephonyConnectionsByIdLiveByCallIdHangup: (
+      input: { readonly path: { readonly callId: string; readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1TelephonyConnectionsByIdLiveByCallIdHangup, input, options),
+    /** POST /v1/terminals */
+    postV1Terminals: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1Terminals, undefined, options),
+    /** POST /v1/terminals/:id/bind */
+    postV1TerminalsByIdBind: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1TerminalsByIdBind, input, options),
+    /** POST /v1/terminals/check-in */
+    postV1TerminalsCheckIn: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1TerminalsCheckIn, undefined, options),
+    /** POST /v1/terminals/devices/:id/revoke */
+    postV1TerminalsDevicesByIdRevoke: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1TerminalsDevicesByIdRevoke, input, options),
     /** POST /v1/track */
     postV1Track: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1Track, undefined, options),
+    /** POST /webhooks/envo/:orgId/:connectionId */
+    postWebhooksEnvoByOrgIdByConnectionId: (
+      input: { readonly path: { readonly connectionId: string; readonly orgId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postWebhooksEnvoByOrgIdByConnectionId, input, options),
     /** POST /webhooks/meta/:orgId */
     postWebhooksMetaByOrgId: (
       input: { readonly path: { readonly orgId: string } },
@@ -4613,6 +5189,14 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/inventory/reorder-levels */
     putV1InventoryReorderLevels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1InventoryReorderLevels, undefined, options),
+    /** PUT /v1/labels/printers/:id */
+    putV1LabelsPrintersById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1LabelsPrintersById, input, options),
+    /** PUT /v1/labels/settings */
+    putV1LabelsSettings: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1LabelsSettings, undefined, options),
     /** PUT /v1/marketing/meta-connection */
     putV1MarketingMetaConnection: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1MarketingMetaConnection, undefined, options),
@@ -4625,6 +5209,12 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/notify/templates */
     putV1NotifyTemplates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1NotifyTemplates, undefined, options),
+    /** PUT /v1/packing/orders/:orderId/lots */
+    putV1PackingOrdersByOrderIdLots: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.putV1PackingOrdersByOrderIdLots, input, options),
     /** PUT /v1/packing/settings */
     putV1PackingSettings: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1PackingSettings, undefined, options),
@@ -4688,6 +5278,21 @@ export function createApiClient(runtime: ApiRuntime) {
     /** PUT /v1/supply/sku-costs */
     putV1SupplySkuCosts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.putV1SupplySkuCosts, undefined, options),
+    /** PUT /v1/terminals/:id */
+    putV1TerminalsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1TerminalsById, input, options),
+    /** PUT /v1/terminals/:id/cameras */
+    putV1TerminalsByIdCameras: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1TerminalsByIdCameras, input, options),
+    /** PUT /v1/terminals/:id/members */
+    putV1TerminalsByIdMembers: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.putV1TerminalsByIdMembers, input, options),
     /** The owner has read it: the unread count goes to zero. */
     readInboxConversation: (
       input: { readonly path: { readonly id: string } },
@@ -4703,6 +5308,16 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.releaseOrder, input, options),
+    /** Remove one of a buyer's saved addresses; orders keep where they went. */
+    removeCustomerAddress: (
+      input: { readonly path: { readonly addressId: string; readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.removeCustomerAddress, input, options),
+    /** Remove one of the linked buyer's saved addresses. */
+    removeInboxCustomerAddress: (
+      input: { readonly path: { readonly addressId: string; readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.removeInboxCustomerAddress, input, options),
     /** Remove a product interest. */
     removeInboxInterest: (
       input: { readonly path: { readonly id: string; readonly interestId: string } },
@@ -4718,6 +5333,22 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: ReopenPeriodInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.reopenPeriod, input, options),
+    /** Replace one of a buyer's saved addresses, or make it their default. */
+    replaceCustomerAddress: (
+      input: {
+        readonly path: { readonly addressId: string; readonly id: string };
+        readonly body: CustomerAddressInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.replaceCustomerAddress, input, options),
+    /** Replace one of the linked buyer's saved addresses, or make it their default. */
+    replaceInboxCustomerAddress: (
+      input: {
+        readonly path: { readonly addressId: string; readonly id: string };
+        readonly body: CustomerAddressInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.replaceInboxCustomerAddress, input, options),
     /** Reply. Refused outside the 24-hour window (INBOX_WINDOW_CLOSED); sent by a job after the commit. */
     replyInInboxConversation: (
       input: { readonly path: { readonly id: string }; readonly body: InboxReplyInput },
@@ -4733,6 +5364,22 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.resetUserTwoFactor, input, options),
+    /** Retire a number (changed or recycled SIM, wrong number): it stops matching, stays in history. */
+    retireCustomerPhone: (
+      input: {
+        readonly path: { readonly id: string; readonly phoneId: string };
+        readonly body: CustomerPhoneRetireInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.retireCustomerPhone, input, options),
+    /** Retire one of the linked buyer's numbers. */
+    retireInboxCustomerPhone: (
+      input: {
+        readonly path: { readonly id: string; readonly phoneId: string };
+        readonly body: CustomerPhoneRetireInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.retireInboxCustomerPhone, input, options),
     /** Set a staff member's work types and hub location. */
     saveDeskProfile: (
       input: { readonly path: { readonly userId: string }; readonly body: DeskProfileInput },
@@ -4753,6 +5400,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: InboxPhoneInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.saveInboxContactPhone, input, options),
+    /** Save the chat's person as a new customer and link the chat to them. */
+    saveInboxCustomer: (
+      input: { readonly path: { readonly id: string }; readonly body: InboxSaveCustomerInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.saveInboxCustomer, input, options),
     /** Save the Meta app's secret and the webhook's verify token (write-only). */
     saveInboxMetaApp: (
       input: { readonly body: InboxMetaAppInput },
@@ -4763,6 +5415,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly body: WorkflowSettingsInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.saveWorkflowSettings, input, options),
+    /** The call log, its filters in the body so a phone stays out of URLs. */
+    searchPhoneCalls: (
+      input: { readonly body: unknown },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.searchPhoneCalls, input, options),
     /** Set this organization's maker-checker thresholds. */
     setApprovalThresholds: (
       input: { readonly body: ThresholdInput },
@@ -4798,6 +5455,9 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.signOutUserEverywhere, input, options),
+    /** The names behind staff ids on a record; an owner only to another owner (D-898). */
+    staffNames: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.staffNames, undefined, options),
     /** With your password and a current code, start moving two-step sign-in to a new phone. */
     startTwoFactorReplacement: (
       input: { readonly body: ConfirmWithCode },
@@ -4817,6 +5477,11 @@ export function createApiClient(runtime: ApiRuntime) {
     /** Who is active, idle or away, their open orders, today's confirmations and offers. */
     teamBoard: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.teamBoard, undefined, options),
+    /** Read the connection's extensions and numbers from Envo with its key. */
+    testTelephonyConnection: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.testTelephonyConnection, input, options),
     /** Debit and credit totals per account as of a business date. */
     trialBalance: (
       input: { readonly query: { readonly asOf: string } },
@@ -4832,6 +5497,32 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.turnOffUserTwoFactor, input, options),
+    /** The chat is not that customer: remove the link, keep the number. */
+    unlinkInboxCustomer: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.unlinkInboxCustomer, input, options),
+    /** Change a buyer's number: its kind, relation, note, or its rank (1 makes it primary). */
+    updateCustomerPhone: (
+      input: {
+        readonly path: { readonly id: string; readonly phoneId: string };
+        readonly body: CustomerPhoneUpdateInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updateCustomerPhone, input, options),
+    /** Change the linked buyer's details: name, email, gender, profession, dates, notes. */
+    updateInboxCustomer: (
+      input: { readonly path: { readonly id: string }; readonly body: CustomerDetailsInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updateInboxCustomer, input, options),
+    /** Change one of the linked buyer's numbers, or make it primary. */
+    updateInboxCustomerPhone: (
+      input: {
+        readonly path: { readonly id: string; readonly phoneId: string };
+        readonly body: CustomerPhoneUpdateInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updateInboxCustomerPhone, input, options),
     /** Change the name you go by. */
     updateMyProfile: (
       input: { readonly body: UpdateProfile },
@@ -4847,6 +5538,14 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string }; readonly body: SavedReplyInput },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.updateSavedReply, input, options),
+    /** Change a connection; a secret left out is kept. */
+    updateTelephonyConnection: (
+      input: {
+        readonly path: { readonly id: string };
+        readonly body: TelephonyConnectionUpdateInput;
+      },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.updateTelephonyConnection, input, options),
     /** Issue, ask for, or collect a one-time link that sets a password. */
     userPasswordLink: (
       input: { readonly path: { readonly id: string }; readonly body: CredentialResetInput },
@@ -4883,6 +5582,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.withdrawUserTrust, input, options),
+    /** Wrap up your own call once: its result, what it was about, a call-back; on a callable order also M41's attempt (a colleague's order needs x-acknowledge-owner: 1). */
+    wrapUpPhoneCall: (
+      input: { readonly path: { readonly id: string }; readonly body: PhoneCallWrapUpInput },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.wrapUpPhoneCall, input, options),
   };
 }
 

@@ -238,8 +238,7 @@ export class ScannerService {
   async list(context: ActiveContext, everyone: boolean) {
     return withOrg(context, async (tx) => {
       const rows = await repo.devices(tx, context.orgId, everyone ? null : context.userId);
-      const members = await this.iam.activeMembers(tx, context.orgId);
-      const names = new Map(members.map((member) => [member.userId, member.name]));
+      const names = await this.iam.nameBook(tx, context.orgId);
       return {
         items: rows.map((row) => this.deviceView(row, names.get(row.user_id) ?? null)),
         everyone,

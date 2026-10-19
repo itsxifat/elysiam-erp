@@ -152,12 +152,11 @@ export class ContactPanelService {
           hasOrdered: customer !== undefined && customer.orders > 0,
         });
 
-        const [notes, interests, members] = await Promise.all([
+        const [notes, interests, names] = await Promise.all([
           repo.notesOf(tx, context.orgId, contact.id),
           repo.interestsOf(tx, context.orgId, contact.id),
-          this.iam.activeMembers(tx, context.orgId),
+          this.iam.nameBook(tx, context.orgId),
         ]);
-        const names = new Map(members.map((member) => [member.userId, member.name]));
 
         // M49 (D-890): the linked buyer's whole card, edited from here through the conversation.
         const card =
@@ -261,11 +260,10 @@ export class ContactPanelService {
   async customerChats(context: ActiveContext, customerId: string) {
     return mapInboxErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const [rows, members] = await Promise.all([
+        const [rows, names] = await Promise.all([
           repo.conversationsOfCustomer(tx, context.orgId, customerId, CUSTOMER_CHATS),
-          this.iam.activeMembers(tx, context.orgId),
+          this.iam.nameBook(tx, context.orgId),
         ]);
-        const names = new Map(members.map((member) => [member.userId, member.name]));
         const contactIds = [...new Set(rows.map((row) => row.contact_id))];
         const notes = await repo.notesOfContacts(tx, context.orgId, contactIds, CUSTOMER_NOTES);
         return {

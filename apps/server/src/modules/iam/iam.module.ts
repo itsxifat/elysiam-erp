@@ -5,12 +5,14 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { ApprovalsModule } from '../approvals/approvals.module.js';
 import { AccountController } from './account.controller.js';
 import { AccountService } from './account.service.js';
+import { IamApiService } from './iam.api.js';
 import { IamController } from './iam.controller.js';
 import { AUTH, IamService, PASSWORD_TOKENS, PasswordTokenStore } from './iam.service.js';
 import { OWNER_LINK_CONFIG, ownerLinkConfig } from './owner-link.config.js';
 import { OwnerLinkController } from './owner-link.controller.js';
 import { OwnerLinkService } from './owner-link.service.js';
 import { SecurityPolicyController, SecurityPolicyService } from './security-policy.js';
+import { StaffNamesController } from './staff-names.controller.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 import { PackingModule } from '../packing/packing.module.js';
@@ -37,6 +39,8 @@ import {
  *
  * M40: My account (`AccountController`) and the brand's two-step policy
  * (`SecurityPolicyController`, Settings → Security).
+ *
+ * D-898: the names behind the staff ids on a brand's records (`StaffNamesController`).
  */
 @Module({})
 export class IamModule {
@@ -56,9 +60,11 @@ export class IamModule {
         ScannerAppSignInController,
         AccountController,
         SecurityPolicyController,
+        StaffNamesController,
       ],
       providers: [
         IamService,
+        IamApiService,
         UsersService,
         AccountService,
         SecurityPolicyService,

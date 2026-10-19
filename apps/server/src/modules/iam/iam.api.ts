@@ -11,6 +11,7 @@ import {
   activeRoleBranches,
   membershipsOfUser,
   ownersAmong,
+  peopleOfRecord,
 } from './users.repository.js';
 
 /**
@@ -43,6 +44,13 @@ export interface OwnerOnRecord {
   readonly name: string | null;
 }
 
+/** A person a record names (D-898). */
+export interface StaffName {
+  readonly userId: string;
+  readonly name: string | null;
+  readonly owner: boolean;
+}
+
 export interface IamApi {
   /**
    * Which of these people are owners (M31, D-473), for a record that names who did what.
@@ -65,6 +73,26 @@ export interface IamApi {
     orgId: string,
     options?: { readonly roles?: readonly MembershipRole[] },
   ): Promise<readonly BrandMember[]>;
+
+  /**
+   * The name of everyone this brand's records may mention (D-898), for putting a name beside
+   * "taken by", "written by" or "asked by": whoever holds or ever held a role here and every
+   * super admin, enabled or not. An owner is "Owner" (D-473). Never for deciding who may act or
+   * be picked: `activeMembers` answers that.
+   */
+  nameBook(tx: Tx, orgId: string): Promise<ReadonlyMap<string, string>>;
+
+  /**
+   * The same people for one screen's ids (`GET /v1/staff-names`, D-898). An owner's name goes
+   * only to another owner (D-473): to everyone else `name` is null and `owner` true. An id
+   * this brand's records cannot mention is left out.
+   */
+  namesOf(
+    tx: Tx,
+    orgId: string,
+    userIds: readonly string[],
+    viewer: { readonly isOwner?: boolean | undefined },
+  ): Promise<readonly StaffName[]>;
 
   /**
    * The enabled super admins, who hold no role in a brand but may do anything in it (D-864),
@@ -136,6 +164,25 @@ export class IamApiService implements IamApi {
       name: row.name,
       emailMasked: maskEmail(row.email),
       roles: row.roles,
+    }));
+  }
+
+  async nameBook(tx: Tx, orgId: string): Promise<ReadonlyMap<string, string>> {
+    const rows = await peopleOfRecord(tx, orgId, null);
+    return new Map(rows.map((row) => [row.id, row.is_owner ? 'Owner' : row.name]));
+  }
+
+  async namesOf(
+    tx: Tx,
+    orgId: string,
+    userIds: readonly string[],
+    viewer: { readonly isOwner?: boolean | undefined },
+  ): Promise<readonly StaffName[]> {
+    const rows = await peopleOfRecord(tx, orgId, [...new Set(userIds)]);
+    return rows.map((row) => ({
+      userId: row.id,
+      name: row.is_owner && viewer.isOwner !== true ? null : row.name,
+      owner: row.is_owner,
     }));
   }
 

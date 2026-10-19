@@ -150,7 +150,7 @@ export function ChatsCard({ customerId }: { readonly customerId: string }) {
                     {' · '}
                     {chat.assignedTo === null
                       ? t('people.chats.nobody')
-                      : (chat.assignedTo.name ?? chat.assignedTo.userId)}
+                      : (chat.assignedTo.name ?? '—')}
                   </p>
                 </div>
                 <Link
@@ -173,8 +173,7 @@ export function ChatsCard({ customerId }: { readonly customerId: string }) {
                   <li key={note.id} className="rounded-lg bg-muted px-3 py-2">
                     <p className="text-sm break-words whitespace-pre-wrap">{note.body}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {note.author.name ?? note.author.userId} ·{' '}
-                      <DateTime value={note.at} compact />
+                      {note.author.name ?? '—'} · <DateTime value={note.at} compact />
                     </p>
                   </li>
                 ))}

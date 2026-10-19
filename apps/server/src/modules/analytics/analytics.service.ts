@@ -32,6 +32,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { FlagsService } from '../../platform/flags/flags.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { HR_API, type HrApi } from '../hr/hr.api.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { MARKETING_API, type MarketingApi } from '../marketing/marketing.api.js';
@@ -138,6 +139,7 @@ export class AnalyticsService {
     @Inject(ORDERS_API) private readonly orders: OrdersApi,
     @Inject(MARKETING_API) private readonly marketing: MarketingApi,
     @Inject(HR_API) private readonly hr: HrApi,
+    @Inject(IAM_API) private readonly iam: IamApi,
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(NARRATIVE_PROVIDER) private readonly provider: NarrativeProvider,
@@ -170,6 +172,7 @@ export class AnalyticsService {
         context.orgId,
         agents.map((row) => row.user_id),
       );
+      const names = await this.iam.nameBook(tx, context.orgId);
       const topSkus = await this.orders.topSkus(tx, context.orgId, range, 10);
       const balances = await this.ledger.balancesAsOf(tx, context.orgId, today, WALLET_SUBTYPES);
       const stock = await this.inventory.valuation(tx, context.orgId);
@@ -237,7 +240,7 @@ export class AnalyticsService {
           const person = people.get(row.user_id);
           return {
             userId: row.user_id,
-            name: person?.fullName ?? null,
+            name: person?.fullName ?? names.get(row.user_id) ?? null,
             employeeCode: person?.code ?? null,
             ordersConfirmed: row.orders_confirmed,
             ordersDelivered: row.orders_delivered,

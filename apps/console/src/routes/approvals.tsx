@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 import { useAbility } from '../auth/session.js';
 import { listApprovals, decideApproval, type ApprovalRow } from '../api/approvals.js';
 import { useLocale, useT } from '../i18n/locale.js';
+import { useStaffNames } from '../staff-names.js';
 import {
   APPROVAL_STATUS_OPTIONS,
   approvalTypeLabel,
@@ -103,6 +104,8 @@ export function ApprovalsPage() {
     },
   });
 
+  const staff = useStaffNames((query.data?.rows ?? []).map((row) => row.requestedBy));
+
   const columns = useMemo<readonly DataTableColumn<ApprovalRow>[]>(() => {
     const column = dataTableColumns<ApprovalRow>();
     return column.columns([
@@ -139,10 +142,9 @@ export function ApprovalsPage() {
       }),
       column.accessor('requestedBy', {
         header: t('approvals.colRequestedBy'),
+        // D-898: the person by name, never a piece of their id.
         cell: (cell) => (
-          <span className="font-mono text-xs text-muted-foreground">
-            {String(cell.getValue() ?? '').slice(0, 8)}
-          </span>
+          <span className="text-muted-foreground">{staff(cell.getValue()) ?? '—'}</span>
         ),
       }),
       column.accessor('branchId', {
@@ -187,7 +189,7 @@ export function ApprovalsPage() {
         },
       }),
     ]) as readonly DataTableColumn<ApprovalRow>[];
-  }, [t, locale, mayDecide]);
+  }, [t, locale, mayDecide, staff]);
 
   if (!mayRead) {
     return (

@@ -185,7 +185,7 @@ function TerminalLiveCard({
                 key={`${person.id}-${person.deviceLabel}`}
                 className="flex items-center gap-2 text-sm"
               >
-                <span className="font-medium">{person.name ?? person.id}</span>
+                <span className="font-medium">{person.name ?? '—'}</span>
                 <PresenceBadge state={person.presence} />
                 <span className="text-xs text-muted-foreground">{person.deviceLabel}</span>
               </li>
@@ -278,7 +278,7 @@ function TerminalLiveCard({
         <p className="text-sm">
           {terminal.members.length === 0
             ? t('lb.terminal.noPeople')
-            : terminal.members.map((member) => member.name ?? member.id).join(', ')}
+            : terminal.members.map((member) => member.name ?? '—').join(', ')}
         </p>
       </div>
 

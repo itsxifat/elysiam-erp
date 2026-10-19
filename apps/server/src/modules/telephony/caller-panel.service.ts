@@ -157,13 +157,12 @@ export class CallerPanelService {
         }
 
         const [names, inbox, calls] = await Promise.all([
-          this.iam.activeMembers(tx, orgId),
+          this.iam.nameBook(tx, orgId),
           this.inbox.contactsOfBuyer(tx, orgId, context, party),
           panelRepo.callsWith(tx, orgId, party, callScope, CALLS_LISTED),
         ]);
-        const nameOf = new Map(names.map((member) => [member.userId, member.name]));
         const person = (id: string | null) =>
-          id === null ? null : { id, name: nameOf.get(id) ?? null };
+          id === null ? null : { id, name: names.get(id) ?? null };
 
         const facts =
           customer === undefined
@@ -218,7 +217,7 @@ export class CallerPanelService {
                       : {
                           body: customer.pinnedNote.body,
                           byUserId: customer.pinnedNote.byUserId,
-                          byName: nameOf.get(customer.pinnedNote.byUserId) ?? null,
+                          byName: names.get(customer.pinnedNote.byUserId) ?? null,
                           at: customer.pinnedNote.at.toISOString(),
                         },
                   // Whoever sees the whole panel may write its note (D-863).
@@ -323,12 +322,12 @@ export class CallerPanelService {
         }
         const note = await this.orders.setPinnedNote(tx, context, request, customerId, body);
         if (note === null) return { pinnedNote: null };
-        const members = await this.iam.activeMembers(tx, context.orgId);
+        const names = await this.iam.nameBook(tx, context.orgId);
         return {
           pinnedNote: {
             body: note.body,
             byUserId: note.byUserId,
-            byName: members.find((member) => member.userId === note.byUserId)?.name ?? null,
+            byName: names.get(note.byUserId) ?? null,
             at: note.at.toISOString(),
           },
         };

@@ -327,7 +327,9 @@ function NumberRow({
         <p className="text-xs text-muted-foreground">
           {phone.addedBy === null
             ? `${t('people.numbers.addedBySystem')} (${label(t, 'source', phone.source)})`
-            : t('people.numbers.addedBy', { name: phone.addedBy.name ?? phone.addedBy.id })}
+            : t('people.numbers.addedBy', {
+                name: phone.addedBy.name ?? t('people.numbers.colleague'),
+              })}
           {' · '}
           <DateTime value={phone.addedAt} />
         </p>

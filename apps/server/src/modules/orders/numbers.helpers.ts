@@ -140,8 +140,7 @@ export async function phoneViews(
   customerId: string,
 ): Promise<CustomerPhoneView[]> {
   const rows = await numbers.phonesOf(tx, orgId, customerId);
-  const members = await iam.activeMembers(tx, orgId);
-  const nameOf = new Map(members.map((member) => [member.userId, member.name]));
+  const nameOf = await iam.nameBook(tx, orgId);
   const person = (id: string | null) => (id === null ? null : { id, name: nameOf.get(id) ?? null });
   return rows.map((row) => ({
     id: row.id,

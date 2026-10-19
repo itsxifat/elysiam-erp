@@ -151,6 +151,10 @@ export const OPERATION_CATALOG: Readonly<Record<string, OperationSpec>> = {
   },
 
   'GET /v1/me': { operationId: 'me', summary: 'The signed-in user, their roles and active org.' },
+  'GET /v1/staff-names': {
+    operationId: 'staffNames',
+    summary: 'The names behind staff ids on a record; an owner only to another owner (D-898).',
+  },
   'GET /v1/me/orgs': {
     operationId: 'listMyOrgs',
     summary: 'The organizations this user may enter.',

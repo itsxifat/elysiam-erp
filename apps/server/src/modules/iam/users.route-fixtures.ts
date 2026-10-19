@@ -42,6 +42,8 @@ async function freshAdmin(): Promise<string> {
 
 export const USERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   'GET /v1/users': () => ({ url: '/v1/users' }),
+  // D-898: every role is admitted; an id nobody has names nobody.
+  'GET /v1/staff-names': () => ({ url: '/v1/staff-names?ids=usr_nobody' }),
   'PUT /v1/users/:id/roles': async () => ({
     url: `/v1/users/${await salesPerson()}/roles`,
     body: { roles: [{ role: 'warehouse', branchIds: [] }] },

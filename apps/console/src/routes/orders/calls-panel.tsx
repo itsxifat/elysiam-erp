@@ -6,6 +6,7 @@ import { useId, useState } from 'react';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
+import { useStaffNames } from '../../staff-names.js';
 import '../../i18n/workflow.js';
 import type { OrderDetail } from './api.js';
 import { useOwnerGuard } from './owner-guard.js';
@@ -71,6 +72,7 @@ export function CallsPanel({
   const mayLog = ability.can('update', 'Order') && callable;
   const summary = order.calls;
   const items = calls.data?.items ?? [];
+  const staff = useStaffNames(items.map((call) => call.calledBy));
 
   return (
     <section
@@ -178,7 +180,8 @@ export function CallsPanel({
               )}
               {call.note === null ? null : <p className="text-muted-foreground">{call.note}</p>}
               <p className="text-xs text-muted-foreground">
-                <DateTime value={call.calledAt} /> · {t('wf.calls.by')} {nameOf(call.calledBy)}
+                <DateTime value={call.calledAt} /> · {t('wf.calls.by')}{' '}
+                {staff(call.calledBy) ?? nameOf(call.calledBy)}
               </p>
             </li>
           ))}

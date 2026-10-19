@@ -3,6 +3,7 @@ import { Module, type Provider } from '@nestjs/common';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { FlagsModule } from '../../platform/flags/flags.module.js';
 import { HrModule } from '../hr/hr.module.js';
+import { IamDirectoryModule } from '../iam/iam.api.js';
 import { InventoryModule } from '../inventory/inventory.module.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
 import { MarketingModule } from '../marketing/marketing.module.js';
@@ -40,7 +41,16 @@ const narrativeProvider: Provider = {
 
 @Module({
   // `FlagsModule` for `analytics.llm_narrative` (D-327): the first runtime reader of a flag.
-  imports: [FlagsModule, OrdersModule, MarketingModule, HrModule, LedgerModule, InventoryModule],
+  imports: [
+    FlagsModule,
+    OrdersModule,
+    MarketingModule,
+    HrModule,
+    // D-898: an agent with no employee record is still named.
+    IamDirectoryModule,
+    LedgerModule,
+    InventoryModule,
+  ],
   controllers: [AnalyticsController],
   providers: [configProvider, narrativeProvider, AuditService, RollupService, AnalyticsService],
   exports: [RollupService, NARRATIVE_PROVIDER],

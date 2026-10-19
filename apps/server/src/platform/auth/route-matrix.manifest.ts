@@ -45,6 +45,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/me',
   'POST /v1/me/active-org',
   'GET /v1/me/orgs',
+  // D-898: the names behind the staff ids on a record.
+  'GET /v1/staff-names',
   'POST /v1/users',
   // gaps-users-auth: the staff screen.
   'GET /v1/users',

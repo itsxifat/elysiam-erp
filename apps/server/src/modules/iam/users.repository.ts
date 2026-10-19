@@ -111,6 +111,35 @@ export async function activeSuperAdmins(
   return [...rows];
 }
 
+/**
+ * Everyone a brand's records may name (D-898): whoever holds or ever held a role in this brand,
+ * and every super admin (owners among them), enabled or not, so a leaver's past work keeps their
+ * name. With `ids`, only those people. In the caller's `withOrg` transaction, so the memberships
+ * seen are this brand's; a person of another brand alone is not found. Names only: never for
+ * deciding who may act or be picked.
+ */
+export async function peopleOfRecord(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[] | null,
+): Promise<{ id: string; name: string; is_owner: boolean }[]> {
+  if (ids !== null && ids.length === 0) return [];
+  const rows = await tx.execute<{ id: string; name: string; is_owner: boolean }>(sql`
+    select u.id, u.name, u.is_owner from iam.users u
+    where (
+        u.is_super_admin
+        or u.is_owner
+        or exists (
+          select 1 from iam.memberships m where m.user_id = u.id and m.org_id = ${orgId}
+        )
+      )
+      and ${ids === null ? sql`true` : sql`u.id = any(${sql.param([...ids])}::text[])`}
+    order by u.name, u.id
+    limit 5000
+  `);
+  return [...rows];
+}
+
 /** The owners among these people (D-473), with their names, for the caller to mask. */
 export async function ownersAmong(
   tx: Tx,

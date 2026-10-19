@@ -536,8 +536,8 @@ export class TelephonyConnectionsService {
             'That person cannot be given an extension: only sales, branch managers and admins place calls.',
           );
         }
-        const nameOf = (who: string) =>
-          members.find((candidate) => candidate.userId === who)?.name ?? 'A colleague';
+        const book = await this.iam.nameBook(tx, context.orgId);
+        const nameOf = (who: string) => book.get(who) ?? 'A colleague';
         const holder = await repo.assignmentOfExtension(tx, context.orgId, id, extension);
         if (holder?.user_id === userId) return { extension, userId, changed: false };
         if (holder !== undefined) {
@@ -669,8 +669,7 @@ export class TelephonyConnectionsService {
         throw envoFailure(error);
       }
       const known = await withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const members = await this.iam.activeMembers(tx, context.orgId);
-        const names = new Map(members.map((member) => [member.userId, member.name]));
+        const names = await this.iam.nameBook(tx, context.orgId);
         const rows = await Promise.all(
           calls.map(async (call) => {
             const row = await repo.callByEnvoIdReadOnly(tx, context.orgId, id, call.id);

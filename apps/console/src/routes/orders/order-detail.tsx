@@ -18,6 +18,7 @@ import { useMemo } from 'react';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useLocale, useT } from '../../i18n/locale.js';
+import { useStaffNames } from '../../staff-names.js';
 import '../../i18n/workflow.js';
 import {
   documentUrl,
@@ -145,12 +146,19 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
   // named as the channel it came through rather than shown as an opaque id.
   // An owner is named only to another owner; everyone else reads "Owner" (D-473).
   const owners = new Map((order.owners ?? []).map((owner) => [owner.userId, owner.name]));
+  // D-898: anyone else (a super admin, a leaver, a role outside the desk) by name, never the id.
+  const staff = useStaffNames([
+    order.assignedTo,
+    order.createdBy,
+    ...order.timeline.map((entry) => entry.actorUserId),
+  ]);
   const nameOf = (userId: string | null): string =>
     userId === null
       ? t('orders.timeline.system')
       : owners.has(userId)
         ? (owners.get(userId) ?? t('orders.timeline.owner'))
         : (names.get(userId) ??
+          staff(userId) ??
           (userId.startsWith('intake:')
             ? t('orders.channel.landing_page')
             : // M34: a website checkout, and the gateway that validated a payment.
@@ -158,7 +166,9 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
               ? t('orders.channel.website')
               : userId.startsWith('gateway:')
                 ? t('orders.timeline.gateway')
-                : userId));
+                : userId.startsWith('system:')
+                  ? t('orders.timeline.system')
+                  : tw('wf.someone')));
 
   const area = areas.data?.areas.find((entry) => entry.thanaId === order.shipTo.thanaId);
   const zone = areas.data?.zones.find((entry) => entry.id === order.deliveryZoneId);

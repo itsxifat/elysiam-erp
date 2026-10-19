@@ -32,6 +32,7 @@ import { useMemo, useState } from 'react';
 
 import { useAbility } from '../../auth/session.js';
 import { useLocale, useT } from '../../i18n/locale.js';
+import { useStaffNames } from '../../staff-names.js';
 import {
   bulkConfirm,
   bulkTransition,
@@ -143,6 +144,8 @@ function OrderList() {
   );
 
   const rows = orders.data?.items ?? [];
+  // D-898: whoever holds an order is named, a super admin or a leaver too, never by id.
+  const staff = useStaffNames(rows.map((row) => row.assignedTo));
   const pageIds = rows.map((row) => row.id);
   const chosen = pageIds.filter((id) => selected.has(id));
   const allChosen = pageIds.length > 0 && chosen.length === pageIds.length;
@@ -269,7 +272,7 @@ function OrderList() {
           return id === null ? (
             <span className="text-muted-foreground">{t('orders.detail.unassigned')}</span>
           ) : (
-            <span className="text-muted-foreground">{agentName.get(id) ?? id}</span>
+            <span className="text-muted-foreground">{agentName.get(id) ?? staff(id) ?? '—'}</span>
           );
         },
       }),
@@ -291,7 +294,7 @@ function OrderList() {
     ]);
     // `selected` and `allChosen` change the checkbox cells; the rest is stable per locale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, tPeople, locale, selected, allChosen, agentName, zoneName, rows]);
+  }, [t, tPeople, locale, selected, allChosen, agentName, staff, zoneName, rows]);
 
   const mayConfirm = ability.can('update', 'Order');
 

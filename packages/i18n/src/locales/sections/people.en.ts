@@ -13,6 +13,7 @@ const en = {
   'people.numbers.needsDetailsHint': 'Nobody has written why this person uses this number yet.',
   'people.numbers.addedBy': 'Added by {name}',
   'people.numbers.addedBySystem': 'Added automatically',
+  'people.numbers.colleague': 'a colleague',
   'people.numbers.makePrimary': 'Make primary',
   'people.numbers.edit': 'Edit',
   'people.numbers.retire': 'Retire',

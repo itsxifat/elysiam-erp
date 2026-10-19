@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { ApiError } from '../../api.js';
 import { useAbility } from '../../auth/session.js';
 import { useLocale, useT } from '../../i18n/locale.js';
+import { useStaffNames } from '../../staff-names.js';
 import '../../i18n/workflow.js';
 import { listAgents } from './api.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
@@ -136,6 +137,7 @@ function QueueTable({ tab }: { readonly tab: DeskTab }) {
 
   const mayTake = ability.can('update', 'Order');
   const items: readonly QueuedOrder[] = queue.data?.items ?? [];
+  const staff = useStaffNames(items.map((order) => order.assignedTo));
   const now = useNow(30_000);
 
   if (queue.isPending) {
@@ -243,7 +245,7 @@ function QueueTable({ tab }: { readonly tab: DeskTab }) {
                     ) : order.assignedTo === null ? (
                       t('wf.nobody')
                     ) : (
-                      (names.get(order.assignedTo) ?? t('wf.someone'))
+                      (names.get(order.assignedTo) ?? staff(order.assignedTo) ?? t('wf.someone'))
                     )}
                   </td>
                   <td className="px-3 py-1 text-right">

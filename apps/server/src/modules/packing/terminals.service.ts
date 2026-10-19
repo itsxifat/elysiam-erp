@@ -85,7 +85,9 @@ export class TerminalsService {
         this.team.members(tx, context.orgId),
       ]);
       const person = new Map(team.map((member) => [member.userId, member]));
-      const nameOf = (id: string | null) => (id === null ? null : (person.get(id)?.name ?? null));
+      // D-898: a super admin or a leaver who worked here is still named.
+      const book = await this.iam.nameBook(tx, context.orgId);
+      const nameOf = (id: string | null) => (id === null ? null : (book.get(id) ?? null));
       const canEdit = defineAbilityFor(context).can('update', 'PackingTerminal');
       return {
         canEdit,
@@ -130,7 +132,7 @@ export class TerminalsService {
                 device.last_user_id === null ? undefined : person.get(device.last_user_id);
               return {
                 id: device.last_user_id ?? '',
-                name: member?.name ?? null,
+                name: member?.name ?? nameOf(device.last_user_id),
                 since: iso(device.user_since),
                 deviceLabel: device.label,
                 presence: member === undefined ? 'away' : presenceState(member.presence, now).state,

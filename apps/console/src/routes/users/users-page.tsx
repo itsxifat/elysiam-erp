@@ -36,6 +36,7 @@ import { decideApproval } from '../../api/approvals.js';
 import { useAbility, useSession } from '../../auth/session.js';
 import { useLocale, useT } from '../../i18n/locale.js';
 import { useRealtime } from '../../realtime/use-realtime.js';
+import { useStaffNames } from '../../staff-names.js';
 import { Field } from '../../ui/primitives.js';
 import { listBranches, type BranchRow } from '../branches/api.js';
 import {
@@ -225,7 +226,10 @@ export function UsersPage() {
   const items = staffQuery.data?.items ?? [];
   const resets = staffQuery.data?.resets ?? [];
   const managed = items.find((row) => row.userId === manageId) ?? null;
-  const nameOf = (userId: string) => items.find((row) => row.userId === userId)?.name ?? userId;
+  // D-898: a person no longer on the list (a leaver, a super admin) by name, never by id.
+  const staff = useStaffNames(resets.flatMap((reset) => [reset.userId, reset.requestedBy]));
+  const nameOf = (userId: string) =>
+    items.find((row) => row.userId === userId)?.name ?? staff(userId) ?? '—';
 
   const columns = useMemo<readonly DataTableColumn<StaffRow>[]>(() => {
     const branchName = (id: string) => branches.find((branch) => branch.id === id)?.name ?? id;
@@ -828,7 +832,9 @@ function WaitingResets({
                 <p className="text-xs text-muted-foreground">
                   {u('users.askedBy')}:{' '}
                   {reset.requestedByName ??
-                    (reset.requestedByOwner === true ? u('users.owner') : reset.requestedBy)}{' '}
+                    (reset.requestedByOwner === true
+                      ? u('users.owner')
+                      : nameOf(reset.requestedBy))}{' '}
                   · <DateTime value={reset.createdAt} />
                 </p>
                 <p className="text-xs text-muted-foreground">
