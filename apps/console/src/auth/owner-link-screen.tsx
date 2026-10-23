@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { csrfToken, endpoints, NetworkError, type LoginBranding } from '../api.js';
 import { useT } from '../i18n/locale.js';
 import { Alert, Button } from '../ui/primitives.js';
+import { useLinkToken } from './link-token.js';
 import { BrandMark } from './login-screen.js';
-import { tokenFromHash } from './password-link.js';
 
 /**
  * The owner sign-in link's page (M31, D-473): `/owner-link#token=…`.
@@ -21,18 +21,9 @@ import { tokenFromHash } from './password-link.js';
 
 type State = 'working' | 'refused' | 'offline' | 'missing';
 
-/** Take the token out of the address bar, once it is in memory. */
-function readTokenOnce(): string | null {
-  const token = tokenFromHash(window.location.hash);
-  if (window.location.hash !== '') {
-    window.history.replaceState(null, '', window.location.pathname);
-  }
-  return token;
-}
-
 export function OwnerLinkScreen({ branding }: { readonly branding: LoginBranding | null }) {
   const t = useT();
-  const [token] = useState(readTokenOnce);
+  const token = useLinkToken();
   const [state, setState] = useState<State>(token === null ? 'missing' : 'working');
   // Once, even under React's development double effects: a link is single use.
   const posted = useRef(false);

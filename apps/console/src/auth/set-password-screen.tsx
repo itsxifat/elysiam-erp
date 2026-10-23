@@ -7,8 +7,9 @@ import { useForm } from 'react-hook-form';
 import { ApiError, csrfToken, endpoints, NetworkError, type LoginBranding } from '../api.js';
 import { useT } from '../i18n/locale.js';
 import { Alert, Button, Field } from '../ui/primitives.js';
+import { useLinkToken } from './link-token.js';
 import { BrandMark } from './login-screen.js';
-import { tokenFromHash, type PasswordLinkPage } from './password-link.js';
+import type { PasswordLinkPage } from './password-link.js';
 
 export { passwordLinkPage } from './password-link.js';
 
@@ -22,18 +23,9 @@ export { passwordLinkPage } from './password-link.js';
  *
  * **The token rides in the fragment** (`#token=…`), which a browser never sends to any
  * server, so it reaches no access log, no proxy and no `Referer`. It is read once into
- * memory and the address bar is rewritten without it, so it is not left in the history
- * either. Better Auth's own `POST /api/auth/reset-password` redeems it, once.
+ * memory and the address bar is rewritten without it (`useLinkToken`), so it is not left in
+ * the history either. Better Auth's own `POST /api/auth/reset-password` redeems it, once.
  */
-
-/** Take the token out of the address bar, once it is in memory. */
-function readTokenOnce(): string | null {
-  const token = tokenFromHash(window.location.hash);
-  if (window.location.hash !== '') {
-    window.history.replaceState(null, '', window.location.pathname);
-  }
-  return token;
-}
 
 export function SetPasswordScreen({
   page,
@@ -43,7 +35,7 @@ export function SetPasswordScreen({
   readonly branding: LoginBranding | null;
 }) {
   const t = useT();
-  const [token] = useState(readTokenOnce);
+  const token = useLinkToken();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
