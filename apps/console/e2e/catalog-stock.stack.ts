@@ -234,7 +234,7 @@ test('transfer to the showroom, then receive it there', async () => {
 
 test('receive a second delivery from the product page', async () => {
   await page.goto('/catalog');
-  await page.getByLabel('Search products or SKU codes').fill(PRODUCT.slice(0, 12));
+  await page.getByLabel('Search by name, SKU code or barcode').fill(PRODUCT.slice(0, 12));
   await page.getByRole('link', { name: PRODUCT }).click();
   await expect(page.getByRole('heading', { name: PRODUCT, level: 1 })).toBeVisible();
 

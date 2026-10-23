@@ -325,7 +325,7 @@ const en = {
   'catalog.title': 'Catalog',
   'catalog.products': 'Products',
   'catalog.structure': 'Categories and attributes',
-  'catalog.search': 'Search products or SKU codes',
+  'catalog.search': 'Search by name, SKU code or barcode',
   'catalog.searchHint': 'Three characters or more',
   'catalog.allCategories': 'All categories',
   'catalog.allStatuses': 'All statuses',
@@ -1474,7 +1474,8 @@ const en = {
   'orders.desk.noZone': 'No zone covers this area: set the charge by hand',
   'orders.desk.items': 'Items',
   'orders.desk.skuSearch': 'Find a SKU',
-  'orders.desk.skuHint': 'Type 3 or more characters of the code, arrow keys, then Enter',
+  'orders.desk.skuHint':
+    'Type 3 or more characters of the code, or scan a barcode, arrow keys, then Enter',
   'orders.desk.skuNone': 'No SKU matches',
   'orders.desk.available': 'available',
   'orders.desk.outOfStock': 'Out of stock',

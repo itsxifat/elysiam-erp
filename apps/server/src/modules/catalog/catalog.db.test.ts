@@ -529,6 +529,48 @@ describe("search (check 2's query shape)", () => {
     expect(skuHit.items[0]?.skuCode).toBe(code);
   });
 
+  it('finds a product by a scanned barcode and by its words in any order (D-899)', async () => {
+    const product = await catalog.createProduct(
+      A,
+      newProduct({
+        name: 'Kurta handloom indigo',
+        slug: uniqueSlug('kurta'),
+        categoryId,
+        status: 'active',
+        pricePoisha: '180000',
+        axes: [{ attributeId: colour.attributeId, valueIds: colour.valueIds.slice(0, 2) }],
+        generateSkus: true,
+      }),
+    );
+    const [first, second] = product.skus;
+    const internal = first?.barcode ?? '';
+    expect(internal).toMatch(/^2\d{12}$/);
+    const ids = async (q: string, status?: 'active' | 'archived') =>
+      (await catalog.listProducts(A, { q, limit: 25, ...(status ? { status } : {}) })).items.map(
+        (item) => item.id,
+      );
+
+    // The ERP's own barcode, whole, as the sticker's scanner types it.
+    expect(await ids(internal)).toEqual([product.id]);
+    // A supplier's barcode on the other variant, letters included.
+    const supplier = `SUP-${String(Date.now()).slice(-9)}`;
+    await catalog.setBarcode(A, second?.id ?? '', { barcode: supplier });
+    expect(await ids(supplier)).toEqual([product.id]);
+    // The other filters still apply to a barcode hit.
+    expect(await ids(internal, 'archived')).toEqual([]);
+
+    // Every word, in any order and any case; one word the product lacks finds nothing.
+    expect(await ids('Indigo KURTA')).toContain(product.id);
+    expect(await ids('handloom indigo kurta')).toContain(product.id);
+    expect(await ids('indigo sherwani')).not.toContain(product.id);
+    // `%` and `_` are letters, not patterns.
+    expect(await ids('kurta%indigo')).toEqual([]);
+
+    // The SKU search behind the order desk and supply entries takes a whole barcode too.
+    const bySkuSearch = await catalog.searchSkus(A, { q: supplier, limit: 10 });
+    expect(bySkuSearch.items.map((item) => item.id)).toEqual([second?.id]);
+  });
+
   it('pages by keyset without repeating or skipping a product', async () => {
     const first = await catalog.listProducts(A, { limit: 3 });
     expect(first.items).toHaveLength(3);

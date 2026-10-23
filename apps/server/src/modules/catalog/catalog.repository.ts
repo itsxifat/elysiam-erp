@@ -1,4 +1,5 @@
 import type { Tx } from '@elysium/db';
+import { escapeLike, searchTokens } from '@elysium/domain/storefront';
 import { sql, type SQL } from 'drizzle-orm';
 
 /**
@@ -17,11 +18,12 @@ import { sql, type SQL } from 'drizzle-orm';
  * product creations the same number, and the second one then dies on
  * `products_org_sequence_idx` with a 500 for something that was nobody's mistake.
  *
- * `searchProducts` is check 2. The `like '%…%'` runs against `search_text`, which
- * migration 0026 keeps as the lower-cased name, slug and every SKU code of the
- * product, and migration 0025 covers with a `gin_trgm_ops` index. The fragment is
+ * `searchProducts` is check 2. Each typed word is a `like '%…%'` against `search_text`,
+ * which migration 0026 keeps as the lower-cased name, slug and every SKU code of the
+ * product, and migration 0025 covers with a `gin_trgm_ops` index. The words are
  * lower-cased here so the comparison is `like`, not `ilike`: both use the index,
- * and folding once on the way in beats folding every row the scan touches.
+ * and folding once on the way in beats folding every row the scan touches. A barcode
+ * is not in `search_text`; it is matched whole, on `skus_org_barcode_idx` (D-899).
  */
 
 /** Columns of a catalog row that leaves the module. Never a cost column. */
@@ -481,6 +483,12 @@ export interface ProductListRow extends ProductRow {
  * that shows. The cursor is `sequence`, which is per-org, unique and never
  * changes (0026 freezes it), so a page boundary cannot shift under an edit the way
  * it would with `created_at`.
+ *
+ * The search finds a product by anything a person types or scans (D-899): every word,
+ * in any order, against `search_text` ("blue panjabi" finds "Panjabi Blue", a parent
+ * SKU finds every size), or a whole barcode of one of its SKUs. The barcode is looked up
+ * first, on its own unique index, so the main query is an OR of two indexed conditions
+ * rather than a join no index serves.
  */
 export async function searchProducts(
   tx: Tx,
@@ -493,7 +501,22 @@ export async function searchProducts(
     readonly afterSequence?: number | undefined;
   },
 ): Promise<ProductListRow[]> {
-  const fragment = query.q === undefined ? null : query.q.toLowerCase();
+  const raw = query.q?.trim() ?? '';
+  let match = sql`true`;
+  if (raw !== '') {
+    const scanned = await tx.execute<{ product_id: string }>(sql`
+      select s.product_id from catalog.skus s where s.org_id = ${orgId} and s.barcode = ${raw}
+    `);
+    const words = searchTokens(raw).map(
+      (word) => sql`p.search_text like ${`%${escapeLike(word)}%`} escape '\\'`,
+    );
+    const byWords = words.length === 0 ? sql`false` : sql.join(words, sql` and `);
+    match =
+      scanned.length === 0
+        ? byWords
+        : sql`(p.id = any (${sql.param(scanned.map((row) => row.product_id))}::uuid[])
+               or (${byWords}))`;
+  }
 
   const rows = await tx.execute<ProductListRow>(sql`
     select ${PRODUCT_COLUMNS},
@@ -515,7 +538,7 @@ export async function searchProducts(
     from catalog.products p
     left join catalog.categories c on c.org_id = p.org_id and c.id = p.category_id
     where p.org_id = ${orgId}
-      and ${fragment === null ? sql`true` : sql`p.search_text like ${'%' + fragment + '%'}`}
+      and ${match}
       and ${
         query.categoryId === undefined
           ? sql`true`
@@ -649,7 +672,13 @@ export async function searchSkus(
             // never touches the trigram index.
             sql`(s.code = ${query.code.toUpperCase()} or s.barcode = ${query.code})`
       }
-      and ${fragment === null ? sql`true` : sql`s.code like ${'%' + fragment + '%'}`}
+      and ${
+        fragment === null
+          ? sql`true`
+          : // A fragment of a code, or a whole barcode typed or scanned into the same box
+            // (D-899): the code's trigram index or the barcode's unique one.
+            sql`(s.code like ${'%' + fragment + '%'} or s.barcode = ${query.q?.trim() ?? ''})`
+      }
     order by s.code
     limit ${query.limit}
   `);

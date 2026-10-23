@@ -422,7 +422,7 @@ export interface Zone {
 export const listAreas = () =>
   api.get<{ areas: Area[]; zones: Zone[] }>('/v1/delivery-zones/areas');
 
-/** The catalog's SKU search: codes only, three characters or more (M06). */
+/** The catalog's SKU search: three characters or more of a code, or a whole barcode (M06, D-899). */
 export interface SkuHit {
   readonly skuId: string;
   readonly skuCode: string;
