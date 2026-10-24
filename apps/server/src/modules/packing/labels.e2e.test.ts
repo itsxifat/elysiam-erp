@@ -610,6 +610,60 @@ describe('terminals (M46 check 4, D-801 to D-804)', () => {
   });
 });
 
+describe('moving a bound computer (D-910)', () => {
+  it('only a supervisor, or someone assigned where it is bound now, moves it; the old binding stops', async () => {
+    const make = async (name: string) => {
+      const made = await call(admin, 'POST', '/v1/terminals', { kind: 'label', name });
+      expect(made.status, made.text).toBe(201);
+      return String(made.body.id);
+    };
+    const firstName = `Desk A ${randomUUID().slice(0, 4)}`;
+    const first = await make(firstName);
+    const second = await make(`Desk B ${randomUUID().slice(0, 4)}`);
+    const assign = async (terminal: string, userIds: string[]) =>
+      expect(
+        (await call(admin, 'PUT', `/v1/terminals/${terminal}/members`, { userIds })).status,
+      ).toBe(200);
+    await assign(second, [packer.userId]);
+    const bound = await call(admin, 'POST', `/v1/terminals/${first}/bind`, { label: 'Shared PC' });
+    expect(bound.status, bound.text).toBe(200);
+    const shared = { [TERMINAL_DEVICE_HEADER]: String(bound.body.token) };
+
+    // Assigned to the second, not to the first it is bound to: refused, and it stays the first.
+    const taken = await call(
+      packer,
+      'POST',
+      `/v1/terminals/${second}/bind`,
+      { label: 'Shared PC' },
+      shared,
+    );
+    expect(taken.status, taken.text).toBe(403);
+    expect(taken.body.code).toBe('TERMINAL_NOT_ASSIGNED');
+    expect(
+      (await call(admin, 'POST', '/v1/terminals/check-in', undefined, shared)).body,
+    ).toMatchObject({ terminal: { name: firstName } });
+
+    // Assigned to both: moved, and the old binding stops at once, leaving no dead computer.
+    await assign(first, [packer.userId]);
+    const moved = await call(
+      packer,
+      'POST',
+      `/v1/terminals/${second}/bind`,
+      { label: 'Shared PC' },
+      shared,
+    );
+    expect(moved.status, moved.text).toBe(200);
+    const old = await call(admin, 'POST', '/v1/terminals/check-in', undefined, shared);
+    expect(old.status, old.text).toBe(404);
+    expect(old.body.code).toBe('TERMINAL_DEVICE_INVALID');
+    const cards = (await call(admin, 'GET', '/v1/terminals')).body.terminals as Json[];
+    expect(cards.find((card) => card.id === first)?.devices).toEqual([]);
+    expect(
+      (cards.find((card) => card.id === second)?.devices as Json[]).map((device) => device.label),
+    ).toEqual(['Shared PC']);
+  });
+});
+
 describe('a terminal’s location (D-621)', () => {
   it('is in use while a terminal stands at it: the delete answers why, not a foreign-key error', async () => {
     const place = await makeLocation(ORG_A, {

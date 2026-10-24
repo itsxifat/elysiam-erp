@@ -358,6 +358,8 @@ export class TerminalsService {
     request: AuditableRequest,
     id: string,
     input: TerminalBindInput,
+    /** The asking browser's binding now (`x-terminal-device`), if it has one. */
+    current: string | null,
   ) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
@@ -365,13 +367,26 @@ export class TerminalsService {
         if (terminal?.active !== true) {
           throw new PackingError('TERMINAL_NOT_FOUND', 'No such terminal in use.');
         }
-        if (
-          !defineAbilityFor(context).can('update', 'PackingTerminal') &&
-          !(await repo.isMember(tx, context.orgId, terminal.id, context.userId))
-        ) {
+        const supervisor = defineAbilityFor(context).can('update', 'PackingTerminal');
+        if (!supervisor && !(await repo.isMember(tx, context.orgId, terminal.id, context.userId))) {
           throw new PackingError(
             'TERMINAL_NOT_ASSIGNED',
             `You are not assigned to ${terminal.name}. Ask a supervisor to add you, then bind this computer.`,
+          );
+        }
+        // A computer bound already is moved, never bound twice (D-910's review): someone not a
+        // supervisor moves it only from a terminal they are assigned to, and the old binding stops.
+        const previous = await this.liveDevice(tx, context.orgId, current);
+        if (
+          previous !== undefined &&
+          previous.terminal_id !== terminal.id &&
+          !supervisor &&
+          !(await repo.isMember(tx, context.orgId, previous.terminal_id, context.userId))
+        ) {
+          const there = await repo.terminalById(tx, context.orgId, previous.terminal_id);
+          throw new PackingError(
+            'TERMINAL_NOT_ASSIGNED',
+            `This computer is ${there?.name ?? 'another terminal'}, and you are not assigned there. A supervisor moves it to ${terminal.name}.`,
           );
         }
         const token = newTerminalToken(context.orgId);
@@ -392,6 +407,25 @@ export class TerminalsService {
           after: { deviceId: device.id, label: device.label },
           request,
         });
+        if (previous !== undefined) {
+          const replaced = await repo.revokeDevice(tx, {
+            orgId: context.orgId,
+            id: previous.id,
+            by: context.userId,
+          });
+          if (replaced !== undefined) {
+            await this.audit.record(tx, {
+              orgId: context.orgId,
+              actorUserId: context.userId,
+              operation: 'update',
+              action: 'packing.terminal_device_revoked',
+              entityType: 'packing_terminal',
+              entityId: replaced.terminal_id,
+              after: { deviceId: replaced.id, label: replaced.label, replacedBy: device.id },
+              request,
+            });
+          }
+        }
         return {
           token,
           device: { id: device.id, label: device.label },
@@ -493,6 +527,17 @@ export class TerminalsService {
       );
     }
     return { terminal, deviceId: found.id };
+  }
+
+  /** The live binding a token names, or undefined: a stale or foreign token is no binding. */
+  private async liveDevice(
+    tx: Tx,
+    orgId: string,
+    token: string | null,
+  ): Promise<repo.DeviceRow | undefined> {
+    if (token === null || orgIdOfTerminalToken(token) !== orgId) return undefined;
+    const found = await repo.deviceByToken(tx, orgId, terminalTokenHash(token));
+    return found?.revoked_at === null ? found : undefined;
   }
 
   private async device(tx: Tx, orgId: string, token: string | null): Promise<repo.DeviceRow> {

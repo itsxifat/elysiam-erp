@@ -162,6 +162,7 @@ export class TerminalsController {
       auditable(request),
       parse(idSchema, id),
       input,
+      terminalTokenOf(request.headers[TERMINAL_DEVICE_HEADER]),
     );
   }
 }

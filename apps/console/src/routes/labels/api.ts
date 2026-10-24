@@ -97,8 +97,9 @@ export interface BoundTerminal {
   readonly terminal: { readonly id: string; readonly kind: TerminalKind; readonly name: string };
 }
 
+/** This computer's binding goes with it: a computer bound already is moved, not bound twice. */
 export const bindTerminal = (id: string, label: string) =>
-  api.post<BoundTerminal>(`/v1/terminals/${id}/bind`, { label });
+  api.post<BoundTerminal>(`/v1/terminals/${id}/bind`, { label }, terminalHeaders());
 
 export const revokeDevice = (deviceId: string) =>
   api.post(`/v1/terminals/devices/${deviceId}/revoke`);
