@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { CallAttemptInput } from '@elysium/contracts';
+import type { CallAttemptInput, CourierBookingPolicy } from '@elysium/contracts';
 import type {
   CustomerAddressInput,
   CustomerCardView,
@@ -758,6 +758,12 @@ export interface OrdersApi {
     orgId: string,
     orderIds: readonly string[],
   ): Promise<readonly PackingFacts[]>;
+
+  /**
+   * When the brand books the courier (§9's `orders.courier_booking`, D-901), `manual` until
+   * chosen: the Labels page says when that means no label prints by itself (D-908).
+   */
+  courierBooking(tx: Tx, orgId: string): Promise<CourierBookingPolicy>;
 
   // --- M38b: the packing station and the packing video ---------------------------------
 
@@ -2262,6 +2268,11 @@ export class OrdersApiService implements OrdersApi {
     const courier = this.courier.current();
     if (courier === undefined) return [];
     return courier.ordersByParcelCode(tx, orgId, trimmed);
+  }
+
+  async courierBooking(tx: Tx, orgId: string): Promise<CourierBookingPolicy> {
+    const value = await repo.courierBookingSetting(tx, orgId);
+    return value === 'on_confirm' || value === 'on_pack' ? value : 'manual';
   }
 
   async packingFacts(

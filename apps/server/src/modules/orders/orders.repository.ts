@@ -336,6 +336,42 @@ export async function replaceAddress(
   return before[0];
 }
 
+/**
+ * Lock a buyer for a change to their address book (D-894): one change at a time per buyer, so
+ * two people removing or adding addresses at once cannot leave the book without its default.
+ * The buyer's row first, as the merge takes it (D-885), so the two never wait on each other.
+ */
+export async function lockCustomer(tx: Tx, orgId: string, customerId: string): Promise<void> {
+  await tx.execute(sql`
+    select id from sales.customers where org_id = ${orgId} and id = ${customerId} for update
+  `);
+}
+
+/**
+ * The buyer's oldest address becomes the default when none is (D-894: the desk always has one to
+ * fill). Only the flag: the row's place and line are never written back from an earlier read.
+ */
+export async function promoteOldestAddress(
+  tx: Tx,
+  orgId: string,
+  customerId: string,
+): Promise<void> {
+  await tx.execute(sql`
+    update sales.customer_addresses set is_default = true, updated_at = now()
+    where org_id = ${orgId}
+      and id = (
+        select id from sales.customer_addresses
+        where org_id = ${orgId} and customer_id = ${customerId}
+        order by created_at, id
+        limit 1
+      )
+      and not exists (
+        select 1 from sales.customer_addresses d
+        where d.org_id = ${orgId} and d.customer_id = ${customerId} and d.is_default
+      )
+  `);
+}
+
 /** Remove one saved address (D-894); the row as it was, or undefined when there is no such one. */
 export async function deleteAddress(
   tx: Tx,

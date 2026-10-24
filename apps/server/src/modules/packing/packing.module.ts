@@ -6,11 +6,13 @@ import { FilesModule } from '../files/files.module.js';
 import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { StorefrontModule } from '../storefront/storefront.module.js';
+import { InventoryModule } from '../inventory/inventory.module.js';
 import { TeamModule } from '../team/team.module.js';
 import { CameraSettingsService } from './camera-settings.service.js';
 import { LabelsController } from './labels.controller.js';
 import { LotsController } from './lots.controller.js';
 import { LotsService } from './lots.service.js';
+import { PackingLocationReferences } from './location-references.binding.js';
 import { PackingCatalogReferences } from './catalog-references.binding.js';
 import { OrderLabelsService } from './order-labels.service.js';
 import { PACKING_API, PackingApiService } from './packing.api.js';
@@ -43,6 +45,8 @@ import { TerminalsService } from './terminals.service.js';
   imports: [
     OrdersModule,
     CatalogModule,
+    // D-621: a terminal's stock location is counted when the location is deleted.
+    InventoryModule,
     StorefrontModule,
     FilesModule,
     IamDirectoryModule,
@@ -60,6 +64,7 @@ import { TerminalsService } from './terminals.service.js';
   ],
   providers: [
     AuditService,
+    PackingLocationReferences,
     ScannerService,
     ScannerDeviceGuard,
     OrderLabelsService,

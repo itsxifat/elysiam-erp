@@ -78,6 +78,7 @@ const en = {
   'mg.reason.packing_scans': 'Packing scans',
   'mg.reason.inbox_interests': 'Customers interested, in the inbox',
   'mg.reason.desk_profiles': 'Staff whose hub it is',
+  'mg.reason.packing_terminals': 'Label and packing terminals at it',
   'mg.reason.leads': 'Leads',
   'mg.reason.campaigns': 'Ad campaigns',
   'mg.reason.ad_spend': 'Ad spend entries',

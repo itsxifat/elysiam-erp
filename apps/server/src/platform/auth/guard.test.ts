@@ -68,6 +68,31 @@ class HandlerOptsOutController {
   }
 }
 
+/**
+ * The same two lists over customers, which sales still reads at `own` scope. Its orders it reads
+ * across the brand since D-725 (a colleague's order opens under "Handled by …"), so `read Order`
+ * no longer shows a scoped caller.
+ */
+@Controller('t/customers')
+class CustomersController {
+  @RequireAbility('read', 'Customer')
+  @Get('forgets')
+  forgets() {
+    return { items: [] };
+  }
+
+  @RequireAbility('read', 'Customer')
+  @Get('applies')
+  applies(@Req() request: FastifyRequest) {
+    const where = scopeWhere(request, {
+      createdBy: sql`created_by`,
+      assignedTo: sql`assigned_to`,
+      branchId: sql`branch_id`,
+    });
+    return { where: new PgDialect().sqlToQuery(where) };
+  }
+}
+
 /** A list that forgets its scope, and one that applies it. */
 @Controller('t/orders')
 class OrdersController {
@@ -137,6 +162,7 @@ beforeAll(async () => {
         InheritsPublicController,
         HandlerOptsOutController,
         OrdersController,
+        CustomersController,
       ],
     } as never,
     new FastifyAdapter(),
@@ -243,9 +269,9 @@ describe('the gate sees the same declarations the guard does', () => {
 
 describe('row scope is mandatory for a scoped caller (M2)', () => {
   it('refuses to send a scoped response whose handler never applied the scope', async () => {
-    // sales reads Order at `own` scope. A list that forgot its filter would
-    // return every agent's orders; the backstop turns that into a 500.
-    const response = await call('GET', '/t/orders/forgets', 'sales');
+    // sales reads Customer at `own` scope. A list that forgot its filter would
+    // return every agent's buyers; the backstop turns that into a 500.
+    const response = await call('GET', '/t/customers/forgets', 'sales');
     expect(response.status).toBe(500);
   });
 
@@ -254,7 +280,7 @@ describe('row scope is mandatory for a scoped caller (M2)', () => {
   });
 
   it('renders own as created-by-or-assigned-to, and branch as a bound list', async () => {
-    const own = JSON.parse((await call('GET', '/t/orders/applies', 'sales')).body) as {
+    const own = JSON.parse((await call('GET', '/t/customers/applies', 'sales')).body) as {
       where: { sql: string; params: unknown[] };
     };
     expect(own.where.sql).toBe('(created_by = $1 or assigned_to = $2)');

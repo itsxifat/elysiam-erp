@@ -297,6 +297,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       'courier',
       'marketplace',
       'orders',
+      // M46: a label or packing terminal's location.
+      'packing',
       'pos',
       'storefront',
       'supply',
@@ -326,6 +328,8 @@ describe('every module that points at catalog rows answers (D-621)', () => {
       'inventory.stock_transfers': 'inventory',
       // M35b, joined at integration: an ncom.bd hold keeps the place it held stock at.
       'marketplace.ncom_holds': 'marketplace',
+      // M46: a label or packing terminal stands at a hub's location.
+      'packing.terminals': 'packing',
       'pos.registers': 'pos',
       'pos.returns': 'pos',
       'pos.sales': 'pos',

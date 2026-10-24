@@ -1,4 +1,4 @@
-import { TERMINAL_DEVICE_HEADER } from '@elysium/contracts';
+import { TERMINAL_DEVICE_HEADER, type CourierBookingPolicy } from '@elysium/contracts';
 
 import { api, request } from '../../api.js';
 import { env } from '../../env.js';
@@ -182,6 +182,8 @@ export interface LabelSettings {
   readonly autoPrintSetting: boolean | null;
   readonly autoSlip: boolean;
   readonly printers: number;
+  /** When the courier is booked: a label prints by itself only after that (D-908). */
+  readonly courierBooking: CourierBookingPolicy;
   readonly canEdit: boolean;
 }
 

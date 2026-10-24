@@ -441,6 +441,8 @@ export class CustomersService {
     customerId: string,
     input: CustomerAddressInput,
   ): Promise<{ addresses: CustomerAddressView[] }> {
+    // One change to this buyer's book at a time (the default rule holds under concurrency).
+    await repo.lockCustomer(tx, context.orgId, customerId);
     await this.requireLive(tx, context.orgId, customerId);
     await assertArea(tx, input);
     const existing = await repo.listAddresses(tx, context.orgId, customerId);
@@ -470,6 +472,8 @@ export class CustomersService {
     addressId: string,
     input: CustomerAddressInput,
   ): Promise<{ addresses: CustomerAddressView[] }> {
+    // One change to this buyer's book at a time (the default rule holds under concurrency).
+    await repo.lockCustomer(tx, context.orgId, customerId);
     await this.requireLive(tx, context.orgId, customerId);
     await assertArea(tx, input);
     const existing = await repo.listAddresses(tx, context.orgId, customerId);
@@ -513,27 +517,14 @@ export class CustomersService {
     customerId: string,
     addressId: string,
   ): Promise<{ addresses: CustomerAddressView[] }> {
+    // One change to this buyer's book at a time (the default rule holds under concurrency).
+    await repo.lockCustomer(tx, context.orgId, customerId);
     await this.requireLive(tx, context.orgId, customerId);
     const removed = await repo.deleteAddress(tx, context.orgId, customerId, addressId);
     if (removed === undefined) {
       throw new OrdersError('CUSTOMER_ADDRESS_NOT_FOUND', 'This person has no such address.');
     }
-    if (removed.is_default) {
-      const next = (await repo.listAddresses(tx, context.orgId, customerId))[0];
-      if (next !== undefined) {
-        await repo.replaceAddress(tx, {
-          orgId: context.orgId,
-          customerId,
-          addressId: next.id,
-          label: next.label,
-          districtId: next.district_id,
-          thanaId: next.thana_id,
-          area: next.area,
-          addressLine: next.address_line,
-          isDefault: true,
-        });
-      }
-    }
+    if (removed.is_default) await repo.promoteOldestAddress(tx, context.orgId, customerId);
     await this.auditAddress(tx, context, request, 'customer.address_removed', customerId, {
       before: {
         addressId,

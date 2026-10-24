@@ -108,9 +108,10 @@ export class PrintingService {
 
   async settings(context: ActiveContext) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const [row, printers] = await Promise.all([
+      const [row, printers, courierBooking] = await Promise.all([
         repo.labelSettingsOf(tx, context.orgId),
         repo.printersOf(tx, context.orgId),
+        this.orders.courierBooking(tx, context.orgId),
       ]);
       const live = printers.filter((printer) => printer.enabled).length;
       return {
@@ -119,6 +120,8 @@ export class PrintingService {
         autoPrintSetting: row?.auto_print ?? null,
         autoSlip: row?.auto_slip ?? false,
         printers: live,
+        /** A label prints by itself only once the courier is booked (D-817, D-908). */
+        courierBooking,
         canEdit: defineAbilityFor(context).can('update', 'PackingTerminal'),
         updatedAt: row === undefined ? null : iso(row.updated_at),
       };

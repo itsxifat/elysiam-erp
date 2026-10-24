@@ -32,6 +32,13 @@ x-server-env: &server-env
   AUTH_SECRET: ${BRAND_AUTH_SECRET:?}
   HR_FIELD_KEY: ${BRAND_HR_FIELD_KEY:?}
   COURIER_CREDENTIALS_KEY: ${BRAND_COURIER_CREDENTIALS_KEY:?}
+  # The unverified couriers' switches (D-908): off until the brand's .env.brand says
+  # BRAND_COURIER_<CODE>_ENABLED=true. Off, an account on that courier cannot be switched on,
+  # nothing is booked with it, and so no consignment comes back and no label prints (D-817).
+  COURIER_STEADFAST_ENABLED: ${BRAND_COURIER_STEADFAST_ENABLED:-false}
+  COURIER_STEADFAST_BASE_URL: ${BRAND_COURIER_STEADFAST_BASE_URL:-https://portal.packzy.com/api/v1}
+  COURIER_PATHAO_ENABLED: ${BRAND_COURIER_PATHAO_ENABLED:-false}
+  COURIER_REDX_ENABLED: ${BRAND_COURIER_REDX_ENABLED:-false}
   MARKETING_CREDENTIALS_KEY: ${BRAND_MARKETING_CREDENTIALS_KEY:?}
   # M34 (D-528): seals the brand's SSLCommerz and email server passwords. Empty keeps
   # Website → Payments and Email off until it is set (new-brand.sh writes one).

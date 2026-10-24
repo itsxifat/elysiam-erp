@@ -82,6 +82,11 @@ deploy_brand() {
       || fail "BRAND_CSP_TELEPHONY_SOCKETS: $SOURCE is not a wss origin"
   done
   BEHIND_CF=$(setting BRAND_BEHIND_CLOUDFLARE)
+  # D-908: an unverified courier switched off books nothing, so no label prints by itself.
+  for CODE in STEADFAST PATHAO REDX; do
+    [ "$(setting "BRAND_COURIER_${CODE}_ENABLED" | tr -d "\"'")" = true ] \
+      || echo "$SLUG: note: BRAND_COURIER_${CODE}_ENABLED is not true; nothing is booked with that courier"
+  done
   [ -n "$HOST" ] && [ -n "$PORT" ] || fail "$ENV_FILE has no BRAND_ADMIN_HOST or BRAND_API_PORT"
   ID=$(printf '%s' "$SLUG" | tr '-' '_')
   WEB="$WEB_BASE/erp-$SLUG"

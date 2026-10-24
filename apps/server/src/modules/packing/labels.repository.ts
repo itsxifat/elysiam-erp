@@ -22,6 +22,15 @@ export interface TerminalRow extends Record<string, unknown> {
 
 const TERMINAL_COLUMNS = sql`id, kind, name, location_id, active, updated_at`;
 
+/** The terminals set at this stock location, switched off or not (D-621's question, M46). */
+export async function terminalsAt(tx: Tx, orgId: string, locationId: string): Promise<number> {
+  const rows = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from packing.terminals
+    where org_id = ${orgId} and location_id = ${locationId}::uuid
+  `);
+  return rows[0]?.n ?? 0;
+}
+
 export async function terminalsOf(tx: Tx, orgId: string): Promise<TerminalRow[]> {
   const rows = await tx.execute<TerminalRow>(sql`
     select ${TERMINAL_COLUMNS} from packing.terminals where org_id = ${orgId}

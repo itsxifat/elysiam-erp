@@ -21,7 +21,7 @@ import { applyCourierMigrations, makeCourier } from '../courier/courier.testing.
 import { FILES_QUEUE_DEFINITIONS } from '../files/files.queues.js';
 import type { GotenbergClient } from '../files/pdf/gotenberg.client.js';
 import { IAM_API } from '../iam/iam.api.js';
-import { seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
+import { makeLocation, seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
 import { ORDERS_API } from '../orders/orders.api.js';
 import { applyOrderMigrations, seedCustomer, seedStockLevel } from '../orders/orders.testing.js';
 import { ParcelObserverRegistry } from '../orders/ports/parcel-observer.port.js';
@@ -275,10 +275,39 @@ afterAll(async () => {
 }, 60_000);
 
 describe('auto-print (M46 check 1, D-817)', () => {
+  it('tells the Labels page when the courier is booked (D-908)', async () => {
+    const workflow = await call(admin, 'GET', '/v1/orders/workflow-settings');
+    const { autoAssign, offerSeconds, maxOpen } = workflow.body as {
+      autoAssign: boolean;
+      offerSeconds: number;
+      maxOpen: number;
+    };
+    const choose = (courierBooking: string) =>
+      call(admin, 'PUT', '/v1/orders/workflow-settings', {
+        autoAssign,
+        offerSeconds,
+        maxOpen,
+        courierBooking,
+      });
+    expect((await choose('on_confirm')).status).toBe(200);
+    try {
+      const settings = await call(admin, 'GET', '/v1/labels/settings');
+      expect(settings.body).toMatchObject({ courierBooking: 'on_confirm' });
+    } finally {
+      expect((await choose('manual')).status).toBe(200);
+    }
+  });
+
   it('prints a booked order’s label on its terminal’s printer without a click, and logs it', async () => {
     const settings = await call(admin, 'GET', '/v1/labels/settings');
     // ASSUMED default: on once the brand has a printer.
-    expect(settings.body).toMatchObject({ autoPrint: true, autoPrintSetting: null, printers: 1 });
+    expect(settings.body).toMatchObject({
+      autoPrint: true,
+      autoPrintSetting: null,
+      printers: 1,
+      // D-908: the Labels page says a Confirm books nothing while the courier is booked by hand.
+      courierBooking: 'manual',
+    });
 
     const order = await confirmedOrder();
     const before = sent.length;
@@ -568,6 +597,30 @@ describe('terminals (M46 check 4, D-801 to D-804)', () => {
       packer.userId,
     ]);
     expect((card?.cameras as unknown[]).length).toBe(2);
+  });
+});
+
+describe('a terminal’s location (D-621)', () => {
+  it('is in use while a terminal stands at it: the delete answers why, not a foreign-key error', async () => {
+    const place = await makeLocation(ORG_A, {
+      code: `HUB-${randomUUID().slice(0, 4).toUpperCase()}`,
+      name: 'Second hub',
+      kind: 'warehouse',
+    });
+    const terminal = await call(admin, 'POST', '/v1/terminals', {
+      kind: 'label',
+      name: `Label at ${place.slice(0, 4)}`,
+      locationId: place,
+    });
+    expect(terminal.status, terminal.text).toBe(201);
+    const usage = await call(admin, 'GET', `/v1/inventory/locations/${place}/usage`);
+    expect(usage.status, usage.text).toBe(200);
+    expect(usage.body.canDelete).toBe(false);
+    expect(usage.body.uses).toEqual(
+      expect.arrayContaining([expect.objectContaining({ reason: 'packing_terminals', count: 1 })]),
+    );
+    const refused = await call(admin, 'DELETE', `/v1/inventory/locations/${place}`);
+    expect(refused.status, refused.text).toBe(409);
   });
 });
 

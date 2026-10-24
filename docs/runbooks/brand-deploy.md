@@ -87,6 +87,21 @@ there).
    certificate below exists: "Flexible" makes Cloudflare call the server over plain HTTP, and
    certbot's redirect would then loop.
 
+6. The couriers the brand books with (D-908). Steadfast, Pathao and RedX are UNVERIFIED
+   adapters and stay off until the brand's `.env.brand` switches each one on:
+
+   ```sh
+   BRAND_COURIER_STEADFAST_ENABLED=true
+   # BRAND_COURIER_PATHAO_ENABLED=true
+   # BRAND_COURIER_REDX_ENABLED=true
+   # BRAND_COURIER_STEADFAST_BASE_URL=https://portal.packzy.com/api/v1   (the default)
+   ```
+
+   Off, an account on that courier cannot be switched on and nothing is booked with it, so no
+   consignment comes back and no label prints by itself. The deploy prints a note for each
+   switch that is not `true`. A change takes effect on the next deploy (or
+   `dc <slug> up -d api worker`, §6).
+
 ## 3. Deploy
 
 From a workstation, at the repository root, with the commit to deploy:
@@ -302,6 +317,19 @@ dc oura-lifestyle restart api
   ```
 
   A switched-off owner's next link is refused (`identity_inactive` in the API's log).
+
+- A label does not print by itself after Confirm (D-817, D-901, D-908). It prints when the
+  order gets its consignment, so check, in order:
+  1. the courier's switch is on in `.env.brand` (§2 step 6) and its account is active in
+     Settings → Couriers;
+  2. Settings → Order workflow books the courier **when the order is confirmed** (until
+     chosen it is by hand, and Labels → Printers says so);
+  3. the order has that courier when it is confirmed;
+  4. the label computer is bound to a label terminal with a label printer, its print station
+     is open, and Chrome runs with `--kiosk-printing` with that printer as the default.
+
+  `dc <slug> logs --tail 200 worker | grep -i -e courier -e auto-print` shows a booking that
+  failed and an auto-print that found no label printer.
 
 ## Checks
 

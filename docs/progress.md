@@ -3747,3 +3747,39 @@ c.org_id and o.id = c.order_id where a.provider_code = 'steadfast' and c.booking
   Gotenberg). Not run: the stack specs, a real printer, a real Steadfast account.
 - **New dependencies:** none. **Migration:** 0162 (data only: stored Steadfast `pending` to
   `picked_up`).
+
+## 2026-10-24 · fix · the whole suite before go-live
+
+- **Decision:** D-907. Asked to run every test before production.
+- **The suite:** with Gotenberg up (the PDF tests, the label routes and the route matrix's PDF
+  routes need it), `pnpm test` is green: 4,622 passed, 2 skipped, 0 failed. Six failures `main`
+  had, now fixed: D-894's address book losing its default under concurrent changes (a new test
+  fires the pairs at once and failed on the old code), a stock location a packing terminal
+  stands at failing its delete with a 500 (packing's D-621 checker), and three tests left behind
+  by D-725, D-894 and M47 (above). Run against one shared Postgres the suite starves it of
+  connections (`CONNECT_TIMEOUT` in two auto-assign tests); with each suite's own container, as
+  by default, it does not.
+- **Reviewed:** the six fixes by three reviewers and skeptics (nothing confirmed; the address
+  book's races they raised as `main`'s were real and are fixed here).
+- **Gates:** format (only the two migration meta files `main` already fails on), lint,
+  typecheck, build, `check:bundle` (248.3 KB), `check:white-label`, `check:migrations`,
+  `check:schema`, `check:routes`, `check:i18n`, `check:api-client`: PASS.
+
+## 2026-10-24 · fix · the label still not printing after Confirm on the brand servers
+
+- **Decision:** D-908. Reported: "after confirming order its not being printed automatically in
+  the label tab".
+- **Why:** the brand compose file never passed the unverified couriers' switches to the API
+  and worker, so Steadfast was off on every brand server whatever `.env.brand` said: no account
+  on it could be switched on, an on-confirm booking was skipped, no consignment came back and
+  the auto-print never ran. The brands also still ran the release before D-901, with no way to
+  choose booking on Confirm.
+- **Changed:** the compose passes `BRAND_COURIER_{STEADFAST,PATHAO,REDX}_ENABLED` (default
+  `false`) and `BRAND_COURIER_STEADFAST_BASE_URL`; `server-deploy.sh` notes each switch not on;
+  Labels → Printers says when the courier is booked by hand, linking to Settings → Order
+  workflow (`courierBooking` on `GET /v1/labels/settings`); the runbook's §2 step 6 and §6's
+  checklist.
+- **Tests:** `labels.e2e.test.ts` 12 passed (the policy read back after it changes);
+  `docker compose config` with a sample `.env.brand` shows the switches on the API and worker;
+  console and server typecheck, lint, format: PASS.
+- **New dependencies:** none. **Migration:** none.

@@ -452,6 +452,50 @@ describe('the buyer page’s address book (D-894)', () => {
     });
     expect(otherBrand.statusCode).toBe(404);
   });
+
+  it('keeps one default when two people change the book at the same moment', async () => {
+    const book = async (customerId: string) =>
+      json<Card>(await admin.client.request('GET', `/v1/customers/${customerId}`)).addresses;
+    const add = async (customerId: string, label: string) =>
+      json<{ addresses: Card['addresses'] }>(
+        await admin.client.request('POST', `/v1/customers/${customerId}/addresses`, {
+          body: { ...area, label, addressLine: `${label} house, road 1` },
+        }),
+        201,
+      ).addresses;
+
+    // Two removals at once, the default among them: the one left becomes the default.
+    for (let round = 0; round < 3; round += 1) {
+      const customerId = await seedCustomer(ORG_A, { phoneE164: freshPhone(), name: 'Busy book' });
+      await add(customerId, 'B');
+      const addresses = await add(customerId, 'C');
+      const first = addresses.find((row) => row.isDefault);
+      const second = addresses.find((row) => row.label === 'B');
+      const url = `/v1/customers/${customerId}/addresses`;
+      const answers = await Promise.all([
+        admin.client.request('DELETE', `${url}/${first?.id ?? ''}`),
+        admin.client.request('DELETE', `${url}/${second?.id ?? ''}`),
+      ]);
+      expect(answers.map((answer) => answer.statusCode)).toEqual([200, 200]);
+      const left = await book(customerId);
+      expect(left.map((row) => row.label)).toEqual(['C']);
+      expect(left[0]?.isDefault).toBe(true);
+    }
+
+    // The last address removed while another is added: the new one is the default.
+    for (let round = 0; round < 3; round += 1) {
+      const customerId = await seedCustomer(ORG_A, { phoneE164: freshPhone(), name: 'Busy book' });
+      const only = (await book(customerId))[0];
+      const url = `/v1/customers/${customerId}/addresses`;
+      await Promise.all([
+        admin.client.request('DELETE', `${url}/${only?.id ?? ''}`),
+        add(customerId, 'D'),
+      ]);
+      const left = await book(customerId);
+      expect(left.map((row) => row.label)).toEqual(['D']);
+      expect(left[0]?.isDefault).toBe(true);
+    }
+  });
 });
 
 describe('the picker lists every match (D-890)', () => {

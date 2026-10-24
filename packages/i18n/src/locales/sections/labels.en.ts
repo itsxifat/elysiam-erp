@@ -165,6 +165,9 @@ const en = {
   'lb.settings.autoPrint': 'Print each lot’s label the moment an order gets its consignment',
   'lb.settings.autoSlip': 'Print the packing slip with it',
   'lb.settings.default': 'On by default once the brand has a printer.',
+  'lb.settings.manualBooking':
+    'Nothing prints by itself yet: the courier is booked only by hand, so a confirmed order gets no consignment until someone books it.',
+  'lb.settings.manualBookingLink': 'Book the courier when the order is confirmed',
 
   'lb.terminals.add': 'Add terminal',
   'lb.terminals.empty': 'No terminals yet',

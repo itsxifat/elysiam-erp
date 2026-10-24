@@ -12,6 +12,7 @@ import {
   Skeleton,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { Plus, Printer as PrinterIcon } from 'lucide-react';
 import { useId, useState } from 'react';
 
@@ -213,7 +214,7 @@ function AutoPrintCard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['labels', 'settings'] }),
   });
   if (settings.data === undefined) return null;
-  const { autoPrint, autoSlip, canEdit, autoPrintSetting } = settings.data;
+  const { autoPrint, autoSlip, canEdit, autoPrintSetting, courierBooking } = settings.data;
   return (
     <section
       className="space-y-3 rounded-lg border border-border bg-card p-5"
@@ -238,6 +239,22 @@ function AutoPrintCard() {
       </label>
       {autoPrintSetting === null ? (
         <p className="text-xs text-muted-foreground">{t('lb.settings.default')}</p>
+      ) : null}
+      {/* D-908: with the courier booked by hand, a Confirm books nothing, so nothing prints. */}
+      {autoPrint && courierBooking === 'manual' ? (
+        <p
+          role="status"
+          className="rounded-md border border-border px-3 py-2 text-sm text-foreground"
+          data-testid="auto-print-manual-booking"
+        >
+          {t('lb.settings.manualBooking')}{' '}
+          <Link
+            to="/settings/order-workflow"
+            className="font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            {t('lb.settings.manualBookingLink')}
+          </Link>
+        </p>
       ) : null}
     </section>
   );

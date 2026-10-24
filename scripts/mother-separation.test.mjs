@@ -111,6 +111,10 @@ const KNOWN_HOSTS = new Set([
   'https://securepay.sslcommerz.com',
   'https://www.google-analytics.com',
   'https://ncom.bd',
+  // The owner's own phone service (M47, D-830): a brand's Envo connection, named in Settings →
+  // Calls' own words (an example base URL, and "must start with https://.").
+  'https://envo.enfinito.cloud',
+  'https://.',
   // XML namespaces in the XLSX writer and the label sheet's SVG, never fetched.
   'http://schemas.openxmlformats.org',
   'http://www.w3.org',

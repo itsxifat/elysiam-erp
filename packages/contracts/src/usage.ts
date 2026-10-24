@@ -56,6 +56,8 @@ export const USAGE_REASONS = [
   'inbox_interests',
   // M41: a staff member's desk profile names it as the hub they pack at.
   'desk_profiles',
+  // M46: a label or packing terminal stands at a stock location (or at every location).
+  'packing_terminals',
   // Marketing and messages.
   'leads',
   'campaigns',

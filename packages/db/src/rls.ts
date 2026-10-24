@@ -349,11 +349,12 @@ export const NO_DELETE_TABLES: readonly string[] = [
    * is the thing a journal, a dispatch movement and a courier consignment all point at:
    * deleting one leaves three schemas referring to a row that never existed. `order_lines`
    * is deliberately **absent** — 0044 grants DELETE for a pre-dispatch edit, bounded by
-   * 0041's trigger.
+   * 0041's trigger. So is `customer_addresses` since M49 (D-894, 0161): a saved address can be
+   * removed from the buyer's address book, and no row points at one (an order keeps its own copy
+   * of where it went).
    */
   'sales.orders',
   'sales.customers',
-  'sales.customer_addresses',
   'sales.order_counters',
   /*
    * The outbox is append-then-mark (§19). The dispatcher needs UPDATE to stamp

@@ -162,6 +162,7 @@ const REASON_WORDS: Readonly<Record<UsageReason, readonly [string, string]>> = {
   packing_scans: ['packing scan', 'packing scans'],
   inbox_interests: ['customer interest in the inbox', 'customer interests in the inbox'],
   desk_profiles: ['staff member whose hub it is', 'staff members whose hub it is'],
+  packing_terminals: ['label or packing terminal at it', 'label or packing terminals at it'],
   leads: ['lead', 'leads'],
   campaigns: ['ad campaign', 'ad campaigns'],
   ad_spend: ['ad spend entry', 'ad spend entries'],
