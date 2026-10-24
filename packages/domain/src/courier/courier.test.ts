@@ -131,6 +131,27 @@ describe('courier status mapping', () => {
     expect([...MAPPED_COURIER_CODES].sort()).toEqual(['fake', 'pathao', 'redx', 'steadfast']);
   });
 
+  it('knows every delivery status Steadfast’s API document lists (D-916)', () => {
+    for (const word of [
+      'pending',
+      'in_review',
+      'hold',
+      'delivered_approval_pending',
+      'partial_delivered_approval_pending',
+      'cancelled_approval_pending',
+      'unknown_approval_pending',
+      'delivered',
+      'partial_delivered',
+      'cancelled',
+      'exceptional',
+      'unknown',
+    ]) {
+      expect(Object.keys(STEADFAST_STATUS_MAP.statuses), word).toContain(word);
+    }
+    // Lost or damaged is a parcel to chase, never one on its way or delivered.
+    expect(normalizeStatus(STEADFAST_STATUS_MAP, 'exceptional').status).toBe('hold');
+  });
+
   it('never recognises an unconfirmed delivery as delivered (D-003)', () => {
     // Revenue is recognised on delivery. A rider's word that Steadfast has not
     // confirmed would mean recognising it and reversing it next week, every week.

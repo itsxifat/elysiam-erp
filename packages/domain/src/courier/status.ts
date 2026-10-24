@@ -97,6 +97,8 @@ export interface ProviderStatusMap {
  * disagreed — reversals in a closed month, every month. So they map to states that
  * move nothing: the parcel is still out, or on hold.
  *
+ * The twelve words are Steadfast's API document's own list (D-916, its "Status reference").
+ *
  * `in_review` and `pending` are the owner's own reading of Steadfast (D-902): a parcel is
  * `in_review` from its booking until Steadfast's hub has it, and `pending` from then until
  * it is delivered or cancelled. So `pending` is the courier's word that it has the parcel,
@@ -116,6 +118,9 @@ export const STEADFAST_STATUS_MAP: ProviderStatusMap = {
     delivered: 'delivered',
     partial_delivered: 'partial_delivered',
     cancelled: 'cancelled',
+    // D-916, Steadfast's API document: "Lost, damaged or otherwise off the normal path. Contact
+    // support." Held, so it is listed as a parcel to chase rather than one on its way.
+    exceptional: 'hold',
     unknown: 'unknown',
   },
 };
@@ -323,7 +328,8 @@ export const REDX_STATUS_MAP: ProviderStatusMap = {
  *
  * Source: the "Delivery Statuses" table in `steadfast-it/SteadFast-Courier-Laravel-Package`'s
  * README (the same first-party-authored document the map above was built from), read again
- * for M15. Eleven values, in the README's order. Typed out rather than taken from the map's
+ * for M15, eleven values in the README's order; and `exceptional`, from Steadfast's API document
+ * (D-916), which lists twelve. Typed out rather than taken from the map's
  * keys: M12's completeness test used `Object.keys(map.statuses)` as the vocabulary, which
  * makes "every word is mapped" true by construction and the test unable to fail.
  */
@@ -338,6 +344,8 @@ export const STEADFAST_STATUS_VOCABULARY: readonly string[] = [
   'cancelled',
   'hold',
   'in_review',
+  // D-916: in the API document's own list ("Status reference"), not in the package README.
+  'exceptional',
   'unknown',
 ];
 

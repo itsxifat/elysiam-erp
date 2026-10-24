@@ -21,8 +21,13 @@ import { sealCredentials } from './credentials.js';
 import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
 import { courierOffered, PANEL_COURIERS, type PanelCourier } from './providers.js';
 
-/** Polling, until a webhook is set up: M12's default, and the account form's. */
-const DEFAULT_POLL_AFTER_HOURS = 6;
+/**
+ * A connected courier's parcels are asked about after an hour without news (D-916). The poll
+ * runs every half hour; with no webhook set up it is how a status arrives at all, and six hours
+ * (M12's default, still the account form's) left a parcel's status a day part behind. Steadfast
+ * caches a status answer for 60 seconds and allows 1,000 requests a minute: an hour is cheap.
+ */
+const DEFAULT_POLL_AFTER_HOURS = 1;
 
 /** Whether making it the default was asked for and done, and how many zones are active. */
 interface DefaultOutcome {

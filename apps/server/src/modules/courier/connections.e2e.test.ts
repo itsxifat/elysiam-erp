@@ -19,8 +19,10 @@ import { applyCourierMigrations, makeBankWallet } from './courier.testing.js';
  * The orders module that owns the courier parties and the delivery zones is the real one, so
  * "the party is created" and "it is the default" are read back out of `sales.couriers` and
  * `sales.delivery_zones`, not out of a double. The one stand-in is Steadfast itself: `fetch` is
- * replaced for Steadfast's host only, answering a status question as a courier would — a 401
- * for keys it does not know, an answer about the parcel for keys it does.
+ * replaced for Steadfast's host only and answers as Steadfast's API document says (D-916):
+ * `get_balance` is 200 for keys it knows and 401 for any other; a parcel that is not the
+ * caller's is 401 whatever the keys (so a made-up consignment can never test keys); keys it has
+ * locked out are 429, and an account it will not serve is 403.
  */
 
 const STEADFAST = 'https://portal.packzy.com/api/v1/';
@@ -29,6 +31,9 @@ const SANDBOX = 'https://sandbox.packzy.example/api/v1';
 const GOOD = { apiKey: 'sf-good-api-key-1234', secretKey: 'sf-good-secret-key-5678' };
 const NEWER = { apiKey: 'sf-rotated-api-key-9012', secretKey: 'sf-rotated-secret-3456' };
 const KNOWN = new Set([`${GOOD.apiKey}:${GOOD.secretKey}`, `${NEWER.apiKey}:${NEWER.secretKey}`]);
+/** Keys Steadfast has locked out (429) and an account it will not serve (403), D-916. */
+const LOCKED = { apiKey: 'sf-locked-api-key-0001', secretKey: 'sf-locked-secret-0001' };
+const INACTIVE = { apiKey: 'sf-inactive-api-key-0002', secretKey: 'sf-inactive-secret-0002' };
 
 let harness: HttpHarness;
 let admin: RoleClient;
@@ -114,16 +119,19 @@ beforeAll(async () => {
     if (!url.startsWith(STEADFAST) && !url.startsWith(SANDBOX)) return realFetch(input, init);
     const headers = Object.fromEntries(new Headers(init?.headers).entries());
     courierCalls.push({ url, headers });
-    const known = KNOWN.has(`${headers['api-key'] ?? ''}:${headers['secret-key'] ?? ''}`);
-    return known
-      ? new Response(JSON.stringify({ status: 404, message: 'Consignment not found.' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        })
-      : new Response(JSON.stringify({ message: 'Unauthorized' }), {
-          status: 401,
-          headers: { 'content-type': 'application/json' },
-        });
+    const answer = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+    const apiKey = headers['api-key'] ?? '';
+    if (apiKey === LOCKED.apiKey) return answer(429, { message: 'Too many attempts.' });
+    if (apiKey === INACTIVE.apiKey) return answer(403, { message: 'Account inactive.' });
+    const known = KNOWN.has(`${apiKey}:${headers['secret-key'] ?? ''}`);
+    if (!known) return answer(401, { message: 'Unauthenticated.' });
+    if (url.endsWith('/get_balance')) return answer(200, { status: 200, current_balance: 0 });
+    // Not the caller's parcel: Steadfast's document answers 401 for it, good keys or not.
+    return answer(401, { message: 'Unauthenticated.' });
   });
 }, 420_000);
 
@@ -233,12 +241,35 @@ describe('connecting Steadfast', () => {
     expect(problem.detail).toMatch(/Steadfast did not accept these keys/);
     expect(response.body).not.toContain('sf-wrong-secret');
 
-    // Asked once, with the keys typed, about a consignment that cannot exist.
+    // Asked once, with the keys typed, for the balance: the documented call that needs keys.
     expect(courierCalls).toHaveLength(1);
-    expect(courierCalls[0]?.url).toBe(`${STEADFAST}status_by_cid/0`);
+    expect(courierCalls[0]?.url).toBe(`${STEADFAST}get_balance`);
     expect(courierCalls[0]?.headers['api-key']).toBe('sf-wrong-key');
 
     expect(await parties('steadfast')).toEqual([]);
+    expect(await accountsFor('steadfast')).toEqual([]);
+  });
+
+  it('says plainly when Steadfast has locked the keys out or will not serve the account (D-916)', async () => {
+    const locked = await connect(admin, {
+      provider: 'steadfast',
+      credentials: LOCKED,
+      isDefault: false,
+    });
+    expect(locked.statusCode, locked.body).toBe(400);
+    expect(json<{ detail: string }>(locked).detail).toMatch(/paused these keys for an hour/);
+
+    const inactive = await connect(admin, {
+      provider: 'steadfast',
+      credentials: INACTIVE,
+      isDefault: false,
+    });
+    expect(inactive.statusCode, inactive.body).toBe(400);
+    expect(json<{ code: string; detail: string }>(inactive)).toMatchObject({
+      code: 'COURIER_CREDENTIALS_REJECTED',
+    });
+    expect(json<{ detail: string }>(inactive).detail).toMatch(/inactive|KYC/);
+
     expect(await accountsFor('steadfast')).toEqual([]);
   });
 
@@ -304,7 +335,8 @@ describe('connecting Steadfast', () => {
       base_url: null,
       is_active: true,
       has_credentials: true,
-      poll_after_hours: 6,
+      // D-916: asked about after an hour without news, until a webhook is set up.
+      poll_after_hours: 1,
     });
     expect(account?.credentials_fingerprint).toMatch(/^[0-9a-f]{12}$/);
 
@@ -435,7 +467,7 @@ describe('re-connecting', () => {
 
     // Checked against the account's own address, not the installation's.
     expect(courierCalls).toHaveLength(1);
-    expect(courierCalls[0]?.url).toBe(`${SANDBOX}/status_by_cid/0`);
+    expect(courierCalls[0]?.url).toBe(`${SANDBOX}/get_balance`);
     const [after] = await accountsFor('steadfast');
     expect(after).toMatchObject({
       id: before?.id,

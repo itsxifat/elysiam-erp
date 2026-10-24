@@ -95,60 +95,54 @@ export class SteadfastCourierAdapter implements CourierAdapter {
   readonly credentialFields = ['apiKey', 'secretKey', 'webhookToken'];
 
   /**
-   * Whether Steadfast accepts these keys (D-913), asked with the status call this adapter
-   * already polls with (`status_by_cid`), about a consignment that cannot exist.
-   *
-   * Steadfast's package documents no call made only to check keys that this adapter uses, and
-   * an invented one is what CLAUDE.md forbids. A status question costs nothing and books
-   * nothing: with good keys Steadfast answers about the parcel (that it has none such, in
-   * whatever words), and with bad ones it refuses the keys — a 401 or 403, or a JSON answer
-   * whose own `status` says 401 or 403, which is how its answers carry their status. Any other
-   * answer means the keys got through. A courier that does not answer is `COURIER_UNAVAILABLE`.
+   * Whether Steadfast accepts these keys (D-913, D-916), asked with `GET /get_balance`: the call
+   * Steadfast's API document lists under "Balance and payments", which needs the keys and
+   * changes nothing. Before D-916 this asked about a consignment that cannot exist, and
+   * Steadfast's document says a parcel that is not the caller's answers 401 whatever the keys,
+   * so good keys were refused as bad. The document's codes: 200 the keys work; 401 wrong or
+   * revoked keys; 403 an inactive account or ownership (KYC) details to resubmit; 429 too many
+   * failures from one address and key, which locks even the right keys out for 60 minutes.
    */
   async verifyCredentials(context: AdapterContext): Promise<void> {
-    const rejected = new CourierError(
-      'COURIER_CREDENTIALS_REJECTED',
-      'Steadfast did not accept these keys. Copy the API key and the secret key again from Steadfast’s merchant panel (API settings) and try once more.',
-    );
-    let body: unknown;
-    try {
-      body = await this.call(context, 'status_by_cid/0', { method: 'GET' });
-    } catch (error) {
-      if (error instanceof CourierError && error.code === 'COURIER_CREDENTIALS_MISSING') {
-        throw rejected;
-      }
-      // A 404 or a 422 about the made-up consignment: Steadfast read the keys and answered.
-      if (error instanceof CourierError && error.code === 'COURIER_BOOKING_FAILED') return;
-      throw error;
+    const response = await this.send(context, 'get_balance', { method: 'GET' });
+    if (response.ok) return;
+    if (response.status === 401) {
+      throw new CourierError(
+        'COURIER_CREDENTIALS_REJECTED',
+        'Steadfast did not accept these keys. Copy the API key and the secret key again from Steadfast’s merchant panel (Your API keys) and try once more.',
+      );
     }
-    const status = readString(readObject(body, null), 'status');
-    if (status === '401' || status === '403') throw rejected;
+    if (response.status === 403) {
+      throw new CourierError(
+        'COURIER_CREDENTIALS_REJECTED',
+        'Steadfast knows these keys but will not let the account use its API now: the account is inactive, or its ownership (KYC) details need resubmitting in Steadfast’s merchant panel.',
+      );
+    }
+    if (response.status === 429) {
+      // Refused for now, and said in words: a 503's own words are not shown to the person.
+      throw new CourierError(
+        'COURIER_CREDENTIALS_REJECTED',
+        'Steadfast has paused these keys for an hour after too many failed tries. Wait 60 minutes, then connect again.',
+      );
+    }
+    throw new CourierError(
+      'COURIER_UNAVAILABLE',
+      `Steadfast answered ${String(response.status)}. Try again in a few minutes.`,
+      true,
+    );
   }
 
-  /**
-   * The HTTP call, in one place.
-   *
-   * `fetch` with an `AbortSignal.timeout`, and the timeout is not optional: §20 gives a
-   * job fifteen minutes before it is considered dead, and a courier that accepts the
-   * connection and never answers would hold a worker slot for all fifteen. A request
-   * that has not answered in `COURIER_HTTP_TIMEOUT_MS` is a retry.
-   *
-   * Nothing about the response body is logged here. A courier's error body echoes the
-   * address and phone number we sent it (invariant 10), so the caller gets a status and
-   * a code and the body is dropped.
-   */
-  private async call(
+  /** One request to Steadfast, its response whatever the status; a courier that does not answer is `COURIER_UNAVAILABLE`. */
+  private async send(
     context: AdapterContext,
     path: string,
     init: { method: 'GET' | 'POST'; body?: unknown },
-  ): Promise<unknown> {
+  ): Promise<Response> {
     const credentials = credentialsOf(context);
     const base = (context.baseUrl ?? courierEnv().COURIER_STEADFAST_BASE_URL).replace(/\/+$/, '');
     const url = `${base}/${path.replace(/^\/+/, '')}`;
-
-    let response: Response;
     try {
-      response = await fetch(url, {
+      return await fetch(url, {
         method: init.method,
         headers: {
           'Api-Key': credentials.apiKey,
@@ -168,6 +162,26 @@ export class SteadfastCourierAdapter implements CourierAdapter {
         true,
       );
     }
+  }
+
+  /**
+   * The HTTP call, in one place.
+   *
+   * `fetch` with an `AbortSignal.timeout`, and the timeout is not optional: §20 gives a
+   * job fifteen minutes before it is considered dead, and a courier that accepts the
+   * connection and never answers would hold a worker slot for all fifteen. A request
+   * that has not answered in `COURIER_HTTP_TIMEOUT_MS` is a retry.
+   *
+   * Nothing about the response body is logged here. A courier's error body echoes the
+   * address and phone number we sent it (invariant 10), so the caller gets a status and
+   * a code and the body is dropped.
+   */
+  private async call(
+    context: AdapterContext,
+    path: string,
+    init: { method: 'GET' | 'POST'; body?: unknown },
+  ): Promise<unknown> {
+    const response = await this.send(context, path, init);
 
     if (response.status === 401 || response.status === 403) {
       // Not retryable. A revoked key does not come back, and five attempts against it

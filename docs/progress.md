@@ -3861,3 +3861,17 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
   committed migration file is never edited).
 - **New dependencies:** none. **Migration:** 0163 (`label_orders.consignment_no` nullable; the
   confirmed orders waiting backfilled into Ready for label).
+
+## 2026-10-24 · fix · Steadfast connects with its keys, and statuses arrive hourly
+
+- **Decision:** D-916. The owner sent Steadfast's API document. The key check asked about
+  consignment 0, which the document says answers 401 for good keys too, so Steadfast could
+  never connect; from the brand server the owner's keys answer `get_balance` 200. The check is
+  now `get_balance`, with 401, 403 and 429 (the 60-minute lock-out) each said in words; a newly
+  connected courier's parcels are asked about after an hour without news (was six);
+  `exceptional` (lost or damaged) is held.
+- **Tests:** `connections.e2e.test.ts` 17 passed (its Steadfast stand-in now answers as the
+  document says: 401 for another's parcel whatever the keys, 429 and 403 cases); the courier
+  module and domain courier suites 309 passed, 1 skipped (the live sandbox smoke test without
+  keys). Typecheck and lint: PASS.
+- **New dependencies:** none. **Migration:** none.
