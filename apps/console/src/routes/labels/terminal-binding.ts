@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useSyncExternalStore } from 'react';
 
 import { ApiError } from '../../api.js';
+import { useSession } from '../../auth/session.js';
 
 /**
  * "This computer is Packing 2" (M46, D-803): the binding a supervisor made on this browser, kept
@@ -100,12 +101,41 @@ export function useTerminalBinding(): TerminalBinding | null {
   return useSyncExternalStore(subscribe, snapshot, () => null);
 }
 
+/** The brand a binding's token names (`tdt_<org id, 32 hex>_…`, D-803), as those 32 hex. */
+export function tokenBrand(token: string): string | null {
+  return /^tdt_([0-9a-f]{32})_/.exec(token)?.[1] ?? null;
+}
+
 /**
- * The check-in (D-803): every thirty seconds while Labels or Packaging is open. A binding the
- * server no longer knows (revoked, or its terminal switched off) is forgotten here.
+ * This browser's binding, when its terminal is the brand the person works in now (D-900). A
+ * computer bound to brand A stays bound while its person works in brand B: nothing of B's is
+ * printed or checked in there, and the binding is not forgotten for it, as it was when B's
+ * check-in was refused.
+ */
+export function useBrandBinding(): TerminalBinding | null {
+  const binding = useTerminalBinding();
+  const orgId = useSession().context?.orgId;
+  if (binding === null || orgId == null) return null;
+  return tokenBrand(binding.token) === orgId.replace(/-/g, '').toLowerCase() ? binding : null;
+}
+
+/**
+ * When the server last refused this browser's binding (D-900). A binding is forgotten on a second
+ * refusal at least `FORGET_AFTER_MS` after the first: a brand switch caught between its two
+ * requests (the check-in going out after the server's brand changed and before the console's)
+ * is refused once, and by the next check-in the binding is another brand's and not checked in.
+ */
+let refusedAt: number | null = null;
+const FORGET_AFTER_MS = 25_000;
+
+/**
+ * The check-in (D-803): every thirty seconds while Labels or Packaging is open, and on every page
+ * of a label computer (D-900). A binding the server no longer knows (revoked, or its terminal
+ * switched off) is forgotten here, on its second refusal; one to another brand is left alone
+ * (`useBrandBinding`).
  */
 export function useTerminalCheckIn() {
-  const binding = useTerminalBinding();
+  const binding = useBrandBinding();
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['terminals', 'check-in', binding?.token ?? 'none'],
@@ -116,11 +146,19 @@ export function useTerminalCheckIn() {
     queryFn: async () => {
       const { checkIn } = await import('./api.js');
       try {
-        return await checkIn();
+        const answer = await checkIn();
+        refusedAt = null;
+        return answer;
       } catch (error) {
         if (error instanceof ApiError && error.code === 'TERMINAL_DEVICE_INVALID') {
-          clearBinding();
-          void queryClient.invalidateQueries({ queryKey: ['terminals'] });
+          const now = Date.now();
+          if (refusedAt !== null && now - refusedAt >= FORGET_AFTER_MS) {
+            refusedAt = null;
+            clearBinding();
+            void queryClient.invalidateQueries({ queryKey: ['terminals'] });
+          } else {
+            refusedAt ??= now;
+          }
         }
         throw error;
       }

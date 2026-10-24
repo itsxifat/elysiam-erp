@@ -303,6 +303,11 @@ function pageCss(): string {
         text-transform: uppercase;
       }
       .barcode svg { display: inline-block; }
+      /* D-905: the slip's barcode on a strip of its own, quiet zones clear. */
+      .scan-strip {
+        margin-top: calc(var(--gap) * 0.8); text-align: center; line-height: 0; color: #000;
+      }
+      .scan-strip svg { display: inline-block; }
 
       .hero { display: grid; gap: var(--gap); margin-top: var(--gap); align-items: start; }
       .party .caption { margin-bottom: 1.2mm; }
@@ -393,6 +398,7 @@ function masthead(
   title: string,
   data: OrderDocumentData,
   paper: DocumentPaper,
+  options: { readonly barcode: boolean } = { barcode: true },
 ): string {
   const value = documentBarcodeValue(data);
   const barcode = paper === 'a4' ? orderBarcode(value, 0.3, 12) : orderBarcode(value, 0.25, 9);
@@ -402,9 +408,48 @@ function masthead(
         <div class="doc-title">${escapeHtml(title)}</div>
         <div class="order-no" data-field="order-no">${escapeHtml(data.orderNo)}</div>
         ${lotBadge(data)}
-        <div class="barcode">${barcode}</div>
+        ${options.barcode ? `<div class="barcode">${barcode}</div>` : ''}
       </div>
     </header>`;
+}
+
+/** The widest a slip's scan strip draws its narrowest bar (D-905). */
+export const SLIP_MODULE_MM = 0.5;
+
+/**
+ * The packing slip's barcode, alone on a strip the page's width (D-905).
+ *
+ * The slip is what the packing station and the courier's handover scan, and it is often printed
+ * on the 4 × 6 label printer, shrunk to about two thirds of its A5. In the header's corner its
+ * bars were 0.25 mm and 9 mm tall: two thirds of that is one or two of a thermal head's dots,
+ * which a scanner reads only on its third try. On its own strip under the header it is drawn at
+ * 0.5 mm (narrower only when a long lot code would not fit the page's width), 12 mm tall on A5
+ * and 16 mm on A4, so even shrunk the bars stay a third of a millimetre wide and over 8 mm tall,
+ * with their quiet zones clear of anything else. The order number above it is the human copy.
+ * The slip's own spacing (`slipCss`) gives the strip its height back, so the slip still prints on
+ * one page.
+ */
+function scanStrip(data: OrderDocumentData, paper: DocumentPaper): string {
+  const value = documentBarcodeValue(data);
+  const size = PAPER[paper];
+  const modules = code128Encode(value).width + CODE128_QUIET_MODULES * 2;
+  const room = size.widthMm - size.marginMm * 2;
+  const moduleMm = Math.min(SLIP_MODULE_MM, Math.floor((room / modules) * 100) / 100);
+  return `<section class="scan-strip" data-field="scan">
+      ${orderBarcode(value, moduleMm, paper === 'a4' ? SLIP_BARS_MM.a4 : SLIP_BARS_MM.a5)}
+    </section>`;
+}
+
+/** The scan strip's bar height (D-905). */
+export const SLIP_BARS_MM = { a4: 16, a5: 12 } as const;
+
+/** The packing slip's vertical rhythm, tightened to pay for its scan strip (D-905). */
+function slipCss(): string {
+  return `
+      .scan-strip { margin-top: calc(var(--gap) * 0.5); }
+      .hero { margin-top: calc(var(--gap) * 0.7); }
+      .strip, table.items { margin-top: calc(var(--gap) * 0.7); }
+      footer { margin-top: var(--gap); }`;
 }
 
 function recipient(data: OrderDocumentData): string {
@@ -599,7 +644,8 @@ export function renderPackingSlipHtml(input: {
 
   const courier = data.courier;
   const body = `
-    ${masthead(brand, 'Packing slip', data, paper)}
+    ${masthead(brand, 'Packing slip', data, paper, { barcode: false })}
+    ${scanStrip(data, paper)}
 
     <section class="hero" style="grid-template-columns: 1.35fr 1fr">
       ${recipient(data)}
@@ -648,7 +694,7 @@ export function renderPackingSlipHtml(input: {
 
   return htmlDocument(
     `${data.orderNo} packing slip`,
-    `${baseCss(fonts)}\n${pageCss()}\n${scaleCss(paper)}`,
+    `${baseCss(fonts)}\n${pageCss()}\n${scaleCss(paper)}\n${slipCss()}`,
     body,
   );
 }

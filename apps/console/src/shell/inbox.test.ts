@@ -104,6 +104,23 @@ describe('which events become entries', () => {
     expect(itemFromEvent('loan.instalment_due', { loanId: LOAN }, 5)).toBeNull();
   });
 
+  it('turns a parcel the courier has not received into one, once per parcel (D-903)', () => {
+    const ORDER = '33333333-3333-4333-8333-333333333333';
+    const item = itemFromEvent('parcel.not_received', { consignmentId: ID, orderId: ORDER }, 7);
+    expect(item).toEqual({
+      kind: 'parcel_not_received',
+      id: ID,
+      orderId: ORDER,
+      at: 7,
+      read: false,
+    });
+    expect(itemFromEvent('parcel.not_received', { orderId: ORDER }, 7)).toBeNull();
+    // A re-delivered event is the same parcel: one entry.
+    if (item === null) throw new Error('no item');
+    const once = inboxReducer(EMPTY_INBOX, { type: 'received', item });
+    expect(inboxReducer(once, { type: 'received', item }).items).toHaveLength(1);
+  });
+
   it('ignores anything it does not recognise rather than guessing', () => {
     expect(itemFromEvent('approval.decided', { id: ID, decision: 'maybe' }, 1)).toBeNull();
     expect(itemFromEvent('order.created', { id: ID }, 1)).toBeNull();

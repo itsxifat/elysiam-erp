@@ -6,6 +6,7 @@ import { FilesModule } from '../files/files.module.js';
 import { LEDGER_API, type LedgerApi } from '../ledger/ledger.api.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
+import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { WALLETS_API, type WalletsApi } from '../wallets/wallets.api.js';
 import { WalletsModule } from '../wallets/wallets.module.js';
@@ -90,6 +91,8 @@ import { CourierReferencesBinding } from './references.binding.js';
     LedgerModule,
     ApprovalsModule,
     OrdersModule,
+    // D-903: the not-received alert reaches the branch managers whose branches cover the parcel.
+    IamDirectoryModule,
     WalletsModule,
     FilesModule,
     CatalogModule,
@@ -159,6 +162,8 @@ import { CourierReferencesBinding } from './references.binding.js';
     BookingService,
     CourierSyncService,
     SettlementsService,
+    // D-903: the worker's not-received sweep.
+    StuckParcelsService,
     COURIER_ADAPTERS,
     TRACKING_RATE_LIMITER,
   ],

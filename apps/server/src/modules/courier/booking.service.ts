@@ -21,6 +21,7 @@ import {
   COURIER_QUEUES,
   type BookParcelPayload,
   type CancelParcelPayload,
+  type RecordHandoverPayload,
 } from './courier.queues.js';
 import { openCredentials } from './credentials.js';
 import { CourierBookingRegistry } from '../orders/ports/courier-booking.port.js';
@@ -56,6 +57,16 @@ import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
  * parcel. That is the property that makes at-least-once delivery safe here, and it is why
  * `markBooked` is written to be a no-op when the number already matches.
  */
+
+/** An order at or past its handover: a parcel booked for it is already with the rider. */
+const SHIPPED_OR_LATER: readonly string[] = [
+  'shipped',
+  'delivered',
+  'partially_delivered',
+  'return_in_transit',
+  'returned',
+  'exchange',
+];
 
 export interface BookingOutcome {
   readonly consignmentId: string;
@@ -105,6 +116,53 @@ export class BookingService implements OnModuleInit {
     return existing.booking_state === 'pending' || existing.booking_state === 'booked';
   }
 
+  /**
+   * The order shipped, so its parcel went to the courier now (D-903): the handover time on the
+   * live consignment, unless one was recorded already (a person's Confirm handover stands). It is
+   * the clock "the courier has not received it" runs from. Written without waiting on the parcel's
+   * row (the ship holds the order's lock, and the courier's own status path locks the parcel
+   * first); when another transaction has the row at this instant, `delivery.record_handover`
+   * writes it after this one commits.
+   */
+  async recordHandover(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    at: Date,
+    by: string,
+  ): Promise<void> {
+    const outcome = await repo.recordHandoverNow(tx, { orgId, orderId, at, by });
+    if (outcome !== 'locked') return;
+    const payload: RecordHandoverPayload = { orderId, at: at.toISOString(), by };
+    await enqueue(tx, COURIER_QUEUES.recordHandover, payload, { orgId, ref: orderId });
+  }
+
+  /** The worker's half of `recordHandover`: the handover, once, in its own transaction. */
+  async applyHandover(orgId: string, payload: RecordHandoverPayload): Promise<void> {
+    await withOrg({ orgId, userId: 'system:courier' }, async (tx) => {
+      const existing = await repo.consignmentByOrder(tx, orgId, payload.orderId);
+      if (existing === undefined) return;
+      if (existing.booking_state !== 'pending' && existing.booking_state !== 'booked') return;
+      const recorded = await repo.confirmHandover(tx, {
+        orgId,
+        consignmentId: existing.id,
+        at: new Date(payload.at),
+        by: payload.by,
+      });
+      if (!recorded) return;
+      await this.audit.record(tx, {
+        orgId,
+        actorUserId: null,
+        operation: 'update',
+        action: 'courier.handover.recorded',
+        entityType: 'Order',
+        entityId: payload.orderId,
+        before: { handoverConfirmedAt: null },
+        after: { consignmentId: existing.id, handoverConfirmedAt: payload.at, by: payload.by },
+      });
+    });
+  }
+
   /** The booked parcel's codes, for the buyer's tracking (M34, D-524). Null before booking. */
   async parcelTracking(
     tx: Tx,
@@ -141,7 +199,23 @@ export class BookingService implements OnModuleInit {
     tx: Tx,
     actor: { orgId: string; userId: string; requestId?: string | null },
     input: { orderId: string; courierId?: string | null },
-  ): Promise<BookingOutcome> {
+  ): Promise<BookingOutcome>;
+  /**
+   * `automatic`: the order's status change asks, under the brand's booking setting (D-901). An
+   * order whose courier cannot be booked here (no account, one switched off, no adapter, an
+   * unverified adapter switched off: an own rider, say) is then left to be booked by hand,
+   * `null`, rather than refusing the Confirm or the Pack it rides on.
+   */
+  async reserveConsignment(
+    tx: Tx,
+    actor: { orgId: string; userId: string; requestId?: string | null },
+    input: { orderId: string; courierId?: string | null; automatic: true },
+  ): Promise<BookingOutcome | null>;
+  async reserveConsignment(
+    tx: Tx,
+    actor: { orgId: string; userId: string; requestId?: string | null },
+    input: { orderId: string; courierId?: string | null; automatic?: boolean },
+  ): Promise<BookingOutcome | null> {
     // Locked: the COD copied onto the consignment below must be the one an advance
     // verification racing this booking either already lowered or will see as booked (D-231).
     const order = await this.orders.bookingSnapshot(tx, actor.orgId, input.orderId, {
@@ -203,6 +277,13 @@ export class BookingService implements OnModuleInit {
     const deliveryZoneId = facts?.deliveryZoneId ?? null;
 
     const account = await repo.accountByCourier(tx, actor.orgId, courierId);
+    const adapter = account === undefined ? undefined : this.adapters.get(account.provider_code);
+    if (
+      input.automatic === true &&
+      (account?.is_active !== true || adapter === undefined || !adapterEnabled(adapter))
+    ) {
+      return null;
+    }
     if (account === undefined) {
       throw new CourierError(
         'COURIER_ACCOUNT_NOT_FOUND',
@@ -212,7 +293,6 @@ export class BookingService implements OnModuleInit {
     if (!account.is_active) {
       throw new CourierError('COURIER_ACCOUNT_INVALID', 'That courier account is not active.');
     }
-    const adapter = this.adapters.get(account.provider_code);
     if (adapter === undefined) {
       throw new CourierError(
         'COURIER_ACCOUNT_INVALID',
@@ -245,6 +325,18 @@ export class BookingService implements OnModuleInit {
       createdBy: actor.userId,
       deliveryZoneId,
     });
+
+    // Booked after the order shipped (rebooked after a failure, or shipped before it was booked):
+    // the parcel is already with the rider, so its handover is now (D-903's audit, W1).
+    const now = await this.orders.statusOf(tx, actor.orgId, order.orderId);
+    if (now !== null && SHIPPED_OR_LATER.includes(now.status)) {
+      await repo.confirmHandover(tx, {
+        orgId: actor.orgId,
+        consignmentId,
+        at: new Date(),
+        by: actor.userId,
+      });
+    }
 
     /*
      * The line invariant 6 exists for.

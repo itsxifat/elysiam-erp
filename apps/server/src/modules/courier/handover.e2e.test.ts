@@ -401,6 +401,16 @@ describe('the courier’s own word, through the worker (ledger audit of D-390)',
     const parcel = await bookedParcel(order.id, order.cod);
     const ship = await admin.client.request('POST', `/v1/orders/${order.id}/ship`, { body: {} });
     expect(ship.statusCode, ship.body).toBe(201);
+    // The Ship is the handover: the parcel's clock for "not received" starts (D-903).
+    const [handed] = await withSystem(
+      async (tx) =>
+        tx.execute<{ handover_confirmed_at: string | null }>(sql`
+          select handover_confirmed_at from courier.consignments
+          where org_id = ${ORG_A} and id = ${parcel}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(handed?.handover_confirmed_at).not.toBeNull();
     await courierSays(parcel, 'handed_to_customer');
 
     expect(await orderStatus(order.id)).toBe('delivered');
@@ -703,5 +713,106 @@ describe('the read routes the settings and HR screens need (D-394 to D-396)', ()
     // The balance-carrying list stays closed to hr, which holds no `read Wallet`.
     const ledger = await hr.client.request('GET', '/v1/ledger/wallets');
     expect(ledger.statusCode).toBe(403);
+  });
+});
+
+describe('Settings → Order workflow books the courier on Confirm (D-901, D-903)', () => {
+  it('saves the trigger and the hours, and a Confirm then queues the parcel', async () => {
+    interface Settings {
+      autoAssign: boolean;
+      offerSeconds: number;
+      maxOpen: number;
+      courierBooking: string;
+      notReceivedHours: number;
+    }
+    const read = await admin.client.request('GET', '/v1/orders/workflow-settings');
+    expect(read.statusCode, read.body).toBe(200);
+    const before = body<Settings>(read);
+    // A brand that never chose books by hand, and waits five hours for its courier.
+    expect(before.courierBooking).toBe('manual');
+    expect(before.notReceivedHours).toBe(5);
+    const base = {
+      autoAssign: before.autoAssign,
+      offerSeconds: before.offerSeconds,
+      maxOpen: before.maxOpen,
+    };
+
+    const saved = await admin.client.request('PUT', '/v1/orders/workflow-settings', {
+      body: { ...base, courierBooking: 'on_confirm', notReceivedHours: 6 },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(body<Settings>(saved)).toMatchObject({
+      courierBooking: 'on_confirm',
+      notReceivedHours: 6,
+    });
+
+    // Left out, both stay as they are; out of range, the hours are refused.
+    const kept = await admin.client.request('PUT', '/v1/orders/workflow-settings', { body: base });
+    expect(body<Settings>(kept)).toMatchObject({
+      courierBooking: 'on_confirm',
+      notReceivedHours: 6,
+    });
+    const refused = await admin.client.request('PUT', '/v1/orders/workflow-settings', {
+      body: { ...base, notReceivedHours: 0 },
+    });
+    expect(refused.statusCode).toBe(400);
+
+    // A Confirm now queues the booking with the order's courier, in the same transaction.
+    const created = await admin.client.request('POST', '/v1/orders', {
+      body: {
+        channel: 'phone',
+        customerId,
+        locationId: location,
+        courierId,
+        deliveryChargePoisha: '6000',
+        lines: [{ skuId, qty: 1, unitPricePoisha: '150000' }],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { id } = body<{ id: string }>(created);
+    const confirmed = await admin.client.request('POST', `/v1/orders/${id}/confirm`);
+    expect(confirmed.statusCode, confirmed.body).toBe(201);
+    const [parcel] = await withSystem(
+      async (tx) =>
+        tx.execute<{ booking_state: string; courier_id: string }>(sql`
+          select booking_state::text as booking_state, courier_id
+          from courier.consignments where org_id = ${ORG_A} and order_id = ${id}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(parcel).toEqual({ booking_state: 'pending', courier_id: courierId });
+
+    // An order of a courier that cannot be booked here (an own rider: no account) still confirms,
+    // left to be booked by hand (the ledger audit of D-901, W5).
+    const ownRider = await makeCourier(ORG_A, 'own_rider', 'Own rider');
+    const riders = await admin.client.request('POST', '/v1/orders', {
+      body: {
+        channel: 'phone',
+        customerId,
+        locationId: location,
+        courierId: ownRider,
+        deliveryChargePoisha: '6000',
+        lines: [{ skuId, qty: 1, unitPricePoisha: '150000' }],
+      },
+    });
+    expect(riders.statusCode, riders.body).toBe(201);
+    const riderOrder = body<{ id: string }>(riders).id;
+    const riderConfirm = await admin.client.request('POST', `/v1/orders/${riderOrder}/confirm`);
+    expect(riderConfirm.statusCode, riderConfirm.body).toBe(201);
+    const [none] = await withSystem(
+      async (tx) =>
+        tx.execute<{ count: number }>(sql`
+          select count(*)::int as count from courier.consignments
+          where org_id = ${ORG_A} and order_id = ${riderOrder}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(none?.count).toBe(0);
+
+    // Back to booking by hand, as the other suites expect.
+    const manual = await admin.client.request('PUT', '/v1/orders/workflow-settings', {
+      body: { ...base, courierBooking: 'manual', notReceivedHours: 5 },
+    });
+    expect(manual.statusCode, manual.body).toBe(200);
   });
 });

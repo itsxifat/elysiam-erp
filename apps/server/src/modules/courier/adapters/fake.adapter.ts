@@ -67,6 +67,15 @@ export class FakeCourierAdapter implements CourierAdapter {
     this.byReference.clear();
     this.issuedStatements.length = 0;
     this.failNextFetches = 0;
+    this.failNextStatuses = 0;
+  }
+
+  /** Test-only: make the next `n` status questions fail as a courier outage would (D-903). */
+  failNextStatuses = 0;
+
+  /** Test-only: the courier loses a parcel; asked about it, it answers it has no such parcel. */
+  forget(consignmentNo: string): void {
+    this.parcels.delete(consignmentNo);
   }
 
   /**
@@ -178,6 +187,12 @@ export class FakeCourierAdapter implements CourierAdapter {
     _context: AdapterContext,
     ref: ParcelRef,
   ): Promise<{ rawStatus: string; occurredAt: Date | null; collectedPoisha: string | null }> {
+    if (this.failNextStatuses > 0) {
+      this.failNextStatuses -= 1;
+      return Promise.reject(
+        new CourierError('COURIER_UNAVAILABLE', 'The courier did not answer.', true),
+      );
+    }
     const parcel = this.parcels.get(ref.consignmentNo);
     if (parcel === undefined) {
       throw new CourierError('CONSIGNMENT_NOT_FOUND', 'The courier has no such parcel.');

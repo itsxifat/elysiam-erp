@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 import { withOrg, withSystem } from '@elysium/db';
 import { businessDate, poisha } from '@elysium/domain';
@@ -938,6 +940,249 @@ describe('the stuck-parcel queue (check 5)', () => {
     expect(
       queue.items.find((item) => item.consignmentId === reserved.consignmentId)?.reasons,
     ).toEqual(['booking_failed']);
+  });
+
+  it('flags a parcel the courier never received once it asks, tells the supervisors once, and lists it first (D-903)', async () => {
+    // A shipped order's parcel has its handover from its booking (W1); this one's is moved back.
+    const handedOver = async (hoursAgo: number) => {
+      const shipped = await parcel();
+      await withSystem(
+        (tx) =>
+          tx.execute(sql`
+            update courier.consignments
+            set handover_confirmed_at = now() - make_interval(hours => ${hoursAgo})
+            where org_id = ${ORG_A} and id = ${shipped.id}
+          `),
+        { orgId: ORG_A },
+      );
+      return shipped;
+    };
+
+    // `paused` is the fake courier's hold, as Steadfast's `in_review` is.
+    const missing = await handedOver(6);
+    await webhook(missing.id, 'paused');
+    const recent = await handedOver(2);
+    await webhook(recent.id, 'paused');
+    const received = await handedOver(6);
+    await webhook(received.id, 'collected');
+    // Taken by the courier, then held (a failed delivery): received, not missing.
+    const heldAfterPickup = await handedOver(6);
+    await webhook(heldAfterPickup.id, 'collected');
+    await webhook(heldAfterPickup.id, 'paused');
+    // Booked for a packed order and never handed over: still at the hub, not missing.
+    const packedOrder = await seedShippedOrder(ORG_A, { status: 'packed' });
+    await onZone(packedOrder, zoneInside, courierA);
+    const atHub = { order: packedOrder, id: await book(packedOrder) };
+    await webhook(atHub.id, 'paused');
+    expect((await consignment(atHub.id)).handover_confirmed_at).toBeNull();
+
+    // Nothing is listed before the sweep has asked the courier.
+    const before = await stuck.list(context(), request(), { thresholdDays: 3 });
+    expect(before.items.some((item) => item.reasons.includes('not_received'))).toBe(false);
+
+    // A courier that does not answer leaves the parcel for the next sweep.
+    fake.failNextStatuses = 1;
+    await stuck.sweepNotReceived();
+    const notes = async (id: string) =>
+      withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
+        const [row] = await tx.execute<{ count: number }>(sql`
+          select count(*)::int as count from courier.consignment_escalations
+          where org_id = ${ORG_A} and consignment_id = ${id} and created_by = ${repo.NOT_RECEIVED_BY}
+        `);
+        return row?.count ?? 0;
+      });
+    expect(await notes(missing.id)).toBe(0);
+
+    // Asked, and still nothing: flagged once, however often the sweep runs.
+    await stuck.sweepNotReceived();
+    await stuck.sweepNotReceived();
+    expect(await notes(missing.id)).toBe(1);
+    for (const fine of [recent, received, heldAfterPickup, atHub]) {
+      expect(await notes(fine.id), fine.id).toBe(0);
+    }
+    const told = await withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) =>
+      tx.execute<{ payload: { orderId: string; userIds: string[] } }>(sql`
+        select payload from events.outbox
+        where org_id = ${ORG_A} and name = 'parcel.not_received'
+          and payload->>'consignmentId' = ${missing.id}
+      `),
+    );
+    expect(told).toHaveLength(1);
+    expect(told[0]?.payload.orderId).toBe(missing.order.orderId);
+    expect(Array.isArray(told[0]?.payload.userIds)).toBe(true);
+    // Audited, as the job's own write.
+    const audited = await withSystem(
+      async (tx) => {
+        const [row] = await tx.execute<{ count: number }>(sql`
+          select count(*)::int as count from audit.audit_log
+          where org_id = ${ORG_A} and action = 'courier.parcel.not_received'
+            and entity_id = ${missing.order.orderId}
+        `);
+        return row?.count ?? 0;
+      },
+      { orgId: ORG_A },
+    );
+    expect(audited).toBe(1);
+
+    // The queue lists it, first, with when it was handed over.
+    const queue = await stuck.list(context(), request(), { thresholdDays: 3 });
+    expect(queue.notReceivedHours).toBe(5);
+    expect(queue.items[0]?.consignmentId).toBe(missing.id);
+    expect(queue.items[0]?.reasons).toEqual(['not_received']);
+    expect(queue.items[0]?.handedOverAt).not.toBeNull();
+    const listed = new Map(queue.items.map((item) => [item.consignmentId, item]));
+    for (const fine of [recent, received, heldAfterPickup, atHub]) {
+      expect(listed.get(fine.id)?.reasons ?? [], fine.id).not.toContain('not_received');
+    }
+
+    // Once the courier says it has the parcel, it leaves the list, and does not come back when
+    // the courier later holds it; its note stays in the trail.
+    await webhook(missing.id, 'collected');
+    await webhook(missing.id, 'paused');
+    const after = await stuck.list(context(), request(), { thresholdDays: 3 });
+    expect(
+      after.items.find((item) => item.consignmentId === missing.id)?.reasons ?? [],
+    ).not.toContain('not_received');
+    expect(await notes(missing.id)).toBe(1);
+  });
+
+  it('flags a parcel the courier says it has no record of (D-903)', async () => {
+    const order = await seedShippedOrder(ORG_A, { status: 'packed' });
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+    await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+      booking.recordHandover(tx, ORG_A, order.orderId, new Date(Date.now() - 7 * 3_600_000), ACTOR),
+    );
+    // The courier forgets the parcel: its status question now answers "no such parcel".
+    fake.forget((await consignment(id)).consignment_no ?? '');
+    await stuck.sweepNotReceived();
+    const [note] = await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+      tx.execute<{ note: string }>(sql`
+        select note from courier.consignment_escalations
+        where org_id = ${ORG_A} and consignment_id = ${id} and created_by = ${repo.NOT_RECEIVED_BY}
+      `),
+    );
+    expect(note?.note).toContain('it has no such parcel');
+  });
+
+  it('records the handover without waiting on a parcel row another transaction holds, then after (D-903)', async () => {
+    const order = await seedShippedOrder(ORG_A, { status: 'packed' });
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+
+    // The courier's status path holds the parcel's row while the order ships.
+    let holding = (): void => undefined;
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      holding = resolve;
+    });
+    const done = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = withOrg({ orgId: ORG_A, userId: ACTOR }, async (tx) => {
+      await tx.execute(sql`
+        select id from courier.consignments where org_id = ${ORG_A} and id = ${id} for update
+      `);
+      holding();
+      await done;
+    });
+    await held;
+    const at = new Date(Date.now() - 60_000);
+    await withOrg({ orgId: ORG_A, userId: ACTOR }, (tx) =>
+      booking.recordHandover(tx, ORG_A, order.orderId, at, ACTOR),
+    );
+    release();
+    await holder;
+    expect((await consignment(id)).handover_confirmed_at).toBeNull();
+
+    // Queued instead, and written by the worker's half once the row is free.
+    const [job] = await withSystem((tx) =>
+      tx.execute<{ payload: { orderId: string; at: string; by: string } }>(sql`
+        select data->'payload' as payload from pgboss.job
+        where name = 'delivery.record_handover' and data->'payload'->>'orderId' = ${order.orderId}
+      `),
+    );
+    expect(job?.payload.orderId).toBe(order.orderId);
+    await booking.applyHandover(
+      ORG_A,
+      job?.payload ?? { orderId: order.orderId, at: at.toISOString(), by: ACTOR },
+    );
+    expect(new Date((await consignment(id)).handover_confirmed_at ?? 0).toISOString()).toBe(
+      at.toISOString(),
+    );
+  });
+
+  it('gives a parcel booked after its order shipped its handover at the booking (D-903)', async () => {
+    const order = await seedShippedOrder(ORG_A);
+    await onZone(order, zoneInside, courierA);
+    const id = await book(order);
+    expect((await consignment(id)).handover_confirmed_at).not.toBeNull();
+  });
+
+  it('migration 0162 moves a stored Steadfast `pending` to picked_up and keeps its stuck clock (D-902)', async () => {
+    const steadfast = await makeCourier(ORG_A, 'steadfast', 'Steadfast');
+    const account = await withSystem(
+      async (tx) => {
+        const rows = await tx.execute<{ id: string }>(sql`
+          insert into courier.courier_accounts
+            (org_id, courier_id, provider_code, label, supports_webhook, verified, is_active,
+             credentials, credentials_key_id)
+          values (${ORG_A}, ${steadfast}, 'steadfast', 'Steadfast (migration)', false, false, true,
+                  '\\x00'::bytea, 'test-key')
+          on conflict (org_id, courier_id) do update set label = excluded.label
+          returning id
+        `);
+        return rows[0]?.id ?? '';
+      },
+      { orgId: ORG_A },
+    );
+    const stored = async (raw: string, status: string) => {
+      const order = await seedShippedOrder(ORG_A);
+      return withSystem(
+        async (tx) => {
+          const rows = await tx.execute<{ id: string }>(sql`
+            insert into courier.consignments
+              (org_id, order_id, courier_account_id, courier_id, branch_id, consignment_no,
+               reference, booking_state, status, raw_status, cod_amount_poisha, booked_at,
+               status_changed_at, last_status_at, created_by)
+            select ${ORG_A}, o.id, ${account}, ${steadfast}, o.branch_id,
+                   ${`SF-${randomUUID().slice(0, 8)}`}, o.order_no, 'booked', ${status}, ${raw},
+                   o.cod_amount_poisha, now() - interval '9 days', now() - interval '8 days',
+                   now() - interval '1 day', 'usr_migration_test'
+            from sales.orders o where o.org_id = ${ORG_A} and o.id = ${order.orderId}
+            returning id
+          `);
+          return rows[0]?.id ?? '';
+        },
+        { orgId: ORG_A },
+      );
+    };
+    const pending = await stored('pending', 'pickup_pending');
+    const inReview = await stored('in_review', 'hold');
+    const clock = async (id: string) => (await consignment(id)).status_changed_at;
+    const pendingClock = await clock(pending);
+
+    const file = readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../../../../packages/db/migrations/0162_steadfast_pending_with_courier.sql',
+      ),
+      'utf8',
+    );
+    await withSystem(async (tx) => {
+      for (const statement of file.split('--> statement-breakpoint')) {
+        const text = statement
+          .split('\n')
+          .filter((line) => !line.trim().startsWith('--'))
+          .join('\n')
+          .trim();
+        if (text !== '') await tx.execute(sql.raw(text));
+      }
+    });
+
+    expect((await consignment(pending)).status).toBe('picked_up');
+    expect(await clock(pending)).toEqual(pendingClock);
+    expect((await consignment(inReview)).status).toBe('hold');
   });
 
   it('does not reset the clock when a poll hears the same status again', async () => {

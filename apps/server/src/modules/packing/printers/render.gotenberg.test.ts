@@ -156,6 +156,14 @@ describe('a lot’s label and slip on a thermal printer (D-811)', () => {
     });
     const slipBitmap = bitmapOfTspl(slip.bytes);
     expect(slipBitmap.heightDots).toBe(1218);
+    // D-905: the slip's scan strip still reads, shrunk to two thirds on a 203 dpi head, on rows
+    // all across its height rather than on one lucky row.
+    const expected = lotCode(SAMPLE_ORDER.orderNo, 2);
+    let reads = 0;
+    for (let y = 40; y < 600; y += 2) {
+      if (decodeRow(slipBitmap, y, expected.length) === expected) reads += 1;
+    }
+    expect(reads).toBeGreaterThan(10);
     await mkdir(REVIEW_DIR, { recursive: true });
     await writeFile(path.join(REVIEW_DIR, 'slip-lot-2-of-3-on-4x6-tspl.png'), picture(slipBitmap));
 

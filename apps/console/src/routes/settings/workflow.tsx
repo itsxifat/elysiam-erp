@@ -1,5 +1,9 @@
-import { workflowSettingsSchema } from '@elysium/contracts';
-import { Button, controlClassName } from '@elysium/ui';
+import {
+  COURIER_BOOKING_POLICIES,
+  workflowSettingsSchema,
+  type CourierBookingPolicy,
+} from '@elysium/contracts';
+import { Button, controlClassName, Select } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
@@ -45,6 +49,10 @@ function WorkflowForm({ settings }: { readonly settings: WorkflowSettings }) {
   const [autoAssign, setAutoAssign] = useState(settings.autoAssign);
   const [offerSeconds, setOfferSeconds] = useState(String(settings.offerSeconds));
   const [maxOpen, setMaxOpen] = useState(String(settings.maxOpen));
+  const [courierBooking, setCourierBooking] = useState<CourierBookingPolicy>(
+    settings.courierBooking,
+  );
+  const [notReceivedHours, setNotReceivedHours] = useState(String(settings.notReceivedHours));
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   const save = useMutation({
@@ -70,12 +78,18 @@ function WorkflowForm({ settings }: { readonly settings: WorkflowSettings }) {
           autoAssign,
           offerSeconds: Number(offerSeconds),
           maxOpen: Number(maxOpen),
+          courierBooking,
+          notReceivedHours: Number(notReceivedHours),
         });
         if (!parsed.success) {
           setMessage({ tone: 'error', text: parsed.error.issues[0]?.message ?? t('wf.failed') });
           return;
         }
-        save.mutate(parsed.data);
+        save.mutate({
+          ...parsed.data,
+          courierBooking,
+          notReceivedHours: parsed.data.notReceivedHours ?? settings.notReceivedHours,
+        });
       }}
     >
       <label className="flex items-start gap-3 text-sm" htmlFor={`${id}-auto`}>
@@ -121,6 +135,42 @@ function WorkflowForm({ settings }: { readonly settings: WorkflowSettings }) {
           />
           <span id={`${id}-max-hint`} className="block text-xs text-muted-foreground">
             {t('wf.settings.maxOpenHint')}
+          </span>
+        </label>
+      </div>
+      <div className="grid gap-4 border-t border-border pt-5 sm:grid-cols-2">
+        <div className="space-y-1.5 text-sm">
+          <label className="block font-medium" htmlFor={`${id}-booking`}>
+            {t('wf.settings.booking')}
+          </label>
+          <Select
+            id={`${id}-booking`}
+            value={courierBooking}
+            disabled={!mayEdit}
+            aria-describedby={`${id}-booking-hint`}
+            options={COURIER_BOOKING_POLICIES.map((policy) => ({
+              value: policy,
+              label: t(`wf.settings.booking.${policy}`),
+            }))}
+            onValueChange={(value) => setCourierBooking(value as CourierBookingPolicy)}
+          />
+          <span id={`${id}-booking-hint`} className="block text-xs text-muted-foreground">
+            {t('wf.settings.bookingHint')}
+          </span>
+        </div>
+        <label className="block space-y-1.5 text-sm" htmlFor={`${id}-received`}>
+          <span className="font-medium">{t('wf.settings.notReceived')}</span>
+          <input
+            id={`${id}-received`}
+            inputMode="numeric"
+            value={notReceivedHours}
+            disabled={!mayEdit}
+            aria-describedby={`${id}-received-hint`}
+            className={`${controlClassName} w-full tabular-nums`}
+            onChange={(event) => setNotReceivedHours(event.target.value)}
+          />
+          <span id={`${id}-received-hint`} className="block text-xs text-muted-foreground">
+            {t('wf.settings.notReceivedHint')}
           </span>
         </label>
       </div>

@@ -41,6 +41,7 @@ const STATUS: Partial<Record<ErrorCode, number>> = {
   LOTS_LOCKED: 409,
   LOT_CLOSE_REFUSED: 409,
   ORDER_LOTS_NOT_HANDED: 409,
+  ORDER_ALREADY_HANDED: 409,
   ORDER_NOT_FOUND: 404,
 };
 

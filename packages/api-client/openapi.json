@@ -1495,6 +1495,7 @@
               "LOTS_LOCKED",
               "LOT_CLOSE_REFUSED",
               "ORDER_LOTS_NOT_HANDED",
+              "ORDER_ALREADY_HANDED",
               "TELEPHONY_NOT_FOUND",
               "TELEPHONY_INVALID",
               "TELEPHONY_NO_EXTENSION",
@@ -1773,6 +1774,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 200
+          },
+          "courierBooking": {
+            "type": "string",
+            "enum": ["on_confirm", "on_pack", "manual"]
+          },
+          "notReceivedHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 72
           }
         },
         "required": ["autoAssign", "offerSeconds", "maxOpen"],

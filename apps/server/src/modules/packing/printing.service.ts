@@ -921,6 +921,9 @@ export class PrintingService {
           tx,
           context.orgId,
           here.terminal.id,
+          // Another computer's job being sent is its own to finish (D-826 W2): listing it here
+          // made this station ask for it again and again (D-900's review).
+          here.deviceId,
           this.orders.orderInScopeSql(context.orgId, sql`j.order_id`, request),
         );
         const printers = await repo.printersOf(tx, context.orgId);

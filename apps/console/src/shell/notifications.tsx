@@ -1,7 +1,7 @@
 import type { MessageKey } from '@elysium/i18n';
 import { Button, DateTime, Popover, PopoverContent, PopoverTrigger } from '@elysium/ui';
 import { Link } from '@tanstack/react-router';
-import { Bell, CalendarClock, CheckCheck, ShieldCheck, ShieldX } from 'lucide-react';
+import { Bell, CalendarClock, CheckCheck, PackageX, ShieldCheck, ShieldX } from 'lucide-react';
 import { useReducer, useState } from 'react';
 
 import { useT } from '../i18n/locale.js';
@@ -22,7 +22,13 @@ import { EMPTY_INBOX, inboxReducer, itemFromEvent, unreadCount, type InboxItem }
  * badge is a coloured shape and a screen reader user is owed the number too.
  */
 
-const INBOX_EVENTS = ['approval.requested', 'approval.decided', 'loan.instalment_due'] as const;
+const INBOX_EVENTS = [
+  'approval.requested',
+  'approval.decided',
+  'loan.instalment_due',
+  // D-903: a parcel the courier has not received, to the supervisors.
+  'parcel.not_received',
+] as const;
 
 /** Every entry is about an approval, so each opens the approvals list at its start. */
 const APPROVALS_FIRST_PAGE = { page: 1, pageSize: DEFAULT_PAGE_SIZE } as const;
@@ -120,7 +126,23 @@ export function NotificationInbox() {
           <ul className="max-h-96 divide-y divide-border overflow-y-auto">
             {inbox.items.map((item) => (
               <li key={`${item.kind}:${item.id}`}>
-                {item.kind === 'loan_due' ? (
+                {item.kind === 'parcel_not_received' ? (
+                  <Link to="/courier/stuck" onClick={() => setOpen(false)} className={ITEM_CLASS}>
+                    <span aria-hidden="true" className="mt-0.5 text-destructive-text">
+                      <PackageX className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={item.read ? 'block' : 'block font-medium'}>
+                        {t('shell.notifyParcelNotReceived')}
+                      </span>
+                      <DateTime
+                        value={new Date(item.at)}
+                        className="block text-xs text-muted-foreground"
+                      />
+                    </span>
+                    <Unread read={item.read} label={t('shell.unread')} />
+                  </Link>
+                ) : item.kind === 'loan_due' ? (
                   <Link
                     to="/loans/$loanId"
                     params={{ loanId: item.loanId }}

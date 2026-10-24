@@ -1,3 +1,5 @@
+import type { CourierBookingPolicy } from '@elysium/contracts';
+
 import { api } from '../../api.js';
 import type { OrderRow, OrderStatus } from './api.js';
 import { ackHeaders } from './owner-ack.js';
@@ -136,6 +138,10 @@ export interface WorkflowSettings {
   readonly autoAssign: boolean;
   readonly offerSeconds: number;
   readonly maxOpen: number;
+  /** When the courier is booked (D-901). */
+  readonly courierBooking: CourierBookingPolicy;
+  /** Hours after the handover before an unreceived parcel is listed (D-903). */
+  readonly notReceivedHours: number;
 }
 
 export const getWorkflowSettings = () => api.get<WorkflowSettings>('/v1/orders/workflow-settings');

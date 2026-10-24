@@ -50,12 +50,24 @@ export const deskProfileSchema = z
   .strict();
 export type DeskProfileInput = z.infer<typeof deskProfileSchema>;
 
-/** Settings → Order workflow (D-715). */
+/**
+ * When the courier is booked (§9's `orders.courier_booking`, D-901): as the order is confirmed,
+ * as it is packed, or only when a person books it. Booking gives the parcel its consignment,
+ * and the label prints by itself from there (D-817).
+ */
+export const COURIER_BOOKING_POLICIES = ['on_confirm', 'on_pack', 'manual'] as const;
+export type CourierBookingPolicy = (typeof COURIER_BOOKING_POLICIES)[number];
+
+/** Settings → Order workflow (D-715; the booking and the courier's hours, D-901, D-903). */
 export const workflowSettingsSchema = z
   .object({
     autoAssign: z.boolean(),
     offerSeconds: z.number().int().min(15).max(300),
     maxOpen: z.number().int().min(1).max(200),
+    /** Absent leaves it as it is. */
+    courierBooking: z.enum(COURIER_BOOKING_POLICIES).optional(),
+    /** Hours after the handover with no word from the courier of having the parcel; absent leaves it. */
+    notReceivedHours: z.number().int().min(1).max(72).optional(),
   })
   .strict();
 export type WorkflowSettingsInput = z.infer<typeof workflowSettingsSchema>;

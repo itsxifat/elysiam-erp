@@ -465,6 +465,8 @@ export interface PackingFacts {
     readonly consignmentNo: string | null;
     readonly trackingCode: string | null;
   } | null;
+  /** The order's own courier, booked or not (D-904: the courier portal counts by it). */
+  readonly courierName: string | null;
   readonly lines: readonly PackingLine[];
 }
 
@@ -2272,6 +2274,15 @@ export class OrdersApiService implements OrdersApi {
       repo.packingOrderRows(tx, orgId, ids),
       repo.packingLines(tx, orgId, ids),
     ]);
+    const courierIds = [
+      ...new Set(rows.flatMap((row) => (row.courier_id === null ? [] : [row.courier_id]))),
+    ];
+    const couriers = new Map(
+      (await repo.couriersByIds(tx, orgId, courierIds)).map((courier) => [
+        courier.id,
+        courier.name,
+      ]),
+    );
     const facts: PackingFacts[] = [];
     for (const row of rows) {
       facts.push({
@@ -2302,6 +2313,7 @@ export class OrdersApiService implements OrdersApi {
           addressLine: row.ship_address_line,
         },
         parcel: await this.parcelTracking(tx, orgId, row.id),
+        courierName: row.courier_id === null ? null : (couriers.get(row.courier_id) ?? null),
         lines: lines
           .filter((line) => line.order_id === row.id)
           .map((line) => ({

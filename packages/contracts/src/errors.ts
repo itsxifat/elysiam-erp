@@ -703,6 +703,8 @@ export const ERROR_CODES = [
   'LOT_CLOSE_REFUSED',
   /** Every lot's label must be scanned before the order goes to the courier (D-808). */
   'ORDER_LOTS_NOT_HANDED',
+  /** The order is already with the courier: shipped by an earlier scan, a person or the courier (D-904). */
+  'ORDER_ALREADY_HANDED',
   // M47: phone calls through Envo (D-830 to D-853)
   /** No Envo connection, extension or call of this brand has that id. */
   'TELEPHONY_NOT_FOUND',

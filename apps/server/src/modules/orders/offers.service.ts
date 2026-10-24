@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { WorkflowSettingsInput } from '@elysium/contracts';
+import type { CourierBookingPolicy, WorkflowSettingsInput } from '@elysium/contracts';
 import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import {
   MAX_OPEN_DEFAULT,
@@ -8,6 +8,7 @@ import {
   presenceState,
   type AssignmentCandidate,
 } from '@elysium/domain/assignment';
+import { NOT_RECEIVED_HOURS } from '@elysium/domain/courier';
 import { sql } from 'drizzle-orm';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -72,6 +73,10 @@ export interface WorkflowSettings {
   readonly autoAssign: boolean;
   readonly offerSeconds: number;
   readonly maxOpen: number;
+  /** §9's booking trigger (D-901): `manual` until the brand chooses. */
+  readonly courierBooking: CourierBookingPolicy;
+  /** D-903: hours after the handover before an unreceived parcel is listed. */
+  readonly notReceivedHours: number;
 }
 
 const iso = (value: Date | string | null): string | null =>
@@ -90,10 +95,15 @@ export class OffersService {
 
   async settingsIn(tx: Tx, orgId: string): Promise<WorkflowSettings> {
     const row = await offers.settingsOf(tx, orgId);
+    const booking = await repo.courierBookingSetting(tx, orgId);
     return {
       autoAssign: row?.auto_assign ?? false,
       offerSeconds: row?.offer_seconds ?? OFFER_SECONDS_DEFAULT,
       maxOpen: row?.max_open ?? MAX_OPEN_DEFAULT,
+      // The transition service's reading of the same key: anything else is `manual`.
+      courierBooking: booking === 'on_confirm' || booking === 'on_pack' ? booking : 'manual',
+      notReceivedHours:
+        (await repo.notReceivedHoursSetting(tx, orgId)) ?? NOT_RECEIVED_HOURS.default,
     };
   }
 
@@ -115,9 +125,27 @@ export class OffersService {
         const before = await this.settingsIn(tx, context.orgId);
         await offers.saveSettings(tx, {
           orgId: context.orgId,
-          ...input,
+          autoAssign: input.autoAssign,
+          offerSeconds: input.offerSeconds,
+          maxOpen: input.maxOpen,
           updatedBy: context.userId,
         });
+        if (input.courierBooking !== undefined) {
+          await repo.saveOrgSetting(
+            tx,
+            context.orgId,
+            'orders.courier_booking',
+            input.courierBooking,
+          );
+        }
+        if (input.notReceivedHours !== undefined) {
+          await repo.saveOrgSetting(
+            tx,
+            context.orgId,
+            'orders.not_received_hours',
+            input.notReceivedHours,
+          );
+        }
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,

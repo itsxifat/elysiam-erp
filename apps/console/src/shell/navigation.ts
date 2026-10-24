@@ -147,6 +147,13 @@ export const NAVIGATION: readonly NavSection[] = [
         icon: PackageOpen,
         required: { action: 'read', subject: 'PackingTerminal' },
       },
+      // D-904: the rider's desk, where each scan hands its parcel to the courier.
+      {
+        to: '/courier-portal',
+        labelKey: 'nav.courierPortal',
+        icon: Truck,
+        required: { action: 'read', subject: 'PackingTerminal' },
+      },
       {
         to: '/customers',
         labelKey: 'nav.customers',

@@ -446,10 +446,34 @@ export class CourierSyncService {
       const outcome = await this.pollOne(orgId, consignment);
       polled += 1;
       if (outcome === 'moved') moved += 1;
-      if (outcome === 'failed') failed += 1;
+      if (outcome === 'failed' || outcome === 'unknown') failed += 1;
     }
 
     return { polled, moved, failed };
+  }
+
+  /**
+   * Ask the courier about one parcel now and apply what it says (D-903: the not-received sweep
+   * asks before it judges). No transaction is open while the courier is asked (invariant 6).
+   * `failed`: the courier did not answer, so nothing fresh is known; `skipped`: there is no one to
+   * ask (no adapter, an adapter switched off, a parcel not booked), so the stored word stands;
+   * `unknown`: the courier answered that it has no such parcel.
+   */
+  async pollConsignment(
+    orgId: string,
+    consignmentId: string,
+  ): Promise<'moved' | 'recorded' | 'skipped' | 'failed' | 'unknown'> {
+    const consignment = await withOrg({ orgId, userId: 'system:courier' }, (tx) =>
+      repo.consignmentById(tx, orgId, consignmentId),
+    );
+    if (
+      consignment?.booking_state !== 'booked' ||
+      consignment.consignment_no === null ||
+      isTerminalParcelStatus(consignment.status as ParcelStatus)
+    ) {
+      return 'skipped';
+    }
+    return this.pollOne(orgId, consignment);
   }
 
   /**
@@ -459,7 +483,7 @@ export class CourierSyncService {
   private async pollOne(
     orgId: string,
     consignment: repo.ConsignmentRow,
-  ): Promise<'moved' | 'recorded' | 'skipped' | 'failed'> {
+  ): Promise<'moved' | 'recorded' | 'skipped' | 'failed' | 'unknown'> {
     const actor = { orgId, userId: 'system:courier' };
     if (consignment.consignment_no === null) return 'skipped';
 
@@ -482,11 +506,14 @@ export class CourierSyncService {
         reference: consignment.reference,
         trackingCode: consignment.tracking_code,
       });
-    } catch {
+    } catch (error) {
       // A courier that cannot answer about one parcel should not stop the sweep. The row
       // is marked polled so the next sweep does not start with the same parcel.
       await withOrg(actor, (tx) => repo.markPolled(tx, orgId, consignment.id, new Date()));
-      return 'failed';
+      // D-903: a courier that answers it has no such parcel has not received it.
+      return error instanceof CourierError && error.code === 'CONSIGNMENT_NOT_FOUND'
+        ? 'unknown'
+        : 'failed';
     }
 
     await withOrg(actor, (tx) => repo.markPolled(tx, orgId, consignment.id, new Date()));

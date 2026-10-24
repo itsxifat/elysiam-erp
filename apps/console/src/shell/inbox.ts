@@ -36,6 +36,14 @@ export type InboxItem =
       readonly dueOn: string;
       readonly at: number;
       readonly read: boolean;
+    }
+  | {
+      /** D-903: a parcel we handed over that the courier has not received; `id` is the parcel. */
+      readonly kind: 'parcel_not_received';
+      readonly id: string;
+      readonly orderId: string;
+      readonly at: number;
+      readonly read: boolean;
     };
 
 export interface Inbox {
@@ -92,6 +100,16 @@ export function itemFromEvent(name: string, payload: unknown, at: number): Inbox
       id: body.instalmentId,
       loanId: body.loanId,
       dueOn: body.dueOn,
+      at,
+      read: false,
+    };
+  }
+  if (name === 'parcel.not_received') {
+    if (typeof body.consignmentId !== 'string' || typeof body.orderId !== 'string') return null;
+    return {
+      kind: 'parcel_not_received',
+      id: body.consignmentId,
+      orderId: body.orderId,
       at,
       read: false,
     };

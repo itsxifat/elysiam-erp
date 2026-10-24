@@ -356,10 +356,11 @@ export interface HandoverProgress {
 }
 
 export const handoverScan = (code: string) =>
-  request<{ outcome: 'accepted' | 'already'; order: HandoverProgress }>(
-    '/v1/packing/handover/scans',
-    { method: 'POST', body: { code }, headers: terminalHeaders() },
-  );
+  request<{
+    outcome: 'accepted' | 'already';
+    /** The order's courier, for the courier portal's counts (D-904). */
+    order: HandoverProgress & { readonly courier: string | null };
+  }>('/v1/packing/handover/scans', { method: 'POST', body: { code }, headers: terminalHeaders() });
 
 export const handoverPending = () =>
   api.get<{

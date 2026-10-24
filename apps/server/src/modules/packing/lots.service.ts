@@ -28,6 +28,16 @@ import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as station from './station.repository.js';
 import { TerminalsService } from './terminals.service.js';
 
+/** An order at or past the handover: the courier has it (D-904), so a scan is not a refusal. */
+const HANDED_STATUSES: readonly string[] = [
+  'shipped',
+  'delivered',
+  'partially_delivered',
+  'return_in_transit',
+  'returned',
+  'exchange',
+];
+
 const iso = (value: Date | string | null): string | null =>
   value === null ? null : new Date(value).toISOString();
 
@@ -231,12 +241,16 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         await this.lockOrder(tx, context.orgId, orderId);
         const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
         if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
+        if (HANDED_STATUSES.includes(facts.status)) {
+          throw new PackingError(
+            'ORDER_ALREADY_HANDED',
+            `Order ${facts.orderNo} is already with the courier.`,
+          );
+        }
         if (facts.status !== 'packed') {
           throw new PackingError(
             'PACKING_NOT_PACKABLE',
-            facts.status === 'shipped'
-              ? `Order ${facts.orderNo} is already with the courier.`
-              : `Order ${facts.orderNo} is not packed yet: pack every lot first.`,
+            `Order ${facts.orderNo} is not packed yet: pack every lot first.`,
           );
         }
         const lotCount = await labels.lotCountOf(tx, context.orgId, orderId);
@@ -283,7 +297,12 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         }
         return {
           outcome,
-          order: this.progress(orderId, facts.orderNo, lotCount, scanned),
+          order: {
+            ...this.progress(orderId, facts.orderNo, lotCount, scanned),
+            // The courier portal counts each courier's parcels as they go (D-904): the booked
+            // parcel's courier, else the order's own.
+            courier: facts.parcel?.courierName ?? facts.courierName,
+          },
         };
       }),
     );
@@ -343,6 +362,13 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
             await this.lockOrder(tx, context.orgId, orderId);
             const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
             if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
+            // Shipped meanwhile (the courier's pickup, another desk): with the courier, not refused.
+            if (HANDED_STATUSES.includes(facts.status)) {
+              throw new PackingError(
+                'ORDER_ALREADY_HANDED',
+                `Order ${facts.orderNo} is already with the courier.`,
+              );
+            }
             const lotCount = await labels.lotCountOf(tx, context.orgId, orderId);
             const scanned = new Set(
               (await labels.handoverScansOf(tx, context.orgId, [orderId])).map(

@@ -1,5 +1,6 @@
 import { Button, EmptyState, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { Truck } from 'lucide-react';
 import { useId, useState } from 'react';
 
@@ -89,10 +90,19 @@ export function HandoverPanel({ locationId }: { readonly locationId: string | un
         className="space-y-3 rounded-lg border border-border bg-card p-5"
         data-testid="handover"
       >
-        <h2 id={`${id}-title`} className="flex items-center gap-2 text-base font-semibold">
-          <Truck aria-hidden className="size-4" />
-          {t('lb.handover.title')}
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id={`${id}-title`} className="flex items-center gap-2 text-base font-semibold">
+            <Truck aria-hidden className="size-4" />
+            {t('lb.handover.title')}
+          </h2>
+          {/* D-904: each scan ships its order there, with no press of Hand over. */}
+          <Link
+            to="/courier-portal"
+            className="text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            {t('lb.portal.open')}
+          </Link>
+        </div>
         <ScanField
           label={t('lb.handover.scan')}
           hint={t('lb.handover.hint')}

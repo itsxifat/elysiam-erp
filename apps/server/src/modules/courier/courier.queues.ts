@@ -52,6 +52,17 @@ export const COURIER_QUEUES = {
   fetchSettlements: 'delivery.fetch_settlements',
   /** The per-account half of the fetch, where the courier call and the import happen. */
   fetchAccountSettlements: 'delivery.fetch_account_settlements',
+  /**
+   * D-903: every quarter hour, the parcels handed over the brand's hours ago that the courier has
+   * not received: each asked about once more (outside any transaction), then flagged once and
+   * told to the supervisors. Global: one pass over the brands.
+   */
+  notReceivedSweep: 'delivery.not_received_sweep',
+  /**
+   * D-903: a ship's handover time, written after the ship commits when the parcel's row was
+   * locked at that instant (the courier's own status path holds it).
+   */
+  recordHandover: 'delivery.record_handover',
 } as const;
 
 export const COURIER_QUEUE_DEFINITIONS: readonly QueueDefinition[] = [
@@ -155,6 +166,22 @@ export const COURIER_QUEUE_DEFINITIONS: readonly QueueDefinition[] = [
     retryDelaySeconds: 120,
     expireInSeconds: 600,
   },
+  {
+    name: COURIER_QUEUES.notReceivedSweep,
+    scope: 'global',
+    cron: '*/15 * * * *',
+    // The next quarter hour tries again, and each parcel is flagged once whatever happens. Twenty
+    // courier questions a brand of at most 15 s each fit well inside 14 minutes.
+    retryLimit: 0,
+    expireInSeconds: 840,
+  },
+  {
+    name: COURIER_QUEUES.recordHandover,
+    scope: 'org',
+    retryLimit: 3,
+    retryDelaySeconds: 10,
+    expireInSeconds: 120,
+  },
 ];
 
 /*
@@ -207,3 +234,14 @@ export type ProcessWebhookPayload = z.infer<typeof processWebhookPayload>;
 export type PollOrgPayload = z.infer<typeof pollOrgPayload>;
 export type RepollPayload = z.infer<typeof repollPayload>;
 export type FetchAccountSettlementsPayload = z.infer<typeof fetchAccountSettlementsPayload>;
+
+/** D-903: the handover a ship could not write at once (`delivery.record_handover`). */
+export const recordHandoverPayload = z
+  .object({
+    orderId: z.string().uuid(),
+    /** The ship's instant, ISO 8601. */
+    at: z.string().datetime({ offset: true }),
+    by: z.string().min(1),
+  })
+  .strict();
+export type RecordHandoverPayload = z.infer<typeof recordHandoverPayload>;

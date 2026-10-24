@@ -548,6 +548,21 @@ export const teamPresenceChangedPayload = z
   .strict();
 
 /**
+ * D-903: a parcel we handed over has not reached its courier in the brand's hours (Steadfast
+ * still `in_review`). Once per parcel, to the org admins and to the branch managers whose
+ * branches cover it (by user, not the role's room, which hears every branch). Ids only; the
+ * stuck-parcel queue shows the details.
+ */
+export const parcelNotReceivedPayload = z
+  .object({
+    consignmentId: uuid,
+    orderId: uuid,
+    /** The branch managers whose branches cover the parcel; the org admins hear it by role. */
+    userIds: z.array(z.string().min(1)).max(200),
+  })
+  .strict();
+
+/**
  * M46 (D-813, D-816): a print job was queued, printed or failed. To the label team (warehouse)
  * and its supervisors: ids, the state, and for a failure its short reason. No order number: a
  * branch manager's room hears every branch's jobs, so the screens refetch their scoped lists
@@ -726,6 +741,11 @@ export const EVENTS = {
   // M46: the print queue (D-813, D-816).
   'labels.job_changed': defineEvent('labels.job_changed', labelsJobChangedPayload, {
     roles: ['warehouse', 'org_admin', 'branch_manager'],
+  }),
+  // D-903: a parcel the courier has not received, to the supervisors.
+  'parcel.not_received': defineEvent('parcel.not_received', parcelNotReceivedPayload, {
+    roles: ['org_admin'],
+    extra: (payload) => payload.userIds.map(userRoom),
   }),
   // M47 (D-850): a call through Envo, to the supervisors and the people it concerns.
   'telephony.call_changed': defineEvent('telephony.call_changed', telephonyCallChangedPayload, {

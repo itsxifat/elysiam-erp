@@ -592,6 +592,33 @@ export async function courierBookingSetting(tx: Tx, orgId: string): Promise<stri
   return typeof value === 'string' ? value : null;
 }
 
+/**
+ * Hours after the handover before a parcel the courier has not received is listed (D-903),
+ * `orders.not_received_hours`; null when the brand never chose. The courier module reads the
+ * same key (`org` is global, §5).
+ */
+export async function notReceivedHoursSetting(tx: Tx, orgId: string): Promise<number | null> {
+  const rows = await tx.execute<{ value: unknown }>(sql`
+    select value from org.settings where org_id = ${orgId} and key = 'orders.not_received_hours'
+  `);
+  const value = rows[0]?.value;
+  return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
+}
+
+/** One brand setting, written whole (D-901, D-903). */
+export async function saveOrgSetting(
+  tx: Tx,
+  orgId: string,
+  key: 'orders.courier_booking' | 'orders.not_received_hours',
+  value: string | number,
+): Promise<void> {
+  await tx.execute(sql`
+    insert into org.settings (org_id, key, value)
+    values (${orgId}, ${key}, ${JSON.stringify(value)}::jsonb)
+    on conflict (org_id, key) do update set value = excluded.value, updated_at = now()
+  `);
+}
+
 export async function orderNumberPrefix(tx: Tx, orgId: string): Promise<string | null> {
   const rows = await tx.execute<{ value: unknown }>(sql`
     select value from org.settings where org_id = ${orgId} and key = 'orders.number_prefix'

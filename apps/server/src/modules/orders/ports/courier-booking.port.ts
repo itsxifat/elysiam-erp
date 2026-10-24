@@ -47,11 +47,15 @@ export interface CourierBookingPort {
    */
   hasLiveParcel(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
 
-  /** Write the consignment row and enqueue the booking, in the caller's transaction. */
+  /**
+   * Write the consignment row and enqueue the booking, in the caller's transaction. `automatic`
+   * (the brand's booking setting, D-901): a courier that cannot be booked here leaves the order
+   * to be booked by hand instead of refusing the status change.
+   */
   reserveConsignment(
     tx: Tx,
     actor: { orgId: string; userId: string; requestId?: string | null },
-    input: { orderId: string; courierId?: string | null },
+    input: { orderId: string; courierId?: string | null; automatic?: true },
   ): Promise<unknown>;
 
   /**
@@ -73,6 +77,14 @@ export interface CourierBookingPort {
    * scanner, D-554), newest first. Empty when none does.
    */
   ordersByParcelCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]>;
+
+  /**
+   * The order shipped: its parcel went to the courier at `at` (D-903). Records the handover on
+   * the live consignment, once (an earlier one stands), so the courier module can tell a parcel
+   * the courier never received. Nothing when the order has no parcel. Optional so a test's port
+   * need not implement it.
+   */
+  recordHandover?(tx: Tx, orgId: string, orderId: string, at: Date, by: string): Promise<void>;
 
   /** Enqueue a cancellation with the courier, in the caller's transaction. */
   cancelConsignment(

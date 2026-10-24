@@ -17,5 +17,11 @@ export function labelsRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     path: '/packaging',
     component: lazyRouteComponent(() => import('./packaging-page.js'), 'PackagingPage'),
   });
-  return [labels, packaging] as const;
+  // D-904: the courier portal, a page of its own for the person at the rider's desk.
+  const courierPortal = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/courier-portal',
+    component: lazyRouteComponent(() => import('./courier-portal.js'), 'CourierPortalPage'),
+  });
+  return [labels, packaging, courierPortal] as const;
 }

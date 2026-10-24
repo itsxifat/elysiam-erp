@@ -526,6 +526,43 @@ export async function confirmHandover(
   return rows.length > 0;
 }
 
+/**
+ * The order's live parcel gets its handover, once, without waiting on its row (D-903): the ship
+ * holds the order's lock, and the courier's status path takes the parcel's row before the order's,
+ * so waiting here could deadlock with it. `recorded`; `locked` (another transaction has the row
+ * now; the caller records it later); or `none` (no live parcel, or its handover is already set).
+ */
+export async function recordHandoverNow(
+  tx: Tx,
+  input: { orgId: string; orderId: string; at: Date; by: string },
+): Promise<'recorded' | 'locked' | 'none'> {
+  // The order's live parcel (0050: one at most), picked first and only then locked, never waited
+  // for: `no key update` does not collide with the key-share lock a child row's insert takes.
+  const live = await tx.execute<{ id: string; handover_confirmed_at: string | null }>(sql`
+    select id, handover_confirmed_at from courier.consignments
+    where org_id = ${input.orgId} and order_id = ${input.orderId}
+      and booking_state in ('pending', 'booked')
+      and status not in ('delivered', 'partial_delivered', 'returned_to_merchant', 'cancelled')
+    order by created_at desc
+    limit 1
+  `);
+  const parcel = live[0];
+  if (parcel?.handover_confirmed_at !== null) return 'none';
+  const updated = await tx.execute<{ id: string }>(sql`
+    update courier.consignments set
+      handover_confirmed_at = ${input.at.toISOString()}::timestamptz,
+      handover_confirmed_by = ${input.by},
+      updated_at = now()
+    where id = (
+      select id from courier.consignments
+      where org_id = ${input.orgId} and id = ${parcel.id} and handover_confirmed_at is null
+      for no key update skip locked
+    )
+    returning id
+  `);
+  return updated.length > 0 ? 'recorded' : 'locked';
+}
+
 export async function markPolled(
   tx: Tx,
   orgId: string,
@@ -1330,10 +1367,140 @@ export interface StuckRow extends Record<string, unknown> {
   readonly last_escalation_at: string | null;
   readonly delivered_at: string | null;
   readonly has_return_receipt: boolean;
+  /** D-903: when the order shipped and the parcel went to the courier; null before. */
+  readonly handed_over_at: string | null;
+  /** D-903: flagged by the sweep, and still with no word of the courier having it. */
+  readonly not_received: boolean;
 }
 
 const ACTIVE_PARCEL = sql`c.booking_state = 'booked'
   and c.status not in ('delivered', 'partial_delivered', 'returned_to_merchant', 'cancelled')`;
+
+/** D-903: a status that says nothing about the courier having the parcel (`NOT_YET_WITH_COURIER`). */
+const NOT_YET_WITH_COURIER = sql`c.status in ('booked', 'pickup_pending', 'hold')`;
+
+/** D-903: a word from the courier, stored as meaning it has the parcel (`LEFT_THE_MERCHANT`). */
+const COURIER_SAID_IT_HAD_IT = sql`exists (
+  select 1 from courier.consignment_events ev
+  where ev.org_id = c.org_id and ev.consignment_id = c.id
+    and ev.status in ('picked_up', 'in_transit', 'out_for_delivery', 'delivered',
+                      'partial_delivered', 'return_in_transit', 'returned_to_merchant'))`;
+
+/** The marker on the automatic escalation the not-received sweep writes once per parcel. */
+export const NOT_RECEIVED_BY = 'system:not_received';
+
+/**
+ * D-903: the sweep found this parcel not received (its automatic escalation), and its status
+ * still says nothing of the courier having it. The stuck queue lists exactly these, so the list
+ * and the supervisors' alert agree: the sweep, which asks the courier first, is the one judge.
+ */
+const NOT_RECEIVED_LISTED = sql`(${ACTIVE_PARCEL} and ${NOT_YET_WITH_COURIER}
+  and not ${COURIER_SAID_IT_HAD_IT}
+  and exists (
+    select 1 from courier.consignment_escalations ne
+    where ne.org_id = c.org_id and ne.consignment_id = c.id and ne.created_by = ${NOT_RECEIVED_BY}))`;
+
+/**
+ * The brand's hours for a parcel to reach its courier (D-903), `orders.not_received_hours` in
+ * `org.settings` (global, §5; Settings → Order workflow writes it). Null when never chosen.
+ */
+export async function notReceivedHoursSetting(tx: Tx, orgId: string): Promise<number | null> {
+  const rows = await tx.execute<{ value: unknown }>(sql`
+    select value from org.settings where org_id = ${orgId} and key = 'orders.not_received_hours'
+  `);
+  const value = rows[0]?.value;
+  return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
+}
+
+/** A parcel the not-received sweep looks at (D-903). */
+export interface NotReceivedCandidate extends Record<string, unknown> {
+  readonly id: string;
+  readonly order_id: string;
+  readonly branch_id: string | null;
+  readonly provider_code: string;
+  readonly handover_confirmed_at: string;
+}
+
+/**
+ * The parcels handed over before `before` whose status still says nothing of the courier having
+ * them, no word of the courier's ever stored as having them, and not flagged yet (D-903): the
+ * sweep's candidates, oldest handover first, a bounded batch. The sweep asks the courier about
+ * each before it judges.
+ */
+export async function notReceivedCandidates(
+  tx: Tx,
+  orgId: string,
+  before: Date,
+  limit: number,
+): Promise<NotReceivedCandidate[]> {
+  const rows = await tx.execute<NotReceivedCandidate>(sql`
+    select c.id, c.order_id, c.branch_id, a.provider_code, c.handover_confirmed_at
+    from courier.consignments c
+    join courier.courier_accounts a on a.org_id = c.org_id and a.id = c.courier_account_id
+    where c.org_id = ${orgId}
+      and ${ACTIVE_PARCEL}
+      and ${NOT_YET_WITH_COURIER}
+      and c.handover_confirmed_at <= ${before.toISOString()}::timestamptz
+      and not ${COURIER_SAID_IT_HAD_IT}
+      and not exists (
+        select 1 from courier.consignment_escalations e
+        where e.org_id = c.org_id and e.consignment_id = c.id and e.created_by = ${NOT_RECEIVED_BY}
+      )
+    -- The least recently asked first, so parcels asked about and not flagged (a courier that
+    -- did not answer, one it had and held) never keep the newer ones out of the batch.
+    order by c.last_polled_at nulls first, c.handover_confirmed_at, c.id
+    limit ${limit}
+  `);
+  return [...rows];
+}
+
+/** One parcel as the sweep judges it after asking the courier: its state and every word (D-903). */
+export async function notReceivedFacts(
+  tx: Tx,
+  orgId: string,
+  consignmentId: string,
+): Promise<
+  | {
+      readonly booking_state: string;
+      readonly status: string;
+      readonly raw_status: string | null;
+      readonly handover_confirmed_at: string | null;
+      /** Flagged already (another sweep got here first). */
+      readonly flagged: boolean;
+      readonly events: readonly { readonly status: string; readonly rawStatus: string | null }[];
+    }
+  | undefined
+> {
+  // Locked to the end of the flag's transaction: a courier's word arriving meanwhile, or a second
+  // sweep, waits, then sees this one's flag (the sweep locks nothing else, so no cycle).
+  const rows = await tx.execute<{
+    booking_state: string;
+    status: string;
+    raw_status: string | null;
+    handover_confirmed_at: string | null;
+    flagged: boolean;
+  }>(sql`
+    select c.booking_state::text as booking_state, c.status::text as status, c.raw_status,
+           c.handover_confirmed_at,
+           exists (
+             select 1 from courier.consignment_escalations e
+             where e.org_id = c.org_id and e.consignment_id = c.id
+               and e.created_by = ${NOT_RECEIVED_BY}
+           ) as flagged
+    from courier.consignments c where c.org_id = ${orgId} and c.id = ${consignmentId}
+    for no key update of c
+  `);
+  const row = rows[0];
+  if (row === undefined) return undefined;
+  const words = await tx.execute<{ status: string; raw_status: string | null }>(sql`
+    select status::text as status, raw_status from courier.consignment_events
+    where org_id = ${orgId} and consignment_id = ${consignmentId}
+  `);
+  return {
+    ...row,
+    events: words.map((word) => ({ status: word.status, rawStatus: word.raw_status })),
+  };
+}
 
 const STUCK_CLOCK = sql`coalesce(c.status_changed_at, c.last_status_at, c.booked_at, c.created_at)`;
 
@@ -1364,7 +1531,9 @@ export async function stuckCandidates(
              where r.org_id = c.org_id and r.consignment_id = c.id
            ) as has_return_receipt,
            coalesce(esc.count, 0)::int as escalation_count,
-           esc.last_note as last_escalation_note, esc.last_at as last_escalation_at
+           esc.last_note as last_escalation_note, esc.last_at as last_escalation_at,
+           c.handover_confirmed_at as handed_over_at,
+           ${NOT_RECEIVED_LISTED} as not_received
     from courier.consignments c
     join courier.courier_accounts a on a.org_id = c.org_id and a.id = c.courier_account_id
     left join lateral (
@@ -1388,6 +1557,8 @@ export async function stuckCandidates(
         (${ACTIVE_PARCEL}
           and (${STUCK_CLOCK} at time zone 'Asia/Dhaka')::date <= ${options.cutoffDate}::date)
         or (${ACTIVE_PARCEL} and (c.status = 'unknown' or le.status = 'unknown'))
+        -- D-903: the sweep asked the courier and found the parcel never reached it.
+        or ${NOT_RECEIVED_LISTED}
         or c.booking_state = 'failed'
         -- The courier says delivered but no delivery was booked: a partial delivery the courier
         -- gave no figure for, or one that reached an order not at shipped. Terminal to the
@@ -1403,7 +1574,9 @@ export async function stuckCandidates(
             )
             and (${STUCK_CLOCK} at time zone 'Asia/Dhaka')::date <= ${options.cutoffDate}::date)
       )
-    order by since_at
+    -- A parcel the courier never received first (D-903): the urgent one, and never the one a
+    -- long list of older parcels pushes past the limit.
+    order by ${NOT_RECEIVED_LISTED} desc, since_at
     limit ${options.limit}
   `);
   return [...rows];

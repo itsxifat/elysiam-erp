@@ -768,6 +768,8 @@ export async function stationJobs(
   tx: Tx,
   orgId: string,
   terminalId: string,
+  /** This computer: it sees the queued jobs and its own being sent, never another's (D-826 W2). */
+  deviceId: string,
   orderInScope: SQL,
 ): Promise<JobRow[]> {
   const rows = await tx.execute<JobRow>(sql`
@@ -778,7 +780,7 @@ export async function stationJobs(
     from packing.print_jobs j
     join packing.printers p on p.org_id = j.org_id and p.id = j.printer_id
     where j.org_id = ${orgId} and j.terminal_id = ${terminalId} and p.connection = 'browser'
-      and j.state in ('queued', 'sending')
+      and (j.state = 'queued' or (j.state = 'sending' and j.device_id = ${deviceId}::uuid))
       and (j.order_id is null or ${orderInScope})
     order by j.created_at
     limit 50

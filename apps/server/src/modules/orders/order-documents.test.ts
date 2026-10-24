@@ -14,6 +14,7 @@ import {
   renderOrderDocumentHtml,
   renderOrderInvoiceHtml,
   renderPackingSlipHtml,
+  SLIP_BARS_MM,
   type OrderDocumentKind,
 } from './order-documents.js';
 import { SAMPLE_BRAND, SAMPLE_ORDER } from './order-documents.sample.js';
@@ -146,6 +147,49 @@ describe('the order barcode is the code the packing station opens (check 1)', ()
       // What the station does with a scan before it looks the code up (`station.service.ts`).
       expect(normaliseScannedCode(decoded)).toBe(SAMPLE_ORDER.orderNo);
     }
+  });
+
+  it('gives the packing slip one strip barcode a scanner reads even shrunk onto a label (D-905)', () => {
+    const quiet = 20; // CODE128_QUIET_MODULES on each side
+    const symbol = (value: string) => 11 * value.length + 35 + quiet; // subset B
+    const sized = (html: string) => {
+      const match =
+        /<svg [^>]*width="([\d.]+)mm" height="([\d.]+)mm"[^>]*data-barcode="([^"]*)"/.exec(html);
+      return { width: Number(match?.[1]), height: Number(match?.[2]), value: match?.[3] ?? '' };
+    };
+    for (const paper of ['a4', 'a5'] as const) {
+      const html = render('packing_slip', paper);
+      // The strip only: no second, smaller barcode in the header to aim at by mistake.
+      expect(html.match(/data-barcode=/g)).toHaveLength(1);
+      expect(html).toContain('data-field="scan"');
+      const { width, height, value } = sized(html);
+      expect(value).toBe(SAMPLE_ORDER.orderNo);
+      expect(width / symbol(value)).toBeCloseTo(0.5, 2);
+      expect(height).toBe(SLIP_BARS_MM[paper]);
+    }
+    // On the 4 × 6 printer the slip is drawn on A5 and shrunk to fit (D-822): still a third of a
+    // millimetre a bar, and over eight millimetres tall (the old one was six). The bars decoded
+    // off a real 203 dpi render are `render.gotenberg.test.ts`'s.
+    const a5 = sized(render('packing_slip', 'a5'));
+    const shrink = Math.min(
+      PAPER.label.widthMm / PAPER.a5.widthMm,
+      PAPER.label.heightMm / PAPER.a5.heightMm,
+    );
+    expect((a5.width / symbol(a5.value)) * shrink).toBeGreaterThanOrEqual(0.33);
+    expect(a5.height * shrink).toBeGreaterThanOrEqual(8);
+
+    // A lot of several carries its longer lot code, and the strip still fits inside the margins.
+    const lotted = renderPackingSlipHtml({
+      brand: SAMPLE_BRAND,
+      data: { ...SAMPLE_ORDER, lot: { no: 2, count: 3 } },
+      fonts: [],
+      paper: 'a5',
+    });
+    const lot = sized(lotted);
+    expect(lot.value).toBe(`${SAMPLE_ORDER.orderNo}-L2`);
+    expect(lot.width).toBeLessThanOrEqual(PAPER.a5.widthMm - PAPER.a5.marginMm * 2);
+    const svg = /<svg [^>]*data-barcode="[^"]*"[\s\S]*?<\/svg>/.exec(lotted)?.[0] ?? '';
+    expect(decodeCode128Svg(svg)).toBe(`${SAMPLE_ORDER.orderNo}-L2`);
   });
 
   it('prints whole modules: 0.3 mm on A4, 0.375 mm (three thermal dots) on the label', () => {

@@ -96,11 +96,17 @@ export interface ProviderStatusMap {
  * (D-003) on a rider's unconfirmed word and then have to reverse it when the office
  * disagreed — reversals in a closed month, every month. So they map to states that
  * move nothing: the parcel is still out, or on hold.
+ *
+ * `in_review` and `pending` are the owner's own reading of Steadfast (D-902): a parcel is
+ * `in_review` from its booking until Steadfast's hub has it, and `pending` from then until
+ * it is delivered or cancelled. So `pending` is the courier's word that it has the parcel,
+ * `picked_up`, and a parcel still `in_review` hours after its handover never reached the hub
+ * (D-903).
  */
 export const STEADFAST_STATUS_MAP: ProviderStatusMap = {
   code: 'steadfast',
   statuses: {
-    pending: 'pickup_pending',
+    pending: 'picked_up',
     in_review: 'hold',
     hold: 'hold',
     delivered_approval_pending: 'out_for_delivery',

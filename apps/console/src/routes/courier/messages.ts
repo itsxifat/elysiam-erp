@@ -1,5 +1,7 @@
 import type { MessageKey } from '@elysium/i18n';
 
+// First, so the section is registered before `sectionCatalogue` reads it (D-906).
+import '../../i18n/courier.js';
 import { sectionCatalogue } from '../../i18n/messages.js';
 import { useLocale } from '../../i18n/locale.js';
 
@@ -95,6 +97,7 @@ const COURIER_KEYS = [
   'courier.stuck.reason.booking_failed',
   'courier.stuck.reason.unposted_delivery',
   'courier.stuck.reason.return_not_received',
+  'courier.stuck.reason.not_received',
   'courier.stuck.repoll',
   'courier.stuck.repollDone',
   'courier.stuck.export',

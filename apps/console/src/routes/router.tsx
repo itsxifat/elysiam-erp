@@ -189,6 +189,8 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         '/inbox',
         '/labels',
         '/packaging',
+        // D-904: the courier portal is the labels module's route, not a placeholder.
+        '/courier-portal',
         '/calls',
       ].includes(item.to),
   )

@@ -206,7 +206,7 @@ const en = {
 
   'lb.station.title': 'Print station',
   'lb.station.detail':
-    'Leave this page open on the label desk’s computer: this terminal’s browser-printer jobs print here by themselves, and each print is confirmed to the server.',
+    'This computer prints this terminal’s browser-printer jobs by itself while the ERP is open on it, on any page; each print is confirmed to the server. This page shows what it is printing.',
   'lb.station.needBinding':
     'Bind this computer to a label terminal first, on the Terminals tab, to make it a print station.',
   'lb.station.on': 'Printing for',
@@ -216,9 +216,36 @@ const en = {
   'lb.station.resume': 'Resume',
   'lb.station.paused': 'Paused',
   'lb.station.last': 'Last printed',
+  'lb.station.starting': 'Starting',
+  'lb.station.elsewhere': 'Printing in another tab',
+  'lb.station.elsewhereDetail':
+    'Another tab of this browser prints for this terminal; jobs print there, once. Close it and this tab takes over.',
+  'lb.station.dialog':
+    'Chrome asked before printing. For labels to print by themselves, start Chrome with --kiosk-printing, as below.',
   'lb.station.kioskTitle': 'Silent printing',
   'lb.station.kiosk':
     'Start Chrome with --kiosk-printing (add it to the shortcut’s target): it then prints to the default printer without asking. Make the label printer Windows’ default printer and set its paper to the label size.',
+
+  'lb.portal.title': 'Courier handover',
+  'lb.portal.subtitle':
+    'Scan each parcel’s slip, label or lot code as it goes to the rider. The moment an order’s last lot is scanned, it is handed to the courier and shipped.',
+  'lb.portal.open': 'Open the courier portal',
+  'lb.portal.scan': 'Scan a slip, label or lot code',
+  'lb.portal.hint': 'One scan per bag. Each order ships by itself once all its bags are scanned.',
+  'lb.portal.working': 'Working…',
+  'lb.portal.full': 'Full screen',
+  'lb.portal.exitFull': 'Exit full screen',
+  'lb.portal.counts': 'This session',
+  'lb.portal.shipped': 'shipped',
+  'lb.portal.noCourier': 'No courier',
+  'lb.portal.empty': 'Nothing scanned yet.',
+  'lb.portal.stillToScan': 'Still to scan',
+  'lb.portal.lots': 'lots',
+  'lb.portal.batch': 'To scan a batch and hand it over with one press, use Packaging →',
+  'lb.portal.outcome.shipped': 'Shipped',
+  'lb.portal.outcome.partial': 'Lot scanned',
+  'lb.portal.outcome.already': 'Already with the courier',
+  'lb.portal.outcome.refused': 'Not handed over',
 
   'lb.packaging.title': 'Packaging',
   'lb.packaging.subtitle':

@@ -80,6 +80,10 @@
     "./locales/sections/people.en": {
       "types": "./dist/locales/sections/people.en.d.ts",
       "default": "./dist/locales/sections/people.en.js"
+    },
+    "./locales/sections/courier.en": {
+      "types": "./dist/locales/sections/courier.en.d.ts",
+      "default": "./dist/locales/sections/courier.en.js"
     }
   },
   "files": [

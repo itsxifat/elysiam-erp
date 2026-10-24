@@ -59,7 +59,9 @@ export type StuckReason =
   | 'unknown_status'
   | 'booking_failed'
   | 'unposted_delivery'
-  | 'return_not_received';
+  | 'return_not_received'
+  /** D-903: handed over, and the courier has not said it has the parcel in time. */
+  | 'not_received';
 
 export interface StuckParcel {
   readonly consignmentId: string;

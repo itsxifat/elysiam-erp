@@ -50,6 +50,7 @@ export const REASON_TONE: Readonly<Record<StuckReason, Tone>> = {
   booking_failed: 'danger',
   unposted_delivery: 'danger',
   return_not_received: 'warning',
+  not_received: 'danger',
 };
 
 export const SETTLEMENT_TONE: Readonly<Record<SettlementStatus, Tone>> = {

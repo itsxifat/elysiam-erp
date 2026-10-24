@@ -54,6 +54,7 @@ describe('the courier catalogue', () => {
       'booking_failed',
       'unposted_delivery',
       'return_not_received',
+      'not_received',
     ]) {
       expect(Object.hasOwn(courierEn, `courier.stuck.reason.${reason}`), reason).toBe(true);
     }

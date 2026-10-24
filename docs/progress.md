@@ -3657,3 +3657,93 @@ dry-run|commit --file <users.json>`.
 - **New dependencies:** none.
 - **Live:** deployed to both brands on 2026-10-19 (6c3051ab, `infra/brand/deploy.sh … all`): no
   migration; every container healthy; `GET /v1/staff-names` answers on both APIs.
+
+## 2026-10-24 · fix · invite links, product search by barcode
+
+- **Commits on `main`:** `18351227` (a React fix; no decision row) and `59561b95` (D-899).
+- **Invite and reset links said "incomplete":** the set-password and owner-link screens read
+  the token in a `useState` initializer that also emptied the address bar; React 19 holds a
+  Suspense reveal back, and the branding or session answer landing meanwhile discarded the
+  render and mounted the screen again, which found no fragment. `useLinkToken` reads purely and
+  rewrites the address bar after the commit. Reproduced on a production build with a stubbed
+  API: 25 of 75 loads failed before, none after; `link-token.test.tsx` fails on the old code.
+- **The product list found nothing by barcode** (D-899): each typed word in any order against
+  `search_text`, or a whole barcode looked up on its own index; the SKU search behind the order
+  desk takes a whole barcode too. M06 check 2's bench unchanged (about 3 ms p95).
+
+## 2026-10-24 · fix · printing, booking on confirm, the courier portal, parcels not received
+
+- **Branch:** `fix-printing-handover-missing` from `main` (59561b95). Decisions D-900 to D-906.
+- **The owner's report:** after Confirm no label printed; a USB label printer showed connected
+  and even the test print stayed Queued; the slip's barcode was slow to scan; a separate page
+  to scan parcels to the courier; Steadfast parcels still `in_review` hours after the handover
+  are missing. The owner chose booking on Confirm and "each scan ships it".
+- **What changed:**
+  - Settings → Order workflow: when the courier is booked (`orders.courier_booking`, which had
+    no screen, so every brand was on `manual` and auto-print never ran) and the hours a parcel
+    may take to reach its courier (`orders.not_received_hours`, default 5) (D-901).
+  - The print station runs on every page of a computer bound to a label terminal, one tab per
+    browser by a Web Lock; Print station is its window and says when Chrome showed a dialog
+    (no `--kiosk-printing`) (D-900).
+  - Steadfast's `pending` is `picked_up` (D-902). Every ship records the parcel's handover; the
+    stuck queue lists `not_received`, and `delivery.not_received_sweep` tells the supervisors
+    once per parcel (`parcel.not_received`, the header's notifications) (D-903).
+  - `/courier-portal` (Courier handover in the sidebar): each scan is a handover scan and an
+    order ships when its last lot is scanned (D-904).
+  - The packing slip's barcode on a strip of its own, 0.5 mm a bar (D-905).
+  - The 186 `courier.*` strings are a section; the first download is 248.3 KB of 250 (D-906).
+- **Review:** six reviewers (one area each, the ledger auditor among them), each finding checked
+  by skeptics told to refute it: 26 confirmed, 7 rejected, all 26 fixed. The one critical was
+  the sidebar's Courier handover entry plus the labels route making two `/courier-portal` routes,
+  which the router refuses, so the console would not have started (`router.test.tsx` builds the
+  real tree now). The others: a parcel taken and later held flagged as never received (the rule
+  now reads every word the courier ever gave, `courierHadParcel`), flags on a stale stored word
+  (the sweep asks the courier first), the handover's lock order against the courier's status
+  path (written without waiting, `for update skip locked`, else `delivery.record_handover`),
+  stored Steadfast `pending` rows (migration 0162), alerts to branch managers for other branches,
+  the not-received rows cut by the list's 500 limit; on the station the focus taken by the hidden
+  frame, the job just printed asked for again, another computer's job asked for in a loop, a
+  brand switch forgetting the binding, Pause in a tab that is not printing; on the portal no
+  permission gate, "Working…" cleared early, "already with the courier" read from English text
+  (now `ORDER_ALREADY_HANDED`), the first answer not read out, Full screen on an iPhone, counts
+  without a booked parcel; the A5 slip running onto two pages (spacing given back, checked
+  against Gotenberg).
+- **Ledger audit** (the `ledger-auditor`, after the review's fixes): 0 critical, 6 warnings, 9
+  notes. Fixed: W1 (a parcel booked after its order shipped had no handover: it takes one at the
+  booking), W2 (one parcel's error stopped a brand's sweep, and parcels never flagged starved the
+  batch: caught per parcel, the least recently asked first, "no such parcel" flagged, 20 a run
+  inside 14 minutes), W3 (a flagged parcel the courier had and later held was listed again), W5
+  (On Confirm refused every Confirm of an own rider's order: such orders confirm unbooked), W6
+  (tests: the locked path and its job, the recipients by branch, the audit row, W3, a booking
+  after the ship, an own rider's Confirm), N1 (the live parcel picked, then locked without
+  waiting, `no key update`), N4 (the flag locks the parcel and re-checks), N5 (the job's write
+  audited), N6 (the log masks phones). Not changed: N2 (the release step creates the queues
+  before the API starts), N9 (as every user-room event). W4, N7 and N8 are deploy notes below.
+- **Before deploying (W4, N7, N8):** Steadfast's `pending` now ships an order nobody marked
+  shipped (D-902, the owner's reading; D-176 still calls the vocabulary unverified). On each brand
+  database, list the orders the first polls will ship, and count the parcels 0162 will touch:
+  `select set_config('app.org_id', (select id::text from org.organizations limit 1), false);`
+  then `select o.order_no, o.status from courier.consignments c join courier.courier_accounts a
+on a.org_id = c.org_id and a.id = c.courier_account_id join sales.orders o on o.org_id =
+c.org_id and o.id = c.order_id where a.provider_code = 'steadfast' and c.booking_state =
+'booked' and lower(trim(c.raw_status)) = 'pending' and o.status in ('confirmed', 'packed');`.
+  Watch one real Steadfast parcel's statuses before turning On Confirm on. The first sweeps flag
+  only parcels with a recorded handover (before this change, only a person's Confirm handover).
+- **Tests:** new `background-station.test.tsx` (the lock, dialog detection),
+  `portal-logic.test.ts`, `router.test.tsx`, `not-received.test.ts` (domain),
+  `not-received-recipients.test.ts`; in
+  `courier.m15.db` the sweep (a courier that does not answer, a parcel taken then held, flagged
+  once, listed first, the event's recipients) and migration 0162 run on stored rows; in
+  `handover.e2e` a Ship recording the handover and booking on Confirm through Settings; the
+  slip's strip (`order-documents.test.ts`), its bars read back off a 203 dpi render
+  (`render.gotenberg.test.ts`: none of the old slip's rows decodes, many of the new one's do) and
+  its page counts (`documents-review.test.ts`), both against Gotenberg 8.37; the bell's new item.
+- **Gates:** lint, typecheck, build, `check:bundle` (248.4 KB), `check:white-label`,
+  `check:migrations`, `check:schema`, `check:routes` (672), `check:i18n`, `check:api-client`
+  (regenerated): PASS. `format:check` fails only on `packages/db/migrations/meta/_journal.json`
+  and `0161_snapshot.json`, as on `main` since M49. `pnpm test`: 4,593 passed; the ten failures
+  are `main`'s own (mother-separation, tenancy ×2, catalog-deletes, courier.m15's labels route,
+  packing's old label sheet, wallets-tenancy, guard ×2, route-matrix's three PDF routes with no
+  Gotenberg). Not run: the stack specs, a real printer, a real Steadfast account.
+- **New dependencies:** none. **Migration:** 0162 (data only: stored Steadfast `pending` to
+  `picked_up`).

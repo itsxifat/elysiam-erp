@@ -9,6 +9,7 @@ import { BookingService } from './modules/courier/booking.service.js';
 import { CourierModule } from './modules/courier/courier.module.js';
 import { registerCourierJobs } from './modules/courier/courier.worker.js';
 import { SettlementsService } from './modules/courier/settlements.service.js';
+import { StuckParcelsService } from './modules/courier/stuck.service.js';
 import { CourierSyncService } from './modules/courier/sync.service.js';
 import { HrModule } from './modules/hr/hr.module.js';
 import { registerPerformanceJobs } from './modules/hr/performance.worker.js';
@@ -131,6 +132,8 @@ export async function registerWorkerJobs(deps: WorkerJobDependencies): Promise<v
     sync: context.get(CourierSyncService),
     // Without it the settlement-fetch queues drain as logged no-ops.
     settlements: context.get(SettlementsService),
+    // D-903: parcels handed over that the courier has not received.
+    stuck: context.get(StuckParcelsService),
     report,
     logger,
   });

@@ -1,10 +1,14 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { withOrg } from '@elysium/db';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import { maskPhonesInText } from '@elysium/domain';
 import {
   assertStuckThreshold,
   calendarDaysSince,
+  courierHadParcel,
+  courierStatusMap,
   isTerminalParcelStatus,
+  NOT_RECEIVED_HOURS,
+  notReceivedByCourier,
   STUCK_THRESHOLD_DAYS,
   stuckCutoffDate,
   type ParcelStatus,
@@ -14,12 +18,15 @@ import { sql } from 'drizzle-orm';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
+import { emit } from '../../platform/events/outbox.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { enqueue } from '../../platform/jobs/enqueue.js';
 import { CourierError } from './courier.errors.js';
 import { COURIER_QUEUES, type RepollPayload } from './courier.queues.js';
 import * as repo from './courier.repository.js';
+import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
+import { CourierSyncService } from './sync.service.js';
 
 /**
  * The stuck-parcel queue (M15: "active consignments with no status change in N days, with
@@ -46,6 +53,11 @@ import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
  *   The parcel never reached a courier; nothing moves until somebody rebooks it. This is also
  *   where M12's "flag the order" is visible: the flag lives on the consignment, and this queue
  *   is the operational view of it.
+ * - **`not_received`** (D-903) — we handed the parcel over (the order shipped) the brand's
+ *   hours ago or more (five unless Settings → Order workflow says otherwise), and the courier
+ *   still says nothing that proves it has it: Steadfast's `in_review`, never `pending`. The
+ *   rider never reached the hub with it. Hours, not days: it is found the same afternoon. The
+ *   sweep (`delivery.not_received_sweep`) tells the supervisors once per parcel.
  *
  * Row scope: §6's branch narrowing on the parcel's branch, plus "own" mapped onto the person
  * who queued the booking — the nearest thing a consignment has to an owner. A sales agent
@@ -57,7 +69,8 @@ export type StuckReason =
   | 'unknown_status'
   | 'booking_failed'
   | 'unposted_delivery'
-  | 'return_not_received';
+  | 'return_not_received'
+  | 'not_received';
 
 export interface StuckParcel {
   readonly consignmentId: string;
@@ -83,6 +96,8 @@ export interface StuckParcel {
   readonly escalationCount: number;
   readonly lastEscalationNote: string | null;
   readonly lastEscalationAt: string | null;
+  /** D-903: when we handed it to the courier (the order shipped); null before. */
+  readonly handedOverAt: string | null;
 }
 
 /** Scope columns for a consignment row. See the class comment for "own". */
@@ -95,11 +110,44 @@ function consignmentScope(request: object) {
   });
 }
 
+/**
+ * How many parcels one sweep asks a courier about per brand (D-903); the rest wait 15 minutes.
+ * At most 20 courier questions of 15 s each stay inside the job's 14 minutes.
+ */
+const NOT_RECEIVED_BATCH = 20;
+
+/** A branch manager and the branches their role reaches (empty: the whole brand). */
+export interface BranchManager {
+  readonly userId: string;
+  readonly branchIds: readonly string[];
+}
+
+/**
+ * The branch managers a parcel's alert reaches (D-903): those whose role covers its branch, and
+ * those whose role reaches the whole brand. A parcel of no branch reaches only the latter, as the
+ * stuck queue's branch scope shows it only to them (§6).
+ */
+export function managersFor(managers: readonly BranchManager[], branchId: string | null): string[] {
+  const ids = managers
+    .filter(
+      (manager) =>
+        manager.branchIds.length === 0 ||
+        (branchId !== null && manager.branchIds.includes(branchId)),
+    )
+    .map((manager) => manager.userId);
+  return [...new Set(ids)];
+}
+
 @Injectable()
 export class StuckParcelsService {
+  private readonly logger = new Logger(StuckParcelsService.name);
+
   constructor(
     @Inject(ORDERS_PORT) private readonly orders: OrdersPort,
     private readonly audit: AuditService,
+    // D-903: the sweep asks the courier before it judges, and tells the people who can act.
+    private readonly sync: CourierSyncService,
+    @Inject(IAM_API) private readonly iam: IamApi,
   ) {}
 
   async list(
@@ -107,7 +155,12 @@ export class StuckParcelsService {
     request: object,
     options: { thresholdDays?: number | undefined; courierId?: string | undefined },
     now: Date = new Date(),
-  ): Promise<{ thresholdDays: number; cutoffDate: string; items: readonly StuckParcel[] }> {
+  ): Promise<{
+    thresholdDays: number;
+    cutoffDate: string;
+    notReceivedHours: number;
+    items: readonly StuckParcel[];
+  }> {
     const thresholdDays = options.thresholdDays ?? STUCK_THRESHOLD_DAYS.default;
     try {
       assertStuckThreshold(thresholdDays);
@@ -122,9 +175,11 @@ export class StuckParcelsService {
 
     // The rows and their couriers' names in one transaction: the names belong to M10,
     // which owns `sales.couriers`, so they are asked for rather than joined (invariant 12).
-    const { rows, courierNames } = await withOrg(
+    const { rows, courierNames, hours } = await withOrg(
       { orgId: context.orgId, userId: context.userId },
       async (tx) => {
+        const hours =
+          (await repo.notReceivedHoursSetting(tx, context.orgId)) ?? NOT_RECEIVED_HOURS.default;
         const found = await repo.stuckCandidates(tx, context.orgId, {
           cutoffDate,
           courierId: options.courierId,
@@ -139,6 +194,7 @@ export class StuckParcelsService {
         return {
           rows: found,
           courierNames: new Map(parties.map((party) => [party.id, party.name])),
+          hours,
         };
       },
     );
@@ -171,10 +227,145 @@ export class StuckParcelsService {
         escalationCount: row.escalation_count,
         lastEscalationNote: row.last_escalation_note,
         lastEscalationAt: row.last_escalation_at,
+        handedOverAt:
+          row.handed_over_at === null ? null : new Date(row.handed_over_at).toISOString(),
       });
     }
 
-    return { thresholdDays, cutoffDate, items };
+    return { thresholdDays, cutoffDate, notReceivedHours: hours, items };
+  }
+
+  /**
+   * D-903, every quarter hour (`delivery.not_received_sweep`): each brand's parcels handed over
+   * its hours ago with no word yet of the courier having them. Each is asked about first (one
+   * poll, no transaction open, invariant 6), so a stale stored word never raises the alarm: a
+   * courier that does not answer leaves the parcel for the next sweep, and one that now says it
+   * has the parcel ends it. A parcel still not received (`notReceivedByCourier`, reading every
+   * word the courier ever gave through today's vocabulary) is flagged once: an automatic
+   * escalation note (`NOT_RECEIVED_BY`), which is also what lists it in the queue, an audit row,
+   * and `parcel.not_received` for the org admins and the branch managers whose branches cover it.
+   * A brand that fails is logged and the others are swept.
+   */
+  async sweepNotReceived(now: Date = new Date()): Promise<number> {
+    const orgIds = await withGlobal(async (tx) =>
+      (
+        await tx.execute<{ id: string }>(
+          sql`select id from org.organizations where is_active order by slug`,
+        )
+      ).map((row) => row.id),
+    );
+    let flagged = 0;
+    for (const orgId of orgIds) {
+      try {
+        flagged += await this.sweepBrand(orgId, now);
+      } catch (error) {
+        this.logger.warn(
+          `not-received sweep of org ${orgId} failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return flagged;
+  }
+
+  private async sweepBrand(orgId: string, now: Date): Promise<number> {
+    const actor = { orgId, userId: repo.NOT_RECEIVED_BY };
+    const { hours, candidates } = await withOrg(actor, async (tx) => {
+      const hours = (await repo.notReceivedHoursSetting(tx, orgId)) ?? NOT_RECEIVED_HOURS.default;
+      const candidates = await repo.notReceivedCandidates(
+        tx,
+        orgId,
+        new Date(now.getTime() - hours * 3_600_000),
+        NOT_RECEIVED_BATCH,
+      );
+      return { hours, candidates };
+    });
+    let flagged = 0;
+    let managers: readonly BranchManager[] | undefined;
+    for (const candidate of candidates) {
+      try {
+        // The courier's word now, not the one stored: outside any transaction.
+        const asked = await this.sync.pollConsignment(orgId, candidate.id);
+        if (asked === 'failed') continue;
+        const done = await withOrg(actor, async (tx) => {
+          const facts = await repo.notReceivedFacts(tx, orgId, candidate.id);
+          if (facts === undefined || facts.flagged) return false;
+          const status = facts.status as ParcelStatus;
+          const missing = notReceivedByCourier({
+            bookingState: facts.booking_state,
+            status,
+            handedOverAt:
+              facts.handover_confirmed_at === null ? null : new Date(facts.handover_confirmed_at),
+            courierHadIt: courierHadParcel({
+              status,
+              map: courierStatusMap(candidate.provider_code),
+              events: facts.events,
+            }),
+            now,
+            hours,
+          });
+          if (!missing) return false;
+          const said =
+            asked === 'unknown'
+              ? 'it has no such parcel'
+              : facts.raw_status === null
+                ? 'nothing yet'
+                : `"${facts.raw_status}"`;
+          const saved = await repo.insertEscalation(tx, {
+            orgId,
+            consignmentId: candidate.id,
+            note: `Not received by the courier: handed over ${String(hours)} or more hours ago, and the courier says ${said}.`,
+            createdBy: repo.NOT_RECEIVED_BY,
+          });
+          await this.audit.record(tx, {
+            orgId,
+            actorUserId: null,
+            operation: 'create',
+            action: 'courier.parcel.not_received',
+            entityType: 'Order',
+            entityId: candidate.order_id,
+            before: null,
+            after: { consignmentId: candidate.id, escalationId: saved.id, hours },
+          });
+          managers ??= await this.branchManagers(tx, orgId);
+          await emit(
+            tx,
+            'parcel.not_received',
+            {
+              consignmentId: candidate.id,
+              orderId: candidate.order_id,
+              userIds: managersFor(managers, candidate.branch_id),
+            },
+            { orgId },
+          );
+          return true;
+        });
+        if (done) flagged += 1;
+      } catch (error) {
+        // One parcel that cannot be judged (an order its courier's word cannot move, say) leaves
+        // the rest of the brand's batch to be swept (D-903's audit, W2).
+        this.logger.warn(
+          `not-received sweep of a parcel of org ${orgId} failed: ${maskPhonesInText(error instanceof Error ? error.message : String(error))}`,
+        );
+      }
+    }
+    return flagged;
+  }
+
+  /**
+   * The brand's branch managers and the branches their role reaches (empty: the whole brand),
+   * so a parcel's alert reaches only those whose stuck queue will show it (§6's branch scope).
+   */
+  private async branchManagers(tx: Tx, orgId: string): Promise<readonly BranchManager[]> {
+    const members = await this.iam.activeMembers(tx, orgId, { roles: ['branch_manager'] });
+    const found: BranchManager[] = [];
+    for (const member of members) {
+      const scopes = await this.iam.roleScopes(tx, orgId, member.userId);
+      for (const scope of scopes) {
+        if (scope.role === 'branch_manager')
+          found.push({ userId: member.userId, branchIds: scope.branchIds });
+      }
+    }
+    return found;
   }
 
   /**
@@ -345,6 +536,8 @@ export function reasonsFor(row: repo.StuckRow, cutoffDate: string): StuckReason[
   }
   if (isTerminalParcelStatus(status)) return reasons;
 
+  // D-903 first: the sweep asked the courier and found the parcel never reached it.
+  if (row.not_received) reasons.push('not_received');
   if (row.since_on <= cutoffDate) reasons.push('no_status_change');
 
   /*

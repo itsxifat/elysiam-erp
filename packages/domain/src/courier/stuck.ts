@@ -1,5 +1,11 @@
 import { businessDate, daysBetween, type IsoDate } from '../dates/index.js';
-import { isTerminalParcelStatus, type ParcelStatus } from './status.js';
+import {
+  isTerminalParcelStatus,
+  LEFT_THE_MERCHANT,
+  normalizeStatus,
+  type ParcelStatus,
+  type ProviderStatusMap,
+} from './status.js';
 
 /**
  * The stuck-parcel queue (M15: "active consignments with no status change in N days").
@@ -89,6 +95,70 @@ export function assertStuckThreshold(days: number): void {
   ) {
     throw new RangeError(
       `A stuck-parcel threshold is ${String(STUCK_THRESHOLD_DAYS.min)} to ${String(STUCK_THRESHOLD_DAYS.max)} days.`,
+    );
+  }
+}
+
+/**
+ * The hours a parcel may wait for its courier's first word of having it (D-903): handed over and
+ * shipped by us, and still no status that proves the courier took it. Steadfast's `in_review`
+ * changes to `pending` once its hub has the parcel; a parcel still `in_review` hours after the
+ * rider left with it is one the courier never received. The rider's trip to the hub takes about
+ * five hours, so the default is five.
+ */
+export const NOT_RECEIVED_HOURS = { min: 1, max: 72, default: 5 } as const;
+
+/** The statuses that say nothing about the courier having the parcel. */
+export const NOT_YET_WITH_COURIER: readonly ParcelStatus[] = ['booked', 'pickup_pending', 'hold'];
+
+/**
+ * Whether the courier has ever said it has the parcel (D-903): its status now, or any word it
+ * gave, read through the account's vocabulary as it stands today. Read again rather than taken
+ * from the stored status, because a word's meaning can be corrected after it was stored (D-902:
+ * Steadfast's `pending`, stored as `pickup_pending` before), and the events cannot be rewritten.
+ * A parcel the courier took and later put on hold (a failed delivery, a cancellation waiting for
+ * approval) was received: it is not missing.
+ */
+export function courierHadParcel(input: {
+  readonly status: ParcelStatus;
+  readonly map: ProviderStatusMap | undefined;
+  readonly events: readonly { readonly status: string; readonly rawStatus: string | null }[];
+}): boolean {
+  if (LEFT_THE_MERCHANT.includes(input.status)) return true;
+  return input.events.some((event) => {
+    if (LEFT_THE_MERCHANT.includes(event.status as ParcelStatus)) return true;
+    if (input.map === undefined || event.rawStatus === null) return false;
+    return LEFT_THE_MERCHANT.includes(normalizeStatus(input.map, event.rawStatus).status);
+  });
+}
+
+/**
+ * Whether a parcel we handed over has not reached its courier (D-903): booked, its handover
+ * `hours` or more ago, its status one that proves nothing (`NOT_YET_WITH_COURIER`), and nothing
+ * the courier ever said shows it had the parcel (`courierHadParcel`). A parcel never handed
+ * over is not missing; it is still at the hub.
+ */
+export function notReceivedByCourier(input: {
+  readonly bookingState: string;
+  readonly status: ParcelStatus;
+  readonly handedOverAt: Date | null;
+  readonly courierHadIt: boolean;
+  readonly now: Date;
+  readonly hours: number;
+}): boolean {
+  if (input.bookingState !== 'booked' || input.handedOverAt === null) return false;
+  if (input.courierHadIt || !NOT_YET_WITH_COURIER.includes(input.status)) return false;
+  return input.now.getTime() - input.handedOverAt.getTime() >= input.hours * 3_600_000;
+}
+
+export function assertNotReceivedHours(hours: number): void {
+  if (
+    !Number.isSafeInteger(hours) ||
+    hours < NOT_RECEIVED_HOURS.min ||
+    hours > NOT_RECEIVED_HOURS.max
+  ) {
+    throw new RangeError(
+      `The courier's time to receive a parcel is ${String(NOT_RECEIVED_HOURS.min)} to ${String(NOT_RECEIVED_HOURS.max)} hours.`,
     );
   }
 }

@@ -1977,6 +1977,19 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   order through the state machine only once every lot is scanned, and a person's Ship of a
   multi-lot order is refused through the orders module's `HandoverGuardRegistry`. One
   consignment per order; no courier is sent a lot count (none documents one, D-809).
+- **Booking, printing and the handover, as run** (D-900 to D-905): Settings → Order workflow
+  chooses when the courier is booked (`orders.courier_booking`: on confirm, on pack, by hand),
+  and booking is what starts auto-print. A browser printer prints from every page of a
+  computer bound to its label terminal (the work dock's `BackgroundPrintStation`, one tab per
+  browser by a Web Lock), so its Online is printing. The courier portal (`/courier-portal`)
+  ships each order the moment its last lot is scanned. Every ship records the parcel's
+  handover on its consignment (without waiting on its row). A parcel the courier has never said
+  it had (every word read through today's vocabulary) the brand's hours after its handover
+  (default 5; Steadfast's `in_review`, never `pending`) is asked about once more and then
+  flagged, once: listed first as `not_received` in the stuck-parcel queue and told to the org
+  admins and the branch managers whose branches cover it (`delivery.not_received_sweep`,
+  `parcel.not_received`). The packing slip's barcode is a strip of its own, 0.5 mm a bar,
+  readable when the slip is shrunk onto a 4 × 6 label.
 
 ## 32. Phone calls through Envo (M47, D-830 to D-862)
 

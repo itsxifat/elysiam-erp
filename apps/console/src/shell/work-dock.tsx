@@ -14,6 +14,7 @@ import '../i18n/alive.js';
 import { useLocale, useT } from '../i18n/locale.js';
 import '../i18n/workflow.js';
 import { useRealtime } from '../realtime/use-realtime.js';
+import { useBrandBinding } from '../routes/labels/terminal-binding.js';
 import { useStaffNames } from '../staff-names.js';
 import { listAgents } from '../routes/orders/api.js';
 import {
@@ -76,6 +77,13 @@ const BEAT_MS = 30_000;
 const NOTICE_MS = 15_000;
 const INPUT_EVENTS = ['keydown', 'pointerdown', 'touchstart', 'wheel'] as const;
 
+/** D-900: the print station's loop, fetched only on a label computer. */
+const BackgroundPrintStation = lazy(() =>
+  import('../routes/labels/background-station.js').then((module) => ({
+    default: module.BackgroundPrintStation,
+  })),
+);
+
 /** Somebody else acted on my order (`order.acted_over_owner`) or in my conversation (D-862). */
 type Notice = {
   readonly key: string;
@@ -93,9 +101,16 @@ type Notice = {
 export function WorkDock() {
   const ability = useAbility();
   const session = useSession();
+  // D-900: a computer bound to a label terminal of this brand prints its labels from every page.
+  const labelComputer = useBrandBinding()?.kind === 'label';
   if (session.context === null) return null;
   return (
     <>
+      {labelComputer && ability.can('update', 'Order') ? (
+        <Suspense fallback={null}>
+          <BackgroundPrintStation />
+        </Suspense>
+      ) : null}
       {/* The call bar checks `update Conversation` itself: the owner may answer without a desk. */}
       <Suspense fallback={null}>
         <CallBar />

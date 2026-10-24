@@ -225,6 +225,15 @@ const en = {
   'wf.settings.maxOpenHint':
     'Pending and on-hold orders count; open conversations count on their own against the same number. Between 1 and 200.',
   'wf.settings.denied': 'Only an org admin changes the order workflow.',
+  'wf.settings.booking': 'Book the courier',
+  'wf.settings.booking.on_confirm': 'When the order is confirmed',
+  'wf.settings.booking.on_pack': 'When the order is packed',
+  'wf.settings.booking.manual': 'By hand, from the order page',
+  'wf.settings.bookingHint':
+    'Booking gives the parcel its consignment number, and its label prints by itself right after. On Confirm, an order needs its courier set before it can be confirmed; an order whose courier has no account here (an own rider) confirms and is booked by hand.',
+  'wf.settings.notReceived': 'Hours for the courier to receive a parcel',
+  'wf.settings.notReceivedHint':
+    'After the handover, a parcel the courier still has not received (Steadfast still says in review) is listed under Stuck parcels and the supervisors are told. Between 1 and 72.',
 
   // Staff → desk profile.
   'wf.profile.title': 'Desk profile',

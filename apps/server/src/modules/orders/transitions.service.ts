@@ -375,7 +375,19 @@ export class TransitionsService {
         // §7's handover journal are one call because they have to be one transaction, and
         // the average recorded on the movement is the value the journal posts. Performed
         // once, on the first of the two effects.
-        if (effect === 'create_dispatch_movement') await this.dispatch(tx, context, order, options);
+        if (effect === 'create_dispatch_movement') {
+          await this.dispatch(tx, context, order, options);
+          // The parcel left with the courier now (D-903): the clock for "not received" starts.
+          await this.courier
+            .current()
+            ?.recordHandover?.(
+              tx,
+              context.orgId,
+              order.id,
+              options.occurredAt ?? new Date(),
+              context.userId,
+            );
+        }
         return;
 
       case 'post_revenue':
@@ -492,6 +504,8 @@ export class TransitionsService {
           await courier.reserveConsignment(tx, actor, {
             orderId: order.id,
             courierId: options.courierId ?? order.courier_id,
+            // The brand's setting asks (D-901): an own rider's order is not refused for it.
+            automatic: true,
           });
           return;
         }

@@ -10,9 +10,11 @@ import {
   fetchAccountSettlementsPayload,
   pollOrgPayload,
   processWebhookPayload,
+  recordHandoverPayload,
   repollPayload,
 } from './courier.queues.js';
 import type { SettlementsService } from './settlements.service.js';
+import type { StuckParcelsService } from './stuck.service.js';
 import type { CourierSyncService } from './sync.service.js';
 
 /**
@@ -50,10 +52,34 @@ export interface CourierWorkerDependencies {
    * expire into dead letters every morning.
    */
   readonly settlements?: SettlementsService;
+  /** D-903: the not-received sweep. Optional so a test's worker need not run it. */
+  readonly stuck?: StuckParcelsService;
 }
 
 export async function registerCourierJobs(deps: CourierWorkerDependencies): Promise<void> {
-  const { jobs, booking, sync, report, logger, settlements } = deps;
+  const { jobs, booking, sync, report, logger, settlements, stuck } = deps;
+
+  // D-903: a ship's handover, when the parcel's row was locked as the order shipped.
+  await jobs.work(
+    COURIER_QUEUES.recordHandover,
+    async (job) => {
+      if (job.orgId === null) throw new Error('delivery.record_handover is tenant-scoped');
+      await booking.applyHandover(job.orgId, recordHandoverPayload.parse(job.payload));
+    },
+    report,
+  );
+
+  // D-903: parcels handed over that the courier has not received, flagged once each.
+  if (stuck !== undefined) {
+    await jobs.work(
+      COURIER_QUEUES.notReceivedSweep,
+      async () => {
+        const flagged = await stuck.sweepNotReceived();
+        if (flagged > 0) logger.info({ flagged }, 'parcels not received by the courier');
+      },
+      report,
+    );
+  }
 
   /*
    * M12 acceptance check 6: a booking that spends every retry flags its parcel and raises
