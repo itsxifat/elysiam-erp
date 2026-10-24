@@ -3783,3 +3783,20 @@ c.org_id and o.id = c.order_id where a.provider_code = 'steadfast' and c.booking
   `docker compose config` with a sample `.env.brand` shows the switches on the API and worker;
   console and server typecheck, lint, format: PASS.
 - **New dependencies:** none. **Migration:** none.
+
+## 2026-10-24 · fix · the print station's frame, and binding one's own computer
+
+- **Decisions:** D-909, D-910.
+- **The print station:** every job failed with "Failed to read a named property 'print' from
+  'Window': Blocked a frame … cross-origin frame". The CSP had no `frame-src`, so the station's
+  `blob:` PDF frame fell to `default-src 'self'` and Chrome blocked it. `frame-src 'self' blob:`
+  is added. Reproduced in Chromium with the production policy (the same error) and gone with the
+  new one (a page served with the policy frames a blob PDF and calls `print()`).
+- **Binding:** a warehouse person assigned to a terminal could not bind their computer (only a
+  supervisor could). Now someone assigned to a terminal binds their own computer to it; anyone
+  else not a supervisor is refused `TERMINAL_NOT_ASSIGNED`. The console shows the button to the
+  terminal's people.
+- **Tests:** `pages-headers.test.ts` 11 passed; `labels.e2e.test.ts` 12 passed (a stranger
+  refused, the assigned packer binds and checks in, Working now one row a computer);
+  `route-matrix.e2e.test.ts` and `guard.test.ts` passed. Typecheck, lint, format: PASS.
+- **New dependencies:** none. **Migration:** none.

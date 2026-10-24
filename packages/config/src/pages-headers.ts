@@ -24,6 +24,10 @@ import path from 'node:path';
  * - `img-src` allows https: product images come from R2's public host.
  * - `media-src` (M38b, D-616): this origin, the API's (a local driver's signed video URL) and
  *   the extra origins (R2's signed URLs), plus `blob:` for a recording played back in place.
+ * - `frame-src 'self' blob:` (D-909): the print station prints each label's PDF from a hidden
+ *   frame of a `blob:` URL the page made itself. Without it the frame falls to `default-src`,
+ *   which `blob:` is not, so Chrome blocks it, puts its own error page in the frame, and the
+ *   station's `print()` fails as a cross-origin frame.
  * - `Permissions-Policy`: the camera only for an app that asks for it (`allowCamera`, the
  *   console: the packing video and scanning stickers with a phone's camera, D-605, D-611), and
  *   then only for this origin; the microphone likewise (`allowMicrophone`, the console: the web
@@ -133,6 +137,7 @@ export function contentSecurityPolicy(html: string, options: PagesHeadersOptions
       'connect-src',
       ["'self'", ...apiSources(options.apiUrl), ...extra, ...phoneSessions, ...phoneSockets],
     ],
+    ['frame-src', ["'self'", 'blob:']],
     ['worker-src', ["'self'"]],
     ['manifest-src', ["'self'"]],
     ['object-src', ["'none'"]],

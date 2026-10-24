@@ -537,11 +537,20 @@ describe('terminals (M46 check 4, D-801 to D-804)', () => {
         })
       ).status,
     ).toBe(200);
-    // Warehouse works at terminals; only a supervisor binds a computer.
-    const notTheirs = await call(packer, 'POST', `/v1/terminals/${terminalId}/bind`, {
+    // D-910: someone assigned to the terminal binds their own computer to it; nobody else does.
+    const notTheirs = await call(stranger, 'POST', `/v1/terminals/${terminalId}/bind`, {
       label: 'Desk PC',
     });
-    expect(notTheirs.status).toBe(403);
+    expect(notTheirs.status, notTheirs.text).toBe(403);
+    expect(notTheirs.body.code).toBe('TERMINAL_NOT_ASSIGNED');
+    const theirOwn = await call(packer, 'POST', `/v1/terminals/${terminalId}/bind`, {
+      label: 'Packer PC',
+    });
+    expect(theirOwn.status, theirOwn.text).toBe(200);
+    const ownDevice = { [TERMINAL_DEVICE_HEADER]: String(theirOwn.body.token) };
+    expect(
+      (await call(packer, 'POST', '/v1/terminals/check-in', undefined, ownDevice)).body,
+    ).toMatchObject({ assigned: true, terminal: { name: 'Packing 1' } });
     const bound = await call(admin, 'POST', `/v1/terminals/${terminalId}/bind`, {
       label: 'Desk PC',
     });
@@ -593,9 +602,10 @@ describe('terminals (M46 check 4, D-801 to D-804)', () => {
       members: [{ id: packer.userId }],
       packedToday: 1,
     });
-    expect((card?.workingNow as { id: string }[]).map((person) => person.id)).toEqual([
-      packer.userId,
-    ]);
+    // One row a computer: the packer is signed in at the supervisor's and at their own (D-910).
+    const working = card?.workingNow as { id: string; deviceLabel: string }[];
+    expect([...new Set(working.map((person) => person.id))]).toEqual([packer.userId]);
+    expect(working.map((person) => person.deviceLabel).sort()).toEqual(['Desk PC', 'Packer PC']);
     expect((card?.cameras as unknown[]).length).toBe(2);
   });
 });

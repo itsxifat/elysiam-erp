@@ -16,6 +16,7 @@ import { Camera, Monitor, Plus, Printer, Users } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
+import { useSession } from '../../auth/session.js';
 import { useT } from '../../i18n/locale.js';
 import '../../i18n/pack-station.js';
 import { packingCameras } from '../orders/pack-station-api.js';
@@ -37,7 +38,8 @@ import { clearBinding, saveBinding, useTerminalBinding } from './terminal-bindin
  * The terminals of one kind (M46, D-801 to D-803, D-823): a live card for each — who is signed
  * in at it now and their presence, its cameras and printers with their state, its queue, what it
  * is packing and its orders per hour today — and, for a supervisor, adding and editing them,
- * assigning people and cameras, and binding this computer.
+ * assigning people and cameras, and binding this computer; the people assigned to a terminal
+ * bind their own computer to it too (D-910).
  */
 export function TerminalsPanel({ kind }: { readonly kind: TerminalKind }) {
   const t = useT();
@@ -122,6 +124,9 @@ function TerminalLiveCard({
   const { names } = useHubLocations();
   const [dialog, setDialog] = useState<'edit' | 'people' | 'cameras' | 'bind' | null>(null);
   const thisOne = binding?.terminalId === terminal.id;
+  // D-910: whoever is assigned here binds their own computer to it, not only a supervisor.
+  const userId = useSession().context?.userId;
+  const canBind = canEdit || terminal.members.some((member) => member.id === userId);
   const revoke = useMutation({
     mutationFn: revokeDevice,
     onSuccess: async (_result, deviceId) => {
@@ -155,11 +160,13 @@ function TerminalLiveCard({
               : ` · ${names.get(terminal.locationId) ?? ''}`}
           </p>
         </div>
-        {canEdit ? (
+        {canBind ? (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => setDialog('edit')}>
-              {t('lb.terminal.edit')}
-            </Button>
+            {canEdit ? (
+              <Button size="sm" variant="outline" onClick={() => setDialog('edit')}>
+                {t('lb.terminal.edit')}
+              </Button>
+            ) : null}
             {thisOne ? (
               <Button size="sm" variant="outline" onClick={() => clearBinding()}>
                 {t('lb.terminal.unbind')}

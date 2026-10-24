@@ -91,6 +91,16 @@ describe('the camera and recorded video (M38b, D-616)', () => {
   });
 });
 
+describe('the print station’s frame (D-909)', () => {
+  it('frames a PDF the page made itself, and nothing from another site', () => {
+    const policy = contentSecurityPolicy('', API);
+    // Without it, Chrome blocks the blob: frame and the station's print() throws.
+    expect(policy).toContain("frame-src 'self' blob:");
+    expect(policy).not.toMatch(/frame-src[^;]*https?:/);
+    expect(policy).toContain("frame-ancestors 'none'");
+  });
+});
+
 describe('pagesHeadersFile', () => {
   it("is Pages' _headers format: a pattern, then indented headers", () => {
     const file = pagesHeadersFile('<script>paint()</script>', API);

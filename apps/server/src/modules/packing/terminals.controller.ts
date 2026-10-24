@@ -56,7 +56,8 @@ const NO_ROWS = 'a terminal is the hub’s, not an order’s or a branch’s (D-
  * The hub's terminals over HTTP (M46, D-801 to D-803, D-820). `read PackingTerminal` to see them
  * (org_admin, branch_manager, warehouse) and to check a bound computer in; `create` and `update
  * PackingTerminal` (org_admin, branch_manager) to set them up, assign people and cameras, and
- * bind or unbind a computer. A terminal has no row dimension: it is the hub's.
+ * bind or unbind a computer; a person assigned to a terminal also binds their own computer to it
+ * (D-910). A terminal has no row dimension: it is the hub's.
  */
 @Controller('v1/terminals')
 export class TerminalsController {
@@ -146,8 +147,11 @@ export class TerminalsController {
     );
   }
 
-  /** "This computer is Packing 2" (D-803): the token, once. */
-  @RequireAbility('update', 'PackingTerminal')
+  /**
+   * "This computer is Packing 2" (D-803): the token, once. A supervisor binds any terminal; a
+   * person assigned to one binds their own computer to it (D-910), which the service checks.
+   */
+  @RequireAbility('read', 'PackingTerminal')
   @Post(':id/bind')
   @HttpCode(200)
   async bind(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {

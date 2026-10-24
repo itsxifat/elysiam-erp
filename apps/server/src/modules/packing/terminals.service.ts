@@ -348,8 +348,10 @@ export class TerminalsService {
   }
 
   /**
-   * "This computer is Packing 2" (D-803): a supervisor binds the browser they ask from. The token
-   * is answered once; the browser keeps it and the server only its hash.
+   * "This computer is Packing 2" (D-803): the browser asking is bound. The token is answered once;
+   * the browser keeps it and the server only its hash. A supervisor binds any terminal; anyone else
+   * only one they are assigned to (D-910): the warehouse staff a supervisor put at Label 1 bind
+   * their own computer there, rather than waiting for a supervisor to sit at it.
    */
   async bind(
     context: ActiveContext,
@@ -362,6 +364,15 @@ export class TerminalsService {
         const terminal = await repo.terminalById(tx, context.orgId, id, { forShare: true });
         if (terminal?.active !== true) {
           throw new PackingError('TERMINAL_NOT_FOUND', 'No such terminal in use.');
+        }
+        if (
+          !defineAbilityFor(context).can('update', 'PackingTerminal') &&
+          !(await repo.isMember(tx, context.orgId, terminal.id, context.userId))
+        ) {
+          throw new PackingError(
+            'TERMINAL_NOT_ASSIGNED',
+            `You are not assigned to ${terminal.name}. Ask a supervisor to add you, then bind this computer.`,
+          );
         }
         const token = newTerminalToken(context.orgId);
         const device = await repo.insertDevice(tx, {
