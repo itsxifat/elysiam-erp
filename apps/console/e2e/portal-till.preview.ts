@@ -5,6 +5,7 @@ import {
   enrolSecondFactor,
   login,
   preview,
+  previewApiUrl,
   snap,
   spaceEnrolment,
 } from './preview/helpers.js';
@@ -18,6 +19,35 @@ import {
 async function inEnglish(page: Page): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('button', { name: /language/i })).toHaveCount(0);
+}
+
+/**
+ * A variant's own barcode, read from the catalog in the signed-in person's session, as the
+ * owner reads it off the product page or the sticker. Since M38a every SKU is born with an
+ * internal EAN-13 (D-603), so the seed's fixed `200000000PPSS` codes (D-389), given only to a
+ * SKU with none, are never given: there is no fixed code to type.
+ */
+async function barcodeOf(page: Page, productName: string, size: string): Promise<string> {
+  const api = previewApiUrl();
+  const listed = await page.request.get(
+    `${api}/v1/catalog/products?q=${encodeURIComponent(productName)}`,
+  );
+  expect(listed.status(), `the catalog lists ${productName}`).toBe(200);
+  const { items } = (await listed.json()) as { items: { id: string; name: string }[] };
+  const product = items.find((row) => row.name === productName);
+  if (product === undefined) throw new Error(`the catalog has no ${productName}`);
+
+  const read = await page.request.get(`${api}/v1/catalog/products/${product.id}`);
+  expect(read.status(), `${productName} opens`).toBe(200);
+  const view = (await read.json()) as {
+    skus: { barcode: string | null; attributes: { code: string; valueCode: string }[] }[];
+  };
+  const sku = view.skus.find((row) =>
+    row.attributes.some((value) => value.code === 'SIZE' && value.valueCode === size),
+  );
+  if (sku === undefined) throw new Error(`${productName} has no ${size}`);
+  if (sku.barcode === null) throw new Error(`${productName} in ${size} has no barcode`);
+  return sku.barcode;
 }
 
 test('investor: signs in to the portal, enrols two-step login, sees their money', async ({
@@ -76,9 +106,14 @@ test('branch manager: signs in to the till, opens a shift, rings up by barcode',
   await expect(page.getByRole('heading', { name: 'Open a shift' })).toBeVisible();
   await page.getByLabel(/^Opening cash/).fill('5000');
   await page.getByRole('button', { name: 'Open shift' }).click();
-  // The code the testing guide tells the owner to type (D-389).
+  // The Classic Cotton Tee in M, by the barcode its sticker prints: the brand's own EAN-13,
+  // `2` (GS1's in-store prefix) and twelve digits (D-603).
+  const barcode = await barcodeOf(page, 'Classic Cotton Tee', 'M');
+  expect(barcode).toMatch(/^2\d{12}$/);
+  // Scanned once the till holds its price list: the empty basket replaces the skeleton.
+  await expect(page.getByText('The basket is empty')).toBeVisible();
   const scan = page.getByLabel(/^Scan or type a code/);
-  await scan.fill('2000000000102');
+  await scan.fill(barcode);
   await scan.press('Enter');
   await expect(page.getByText(/Classic Cotton Tee/).first()).toBeVisible();
   await snap(page, 'till-sale-screen');

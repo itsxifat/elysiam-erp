@@ -46,7 +46,8 @@ import {
 function Loading() {
   const t = useT();
   return (
-    <div className="space-y-2" aria-busy="true" aria-label={t('lb.loading')}>
+    <div className="space-y-2" aria-busy="true">
+      <span className="sr-only">{t('lb.loading')}</span>
       {[0, 1, 2].map((row) => (
         <Skeleton key={row} className="h-row w-full" />
       ))}
@@ -183,7 +184,11 @@ export function ReadyPanel() {
                   <td className="px-3">{item.customer}</td>
                   <td className="px-3 font-mono text-xs">
                     {item.courier === null ? '' : `${item.courier} · `}
-                    {item.consignmentNo}
+                    {item.consignmentNo ?? (
+                      <span className="font-sans text-muted-foreground">
+                        {t('lb.ready.notBooked')}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 text-right tabular-nums">{item.pieces}</td>
                   <td className="px-3 text-right">

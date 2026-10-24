@@ -68,7 +68,12 @@ test('check 1: phone to confirmed order, keyboard only, inside the 30-second bud
   await page.keyboard.type(throwawayPhone());
   await page.keyboard.press('Tab');
   await page.keyboard.type('E2E Buyer');
+  // M48 (D-878): "For someone else" sits between the buyer and the area. The parcel is the
+  // buyer's own here, so Tab passes the box unticked and lands on the area.
   await page.keyboard.press('Tab');
+  await expect(page.getByRole('checkbox', { name: 'For someone else' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('combobox', { name: /^Area/ })).toBeFocused();
   await page.keyboard.type('savar');
   await expect(page.getByRole('option', { name: /Savar, Dhaka/ })).toBeVisible();
   await page.keyboard.press('Enter');
@@ -149,7 +154,11 @@ test('check 4: a new order appears in a second agent’s queue without a refresh
     expect(skuId).toBeDefined();
 
     const taken = await creator.request.post(`${stack().apiUrl}/v1/orders`, {
-      headers: { 'x-csrf-token': await csrfToken(first), origin: 'http://localhost:5183' },
+      headers: {
+        'x-csrf-token': await csrfToken(first),
+        // The console's own origin, wherever this run serves it (E2E_CONSOLE_PORT).
+        origin: `http://localhost:${process.env.E2E_CONSOLE_PORT ?? '5183'}`,
+      },
       data: {
         channel: 'whatsapp',
         customer: {

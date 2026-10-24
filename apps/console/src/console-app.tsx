@@ -174,7 +174,8 @@ function Boot() {
 function BootSkeleton() {
   const t = useT();
   return (
-    <div className="min-h-dvh bg-background" aria-busy="true" aria-label={t('common.loading')}>
+    <div className="min-h-dvh bg-background" aria-busy="true">
+      <span className="sr-only">{t('common.loading')}</span>
       <div className="flex h-14 items-center justify-between border-b border-border px-6">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-8 w-8" />

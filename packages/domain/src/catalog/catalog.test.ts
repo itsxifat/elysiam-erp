@@ -220,6 +220,14 @@ describe('Code 128', () => {
     // Worked by hand: start B (104) + 'A'(33)x1 + 'B'(34)x2 + 'C'(35)x3 = 310,
     // 310 mod 103 = 1.
     expect(code128CheckValue('ABC')).toBe(1);
+    // D-912: an even run of digits is subset C, two digits a symbol: start 105, then 26, 10, 00,
+    // 00, 42, so the check is (105 + 26·1 + 10·2 + 0·3 + 0·4 + 42·5) % 103 = 361 % 103 = 52.
+    expect(code128CheckValue('2610000042')).toBe(52);
+    const digits = code128Encode('2610000042');
+    expect(digits.width).toBe((1 + 5 + 1) * 11 + 13);
+    expect(digits.width).toBeLessThan(code128Encode('ELY-2610-00042').width / 2);
+    // An odd run of digits stays subset B, one a symbol.
+    expect(code128Encode('261000042').width).toBe((1 + 9 + 1) * 11 + 13);
   });
 
   it('encodes a SKU code into bars that start and end on a bar', () => {

@@ -86,8 +86,11 @@ test.afterAll(async () => {
 });
 
 test('the station opens the order from its slip and the camera starts recording', async () => {
-  await page.goto('/orders/packing');
-  await expect(page.getByRole('heading', { name: 'Packing station', level: 1 })).toBeVisible();
+  // M46 (D-800): the station is Packaging's Packing tab; Orders' Pack tab is gone, and its old
+  // address only lands here.
+  await page.goto('/packaging?tab=packing');
+  await expect(page.getByRole('heading', { name: 'Packaging', level: 1 })).toBeVisible();
+  await expect(page.getByTestId('packaging-tab-packing')).toHaveAttribute('aria-current', 'page');
   await noBlockingViolations('packing station');
   await shot('01-station');
 
@@ -187,7 +190,7 @@ test('the station in the dark theme (WCAG AA in both)', async () => {
   await page.evaluate(() => localStorage.setItem('erp-theme', 'dark'));
   try {
     const { packOrder } = stack();
-    await page.goto(`/orders/packing?order=${packOrder.id}`);
+    await page.goto(`/packaging?tab=packing&order=${packOrder.id}`);
     await expect(page.locator('html')).toHaveClass(/\bdark\b/);
     await expect(page.getByTestId('pack-finished')).toBeVisible();
     await noBlockingViolations('packing station (dark)');

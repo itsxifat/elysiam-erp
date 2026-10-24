@@ -116,7 +116,8 @@ export function Loadable<T>({
   const t = useSettingsT();
   if (query.isPending) {
     return (
-      <div className="space-y-2" aria-busy="true" aria-label={t('settings.loading')}>
+      <div className="space-y-2" aria-busy="true">
+        <span className="sr-only">{t('settings.loading')}</span>
         <Skeleton className="h-8 w-full" />
         <Skeleton className="h-40 w-full" />
       </div>

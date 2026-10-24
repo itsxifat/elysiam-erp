@@ -4,6 +4,7 @@ import { LIBRARY_RATE_RULES } from '@elysium/db';
 
 import {
   checkRateLimit,
+  credentialRateLimitsEnabled,
   CREDENTIAL_RULES,
   identifierFrom,
   MemoryRateLimiter,
@@ -269,6 +270,28 @@ describe('what is not limited', () => {
       { limiter, rules: RULES },
     );
     expect(next.allowed).toBe(false);
+  });
+
+  it('applies the real rules when the switch is left alone', async () => {
+    // The decision `main.api.ts` hands both limiters, from a default environment.
+    const enabled = credentialRateLimitsEnabled({
+      NODE_ENV: 'development',
+      CREDENTIAL_RATE_LIMITS: 'on',
+    });
+    const limiter = new MemoryRateLimiter(fakeClock().now);
+    const body = { email: 'victim@example.invalid' };
+    const perEmail = CREDENTIAL_RULES['/api/auth/sign-in/email']?.perIdentifier ?? 0;
+    expect(perEmail).toBeGreaterThan(0);
+
+    for (let attempt = 0; attempt < perEmail; attempt += 1) {
+      const decision = await checkRateLimit(request({ ip: '203.0.113.1', body }), {
+        limiter,
+        enabled,
+      });
+      expect(decision.allowed).toBe(true);
+    }
+    const over = await checkRateLimit(request({ ip: '203.0.113.1', body }), { limiter, enabled });
+    expect(over).toMatchObject({ allowed: false, bucket: 'identifier' });
   });
 
   it('can be switched off wholesale for tests that drive many logins', async () => {

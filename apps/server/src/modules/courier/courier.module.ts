@@ -26,6 +26,7 @@ import { CourierLabelsService } from './labels.service.js';
 import { CourierReportsService } from './reports.service.js';
 import { ReturnsService } from './returns.service.js';
 import { CourierSelectionService } from './selection.service.js';
+import { CourierConnectionsService } from './connections.service.js';
 import { SettlementsService } from './settlements.service.js';
 import { StuckParcelsService } from './stuck.service.js';
 import { LEDGER_READ_PORT, type LedgerReadPort } from './ports/ledger-read.port.js';
@@ -148,6 +149,8 @@ import { CourierReferencesBinding } from './references.binding.js';
       inject: [LEDGER_API],
     },
     CourierAccountsService,
+    // D-913: connecting a courier in one step.
+    CourierConnectionsService,
     BookingService,
     CourierSyncService,
     ReturnsService,

@@ -26,6 +26,7 @@ import { pathToFileURL } from 'node:url';
 import { registerAuth } from './platform/http/auth-plugin.js';
 import { corsOptions } from './platform/http/cors.js';
 import { withBrandOrigins } from './platform/http/origins.js';
+import { credentialRateLimitsEnabled } from './platform/http/rate-limit.js';
 import { ValkeyRateLimiter } from './platform/http/rate-limit.valkey.js';
 import { createRealtimeGateway } from './platform/realtime/index.js';
 import { useTrackingRateLimitStore } from './modules/courier/tracking.service.js';
@@ -164,6 +165,18 @@ async function bootstrap(): Promise<void> {
   };
   logger.info({ origins: originPolicy.trustedOrigins.length }, 'trusted origins resolved');
 
+  /*
+   * The credential limits, ours and Better Auth's, decided once for both. Off only for the
+   * real-stack browser runs (`CREDENTIAL_RATE_LIMITS=off`), which production refuses to
+   * boot with; said loudly when it happens.
+   */
+  const credentialLimits = credentialRateLimitsEnabled(env);
+  if (!credentialLimits) {
+    logger.warn(
+      'credential rate limits are OFF (CREDENTIAL_RATE_LIMITS=off): a throwaway test stack only',
+    );
+  }
+
   // Built before Nest, because the modules depend on it: it owns a connection
   // pool and a shutdown, so the composition root makes it rather than a module.
   //
@@ -179,6 +192,7 @@ async function bootstrap(): Promise<void> {
     trustedOrigins: originPolicy.trustedOrigins,
     cookieDomain: env.APP_DOMAIN === 'localhost' ? undefined : `.${env.APP_DOMAIN}`,
     sms: new RecordingSmsProvider(),
+    rateLimitEnabled: credentialLimits,
     ...(brand === null ? {} : { brandName: brand.displayName }),
     onPasswordToken: ({ email, token }) => {
       tokens.put(email, token);
@@ -283,6 +297,7 @@ async function bootstrap(): Promise<void> {
     auth,
     ...originPolicy,
     limiter,
+    rateLimitEnabled: credentialLimits,
     cookieDomain: env.APP_DOMAIN === 'localhost' ? undefined : `.${env.APP_DOMAIN}`,
     secure: env.NODE_ENV === 'production',
   });

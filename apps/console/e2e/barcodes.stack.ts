@@ -342,6 +342,8 @@ test('a shelf counted in by mistake is sent to a second admin to reverse', async
   const dialog = page.getByRole('dialog', { name: 'Reverse this entry?' });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Why it is being reversed').fill('These two were counted on shelf A too');
+  // A reason enables the request: axe judges the enabled button, as the person sees it.
+  await expect(dialog.getByRole('button', { name: 'Ask to reverse' })).toBeEnabled();
   await noBlockingViolations('reverse entry');
   await shot('07-reverse-entry', false);
   await dialog.getByRole('button', { name: 'Ask to reverse' }).click();

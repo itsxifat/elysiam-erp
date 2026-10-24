@@ -180,7 +180,7 @@ Sign in as **Marketing**.
 2. **Campaigns**: "Eid Festive Collection" and "Winter Preview", with daily ad spend.
    **Add campaign** creates one; type in a day's spend from your ads manager.
 3. **Leads**: people who asked about a product. Change a lead's status as you follow up.
-4. **Promo codes**: **EID10** is live. **New code** creates another: a percentage, a flat
+4. **Discounts** (the promo codes): **EID10** is live. **New code** creates another: a percentage, a flat
    amount or free delivery, with limits and dates.
 5. **Message templates**: the birthday offer and the loan reminder texts, in English (a
    message written in Bangla is refused). No SMS leaves the preview; messages go to a stand-in.
@@ -222,8 +222,9 @@ Open the **till** at https://elyerp.enfinito.cloud/pos/ and sign in as **Branch 
 1. Choose the register **Dhanmondi till 1**.
 2. **Open a shift**: count the cash in the drawer (type 5000) and press **Open shift**.
 3. **Ring up a sale.**
-   - In **Scan or type a code**, type `2000000000102` (Classic Cotton Tee, size M) and
-     press Enter.
+   - In **Scan or type a code**, type the barcode of Classic Cotton Tee in size M (on its
+     product page in the console, or scan its sticker) and press Enter. Every size has its
+     own 13-digit barcode (D-603).
    - Add more items if you like, then **Pay**.
    - Choose cash, bKash or card, or split between them.
 4. At the end, **Close the shift**: count the drawer. The screen shows what it expected and

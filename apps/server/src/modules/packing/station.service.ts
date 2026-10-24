@@ -22,7 +22,6 @@ import {
   packProgress,
   packedCounts,
   packingVideoState,
-  parseLotCode,
   piecesByLot,
   type PackScanOutcome,
 } from '@elysium/domain/packing';
@@ -39,7 +38,7 @@ import { ORDERS_API, type OrdersApi, type PackingFacts } from '../orders/orders.
 import * as cameras from './camera.repository.js';
 import * as labels from './labels.repository.js';
 import { PACKING_QUEUES, type CameraCutPayload } from './packing.queues.js';
-import { ScannerService } from './scanner.service.js';
+import { ordersForScannedCode, ScannerService } from './scanner.service.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as repo from './station.repository.js';
 import { TerminalsService, type AtTerminal } from './terminals.service.js';
@@ -748,16 +747,12 @@ export class PackStationService {
     request: object,
     input: PackingOpenInput,
   ): Promise<string> {
-    // M46 (D-806): a lot's code opens its order.
-    const code = 'orderId' in input ? '' : normaliseScannedCode(input.code);
+    // M46 (D-806, D-912): a lot's code, in letters or twelve digits, opens its order.
     const candidates =
       'orderId' in input
         ? [input.orderId]
-        : await this.orders.orderIdsForShipmentCode(
-            tx,
-            orgId,
-            parseLotCode(code)?.orderCode ?? code,
-          );
+        : (await ordersForScannedCode(this.orders, tx, orgId, normaliseScannedCode(input.code)))
+            .orderIds;
     for (const id of candidates) {
       if (await this.orders.orderVisibleTo(tx, orgId, id, request)) return id;
     }

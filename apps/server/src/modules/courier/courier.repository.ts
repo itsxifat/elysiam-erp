@@ -1,4 +1,5 @@
 import type { Tx } from '@elysium/db';
+import { scannedOrderParts } from '@elysium/domain/packing';
 import { sql, type SQL } from 'drizzle-orm';
 
 /**
@@ -123,8 +124,33 @@ export interface NewCourierAccount {
  * the sandbox becomes live — and each of those is an update to the same account. The
  * credential columns are only overwritten when new ones were supplied, so re-saving the
  * form to change a label does not wipe the keys.
+ *
+ * With no new keys, an existing account is updated by a plain UPDATE first. Postgres checks a
+ * CHECK constraint on the row an INSERT proposes before ON CONFLICT turns it into an update,
+ * so an active account re-saved without keys (Advanced's Save, D-913) would otherwise break
+ * `courier_accounts_active_has_credentials` on a row that is never inserted.
  */
 export async function upsertAccount(tx: Tx, input: NewCourierAccount): Promise<string> {
+  if (input.credentials === null) {
+    const updated = await tx.execute<{ id: string }>(sql`
+      update courier.courier_accounts set
+        provider_code = ${input.providerCode},
+        label = ${input.label},
+        mode = ${input.mode},
+        base_url = ${input.baseUrl},
+        webhook_secret = coalesce(${input.webhookSecret}::bytea, webhook_secret),
+        supports_webhook = ${input.supportsWebhook},
+        poll_after_hours = ${input.pollAfterHours},
+        settlement_wallet_id = ${input.settlementWalletId}::uuid,
+        verified = ${input.verified},
+        is_active = ${input.isActive},
+        updated_at = now()
+      where org_id = ${input.orgId} and courier_id = ${input.courierId}
+      returning id
+    `);
+    const id = updated[0]?.id;
+    if (id !== undefined) return id;
+  }
   const rows = await tx.execute<{ id: string }>(sql`
     insert into courier.courier_accounts
       (org_id, courier_id, provider_code, label, mode, base_url, credentials,
@@ -1713,6 +1739,8 @@ export async function listParcels(
   // `%` and `_` in what a person typed are literal characters, not wildcards.
   const pattern =
     options.q === undefined ? null : `%${options.q.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
+  // D-912: a label scanned into the search types the order's digits; `reference` is its number.
+  const scanned = options.q === undefined ? null : scannedOrderParts(options.q);
   const statuses =
     options.statuses === undefined || options.statuses.length === 0
       ? sql`true`
@@ -1734,7 +1762,13 @@ export async function listParcels(
     where c.org_id = ${orgId}
       and (${pattern}::text is null
            or c.reference ilike ${pattern} or c.consignment_no ilike ${pattern}
-           or c.tracking_code ilike ${pattern})
+           or c.tracking_code ilike ${pattern}
+           or ${
+             scanned === null
+               ? sql`false`
+               : sql`(split_part(c.reference, '-', 2) = ${scanned.period}
+                      and split_part(c.reference, '-', 3) = ${scanned.counter})`
+           })
       and ${statuses}
       and (${options.bookingState ?? null}::text is null
            or c.booking_state::text = ${options.bookingState ?? null})

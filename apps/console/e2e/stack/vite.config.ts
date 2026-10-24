@@ -21,5 +21,18 @@ export default defineConfig({
   resolve: {
     alias: [{ find: '@', replacement: path.resolve(consoleRoot, 'src') }],
   },
-  server: { strictPort: true },
+  server: {
+    strictPort: true,
+    /*
+     * One run tests one console: no file watcher and no hot updates. The API and worker run
+     * from a build, frozen for the run; the console now is too, as `warmConsole` transformed
+     * it. With the watcher on, an edit to `src/` or to a workspace package's `dist` during a
+     * run hot-swapped modules under open pages: a run re-executed `auth/session.tsx` beside
+     * the old one, `AppShell` read a context no `SessionProvider` gave and the page went blank
+     * (order-workflow.stack.ts check 1, waiting on "Take this order" until it timed out).
+     * Nothing in the stack edits the console, so nothing here needs to see a change.
+     */
+    hmr: false,
+    watch: null,
+  },
 });

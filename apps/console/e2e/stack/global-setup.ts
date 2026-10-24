@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, openSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -16,7 +16,8 @@ import { createInterface } from 'node:readline';
  * 2. **The API and the worker**, from `apps/server/dist`, pointed at that database. The
  *    worker is not optional: it is the outbox dispatcher, and check 4 is the outbox →
  *    Socket.IO path working end to end.
- * 3. **The console**, served by Vite from `e2e/stack/vite.config.ts`.
+ * 3. **The console**, served by Vite from `e2e/stack/vite.config.ts`, and warmed before the
+ *    first spec (`warmConsole`).
  *
  * Ports and the realtime channel key are this run's own, so it neither collides with a dev
  * server on 3000/5173 nor receives another stack's broadcasts. Every child is killed as a
@@ -108,6 +109,137 @@ async function waitFor(url: string, timeoutMs: number): Promise<void> {
   throw new Error(`${url} never came up: ${String(last)}`);
 }
 
+/**
+ * A value from the environment, or a throwaway one when it is unset or empty. Empty counts as
+ * unset because `apps/server/.env` ships secrets as `KEY=`, and an empty value set here would
+ * win over nothing and switch the feature off.
+ */
+function givenOr(value: string | undefined, throwaway: () => string): string {
+  return value === undefined || value === '' ? throwaway() : value;
+}
+
+/** A ceiling on the warm-up's crawl, far above the console's module count. */
+const WARMUP_MAX_MODULES = 5_000;
+
+/** Module specifiers named by a page or by a module as Vite serves it, static and dynamic. */
+const SPECIFIER_PATTERNS = [
+  /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/g,
+  /\bfrom\s*["']([^"'\n]+)["']/g,
+  /\bimport\s*\(?\s*["']([^"'\n]+)["']/g,
+];
+
+/** The same-origin modules `source` imports, resolved against `base`. */
+function importsOf(source: string, base: string): string[] {
+  const origin = new URL(base).origin;
+  const found = new Set<string>();
+  for (const pattern of SPECIFIER_PATTERNS) {
+    for (const match of source.matchAll(pattern)) {
+      const specifier = match[1] ?? '';
+      // Vite rewrites every import to a path, and a prebundled dependency names its chunks
+      // relatively with their extension. Anything else (a bare word, or `./Foo` in a doc
+      // comment inside a dependency) is not a module the browser will ask for.
+      const isPath = /^\/(?!\/)/.test(specifier);
+      const isChunk = /^\.\.?\/[^?]*\.[a-z0-9]+(?:\?|$)/i.test(specifier);
+      if (!isPath && !isChunk) continue;
+      const url = new URL(specifier, base);
+      url.hash = '';
+      if (url.origin === origin) found.add(url.href);
+    }
+  }
+  return [...found];
+}
+
+async function fetchText(
+  url: string,
+  timeoutMs: number,
+): Promise<{ status: number; type: string; body: string }> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  return {
+    status: response.status,
+    type: response.headers.get('content-type') ?? '',
+    body: await response.text(),
+  };
+}
+
+/**
+ * Warm the console's dev server before the first spec runs.
+ *
+ * Vite answers the page at once but optimises dependencies and transforms each module on its
+ * first request, and a dependency first met inside a lazy route reloads every open page. The
+ * first spec used to meet all of that cold and spent its whole timeout there
+ * (`account.stack.ts`'s first test, 2 minutes). So the page, its entry and every module they
+ * import, static and dynamic, are requested once here, as the browser would request them;
+ * the specs then load from Vite's cache.
+ *
+ * The page and the entry must answer: without them no spec can pass, and saying so here is
+ * clearer than every spec timing out. The rest is best effort, bounded by `budgetMs` and
+ * written to `test-results/stack/console-warmup.log`.
+ */
+export async function warmConsole(baseUrl: string, budgetMs: number): Promise<void> {
+  const deadline = Date.now() + budgetMs;
+  const root = `${baseUrl}/`;
+  const page = await fetchText(root, 60_000);
+  if (page.status !== 200) {
+    throw new Error(`warming the console: ${root} answered ${String(page.status)}`);
+  }
+  const entries = importsOf(page.body, root).filter((url) =>
+    new URL(url).pathname.startsWith('/src/'),
+  );
+  if (entries.length === 0) throw new Error(`warming the console: ${root} names no entry module`);
+  // The entry's first request waits on Vite's first dependency optimisation.
+  for (const entry of entries) {
+    const answer = await fetchText(entry, 180_000);
+    if (answer.status !== 200) {
+      throw new Error(`warming the console: ${entry} answered ${String(answer.status)}`);
+    }
+  }
+
+  const seen = new Set<string>([root]);
+  const failures: string[] = [];
+  let frontier = importsOf(page.body, root);
+  let cutShort = false;
+  while (frontier.length > 0 && !cutShort) {
+    const fresh = [...new Set(frontier)].filter((url) => !seen.has(url));
+    const wave = fresh.slice(0, Math.max(0, WARMUP_MAX_MODULES - seen.size));
+    if (wave.length < fresh.length) cutShort = true;
+    for (const url of wave) seen.add(url);
+    const next: string[] = [];
+    let cursor = 0;
+    const fetchNext = async (): Promise<void> => {
+      while (cursor < wave.length) {
+        if (Date.now() >= deadline) {
+          cutShort = true;
+          return;
+        }
+        const url = wave[cursor++] ?? '';
+        try {
+          const answer = await fetchText(url, 60_000);
+          if (answer.status !== 200) {
+            failures.push(`${String(answer.status)} ${url}`);
+          } else if (answer.type.includes('javascript')) {
+            next.push(...importsOf(answer.body, url));
+          }
+        } catch (error) {
+          failures.push(`${error instanceof Error ? error.name : 'error'} ${url}`);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: 8 }, fetchNext));
+    frontier = next;
+  }
+
+  const log = logTo('console-warmup');
+  const summary = [
+    `requested ${String(seen.size)} modules`,
+    cutShort
+      ? `stopped early (a ${String(budgetMs)} ms budget, at most ${String(WARMUP_MAX_MODULES)} modules)`
+      : 'every module the page imports was requested',
+    ...failures,
+  ];
+  writeSync(log, `${summary.join('\n')}\n`);
+  closeSync(log);
+}
+
 /** Kill a child and everything it started. `taskkill /T` on Windows, a group kill elsewhere. */
 function killTree(child: ChildProcess | undefined): void {
   if (child?.pid === undefined || child.exitCode !== null) return;
@@ -188,10 +320,26 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       // into these sockets, and this worker must not deliver into another's.
       REALTIME_ADAPTER_KEY: `e2e-desk-${randomBytes(4).toString('hex')}`,
       LOG_LEVEL: process.env.E2E_STACK_LOG_LEVEL ?? 'warn',
+      /*
+       * The credential rate limits off, ours and Better Auth's (`rate-limit.ts`). Every spec
+       * signs in from 127.0.0.1, and `account.stack.ts` alone signs one person in six times
+       * in half a minute: with the limits on, the specs after it were refused sign-in and
+       * failed in their `beforeAll`. The limits are proved by the server's own suites; a
+       * production process refuses to start with this set (`platform/config/env.ts`).
+       */
+      CREDENTIAL_RATE_LIMITS: 'off',
+      // With the limits off, the API listens on this computer alone, never the LAN.
+      API_HOST: '127.0.0.1',
+      // M33: website keys derive from this, so Website → Settings can issue one and Website
+      // order keys work. `apps/server/.env` ships it empty; 32 characters is the floor.
+      INTAKE_KEY_SECRET: givenOr(process.env.INTAKE_KEY_SECRET, () =>
+        randomBytes(32).toString('hex'),
+      ),
       // M34: the website's credentials can be kept, and email and SSLCommerz are recorders,
       // so Website → Payments and Email are exercised without reaching anything real.
-      STOREFRONT_CREDENTIALS_KEY:
-        process.env.STOREFRONT_CREDENTIALS_KEY ?? randomBytes(32).toString('base64'),
+      STOREFRONT_CREDENTIALS_KEY: givenOr(process.env.STOREFRONT_CREDENTIALS_KEY, () =>
+        randomBytes(32).toString('base64'),
+      ),
       NOTIFY_EMAIL_PROVIDER: 'fake',
       STOREFRONT_SSLCOMMERZ_PROVIDER: 'fake',
       // A throwaway stack is a staging server: its sandbox store may take test payments.
@@ -235,6 +383,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
     await waitFor(`${API_URL}/health/live`, 120_000);
     await waitFor(CONSOLE_URL, 120_000);
+    await warmConsole(CONSOLE_URL, 180_000);
 
     const info: StackInfo = {
       apiUrl: API_URL,

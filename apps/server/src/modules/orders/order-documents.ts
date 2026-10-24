@@ -9,7 +9,7 @@ import {
   takaText,
   type Poisha,
 } from '@elysium/domain';
-import { lotCode } from '@elysium/domain/packing';
+import { lotCode, lotScanCode, orderScanCode } from '@elysium/domain/packing';
 import { encode as encodeQr } from 'uqr';
 
 import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fonts.js';
@@ -22,10 +22,11 @@ import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fo
  * company do … formal english language and clean premium design". So each page leads with
  * what the person holding it acts on, in the order they act on it:
  *
- * 1. **The order number, large, with its barcode.** The barcode is Code 128 of the order
- *    number exactly as the order carries it, which is the first thing the packing station and
- *    the scanner look a code up by (`OrdersApi.orderIdsForShipmentCode`); a test decodes the
- *    printed bars and opens the order at the real station with them.
+ * 1. **The order number, large, with its barcode.** The barcode is Code 128 of the order's
+ *    digits-only code (`2610000042` for `ELY-2610-00042`, D-912), which the packing station and
+ *    the scanner look an order up by; a test decodes the printed bars and opens the order at the
+ *    real station with them. The order number in letters is the human copy; the label also
+ *    prints the digits small under its bars.
  * 2. **The cash to collect**, in a heavy black box: the one number the rider must not get
  *    wrong.
  * 3. **The recipient** — name, phone and the full address — large and bold, because a rider
@@ -136,12 +137,17 @@ function lotOf(data: OrderDocumentData): { readonly no: number; readonly count: 
 }
 
 /**
- * What the page's barcode carries (D-806): the order number, or for one lot of several its lot
- * code (`ELY-2610-00042-L2`), which the packing station and the handover read back.
+ * What the page's barcode and QR code carry (D-806, D-912): the order's ten digits, or for one
+ * lot of several the lot's twelve (`261000004202`), which the packing station and the handover
+ * read back. The owner: the brand's letters in front of the number printed hazy and the scanner
+ * missed them; digits alone pair into half the symbols, so the bars can be twice as wide. An
+ * order with no digits-only code (a counter past six digits) prints its order number or lot code
+ * (`ELY-2610-00042-L2`) as before, and those still scan.
  */
 export function documentBarcodeValue(data: OrderDocumentData): string {
   const lot = lotOf(data);
-  return lot === null ? data.orderNo : lotCode(data.orderNo, lot.no);
+  if (lot === null) return orderScanCode(data.orderNo) ?? data.orderNo;
+  return lotScanCode(data.orderNo, lot.no) ?? lotCode(data.orderNo, lot.no);
 }
 
 /** "Lot 2 of 3", bold and boxed, or nothing for an order in one bag. */
@@ -211,11 +217,12 @@ function units(data: OrderDocumentData): number {
 }
 
 /**
- * The order number as a Code 128 barcode, sized in whole modules.
+ * The order's code as a Code 128 barcode, sized in whole modules.
  *
- * `moduleMm` is the narrowest bar: 0.3 mm on a laser page, 0.375 mm (three dots of a 203 dpi
- * head) on a thermal label, so every bar lands on whole dots. The symbol's own width decides
- * the image's, which is the only way to keep the module exact.
+ * `moduleMm` is the narrowest bar: 0.5 mm on the invoice, 1 mm on the packing slip's strip, and
+ * on the thermal label a whole number of a 203 dpi head's dots (`labelModuleMm`), so every bar
+ * lands on whole dots. The symbol's own width decides the image's, which is the only way to keep
+ * the module exact.
  */
 export function orderBarcode(value: string, moduleMm: number, heightMm: number): string {
   const modules = code128Encode(value).width + CODE128_QUIET_MODULES * 2;
@@ -226,8 +233,25 @@ export function orderBarcode(value: string, moduleMm: number, heightMm: number):
   );
 }
 
-/** One dot of a 203 dpi thermal head, in millimetres: a QR module is a whole number of them. */
+/** One dot of a 203 dpi thermal head, in millimetres: a bar or a QR module is whole dots. */
 const THERMAL_DOT_MM = 25.4 / 203;
+
+/** The label's padding in millimetres, top and bottom (`y`) and either side (`x`). */
+const LABEL_PAD_MM = { y: 4, x: 4.5 } as const;
+
+/**
+ * The label's narrowest bar (D-912): as many whole dots of a 203 dpi head as fit, with the quiet
+ * zones, in the label's width inside its padding — worked out from the symbol, not fixed. An
+ * order's ten digits are 90 modules and a lot's twelve 101, with twenty of quiet zone, so six dots
+ * (0.75 mm, 83 or 91 mm of bars): twice the three a bar had when the order number was spelt out,
+ * and what lets a bar printed a dot fat or a dot thin still read. A code that falls back to text
+ * is twice the modules and more, and gets three dots again, or two for a long lot code.
+ */
+export function labelModuleMm(value: string): number {
+  const modules = code128Encode(value).width + CODE128_QUIET_MODULES * 2;
+  const room = PAPER.label.widthMm - LABEL_PAD_MM.x * 2;
+  return Math.max(1, Math.floor(room / modules / THERMAL_DOT_MM)) * THERMAL_DOT_MM;
+}
 
 /**
  * The label's QR code (D-911): the barcode's value again, for a 2D scanner or a phone, which read
@@ -426,7 +450,9 @@ function masthead(
   options: { readonly barcode: boolean } = { barcode: true },
 ): string {
   const value = documentBarcodeValue(data);
-  const barcode = paper === 'a4' ? orderBarcode(value, 0.3, 12) : orderBarcode(value, 0.25, 9);
+  // D-912: the digits are half the symbols the order number was, so the bars grow from 0.3 mm to
+  // 0.5 mm and the code still takes less of the header than the order number's 63 mm did.
+  const barcode = paper === 'a4' ? orderBarcode(value, 0.5, 12) : orderBarcode(value, 0.4, 9);
   return `<header class="masthead">
       ${brandBlock(brand, true)}
       <div class="doc-id">
@@ -438,8 +464,8 @@ function masthead(
     </header>`;
 }
 
-/** The widest a slip's scan strip draws its narrowest bar (D-905). */
-export const SLIP_MODULE_MM = 0.5;
+/** The widest a slip's scan strip draws its narrowest bar (D-905, D-912). */
+export const SLIP_MODULE_MM = 1;
 
 /**
  * The packing slip's barcode, alone on a strip the page's width (D-905).
@@ -447,12 +473,17 @@ export const SLIP_MODULE_MM = 0.5;
  * The slip is what the packing station and the courier's handover scan, and it is often printed
  * on the 4 × 6 label printer, shrunk to about two thirds of its A5. In the header's corner its
  * bars were 0.25 mm and 9 mm tall: two thirds of that is one or two of a thermal head's dots,
- * which a scanner reads only on its third try. On its own strip under the header it is drawn at
- * 0.5 mm (narrower only when a long lot code would not fit the page's width), 12 mm tall on A5
- * and 16 mm on A4, so even shrunk the bars stay a third of a millimetre wide and over 8 mm tall,
- * with their quiet zones clear of anything else. The order number above it is the human copy.
- * The slip's own spacing (`slipCss`) gives the strip its height back, so the slip still prints on
- * one page.
+ * which a scanner reads only on its third try. On its own strip under the header it is drawn
+ * 12 mm tall on A5 and 16 mm on A4, with its quiet zones clear of anything else.
+ *
+ * Since D-912 the strip carries the order's digits, half the symbols the order number was, so
+ * its bars are 1 mm (they were 0.5) and the strip is about as wide as it was, 110 to 121 mm
+ * (105 to 121 before): shrunk onto the 4 × 6 a bar is 0.69 mm, five or six of the head's dots,
+ * and reads printed a dot fat or a dot thin. A code that falls back to text is drawn narrower,
+ * as fits the page's width. The order number above it is the human copy, and typed at the
+ * station it opens the order too; the A5 slip has no room left for the digits under the bars as
+ * the label prints them. The slip's own spacing (`slipCss`) gives the strip its height back, so
+ * the slip still prints on one page.
  */
 function scanStrip(data: OrderDocumentData, paper: DocumentPaper): string {
   const value = documentBarcodeValue(data);
@@ -729,8 +760,10 @@ export function renderPackingSlipHtml(input: {
  *
  * The thermal label every Bangladeshi courier's pickup desk prints, one order per label. What
  * is on it is what a rider needs at a door: who, where, how much to collect, the courier and
- * its numbers, and the order number as a Code 128 barcode so the warehouse scans it at
- * handover instead of typing it. All black, nothing grey: a thermal head prints grey as ash.
+ * its numbers, and the order's digits as a Code 128 barcode and a QR code (D-912, D-911) so the
+ * warehouse scans it at handover instead of typing it; the bars are as wide as the label allows
+ * in whole dots (`labelModuleMm`), the digits printed small under them. All black, nothing grey:
+ * a thermal head prints grey as ash.
  */
 export function renderLabelHtml(input: {
   readonly brand: DocumentBrand;
@@ -755,7 +788,10 @@ export function renderLabelHtml(input: {
           ${lotBadge(data)}
         </div>
       </div>
-      <div class="barcode">${orderBarcode(scan, 0.375, 18)}</div>
+      <div class="barcode">
+        ${orderBarcode(scan, labelModuleMm(scan), 18)}
+        <div class="hri" data-field="scan-digits">${escapeHtml(scan)}</div>
+      </div>
 
       <div class="to" data-field="recipient">
         <div class="caption">Deliver to</div>
@@ -789,7 +825,8 @@ function labelCss(fonts: readonly FontFile[]): string {
       body { margin: 0; font-family: ${DOCUMENT_FONT_STACK}; color: #000; }
       /* A hair under the page, so rounding from millimetres can never spill onto a second label. */
       .label {
-        width: ${String(page.widthMm)}mm; height: ${String(page.heightMm - 0.2)}mm; padding: 4mm 4.5mm;
+        width: ${String(page.widthMm)}mm; height: ${String(page.heightMm - 0.2)}mm;
+        padding: ${String(LABEL_PAD_MM.y)}mm ${String(LABEL_PAD_MM.x)}mm;
         display: flex; flex-direction: column; overflow: hidden; font-size: 9pt; line-height: 1.3;
       }
       .caption { font-size: 6.5pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
@@ -802,13 +839,21 @@ function labelCss(fonts: readonly FontFile[]): string {
       .from span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .logo { max-height: 7mm; max-width: 20mm; object-fit: contain; filter: grayscale(100%) contrast(140%); }
       .courier { flex: none; background: #000; color: #fff; padding: 1mm 2.4mm; font-size: 9pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-      .barcode { margin-top: 2.6mm; text-align: center; line-height: 0; }
+      /* The bars' quiet zones are either side of them; above and below, the gaps pay for the
+         digits under them (D-912), so a long name and a four-line address still fit. */
+      .barcode { margin-top: 2mm; text-align: center; line-height: 0; }
       .barcode svg { display: inline-block; }
+      /* D-912: what the bars carry, small under them, for a person to type when a scan fails. The
+         spacing's gap after the last digit is given back on the left, so the digits centre. */
+      .hri {
+        margin-top: 0.6mm; padding-left: 0.3em; font-size: 8pt; line-height: 1.1; font-weight: 600;
+        letter-spacing: 0.3em; font-variant-numeric: tabular-nums; white-space: nowrap;
+      }
       .order-no { margin-top: auto; font-size: 17pt; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       /* M46 (D-806): one bag of several, black on white so a thermal head prints it solid. */
       .lot { margin: 1.4mm auto 0; width: fit-content; background: #000; color: #fff; padding: 1mm 3.2mm; font-size: 13pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
       .head-side .lot { margin: 0; }
-      .to { margin-top: 3mm; padding-top: 2.6mm; border-top: 1.5pt solid #000; }
+      .to { margin-top: 2.4mm; padding-top: 2.2mm; border-top: 1.5pt solid #000; }
       .name { margin-top: 1mm; font-size: 17pt; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
       .phone { margin-top: 0.6mm; font-size: 17pt; font-weight: 700; letter-spacing: 0.02em; }
       .address {

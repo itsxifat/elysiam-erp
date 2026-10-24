@@ -3809,3 +3809,55 @@ c.org_id and o.id = c.order_id where a.provider_code = 'steadfast' and c.booking
   `render.gotenberg.test.ts` 4 passed (the QR read back square for square and the bars on many
   rows, at 203 dpi and at 96 %), `documents-review.test.ts`, `order-documents.test.ts`,
   `pack-station.e2e.test.ts` 44 passed. Pictures in `docs/review/M46/`.
+
+## 2026-10-24 · fix · a confirmed order is ready for its label, and prints by itself
+
+- **Decision:** D-914 (ASSUMED: label on Confirm, printed at once unless a consignment is
+  awaited). The confirm tells packing through the parcel observer port in its own transaction;
+  a booking that fails for good tells it too (`reportBookingFailed`); an order with no location
+  prints at any active label terminal; "Ready for label" filters by confirmed in the query and
+  shows "Not booked yet"; D-908's Printers notice is gone.
+- **Tests:** `labels.e2e.test.ts` 23 passed (on Confirm booking: nothing until the consignment,
+  then one print carrying it and the row filled; an own rider's order by hand: listed with no
+  consignment, then printed on the terminal's printer with no click; no location at a located
+  terminal; no second print on a repeat or later booking; a cancel leaves the list; a failed
+  booking prints without one); `pack-station.e2e`, `handover.e2e`, `packing.e2e`,
+  `courier.m15.db`, `courier.db`, `orders.db`, `orders.e2e`, `workflow.e2e` passed. Server and
+  console typecheck, lint, format, `check:migrations`, `check:schema`, `check:i18n`: PASS.
+- **New dependencies:** none. **Migration:** 0163 (`label_orders.consignment_no` nullable;
+  confirmed and on-hold orders with no row and no slip printed listed, unprinted).
+- **Review (D-914):** a brand that books by hand with a courier account got a label with no
+  consignment on Confirm, and the one automatic print then skipped the consignment's label after
+  Book now. A consignment is now awaited under booking by hand too when the order's courier can be
+  booked here (`CourierBookingPort.canBook`, the automatic booking's test); only an unbookable
+  courier (an own rider) prints on Confirm. `labels.e2e.test.ts` gains manual + account + Book now:
+  nothing until the consignment, then one automatic label carrying it.
+
+## 2026-10-24 · fix · digits-only barcodes, courier setup in three steps, the browser suites green
+
+- **Decisions:** D-912 (every order barcode carries digits alone), D-913 (Settings → Couriers:
+  pick Steadfast, Pathao or Carrybee, enter its keys, default or not; Carrybee is booked in its
+  own panel, having no public API), D-915 (the browser suites' own switches).
+- **D-912:** an order's code is ten digits (`YYMM` and the counter to six), a lot's twelve;
+  Code 128 writes an even run of digits in subset C, so the 4 × 6 label's bars are 6 dots
+  (0.75 mm) where they were 3, the slip's 1 mm, the invoice's 0.5 mm; the label's QR code and
+  the label sheet's carry the digits. The pack station, handover, courier portal, scanner phone,
+  the console's slip check and the Orders, Labels-log and Parcels searches read the digits and
+  every older form; the order's own code wins over a courier number with the same digits. Off a
+  real 203 dpi raster with every bar a dot fatter or thinner, the old codes read on no row and
+  the new on every row. The console's camera scanner reads QR codes.
+- **D-913:** `POST /v1/courier/connections` checks the keys with a call each adapter already
+  makes (outside any transaction), then creates the party and the account in one transaction,
+  sealed and audited; a default is every delivery zone's default courier (needs `update
+Catalog` as well), zones locked against a concurrent change; re-connecting keeps Advanced's
+  settings; the test courier is not offered by a production process. Pathao's switch is on in
+  both brands' `.env.brand`.
+- **D-915:** console stubbed 13/13, till 5/5, console stack 104/104, portal 6/6, preview 11/11,
+  mother 4/4 before this batch (D-915's row has the causes).
+- **Gates:** `pnpm verify` exit 0: 323 test files, 4,715 passed, 2 skipped (the Steadfast
+  sandbox smoke test without keys; ffmpeg absent on this computer); bundle 248.5 KB of 250;
+  white-label, migrations (0163 added), schema, route matrix (673 routes), i18n, api-client
+  PASS. `.prettierignore` gains `.vscode/` and M49's unformatted `0161_snapshot.json` (a
+  committed migration file is never edited).
+- **New dependencies:** none. **Migration:** 0163 (`label_orders.consignment_no` nullable; the
+  confirmed orders waiting backfilled into Ready for label).

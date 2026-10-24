@@ -15,7 +15,7 @@ const optional = <T extends z.ZodType>(schema: T) =>
  * Parsed once at startup so a missing or malformed variable stops the process
  * before it can serve a request against the wrong database (architecture §28).
  */
-const schema = z.object({
+const fields = z.object({
   ...baseEnvShape,
 
   API_HOST: z.string().min(1).default('0.0.0.0'),
@@ -79,6 +79,25 @@ const schema = z.object({
   TRUSTED_PROXY_COUNT: z.coerce.number().int().min(0).max(10).default(0),
 
   /**
+   * The credential rate limits: `platform/http/rate-limit.ts`'s buckets and Better Auth's
+   * own limiter underneath (`LIBRARY_RATE_RULES`, D-168). `on` unless told otherwise.
+   *
+   * `off` exists for the real-stack Playwright runs alone (the console's and the portal's
+   * `e2e/stack/global-setup.ts`): every spec there signs in from 127.0.0.1, and
+   * `account.stack.ts` alone signs one person in six times in under half a minute, so the
+   * per-email and per-address buckets refused the specs that came after it. The limits
+   * themselves are proved by `rate-limit.test.ts` and the HTTP suites, not by a browser run.
+   *
+   * Refused outright with `NODE_ENV=production` (`schema` below), so a production process
+   * cannot start with it, and no deployment's compose file passes it (`env.test.ts` holds
+   * both).
+   */
+  CREDENTIAL_RATE_LIMITS: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.enum(['on', 'off']).default('on'),
+  ),
+
+  /**
    * The largest single cash-in, in poisha (D-092). Default ৳1 crore. A cash
    * entry is posted without a second person, so its size is bounded here
    * rather than trusted to whoever types it (M03 security review M2).
@@ -132,11 +151,29 @@ const schema = z.object({
     ),
 });
 
+/** The fields, and what production may never run with. */
+const schema = fields.superRefine((env, context) => {
+  if (env.NODE_ENV === 'production' && env.CREDENTIAL_RATE_LIMITS === 'off') {
+    context.addIssue({
+      code: 'custom',
+      path: ['CREDENTIAL_RATE_LIMITS'],
+      message:
+        'CREDENTIAL_RATE_LIMITS=off is for a throwaway test stack and is refused in ' +
+        'production: it lets anyone guess passwords and codes without limit. Unset it.',
+    });
+  }
+});
+
 export type ServerEnv = z.infer<typeof schema>;
 
 let cached: ServerEnv | undefined;
 
+/** Parse a given environment, uncached: the boot path's own check, for a test to call. */
+export function parseServerEnv(source: Record<string, string | undefined>): ServerEnv {
+  return createEnv('server', schema, source);
+}
+
 export function serverEnv(): ServerEnv {
-  cached ??= createEnv('server', schema);
+  cached ??= parseServerEnv(process.env);
   return cached;
 }

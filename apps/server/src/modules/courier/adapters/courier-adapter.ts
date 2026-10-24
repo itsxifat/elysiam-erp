@@ -78,6 +78,8 @@ export interface SettlementBatch {
 export interface CourierAdapter {
   /** `steadfast`, `fake`. Matches `sales.couriers.code` and the account's provider. */
   readonly code: string;
+  /** The courier's own name, for a person: the party's name when connecting creates it (D-913). */
+  readonly name: string;
   /**
    * False for an adapter built from anything other than the courier's own documentation
    * (§21, D-006).
@@ -93,6 +95,17 @@ export interface CourierAdapter {
   readonly supportsWebhook: boolean;
   /** Which credential fields this adapter needs, for the account form to demand them. */
   readonly credentialFields: readonly string[];
+  /** Fields an account may add beyond those (Pathao's password grant), and no others (D-913). */
+  readonly optionalCredentialFields?: readonly string[];
+
+  /**
+   * Ask the courier whether these keys work (D-913), with a call this adapter already makes —
+   * never an endpoint of its own. Resolves when the courier accepted them; throws
+   * `COURIER_CREDENTIALS_REJECTED` with a plain sentence when it refused them, and
+   * `COURIER_UNAVAILABLE` when it did not answer. An outbound call: never inside a
+   * transaction (invariant 6).
+   */
+  verifyCredentials(context: AdapterContext): Promise<void>;
 
   /** Idempotent on our order reference, per §9. */
   createParcel(context: AdapterContext, input: ParcelInput): Promise<ParcelResult>;

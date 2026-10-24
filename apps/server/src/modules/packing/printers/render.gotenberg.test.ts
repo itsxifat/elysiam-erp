@@ -2,14 +2,19 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { lotCode } from '@elysium/domain/packing';
+import { code128Encode } from '@elysium/domain';
+import { lotScanCode } from '@elysium/domain/packing';
 import { encode as encodeQr } from 'uqr';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { decodeCode128Svg } from '../../../testing/code128-decode.js';
 import { loadFonts } from '../../files/pdf/fonts.js';
 import { GotenbergClient } from '../../files/pdf/gotenberg.client.js';
-import { renderLabelHtml, renderPackingSlipHtml } from '../../orders/order-documents.js';
+import {
+  documentBarcodeValue,
+  renderLabelHtml,
+  renderPackingSlipHtml,
+} from '../../orders/order-documents.js';
 import { SAMPLE_BRAND, SAMPLE_ORDER } from '../../orders/order-documents.sample.js';
 import { encodePng } from './png.js';
 import type { MonoBitmap } from './raster.js';
@@ -19,9 +24,20 @@ import { renderForPrinter, testPage, type PrintPage } from './render.js';
  * A lot's label and slip made ready for a thermal printer through the real Gotenberg (M46,
  * D-811): Chromium's screenshot at the printer's dots, thresholded to one bit, framed as TSPL.
  * The bitmap is the paper's size to the dot, carries ink where the page does, and its lot
- * barcode reads back off the dots as `ELY-2610-00042-L2` — what the handover scanner is given.
- * The bitmaps are written to `docs/review/M46/` to look at. Skipped, loudly, without Gotenberg.
+ * barcode reads back off the dots as `261000004202`, the lot's twelve digits (D-912) — what the
+ * handover scanner is given — on every row of the bars, and still with the bars printed a dot fat
+ * or a dot thin. The bitmaps are written to `docs/review/M46/` to look at. Skipped, loudly,
+ * without Gotenberg.
+ *
+ * The rows that read, at 203 dpi, shrunk to 96 % and on the slip shrunk onto the 4 × 6: before
+ * D-912 (`ELY-2610-00042-L2`, a bar three dots on the label and under three on the slip) 72, 69
+ * and 33 read as printed, every row the bars cover, and not one with a dot of print gain either
+ * way; with the digits (six dots, five and a half on the slip) 72, 69 and 33 read both ways.
  */
+
+/** The lot every page here is for, and what its bars and QR code carry. */
+const LOT_DATA = { ...SAMPLE_ORDER, lot: { no: 2, count: 3 } };
+const EXPECTED = lotScanCode(SAMPLE_ORDER.orderNo, 2) ?? '';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REVIEW_DIR = path.resolve(HERE, '../../../../../../docs/review/M46');
@@ -52,11 +68,23 @@ function bitmapOfTspl(bytes: Uint8Array): MonoBitmap {
 const dot = (bitmap: MonoBitmap, x: number, y: number) =>
   ((bitmap.rows[y * bitmap.widthBytes + (x >> 3)] ?? 0) & (0x80 >> (x & 7))) !== 0;
 
-/** Read a row of dots as a Code 128 symbol of `length` characters, as a scanner would. */
-function decodeRow(bitmap: MonoBitmap, y: number, length: number): string | null {
+/**
+ * Read a row of dots as a Code 128 symbol, as a scanner would: every run of dots measured in the
+ * modules of the symbol `expected` makes (its own width, subset B or C alike: D-912) and rounded.
+ * `spread` dots of print gain first grow every bar by that many dots on each side, the way a hot
+ * or hazy head spreads its ink, or for a negative spread wear each one thin, the way a faded
+ * ribbon or a cold head prints; a bar a whole number of dots wide reads through either only when
+ * its modules are wide enough to absorb them.
+ */
+function decodeRow(bitmap: MonoBitmap, y: number, expected: string, spread = 0): string | null {
+  const row = Array.from({ length: bitmap.widthDots }, (_, x) => dot(bitmap, x, y));
+  const reach = Math.abs(spread);
+  const inked = row.map((_, x) => {
+    const near = row.slice(Math.max(0, x - reach), x + reach + 1);
+    return spread >= 0 ? near.some(Boolean) : near.every(Boolean);
+  });
   const runs: { black: boolean; width: number }[] = [];
-  for (let x = 0; x < bitmap.widthDots; x += 1) {
-    const black = dot(bitmap, x, y);
+  for (const black of inked) {
     const last = runs[runs.length - 1];
     if (last?.black === black) last.width += 1;
     else runs.push({ black, width: 1 });
@@ -69,7 +97,7 @@ function decodeRow(bitmap: MonoBitmap, y: number, length: number): string | null
   if (firstBar < 0) return null;
   const symbol = runs.slice(firstBar, lastBar + 1);
   const dots = symbol.reduce((sum, run) => sum + run.width, 0);
-  const module = dots / (11 * length + 35);
+  const module = dots / code128Encode(expected).width;
   let x = 0;
   const rects: string[] = [];
   for (const run of symbol) {
@@ -82,6 +110,20 @@ function decodeRow(bitmap: MonoBitmap, y: number, length: number): string | null
   } catch {
     return null;
   }
+}
+
+/** The rows, every other one down the top half of the page, that read as `expected`. */
+function rowsReading(bitmap: MonoBitmap, expected: string, spread = 0): number {
+  let reads = 0;
+  for (let y = 40; y < 600; y += 2) {
+    if (decodeRow(bitmap, y, expected, spread) === expected) reads += 1;
+  }
+  return reads;
+}
+
+/** The rows that read with a dot of print gain either way: the fewer of the grown and the worn. */
+function hazyRowsReading(bitmap: MonoBitmap, expected: string): number {
+  return Math.min(rowsReading(bitmap, expected, 1), rowsReading(bitmap, expected, -1));
 }
 
 /**
@@ -136,7 +178,7 @@ function picture(bitmap: MonoBitmap): Uint8Array {
 
 async function lotPage(kind: 'label' | 'slip'): Promise<PrintPage> {
   const fonts = await loadFonts();
-  const data = { ...SAMPLE_ORDER, lot: { no: 2, count: 3 } };
+  const data = LOT_DATA;
   const html =
     kind === 'label'
       ? renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts })
@@ -173,17 +215,16 @@ describe('a lot’s label and slip on a thermal printer (D-811)', () => {
     const share = ink / (812 * 1218);
     expect(share).toBeGreaterThan(0.03);
     expect(share).toBeLessThan(0.5);
-    // In the top half, rows of dots read as the lot's code, all down the bars' height (D-911).
+    // In the top half, rows of dots read as the lot's twelve digits, all down the bars' 18 mm (144
+    // dots, 72 rows of every other one: D-911), and so they do printed a dot fat or thin (D-912).
     await mkdir(REVIEW_DIR, { recursive: true });
     await writeFile(path.join(REVIEW_DIR, 'label-lot-2-of-3-tspl-203dpi.png'), picture(bitmap));
-    const expected = lotCode(SAMPLE_ORDER.orderNo, 2);
-    let reads = 0;
-    for (let y = 40; y < 600; y += 2) {
-      if (decodeRow(bitmap, y, expected.length) === expected) reads += 1;
-    }
-    expect(reads).toBeGreaterThan(30);
-    // D-911: and the QR code beside the order number prints square for square.
-    expect(qrMatch(bitmap, expected, 270)).toBe(1);
+    expect(EXPECTED).toBe('261000004202');
+    expect(documentBarcodeValue(LOT_DATA)).toBe(EXPECTED);
+    expect(rowsReading(bitmap, EXPECTED)).toBeGreaterThanOrEqual(70);
+    expect(hazyRowsReading(bitmap, EXPECTED)).toBeGreaterThanOrEqual(65);
+    // D-911: and the QR code beside the order number prints square for square, the same digits.
+    expect(qrMatch(bitmap, EXPECTED, 270)).toBe(1);
   });
 
   it('keeps both codes readable shrunk to 96 %, as Chrome fits a PDF to a printable area (D-911)', async (context) => {
@@ -201,13 +242,11 @@ describe('a lot’s label and slip on a thermal printer (D-811)', () => {
     const bitmap = bitmapOfTspl(rendered.bytes);
     await mkdir(REVIEW_DIR, { recursive: true });
     await writeFile(path.join(REVIEW_DIR, 'label-lot-2-of-3-shrunk-96.png'), picture(bitmap));
-    const expected = lotCode(SAMPLE_ORDER.orderNo, 2);
-    let reads = 0;
-    for (let y = 40; y < 600; y += 2) {
-      if (decodeRow(bitmap, y, expected.length) === expected) reads += 1;
-    }
-    expect(reads).toBeGreaterThan(10);
-    expect(qrMatch(bitmap, expected, 260)).toBe(1);
+    // Every row of the shrunk bars (17.3 mm, 69 rows) reads, and with a dot's gain either way
+    // (before D-912: 69 rows as printed, not one with the gain).
+    expect(rowsReading(bitmap, EXPECTED)).toBeGreaterThanOrEqual(66);
+    expect(hazyRowsReading(bitmap, EXPECTED)).toBeGreaterThanOrEqual(60);
+    expect(qrMatch(bitmap, EXPECTED, 260)).toBe(1);
   });
 
   it('shrinks the A5 slip onto a 4 × 6 label printer and a test page onto 100 × 150 mm', async (context) => {
@@ -222,13 +261,10 @@ describe('a lot’s label and slip on a thermal printer (D-811)', () => {
     const slipBitmap = bitmapOfTspl(slip.bytes);
     expect(slipBitmap.heightDots).toBe(1218);
     // D-905: the slip's scan strip still reads, shrunk to two thirds on a 203 dpi head, on rows
-    // all across its height rather than on one lucky row.
-    const expected = lotCode(SAMPLE_ORDER.orderNo, 2);
-    let reads = 0;
-    for (let y = 40; y < 600; y += 2) {
-      if (decodeRow(slipBitmap, y, expected.length) === expected) reads += 1;
-    }
-    expect(reads).toBeGreaterThan(10);
+    // all across its height (12 mm shrunk to 8.2, 33 rows) rather than on one lucky row; since
+    // D-912 its 1 mm bars are five and a half dots there and read with a dot's gain either way too.
+    expect(rowsReading(slipBitmap, EXPECTED)).toBeGreaterThanOrEqual(31);
+    expect(hazyRowsReading(slipBitmap, EXPECTED)).toBeGreaterThanOrEqual(28);
     await mkdir(REVIEW_DIR, { recursive: true });
     await writeFile(path.join(REVIEW_DIR, 'slip-lot-2-of-3-on-4x6-tspl.png'), picture(slipBitmap));
 

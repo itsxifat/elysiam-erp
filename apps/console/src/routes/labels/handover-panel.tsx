@@ -121,7 +121,7 @@ export function HandoverPanel({ locationId }: { readonly locationId: string | un
             {[...list.values()].map((entry) => (
               <li
                 key={entry.orderId}
-                className={`flex h-row items-center justify-between gap-3 px-3${arrivals.has(entry.orderId) ? 'alive-in' : ''}`}
+                className={`flex h-row items-center justify-between gap-3 px-3 ${arrivals.has(entry.orderId) ? 'alive-in' : ''}`}
                 data-complete={entry.complete}
               >
                 <span className="font-medium tabular-nums">{entry.orderNo}</span>

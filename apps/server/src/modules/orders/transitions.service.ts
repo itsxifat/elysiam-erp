@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 import {
   applicableAdvance,
@@ -34,6 +34,7 @@ import { OffersService } from './offers.service.js';
 import * as advancesRepo from './advances.repository.js';
 import { CourierBookingRegistry } from './ports/courier-booking.port.js';
 import { DeliveryObserverRegistry } from './ports/delivery-observer.port.js';
+import { ParcelObserverRegistry } from './ports/parcel-observer.port.js';
 import { deliveredNetItems, orderLevelDiscount } from './revenue.js';
 import { PROMO_PORT, type PromoPort } from './ports/promo.port.js';
 
@@ -99,10 +100,13 @@ function pick(accounts: Accounts, subtype: AccountSubtype): PostingAccount {
  * `journalId` goes back out to the courier module, which writes it on the return receipt.
  * `advanceAppliedPoisha` is what the delivery journal relieved Customer advance by, which
  * `apply_advances` then spreads over the order's advances (D-233).
+ * `awaitingConsignment` is whether `enqueue_courier_booking` left a booking on its way, whose
+ * consignment the label waits for (D-914).
  */
 interface Posted {
   journalId: string | null;
   advanceAppliedPoisha: bigint;
+  awaitingConsignment: boolean;
 }
 
 export interface DeliverOptions {
@@ -166,6 +170,8 @@ export interface MoveOptions {
 
 @Injectable()
 export class TransitionsService {
+  private readonly logger = new Logger(TransitionsService.name);
+
   constructor(
     @Inject(INVENTORY_API) private readonly inventory: InventoryApi,
     @Inject(LEDGER_API) private readonly ledger: LedgerApi,
@@ -176,6 +182,7 @@ export class TransitionsService {
     private readonly deliveries: DeliveryObserverRegistry,
     private readonly advances: AdvancesService,
     private readonly offers: OffersService,
+    private readonly parcels: ParcelObserverRegistry,
   ) {}
 
   /**
@@ -196,21 +203,23 @@ export class TransitionsService {
     options: MoveOptions = {},
   ): Promise<{ result: TransitionResult; order: repo.OrderRow; journalId: string | null }> {
     const at = options.occurredAt ?? new Date();
+    /*
+     * §9's booking trigger, per org, read from `org.settings`.
+     *
+     * Read here rather than passed in by the caller, because the policy belongs to the
+     * *org* and not to the request: a confirm from the desk, from the portal and from a
+     * job all have to make the same parcel. An unset or unrecognised value is `manual`,
+     * which enqueues nothing — the only default that cannot book a parcel a brand did not
+     * ask for, and the only safe one while a courier account is still being set up. Kept for
+     * the confirm's label below (D-914).
+     */
+    const bookingPolicy = await this.bookingPolicy(tx, context.orgId);
     const result = transition({
       from: order.status as OrderStatus,
       trigger,
       at,
       reason: options.reason ?? null,
-      /*
-       * §9's booking trigger, per org, read from `org.settings`.
-       *
-       * Read here rather than passed in by the caller, because the policy belongs to the
-       * *org* and not to the request: a confirm from the desk, from the portal and from a
-       * job all have to make the same parcel. An unset or unrecognised value is `manual`,
-       * which enqueues nothing — the only default that cannot book a parcel a brand did not
-       * ask for, and the only safe one while a courier account is still being set up.
-       */
-      bookingPolicy: await this.bookingPolicy(tx, context.orgId),
+      bookingPolicy,
       /*
        * Asked only on a cancel, because that is the only transition the domain filters on
        * it: enqueueing a cancellation for a parcel that was never booked would hand a
@@ -232,7 +241,11 @@ export class TransitionsService {
      * mutable holder rather than a return value from `perform`, because the effect list is
      * a loop and only two of its effects post anything.
      */
-    const posted: Posted = { journalId: null, advanceAppliedPoisha: 0n };
+    const posted: Posted = {
+      journalId: null,
+      advanceAppliedPoisha: 0n,
+      awaitingConsignment: false,
+    };
 
     for (const effect of result.effects) {
       await this.perform(tx, context, order, effect, result, options, posted);
@@ -310,6 +323,39 @@ export class TransitionsService {
       });
     }
 
+    /*
+     * D-914: a confirmed order is ready for its label now, whatever its courier. Packing keeps it
+     * in "Ready for label" and, unless a consignment is on its way, enqueues its automatic print —
+     * writes and an enqueue, never a call (invariant 6). A consignment is on its way when this
+     * confirm queued the booking, or when the brand books by hand and the order's courier can be
+     * booked here: the desk's Book now brings it, and the one automatic label carries it (a label
+     * printed now would stop that one, as a lot is printed automatically once). In a savepoint,
+     * as the courier's booking tells packing (ledger audit N5): the confirm is the business
+     * change, and a listener that fails loses only its own rows (the label is then printed by
+     * hand), never the confirm.
+     */
+    if (trigger === 'confirm' && result.to === 'confirmed' && !this.parcels.empty) {
+      try {
+        await tx.transaction(async (savepoint) =>
+          this.parcels.notifyConfirmed(savepoint, {
+            orgId: context.orgId,
+            orderId: order.id,
+            orderNo: order.order_no,
+            locationId: order.location_id,
+            awaitingConsignment:
+              posted.awaitingConsignment ||
+              (bookingPolicy === 'manual' &&
+                (await this.bookableByHand(savepoint, context.orgId, order.id))),
+            at,
+          }),
+        );
+      } catch (error) {
+        this.logger.warn(
+          `a confirmed order's label listeners failed for order ${order.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     // M41 (D-717): an order that left New is offered to nobody any more, whichever path moved
     // it (the desk, a website payment, the marketplace, a courier), so no card outlives it.
     if (order.status === 'pending') await this.offers.withdrawFor(tx, context.orgId, order.id);
@@ -329,6 +375,19 @@ export class TransitionsService {
     const courier = this.courier.current();
     if (courier === undefined) return false;
     return courier.hasLiveParcel(tx, orgId, orderId);
+  }
+
+  /**
+   * D-914, under booking by hand: whether a person's Book now will bring this order a
+   * consignment (its courier can be booked here, and no parcel is booked yet: a booked one's
+   * consignment is on the label's row already). An own rider's order answers no and prints on
+   * Confirm. Asked of the courier module, which owns the accounts.
+   */
+  private async bookableByHand(tx: Tx, orgId: string, orderId: string): Promise<boolean> {
+    const courier = this.courier.current();
+    if (courier?.canBook === undefined) return false;
+    if (!(await courier.canBook(tx, orgId, orderId))) return false;
+    return (await courier.parcelTracking(tx, orgId, orderId)) === null;
   }
 
   private async perform(
@@ -501,12 +560,17 @@ export class TransitionsService {
           );
         }
         if (effect === 'enqueue_courier_booking') {
-          await courier.reserveConsignment(tx, actor, {
+          const reserved = await courier.reserveConsignment(tx, actor, {
             orderId: order.id,
             courierId: options.courierId ?? order.courier_id,
             // The brand's setting asks (D-901): an own rider's order is not refused for it.
             automatic: true,
           });
+          // D-914: a consignment will come back only for a parcel now queued and not yet booked
+          // (null: nothing could be booked here, an own rider's order, say).
+          posted.awaitingConsignment =
+            reserved !== null &&
+            (await courier.parcelTracking(tx, context.orgId, order.id)) === null;
           return;
         }
         await courier.cancelConsignment(tx, actor, order.id);
@@ -1092,17 +1156,18 @@ export class TransitionsService {
     await this.assertCourierChangeAllowed(tx, context.orgId, order, options.courierId);
     const named = options.courierId ?? order.courier_id;
     if (named !== null && named !== undefined) return named;
-    const fallback = await repo.defaultCourier(tx, context.orgId);
+    // §9's default (the order's zone's, else the brand's), never whichever party sorts first.
+    const fallback = await repo.deliveryFallbackCourier(tx, context.orgId, order.delivery_zone_id);
     if (fallback === undefined) {
       // §7's courier receivable is a party subtype: the balance is per courier or it is
-      // meaningless. Refusing beats posting the delivery against a nameless party, which
-      // is a receivable nobody can reconcile.
+      // meaningless. Refusing beats posting the delivery against a nameless party, or one
+      // that never carried the parcel, which is a receivable nobody can reconcile.
       throw new OrdersError(
         'DELIVERY_ZONE_NOT_FOUND',
-        'This brand has no courier configured, so a delivery cannot be posted.',
+        'This order names no courier and the brand has no default courier to post its delivery against. Give the order its courier, then record the delivery.',
       );
     }
-    return fallback.id;
+    return fallback;
   }
 
   /** The §7 accounts, by subtype, or a clear refusal naming the missing one. */

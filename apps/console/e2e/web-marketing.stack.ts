@@ -39,12 +39,13 @@ async function noBlockingViolations(page: Page, label: string): Promise<void> {
   expect(blocking).toEqual([]);
 }
 
-async function open(browser: Browser, role: 'marketing' | 'webadmin' | 'desk'): Promise<Page> {
+async function open(browser: Browser, role: 'marketing' | 'marketadmin' | 'desk'): Promise<Page> {
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 1000 } })
   ).newPage();
   await signIn(page, user(role).email);
-  if (role === 'webadmin') await enrolSecondFactor(page);
+  // Its own org admin, not website-buying.stack.ts's `webadmin`: both enrol a second factor.
+  if (role === 'marketadmin') await enrolSecondFactor(page);
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
   return page;
 }
@@ -137,7 +138,7 @@ test.describe('marketing', () => {
 test.describe('org admin', () => {
   let page: Page;
   test.beforeAll(async ({ browser }) => {
-    page = await open(browser, 'webadmin');
+    page = await open(browser, 'marketadmin');
   });
   test.afterAll(async () => {
     await page.context().close();

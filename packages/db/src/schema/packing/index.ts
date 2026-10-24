@@ -812,9 +812,11 @@ export const labelSettings = packing.table(
 );
 
 /**
- * Orders whose parcel has its consignment (D-817): written in the courier's booking transaction
- * through the orders module's parcel observer, so "Ready for label" never reads the courier's
- * tables. The consignment as booked; a later booking of the same order replaces it.
+ * Orders ready for their label (D-817, D-914): written in the confirm's transaction, then given
+ * the consignment in the courier's booking transaction, both through the orders module's parcel
+ * observer, so "Ready for label" never reads the courier's tables. The consignment as booked,
+ * null until then (and for good for an order nobody books here, an own rider's say); a later
+ * booking of the same order replaces it. `booked_at` is when the order became ready.
  */
 export const labelOrders = packing.table(
   'label_orders',
@@ -824,7 +826,7 @@ export const labelOrders = packing.table(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     orderId: uuid('order_id').notNull(),
     orderNo: text('order_no').notNull().default(''),
-    consignmentNo: text('consignment_no').notNull(),
+    consignmentNo: text('consignment_no'),
     locationId: uuid('location_id'),
     bookedAt: timestamp('booked_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
     ...timestamps,
@@ -837,7 +839,10 @@ export const labelOrders = packing.table(
       columns: [table.orgId, table.orderId],
       foreignColumns: [orders.orgId, orders.id],
     }).onDelete('restrict'),
-    check('label_orders_consignment_length', sql`length(${table.consignmentNo}) between 1 and 120`),
+    check(
+      'label_orders_consignment_length',
+      sql`${table.consignmentNo} is null or length(${table.consignmentNo}) between 1 and 120`,
+    ),
   ],
 );
 

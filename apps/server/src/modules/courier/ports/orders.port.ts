@@ -168,6 +168,51 @@ export interface OrdersPort {
   courierParties(tx: Tx, orgId: string, ids: readonly string[]): Promise<readonly CourierParty[]>;
 
   /**
+   * The party for a courier being connected (D-913): found by its code, made when the brand
+   * has none, switched back on when it was off. In the caller's transaction.
+   */
+  ensureCourierParty(
+    tx: Tx,
+    orgId: string,
+    party: { readonly code: string; readonly name: string },
+  ): Promise<CourierParty & { readonly created: boolean }>;
+
+  /**
+   * The brand's default courier (§9, D-913): the one every active delivery zone names, which
+   * is what each new order is given. Null when the zones disagree or name none.
+   */
+  defaultCourierId(tx: Tx, orgId: string): Promise<string | null>;
+
+  /**
+   * The zones' defaults summed up (D-913): the one courier every active zone names (else
+   * null), whether the active zones name different ones, and how many zones are active.
+   */
+  defaultCourierState(
+    tx: Tx,
+    orgId: string,
+  ): Promise<{
+    readonly courierId: string | null;
+    readonly mixed: boolean;
+    readonly activeZones: number;
+  }>;
+
+  /**
+   * Every delivery zone's default courier becomes this one (D-913), the zones locked first;
+   * the zones' defaults before.
+   */
+  setDefaultCourier(
+    tx: Tx,
+    orgId: string,
+    courierId: string,
+  ): Promise<{
+    readonly before: readonly {
+      readonly zoneCode: string;
+      readonly courierId: string | null;
+      readonly isActive: boolean;
+    }[];
+  }>;
+
+  /**
    * M15. `OrdersApi.summary`, read through this module's own statement of what it needs.
    * Undefined when the order is not this org's.
    */

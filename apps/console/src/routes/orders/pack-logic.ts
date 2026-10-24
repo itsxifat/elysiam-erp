@@ -1,3 +1,5 @@
+import { orderScanCode, readLotCode } from '@elysium/domain/packing';
+
 /**
  * The packing station's rules that need no browser (M38b, D-610, D-611): which recorder
  * format, what the video's caption says, when an upload is tried again, what a scanned code
@@ -107,8 +109,8 @@ export function uploadDue(
 }
 
 /**
- * Whether a scanned code is this order's own slip (its number, or the courier code its QR
- * carries once booked): scanning the slip again finishes the packing.
+ * Whether a scanned code is this order's own slip (its number or its ten digits, D-912, or the
+ * courier code its QR carries once booked): scanning the slip again finishes the packing.
  */
 export function isOrderSlip(
   code: string,
@@ -120,11 +122,17 @@ export function isOrderSlip(
 ): boolean {
   const typed = code.trim().toUpperCase();
   if (typed === '') return false;
-  // M46 (D-806): one lot's slip carries the order number with its lot, `…-L2`.
-  const scanned = /^(.+)-L[1-9]\d?$/.exec(typed)?.[1] ?? typed;
-  return [order.orderNumber, order.trackingCode, order.consignmentId ?? '']
-    .map((value) => value.trim().toUpperCase())
-    .some((value) => value !== '' && (value === scanned || value === typed));
+  const own = [order.orderNumber, orderScanCode(order.orderNumber) ?? ''].map(normalised);
+  const courier = [order.trackingCode, order.consignmentId ?? ''].map(normalised);
+  if ([...own, ...courier].some((value) => value !== '' && value === typed)) return true;
+  // M46 (D-806, D-912): one lot's slip carries the order's code with its lot, `…-L2` or twelve
+  // digits. Only the order's own code takes a lot; a courier's code is matched whole.
+  const lotOf = readLotCode(typed)?.orderCode;
+  return lotOf !== undefined && own.some((value) => value !== '' && value === lotOf);
+}
+
+function normalised(value: string): string {
+  return value.trim().toUpperCase();
 }
 
 export type ScanTone = 'success' | 'danger' | 'neutral';

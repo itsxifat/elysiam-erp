@@ -142,7 +142,8 @@ function QueueTable({ tab }: { readonly tab: DeskTab }) {
 
   if (queue.isPending) {
     return (
-      <div className="space-y-2" aria-busy="true" aria-label={t('wf.loading')}>
+      <div className="space-y-2" aria-busy="true">
+        <span className="sr-only">{t('wf.loading')}</span>
         {[0, 1, 2, 3].map((row) => (
           <Skeleton key={row} className="h-row w-full" />
         ))}

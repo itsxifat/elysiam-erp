@@ -134,11 +134,14 @@ interface CachedToken {
 
 export class PathaoCourierAdapter implements CourierAdapter {
   readonly code = 'pathao';
+  readonly name = 'Pathao';
   /** Built from Pathao's plugin code and community clients, not its API document. */
   readonly verified = false;
   readonly statusMap = PATHAO_STATUS_MAP;
   readonly supportsWebhook = true;
   readonly credentialFields = ['clientId', 'clientSecret', 'storeId'];
+  /** The password grant, for an account issued one (see `COURIER_PATHAO_TOKEN_PATH`). */
+  readonly optionalCredentialFields = ['username', 'password'];
   readonly webhookAcknowledgement = {
     status: 202,
     headers: { 'X-Pathao-Merchant-Webhook-Integration-Secret': PATHAO_INTEGRATION_HEADER_VALUE },
@@ -261,6 +264,39 @@ export class PathaoCourierAdapter implements CourierAdapter {
       }
     }
     throw new CourierError('COURIER_CREDENTIALS_MISSING', 'Pathao refused a fresh token.', false);
+  }
+
+  /**
+   * Whether Pathao accepts these keys (D-913): the login this adapter makes before every call,
+   * with the client id and secret (and the password grant, when given).
+   *
+   * A login refused for any reason a request can carry — 401, 403, or another 4xx about the
+   * fields — is the keys, so all of them are one plain refusal. The store id is not something
+   * the login checks, so it is checked here for being a store id at all, the way a booking
+   * would refuse it later.
+   */
+  async verifyCredentials(context: AdapterContext): Promise<void> {
+    const storeId = Number(context.credentials.storeId);
+    if (!Number.isSafeInteger(storeId) || storeId <= 0) {
+      throw new CourierError(
+        'COURIER_CREDENTIALS_REJECTED',
+        'The store id is a number. Copy it from Pathao’s merchant panel (Stores) and try again.',
+      );
+    }
+    try {
+      await this.token(context);
+    } catch (error) {
+      if (
+        error instanceof CourierError &&
+        (error.code === 'COURIER_CREDENTIALS_MISSING' || error.code === 'COURIER_BOOKING_FAILED')
+      ) {
+        throw new CourierError(
+          'COURIER_CREDENTIALS_REJECTED',
+          'Pathao did not accept this client id and client secret. Copy them again from Pathao’s merchant panel (Developer API) and try once more.',
+        );
+      }
+      throw error;
+    }
   }
 
   async createParcel(context: AdapterContext, input: ParcelInput): Promise<ParcelResult> {

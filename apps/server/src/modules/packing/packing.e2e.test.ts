@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { base32 } from '@better-auth/utils/base32';
 import { grantMembership } from '@elysium/db/testing';
 import { withGlobal, withSystem } from '@elysium/db';
+import { lotCode, lotScanCode, orderScanCode } from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -316,6 +317,38 @@ describe('a scanner phone (check 5)', () => {
       (tx) => tx.execute(sql`update sales.orders set assigned_to = null where id = ${orderId}`),
       { orgId: ORG_A },
     );
+  });
+
+  it('looks a parcel up by the digits its bars carry and by a lot’s, as by its number (D-912)', async () => {
+    const signedIn = await post('/v1/scanner/sign-in', {
+      email: packer.email,
+      password: PASSWORD,
+      deviceName: 'Packing table 2',
+    });
+    expect(signedIn.status).toBe(200);
+    const token = signedIn.body.token as string;
+    const digits = orderScanCode(orderNo) ?? '';
+    expect(digits).toMatch(/^\d{10}$/);
+    for (const code of [digits, lotScanCode(orderNo, 2) ?? '', lotCode(orderNo, 2), orderNo]) {
+      const found = await lookup(token, code);
+      expect(found.status, code).toBe(200);
+      // The answer names the code as it was scanned, and the order it found.
+      expect(found.body, code).toMatchObject({
+        found: true,
+        code,
+        order: { orderNumber: orderNo },
+      });
+    }
+    // The console's own lookup reads them the same way.
+    const viaConsole = await packer.client.request('GET', `/v1/scanner/lookup?code=${digits}`);
+    expect(JSON.parse(viaConsole.body)).toMatchObject({
+      found: true,
+      order: { orderNumber: orderNo },
+    });
+    // Digits naming no order: one answer, as for any unknown code.
+    const none = `${digits.slice(0, 4)}999999`;
+    expect((await lookup(token, none)).body).toEqual({ found: false, code: none });
+    expect((await lookup(token, `${none}02`)).body).toEqual({ found: false, code: `${none}02` });
   });
 
   it('pairs a phone from the console with a code shown once', async () => {

@@ -102,8 +102,15 @@ function section(page: Page, heading: string) {
   return page.locator('section').filter({ has: page.getByRole('heading', { name: heading }) });
 }
 
+/**
+ * The brand switcher's name: "Where you invest" since M31's white-label pass reworded the
+ * multi-brand copy (D-472); it was "Your brands". Beta's check that there is no switcher
+ * names it too, so the old name would pass that check whatever the page drew.
+ */
+const BRANDS_NAV = 'Where you invest';
+
 async function openBrand(page: Page, name: string): Promise<void> {
-  const brands = page.getByRole('navigation', { name: 'Your brands' });
+  const brands = page.getByRole('navigation', { name: BRANDS_NAV });
   const button = brands.getByRole('button', { name, exact: true });
   if ((await button.getAttribute('aria-current')) !== 'true') await button.click();
   await expect(brands.getByRole('button', { name, exact: true })).toHaveAttribute(
@@ -322,7 +329,7 @@ test('on the same browser, the next investor sees their own figures and none of 
   await settled(beta);
 
   // One brand, so no switcher to offer.
-  await expect(beta.getByRole('navigation', { name: 'Your brands' })).toHaveCount(0);
+  await expect(beta.getByRole('navigation', { name: BRANDS_NAV })).toHaveCount(0);
   await expect(tile(beta, 'Capital held')).toContainText('৳5,00,000.00');
   await expect(section(beta, 'Profit distributions')).toContainText('৳20,000.00');
   await expect(section(beta, 'Withdrawals')).toContainText('৳7,777.00');

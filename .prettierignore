@@ -13,3 +13,7 @@ docs/client-spec/
 packages/ui/src/assets/fonts/
 # The old website's discount engine, copied verbatim as a test oracle (M35a, D-540).
 packages/domain/src/promo/oracle/old-site-discounts.js
+# An editor's own settings, not the repository's.
+.vscode/
+# Committed unformatted by M49; a committed migration file is never edited (invariant 9).
+packages/db/migrations/meta/0161_snapshot.json

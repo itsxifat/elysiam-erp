@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { TERMINAL_DEVICE_HEADER } from '@elysium/contracts';
 import { withGlobal, withOrg, withSystem } from '@elysium/db';
-import { lotCode } from '@elysium/domain/packing';
+import { lotCode, lotScanCode, orderScanCode } from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
 import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,6 +16,7 @@ import {
   type HttpHarness,
   type RoleClient,
 } from '../../testing/http-harness.js';
+import { BookingService } from '../courier/booking.service.js';
 import { COURIER_QUEUE_DEFINITIONS } from '../courier/courier.queues.js';
 import { applyCourierMigrations, makeCourier } from '../courier/courier.testing.js';
 import { FILES_QUEUE_DEFINITIONS } from '../files/files.queues.js';
@@ -145,13 +146,20 @@ async function until(check: () => boolean | Promise<boolean>, ms = 30_000): Prom
   throw new Error('timed out waiting');
 }
 
-/** An order taken and confirmed through the real routes. */
-async function confirmedOrder(qty = 1): Promise<{ id: string; orderNo: string }> {
+/**
+ * An order taken and confirmed through the real routes: at the hub's location with the suite's
+ * courier, unless `options` names another courier or no location (`null`, as the desk leaves it).
+ */
+async function confirmedOrder(
+  qty = 1,
+  options: { readonly courier?: string; readonly location?: string | null } = {},
+): Promise<{ id: string; orderNo: string }> {
+  const placeAt = options.location === undefined ? location : options.location;
   const created = await call(admin, 'POST', '/v1/orders', {
     channel: 'phone',
     customerId,
-    locationId: location,
-    courierId,
+    ...(placeAt === null ? {} : { locationId: placeAt }),
+    courierId: options.courier ?? courierId,
     deliveryChargePoisha: '6000',
     lines: [{ skuId, qty, unitPricePoisha: '150000' }],
   });
@@ -170,6 +178,68 @@ async function booked(orderId: string): Promise<string> {
     registry.notify(tx, { orgId: ORG_A, orderId, consignmentNo, at: new Date() }),
   );
   return consignmentNo;
+}
+
+interface ReadyView {
+  readonly orderId: string;
+  readonly orderNo: string;
+  readonly consignmentNo: string | null;
+  readonly courier: string | null;
+  readonly lotCount: number;
+  readonly labelsPrinted: number;
+}
+
+/** The order's row in "Ready for label", or undefined when it is not listed. */
+async function readyItem(orderId: string): Promise<ReadyView | undefined> {
+  const ready = await call(admin, 'GET', '/v1/labels/ready');
+  expect(ready.status, ready.text).toBe(200);
+  return (ready.body.items as ReadyView[]).find((item) => item.orderId === orderId);
+}
+
+/** What packing keeps for the order (D-914): its consignment, or null while it has none. */
+async function labelRow(orderId: string): Promise<{ consignment_no: string | null } | undefined> {
+  const [row] = await withSystem(
+    (tx) =>
+      tx.execute<{ consignment_no: string | null }>(sql`
+        select consignment_no from packing.label_orders
+        where org_id = ${ORG_A} and order_id = ${orderId}
+      `),
+    { orgId: ORG_A },
+  );
+  return row;
+}
+
+/** Long enough for the worker (polling every half second) to have run anything queued. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 2_500));
+
+/** The brand's automatic printing rule. */
+async function autoPrinting(autoPrint: boolean): Promise<void> {
+  const saved = await call(admin, 'PUT', '/v1/labels/settings', { autoPrint, autoSlip: false });
+  expect(saved.status, saved.text).toBe(200);
+}
+
+/** When the courier is booked (Settings → Order workflow), for the length of `body`. */
+async function bookingOn<T>(courierBooking: string, body: () => Promise<T>): Promise<T> {
+  const workflow = await call(admin, 'GET', '/v1/orders/workflow-settings');
+  const { autoAssign, offerSeconds, maxOpen } = workflow.body as {
+    autoAssign: boolean;
+    offerSeconds: number;
+    maxOpen: number;
+  };
+  const choose = (policy: string) =>
+    call(admin, 'PUT', '/v1/orders/workflow-settings', {
+      autoAssign,
+      offerSeconds,
+      maxOpen,
+      courierBooking: policy,
+    });
+  expect((await choose(courierBooking)).status).toBe(200);
+  try {
+    return await body();
+  } finally {
+    // Back to booking by hand, as the rest of the suite expects.
+    expect((await choose('manual')).status).toBe(200);
+  }
 }
 
 interface JobView {
@@ -274,78 +344,232 @@ afterAll(async () => {
   await harness?.close();
 }, 60_000);
 
-describe('auto-print (M46 check 1, D-817)', () => {
+describe('auto-print (M46 check 1, D-817, D-914)', () => {
   it('tells the Labels page when the courier is booked (D-908)', async () => {
-    const workflow = await call(admin, 'GET', '/v1/orders/workflow-settings');
-    const { autoAssign, offerSeconds, maxOpen } = workflow.body as {
-      autoAssign: boolean;
-      offerSeconds: number;
-      maxOpen: number;
-    };
-    const choose = (courierBooking: string) =>
-      call(admin, 'PUT', '/v1/orders/workflow-settings', {
-        autoAssign,
-        offerSeconds,
-        maxOpen,
-        courierBooking,
-      });
-    expect((await choose('on_confirm')).status).toBe(200);
-    try {
+    await bookingOn('on_confirm', async () => {
       const settings = await call(admin, 'GET', '/v1/labels/settings');
       expect(settings.body).toMatchObject({ courierBooking: 'on_confirm' });
-    } finally {
-      expect((await choose('manual')).status).toBe(200);
-    }
+    });
   });
 
-  it('prints a booked order’s label on its terminal’s printer without a click, and logs it', async () => {
+  it('booked on Confirm: waits for the consignment, then prints once with it, without a click', async () => {
     const settings = await call(admin, 'GET', '/v1/labels/settings');
     // ASSUMED default: on once the brand has a printer.
     expect(settings.body).toMatchObject({
       autoPrint: true,
       autoPrintSetting: null,
       printers: 1,
-      // D-908: the Labels page says a Confirm books nothing while the courier is booked by hand.
       courierBooking: 'manual',
     });
 
-    const order = await confirmedOrder();
-    const before = sent.length;
-    const consignmentNo = await booked(order.id);
-    await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
+    await bookingOn('on_confirm', async () => {
+      // The suite's courier has an account: the Confirm queues its booking (D-901), so the label
+      // waits for the consignment. The order is ready for its label already, not booked yet.
+      const order = await confirmedOrder();
+      expect(await readyItem(order.id)).toMatchObject({
+        orderNo: order.orderNo,
+        consignmentNo: null,
+      });
+      expect(await labelRow(order.id)).toEqual({ consignment_no: null });
+      await settle();
+      expect(await jobsOf(order.id)).toEqual([]);
 
+      const before = sent.length;
+      const consignmentNo = await booked(order.id);
+      // The row gains its consignment in the booking's transaction.
+      expect(await labelRow(order.id)).toEqual({ consignment_no: consignmentNo });
+      await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
+
+      const log = await jobsOf(order.id);
+      expect(log).toHaveLength(1);
+      expect(log[0]).toMatchObject({
+        document: 'label',
+        lot: 1,
+        lotCount: 1,
+        source: 'auto',
+        requestedBy: null,
+        state: 'printed',
+        consignmentNo,
+        terminal: { id: labelTerminalId, name: 'Label 1' },
+        printer: { id: labelPrinterId },
+      });
+      const wire = sent.slice(before);
+      expect(wire).toHaveLength(1);
+      expect(wire[0]?.host).toBe('192.168.250.10');
+      expect(wire[0]?.port).toBe(9100);
+      expect(wire[0]?.bytes.toString('latin1', 0, 40)).toMatch(/^SIZE 101\.6 mm,152\.4 mm\r\nGAP/);
+      // Check 5's second half: nothing of this database waited in a transaction while it went.
+      expect(wire[0]?.idleInTransaction).toBe(0);
+
+      // The same booking delivered again, a confirm's run with no consignment and a later
+      // booking of the same order each queue nothing new (the rule's key, then "printed").
+      await printing.autoPrint(ORG_A, { orderId: order.id, consignmentNo });
+      await printing.autoPrint(ORG_A, { orderId: order.id, consignmentNo: null });
+      await booked(order.id);
+      await settle();
+      expect(await jobsOf(order.id)).toHaveLength(1);
+
+      // Printed, the order moved on at the hub: out of "Ready for label", into "To pack".
+      expect(await readyItem(order.id)).toBeUndefined();
+      const toPack = await call(admin, 'GET', '/v1/orders?queue=hub_packing&limit=100');
+      expect((toPack.body.items as { id: string }[]).map((item) => item.id)).toContain(order.id);
+    });
+  });
+
+  it('an own rider’s order, booked by hand: ready on Confirm with no consignment, printed at once', async () => {
+    // A courier party with no account here, under the brand's default of booking by hand: no
+    // booking job ever brings a consignment back, which is what left these orders unprinted.
+    const rider = await makeCourier(ORG_A, 'own_rider', 'Own rider');
+
+    // With automatic printing off, the order waits in "Ready for label" from its Confirm.
+    await autoPrinting(false);
+    const waiting = await confirmedOrder(1, { courier: rider });
+    expect(await readyItem(waiting.id)).toMatchObject({
+      orderNo: waiting.orderNo,
+      consignmentNo: null,
+      courier: null,
+      lotCount: 1,
+      labelsPrinted: 0,
+    });
+    await settle();
+    expect(await jobsOf(waiting.id)).toEqual([]);
+
+    // With it on, the next one prints on the label terminal's printer without a click.
+    await autoPrinting(true);
+    const order = await confirmedOrder(1, { courier: rider });
+    await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
     const log = await jobsOf(order.id);
     expect(log).toHaveLength(1);
     expect(log[0]).toMatchObject({
       document: 'label',
       lot: 1,
-      lotCount: 1,
       source: 'auto',
       requestedBy: null,
       state: 'printed',
-      consignmentNo,
-      terminal: { id: labelTerminalId, name: 'Label 1' },
+      consignmentNo: null,
+      terminal: { id: labelTerminalId },
       printer: { id: labelPrinterId },
     });
-    const wire = sent.slice(before);
-    expect(wire).toHaveLength(1);
-    expect(wire[0]?.host).toBe('192.168.250.10');
-    expect(wire[0]?.port).toBe(9100);
-    expect(wire[0]?.bytes.toString('latin1', 0, 40)).toMatch(/^SIZE 101\.6 mm,152\.4 mm\r\nGAP/);
-    // Check 5's second half: nothing of this database waited in a transaction while it went.
-    expect(wire[0]?.idleInTransaction).toBe(0);
+    expect(await readyItem(order.id)).toBeUndefined();
 
-    // The same booking delivered again queues nothing new (the rule's key).
-    await printing.autoPrint(ORG_A, { orderId: order.id, consignmentNo });
+    // Booked by hand afterwards: the row gains the consignment and nothing prints twice; a
+    // second confirm's run does not either.
+    const consignmentNo = await booked(order.id);
+    expect(await labelRow(order.id)).toEqual({ consignment_no: consignmentNo });
+    await printing.autoPrint(ORG_A, { orderId: order.id, consignmentNo: null });
+    await settle();
     expect(await jobsOf(order.id)).toHaveLength(1);
+  });
 
-    // Printed, the order moved on at the hub: out of "Ready for label", into "To pack".
-    const ready = await call(admin, 'GET', '/v1/labels/ready');
-    expect((ready.body.items as { orderId: string }[]).map((item) => item.orderId)).not.toContain(
-      order.id,
-    );
-    const toPack = await call(admin, 'GET', '/v1/orders?queue=hub_packing&limit=100');
-    expect((toPack.body.items as { id: string }[]).map((item) => item.id)).toContain(order.id);
+  it('booked by hand with a courier that has an account: ready on Confirm, printed once with the consignment after Book now', async () => {
+    // The brands with a courier account that book by hand (D-914 review): a label printed on
+    // Confirm would stop the one automatic print, so it waits for the consignment Book now brings.
+    await autoPrinting(true);
+    const order = await confirmedOrder();
+    expect(await readyItem(order.id)).toMatchObject({
+      orderNo: order.orderNo,
+      consignmentNo: null,
+    });
+    expect(await labelRow(order.id)).toEqual({ consignment_no: null });
+    await settle();
+    expect(await jobsOf(order.id)).toEqual([]);
+
+    // The desk's Book now queues the booking (the real route); nothing prints while it is out.
+    const bookNow = await call(admin, 'POST', '/v1/courier/parcels', { orderId: order.id });
+    expect(bookNow.status, bookNow.text).toBeLessThan(300);
+    await settle();
+    expect(await jobsOf(order.id)).toEqual([]);
+
+    // The booking comes back: the row gains the consignment, and one automatic label carries it.
+    const consignmentNo = await booked(order.id);
+    expect(await labelRow(order.id)).toEqual({ consignment_no: consignmentNo });
+    await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
+    const log = await jobsOf(order.id);
+    expect(log).toHaveLength(1);
+    expect(log[0]).toMatchObject({
+      document: 'label',
+      source: 'auto',
+      state: 'printed',
+      consignmentNo,
+      terminal: { id: labelTerminalId },
+      printer: { id: labelPrinterId },
+    });
+    expect(await readyItem(order.id)).toBeUndefined();
+  });
+
+  it('an order with no location prints at a label terminal that stands at a location', async () => {
+    // The brand's shape: the label terminal is at the hub, the desk's orders name no location and
+    // go with an own rider (no account here), so the label prints on Confirm.
+    const rider = await makeCourier(ORG_A, 'own_rider', 'Own rider');
+    const moved = await call(admin, 'PUT', `/v1/terminals/${labelTerminalId}`, {
+      name: 'Label 1',
+      locationId: location,
+      active: true,
+    });
+    expect(moved.status, moved.text).toBe(200);
+    try {
+      await autoPrinting(true);
+      const order = await confirmedOrder(1, { courier: rider, location: null });
+      const detail = await call(admin, 'GET', `/v1/orders/${order.id}`);
+      expect(detail.body.locationId).toBeNull();
+      await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
+      const log = await jobsOf(order.id);
+      expect(log).toHaveLength(1);
+      expect(log[0]).toMatchObject({
+        source: 'auto',
+        consignmentNo: null,
+        terminal: { id: labelTerminalId },
+        printer: { id: labelPrinterId },
+      });
+    } finally {
+      const back = await call(admin, 'PUT', `/v1/terminals/${labelTerminalId}`, {
+        name: 'Label 1',
+        locationId: null,
+        active: true,
+      });
+      expect(back.status, back.text).toBe(200);
+    }
+  });
+
+  it('a cancelled order leaves "Ready for label"', async () => {
+    await autoPrinting(false);
+    try {
+      const order = await confirmedOrder();
+      expect(await readyItem(order.id)).toMatchObject({ consignmentNo: null });
+      const cancelled = await call(admin, 'POST', `/v1/orders/${order.id}/cancel`, {
+        reason: 'Buyer changed their mind',
+      });
+      expect(cancelled.status, cancelled.text).toBeLessThan(300);
+      expect(await readyItem(order.id)).toBeUndefined();
+    } finally {
+      await autoPrinting(true);
+    }
+  });
+
+  it('a booking that fails for good prints the label without a consignment', async () => {
+    await bookingOn('on_confirm', async () => {
+      const order = await confirmedOrder();
+      await settle();
+      expect(await jobsOf(order.id)).toEqual([]);
+      const [parcel] = await withSystem(
+        (tx) =>
+          tx.execute<{ id: string }>(sql`
+            select id from courier.consignments where org_id = ${ORG_A} and order_id = ${order.id}
+          `),
+        { orgId: ORG_A },
+      );
+      expect(parcel).toBeDefined();
+      // What the dead-letter handler and a refusal no retry can change both call (D-914).
+      await harness.app.get(BookingService, { strict: false }).reportBookingFailed({
+        orgId: ORG_A,
+        consignmentId: parcel?.id ?? '',
+        code: 'COURIER_REJECTED',
+      });
+      await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
+      const log = await jobsOf(order.id);
+      expect(log).toHaveLength(1);
+      expect(log[0]).toMatchObject({ source: 'auto', consignmentNo: null, state: 'printed' });
+    });
   });
 });
 
@@ -505,6 +729,243 @@ describe('lots (M46 check 3, D-805 to D-808)', () => {
     expect(shipped.body).toMatchObject({ moved: 1, results: [{ id: order.id, ok: true }] });
     const after = await call(admin, 'GET', `/v1/orders/${order.id}`);
     expect(after.body.status).toBe('shipped');
+  });
+});
+
+/** A parcel booked for the order under the codes a test chooses, as the booking worker leaves one. */
+async function parcelWith(
+  orderId: string,
+  codes: { readonly consignmentNo: string; readonly trackingCode: string | null },
+): Promise<void> {
+  await withSystem(
+    (tx) =>
+      tx.execute(sql`
+        insert into courier.consignments
+          (org_id, order_id, courier_account_id, courier_id, branch_id, consignment_no,
+           tracking_code, reference, booking_state, status, cod_amount_poisha, booked_at,
+           created_by)
+        select ${ORG_A}, o.id, a.id, ${courierId}, o.branch_id, ${codes.consignmentNo},
+               ${codes.trackingCode}, o.order_no, 'booked', 'booked', o.cod_amount_poisha, now(),
+               'usr_labels_test'
+        from sales.orders o
+        join courier.courier_accounts a on a.org_id = o.org_id and a.courier_id = ${courierId}
+        where o.org_id = ${ORG_A} and o.id = ${orderId}
+      `),
+    { orgId: ORG_A },
+  );
+}
+
+describe('the digits-only codes (D-912)', () => {
+  /** Pack an order of `lots` pieces in `lots` bags at the station, opened from `code`. */
+  async function packIn(order: { id: string }, lots: number, code: string): Promise<void> {
+    if (lots > 1) {
+      const set = await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: lots });
+      expect(set.status, set.text).toBe(200);
+    }
+    const opened = await call(packer, 'POST', '/v1/packing/sessions', { code });
+    expect(opened.status, opened.text).toBe(200);
+    expect((opened.body.session as Json).orderId).toBe(order.id);
+    const sessionId = String((opened.body.session as Json).id);
+    for (let lot = 1; lot <= lots; lot += 1) {
+      const scanned = await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/scans`, {
+        scanId: randomUUID(),
+        code: skuCode,
+      });
+      expect(scanned.body.outcome, scanned.text).toBe('accepted');
+      if (lot < lots) {
+        const closed = await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/lots/close`);
+        expect(closed.status, closed.text).toBe(200);
+      }
+    }
+    const done = await call(packer, 'POST', `/v1/packing/sessions/${sessionId}/complete`);
+    expect(done.status, done.text).toBe(200);
+    expect(done.body.order).toMatchObject({ status: 'packed' });
+  }
+
+  const hand = (code: string) => call(packer, 'POST', '/v1/packing/handover/scans', { code });
+
+  it('counts each lot from its twelve digits at the handover and ships when the last is scanned', async () => {
+    const off = await call(admin, 'PUT', '/v1/labels/settings', {
+      autoPrint: false,
+      autoSlip: false,
+    });
+    expect(off.status, off.text).toBe(200);
+    const order = await confirmedOrder(2);
+    await booked(order.id);
+    const digits = orderScanCode(order.orderNo) ?? '';
+    const lot = (no: number) => lotScanCode(order.orderNo, no) ?? '';
+    expect(digits).toMatch(/^\d{10}$/);
+    expect(lot(2)).toBe(`${digits}02`);
+    // The packing station opens the order from a lot's twelve digits.
+    await packIn(order, 2, lot(2));
+
+    expect((await hand(lot(1))).body).toMatchObject({
+      outcome: 'accepted',
+      order: { orderId: order.id, lotCount: 2, missing: [2], complete: false },
+    });
+    // The same lot's label from before (`…-L1`) is the same lot: scanned already.
+    expect((await hand(lotCode(order.orderNo, 1))).body.outcome).toBe('already');
+    // The order's ten digits name the order but not which of its two bags.
+    const plain = await hand(digits);
+    expect(plain.status, plain.text).toBe(409);
+    expect(plain.body.code).toBe('ORDER_LOTS_NOT_HANDED');
+    // A lot it does not have.
+    const third = await hand(lot(3));
+    expect(third.status, third.text).toBe(409);
+    expect(third.body.code).toBe('ORDER_LOTS_NOT_HANDED');
+    // The last lot, from a scanner that sends its symbology prefix first: complete.
+    expect((await hand(`]C0${lot(2)}`)).body).toMatchObject({
+      outcome: 'accepted',
+      order: { orderId: order.id, missing: [], complete: true, courier: 'Fake Courier' },
+    });
+    // The courier portal ships an order once its last lot is scanned (D-904).
+    const shipped = await call(packer, 'POST', '/v1/packing/handover', { orderIds: [order.id] });
+    expect(shipped.body).toMatchObject({ moved: 1, results: [{ id: order.id, ok: true }] });
+    expect((await call(admin, 'GET', `/v1/orders/${order.id}`)).body.status).toBe('shipped');
+    const again = await hand(lot(2));
+    expect(again.status, again.text).toBe(409);
+    expect(again.body.code).toBe('ORDER_ALREADY_HANDED');
+  });
+
+  it('hands an order in one bag over by its ten digits, by its number, and refuses digits of no order', async () => {
+    const byDigits = await confirmedOrder();
+    const byNumber = await confirmedOrder();
+    await booked(byDigits.id);
+    await booked(byNumber.id);
+    const digits = orderScanCode(byDigits.orderNo) ?? '';
+    await packIn(byDigits, 1, digits);
+    await packIn(byNumber, 1, byNumber.orderNo);
+    expect((await hand(digits)).body).toMatchObject({
+      outcome: 'accepted',
+      order: { orderId: byDigits.id, lotCount: 1, missing: [], complete: true },
+    });
+    expect((await hand(byNumber.orderNo)).body).toMatchObject({
+      outcome: 'accepted',
+      order: { orderId: byNumber.id, complete: true },
+    });
+    // An order in one bag: its lot 1's twelve digits are its one label too.
+    expect((await hand(lotScanCode(byDigits.orderNo, 1) ?? '')).body.outcome).toBe('already');
+    const shipped = await call(packer, 'POST', '/v1/packing/handover', {
+      orderIds: [byDigits.id, byNumber.id],
+    });
+    expect(shipped.body).toMatchObject({ moved: 2 });
+
+    // Digits that name no order: a counter not reached, and a lot of it.
+    for (const code of [`${digits.slice(0, 4)}999999`, `${digits.slice(0, 4)}99999902`]) {
+      const refused = await hand(code);
+      expect(refused.status, code).toBe(404);
+      expect(refused.body.code, code).toBe('SHIPMENT_NOT_FOUND');
+    }
+  });
+
+  it('reads ten digits as an order’s own code before a courier’s, and a courier’s digits that name no order as before', async () => {
+    const ours = await confirmedOrder();
+    const theirs = await confirmedOrder();
+    const plain = await confirmedOrder();
+    const digits = orderScanCode(ours.orderNo) ?? '';
+    const period = digits.slice(0, 4);
+    // Another order's parcel under a consignment number that is this order's code, and a
+    // tracking code of twelve digits that reads as a lot of no order.
+    await parcelWith(theirs.id, { consignmentNo: digits, trackingCode: `${period}99999702` });
+    // A consignment number of ten digits that is no order's code.
+    await parcelWith(plain.id, { consignmentNo: `${period}999998`, trackingCode: null });
+    const opens = async (code: string) => {
+      const opened = await call(packer, 'POST', '/v1/packing/sessions', { code });
+      expect(opened.status, `${code}: ${opened.text}`).toBe(200);
+      return (opened.body.session as Json).orderId;
+    };
+    // The order's own code wins: it is what this ERP prints in every slip's and label's bars.
+    expect(await opens(digits)).toBe(ours.id);
+    expect(await opens(`${digits}01`)).toBe(ours.id);
+    // A courier's code is found as it always was when it names no order.
+    expect(await opens(`${period}99999702`)).toBe(theirs.id);
+    expect(await opens(`${period}999998`)).toBe(plain.id);
+  });
+
+  /*
+   * A scanner types into whichever search box has focus. Each search finds the order from the
+   * codes its labels and slips carry: its ten digits, a lot's twelve, a lot's code from before
+   * (`…-L2`), and its number as it always did.
+   */
+  const scans = (orderNo: string): string[] => [
+    orderScanCode(orderNo) ?? '',
+    lotScanCode(orderNo, 1) ?? '',
+    lotScanCode(orderNo, 2) ?? '',
+    lotCode(orderNo, 2),
+    orderNo,
+  ];
+  /** Ten digits in the order's month that name no order. */
+  const noOrder = (orderNo: string): string =>
+    `${(orderScanCode(orderNo) ?? '').slice(0, 4)}999999`;
+
+  it('finds the order in the Orders search from the digits a scanner types', async () => {
+    const order = await confirmedOrder();
+    const other = await confirmedOrder();
+    const found = async (q: string) => {
+      const page = await call(admin, 'GET', `/v1/orders?q=${encodeURIComponent(q)}&limit=100`);
+      expect(page.status, page.text).toBe(200);
+      return (page.body.items as { id: string }[]).map((item) => item.id);
+    };
+    for (const q of scans(order.orderNo)) expect(await found(q), q).toEqual([order.id]);
+    expect(await found(orderScanCode(other.orderNo) ?? '')).toEqual([other.id]);
+    expect(await found(noOrder(order.orderNo))).toEqual([]);
+  });
+
+  it('finds the order’s prints in the Labels log from the digits a scanner types', async () => {
+    const off = await call(admin, 'PUT', '/v1/labels/settings', {
+      autoPrint: false,
+      autoSlip: false,
+    });
+    expect(off.status, off.text).toBe(200);
+    const order = await confirmedOrder();
+    const other = await confirmedOrder();
+    for (const each of [order, other]) {
+      await booked(each.id);
+      const printed = await call(packer, 'POST', '/v1/labels/print', {
+        orderIds: [each.id],
+        documents: ['label'],
+      });
+      expect(printed.status, printed.text).toBe(200);
+      await until(async () => (await jobsOf(each.id)).every((job) => job.state === 'printed'));
+    }
+    const found = async (q: string) => {
+      const page = await call(
+        admin,
+        'GET',
+        `/v1/labels/jobs?view=log&q=${encodeURIComponent(q)}&limit=200`,
+      );
+      expect(page.status, page.text).toBe(200);
+      return [...new Set((page.body.items as JobView[]).map((job) => job.orderId))];
+    };
+    for (const q of scans(order.orderNo)) expect(await found(q), q).toEqual([order.id]);
+    expect(await found(orderScanCode(other.orderNo) ?? '')).toEqual([other.id]);
+    expect(await found(noOrder(order.orderNo))).toEqual([]);
+  });
+
+  it('finds the order’s parcel in the Parcels search from the digits a scanner types', async () => {
+    const order = await confirmedOrder();
+    const other = await confirmedOrder();
+    const consignmentNo = `SF${randomUUID().slice(0, 8).toUpperCase()}`;
+    await parcelWith(order.id, { consignmentNo, trackingCode: null });
+    await parcelWith(other.id, {
+      consignmentNo: `SF${randomUUID().slice(0, 8).toUpperCase()}`,
+      trackingCode: null,
+    });
+    const found = async (q: string) => {
+      const page = await call(
+        admin,
+        'GET',
+        `/v1/courier/parcels?q=${encodeURIComponent(q)}&pageSize=200`,
+      );
+      expect(page.status, page.text).toBe(200);
+      return (page.body.items as { orderId: string }[]).map((item) => item.orderId);
+    };
+    // The courier's own number still finds its parcel.
+    for (const q of [...scans(order.orderNo), consignmentNo]) {
+      expect(await found(q), q).toEqual([order.id]);
+    }
+    expect(await found(orderScanCode(other.orderNo) ?? '')).toEqual([other.id]);
+    expect(await found(noOrder(order.orderNo))).toEqual([]);
   });
 });
 

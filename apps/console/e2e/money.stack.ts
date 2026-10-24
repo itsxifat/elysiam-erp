@@ -302,7 +302,9 @@ test('last month closes, and says so', async () => {
   await expect(page.getByRole('heading', { name: 'Periods', level: 1 })).toBeVisible();
   await noBlockingViolations('periods');
   await page.getByRole('button', { name: 'Close month' }).click();
-  await expect(page.getByRole('status')).toContainText('The month is closed.');
+  // The page's own status line, by its words: the shell's scanner keeps a status region of
+  // its own on every page (M38a, D-605), so "the status" alone is two elements.
+  await expect(page.getByRole('status').filter({ hasText: 'The month is closed.' })).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: 'Closed' }).first()).toBeVisible();
   await shot('periods');
 });
@@ -330,7 +332,10 @@ test('a bank wallet is added, then edited, and never asks for the full number', 
   await shot('wallet-add');
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('status')).toHaveText('Wallet added.');
+  // By its words, beside the shell scanner's own status region (D-605).
+  await expect(page.getByRole('status').filter({ hasText: 'Wallet added.' })).toHaveText(
+    'Wallet added.',
+  );
 
   const row = page.getByRole('row').filter({ hasText: '1120-DBBL' });
   await expect(row).toContainText('Dutch-Bangla Bank');
@@ -346,7 +351,9 @@ test('a bank wallet is added, then edited, and never asks for the full number', 
   await dialog.getByLabel('In use').uncheck();
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('status')).toHaveText('Wallet saved.');
+  await expect(page.getByRole('status').filter({ hasText: 'Wallet saved.' })).toHaveText(
+    'Wallet saved.',
+  );
   await expect(row).toContainText('Closed');
   await shot('wallets');
 });

@@ -58,6 +58,12 @@ test('My account is in the account menu, and renames its person', async ({ brows
   const page = await freshPage(browser);
   await signIn(page, user('self').email);
   await expect(page.getByRole('button', { name: 'Account' })).toBeVisible();
+  // The menu is its own chunk (D-451): until it lands the topbar shows the same button, inert.
+  // The real trigger is the one that says whether its menu is open.
+  await expect(page.getByRole('button', { name: 'Account' })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
   await page.getByRole('button', { name: 'Account' }).click();
   await page.getByRole('menuitem', { name: 'My account' }).click();
   await expect(page).toHaveURL(/\/account$/);

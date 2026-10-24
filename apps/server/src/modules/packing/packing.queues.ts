@@ -32,9 +32,11 @@ export const PACKING_QUEUES = {
     expireInSeconds: 600,
   },
   /**
-   * M46 (D-817): an order got its consignment; print each lot's parcel label (and its slip, if
-   * the brand asks) on the label terminal for its location. Enqueued in the courier's booking
-   * transaction. Idempotent: each job has its key (order, consignment, document, lot).
+   * M46 (D-817, D-914): an order is ready for its label; print each lot's parcel label (and its
+   * slip, if the brand asks) on the label terminal for its location. Enqueued in the confirm's
+   * transaction (unless a consignment is on its way), in the courier's booking transaction, and
+   * when a booking fails for good. Idempotent: each job has its key (order, consignment or
+   * `none`, document, lot), and a lot already printed or queued is not printed again.
    */
   autoPrint: {
     name: 'labels.auto_print',
@@ -74,10 +76,10 @@ export interface CameraCutPayload {
   readonly cameraId?: string;
 }
 
-/** M46: an order's parcel was booked. */
+/** M46: an order's parcel was booked, or (D-914, null) the order is ready with none. */
 export interface AutoPrintPayload {
   readonly orderId: string;
-  readonly consignmentNo: string;
+  readonly consignmentNo: string | null;
 }
 
 /** M46: one print job to send. */

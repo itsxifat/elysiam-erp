@@ -68,6 +68,7 @@ function credentialsOf(context: AdapterContext): RedxCredentials {
 
 export class RedxCourierAdapter implements CourierAdapter {
   readonly code = 'redx';
+  readonly name = 'RedX';
   /** Built from RedX's parcel-creation plugin and community clients, not its API document. */
   readonly verified = false;
   readonly statusMap = REDX_STATUS_MAP;
@@ -144,6 +145,32 @@ export class RedxCourierAdapter implements CourierAdapter {
     }
     // RedX's tracking id is both its parcel key and what a customer tracks by.
     return { consignmentNo: trackingId, trackingCode: trackingId, rawStatus: null };
+  }
+
+  /**
+   * Whether RedX accepts this token (D-913), asked with the parcel-info call this adapter already
+   * polls with, about a parcel that cannot exist: a 401 or 403 is the token, any other answer
+   * means RedX read it.
+   */
+  async verifyCredentials(context: AdapterContext): Promise<void> {
+    try {
+      await courierRequest({
+        provider: 'RedX',
+        url: `${this.baseUrl(context)}/parcel/info/0`,
+        method: 'GET',
+        headers: this.headers(context),
+        timeoutMs: context.timeoutMs,
+      });
+    } catch (error) {
+      if (error instanceof CourierError && error.code === 'COURIER_CREDENTIALS_MISSING') {
+        throw new CourierError(
+          'COURIER_CREDENTIALS_REJECTED',
+          'RedX did not accept this access token. Copy it again from RedX’s merchant panel and try once more.',
+        );
+      }
+      if (error instanceof CourierError && error.code === 'COURIER_BOOKING_FAILED') return;
+      throw error;
+    }
   }
 
   async getStatus(

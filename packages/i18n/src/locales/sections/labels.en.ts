@@ -41,7 +41,7 @@ const en = {
   'lb.col.consignment': 'Consignment',
   'lb.col.lots': 'Lots',
   'lb.col.printed': 'Labels printed',
-  'lb.col.booked': 'Booked',
+  'lb.col.booked': 'Ready since',
   'lb.col.pieces': 'Pieces',
   'lb.col.cod': 'COD',
   'lb.col.document': 'Document',
@@ -56,7 +56,8 @@ const en = {
   'lb.col.items': 'Items',
 
   'lb.ready.empty': 'Nothing is waiting for a label',
-  'lb.ready.emptyDetail': 'An order shows here once the courier gives it a consignment number.',
+  'lb.ready.emptyDetail': 'An order shows here once it is confirmed.',
+  'lb.ready.notBooked': 'Not booked yet',
   'lb.ready.printLabels': 'Print labels',
   'lb.ready.printBoth': 'Print labels and slips',
   'lb.ready.queued': 'print jobs queued',
@@ -162,12 +163,10 @@ const en = {
   'lb.printer.state.off': 'Off',
 
   'lb.settings.title': 'Automatic printing',
-  'lb.settings.autoPrint': 'Print each lot’s label the moment an order gets its consignment',
+  'lb.settings.autoPrint':
+    'Print each lot’s label as soon as an order is confirmed (when the courier is booked on Confirm, once its consignment comes back)',
   'lb.settings.autoSlip': 'Print the packing slip with it',
   'lb.settings.default': 'On by default once the brand has a printer.',
-  'lb.settings.manualBooking':
-    'Nothing prints by itself yet: the courier is booked only by hand, so a confirmed order gets no consignment until someone books it.',
-  'lb.settings.manualBookingLink': 'Book the courier when the order is confirmed',
 
   'lb.terminals.add': 'Add terminal',
   'lb.terminals.empty': 'No terminals yet',

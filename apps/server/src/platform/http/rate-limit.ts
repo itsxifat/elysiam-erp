@@ -277,6 +277,31 @@ export interface RateLimitOptions {
 }
 
 /**
+ * Whether the running API applies the credential limits: this file's buckets and Better
+ * Auth's own underneath (`LIBRARY_RATE_RULES`). One answer for both, so the switch cannot
+ * turn one off and leave the other binding.
+ *
+ * `CREDENTIAL_RATE_LIMITS` defaults to `on`. `off` is for the real-stack browser runs alone
+ * (the console's and the portal's), which sign the same people in from 127.0.0.1 faster
+ * than any person would. The environment schema already refuses `off` with
+ * `NODE_ENV=production`; this refuses it again, so an API built from some other parse of the
+ * environment still cannot boot unlimited in production.
+ */
+export function credentialRateLimitsEnabled(env: {
+  readonly NODE_ENV: string;
+  readonly CREDENTIAL_RATE_LIMITS: 'on' | 'off';
+}): boolean {
+  if (env.CREDENTIAL_RATE_LIMITS === 'on') return true;
+  if (env.NODE_ENV === 'production') {
+    throw new Error(
+      'CREDENTIAL_RATE_LIMITS=off is refused in production: the credential endpoints would ' +
+        'take unlimited guesses. Unset it.',
+    );
+  }
+  return false;
+}
+
+/**
  * Decide whether this request may proceed.
  *
  * Both buckets are incremented before either is judged, deliberately: counting

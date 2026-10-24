@@ -52,7 +52,8 @@ export function TerminalsPanel({ kind }: { readonly kind: TerminalKind }) {
 
   if (view.isPending) {
     return (
-      <div className="grid gap-4 md:grid-cols-2" aria-busy="true" aria-label={t('lb.loading')}>
+      <div className="grid gap-4 md:grid-cols-2" aria-busy="true">
+        <span className="sr-only">{t('lb.loading')}</span>
         <Skeleton className="h-64" />
         <Skeleton className="h-64" />
       </div>

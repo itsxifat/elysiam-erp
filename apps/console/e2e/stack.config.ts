@@ -24,6 +24,13 @@ export default defineConfig({
   globalSetup: './stack/global-setup.ts',
   use: {
     baseURL: `http://localhost:${process.env.E2E_CONSOLE_PORT ?? '5183'}`,
+    // Every context, the specs' own `browser.newContext()` ones included, asks for reduced
+    // motion. The kit honours it (`motion-safe:` on every transition and enter animation, and
+    // the reduced-motion guard in `packages/ui/src/styles/tailwind.css`), so a dialog or a
+    // button is at its settled colours the moment it shows: axe's contrast check then judges
+    // what a person reads, not a frame of a 160 ms fade (barcodes.stack.ts's reverse dialog
+    // read 3.62:1 mid-fade, about 5.5:1 settled).
+    reducedMotion: 'reduce',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

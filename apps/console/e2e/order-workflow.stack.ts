@@ -12,10 +12,17 @@ import { enrolSecondFactor, signIn, stack, user } from './stack/helpers.js';
  * Two sales agents race to take a new order and the loser is told who won; an org admin acts
  * on an agent's order only after "go ahead", and the agent's own dock hears it; auto-assign
  * offers a new order to the one active agent taking orders, who accepts it from the dock's
- * card; the agent logs verification calls; the hub prints the slip, the order is packed, the
- * parcel is scanned onto the courier hand-over, and the desk sees each stage; the supervisors'
- * team board shows who is active and who is not taking orders. Every screen is checked with axe
- * (no serious or critical violation) and photographed in both themes into `docs/review/M41/`.
+ * card; the agent logs verification calls; at the hub (Packaging since M46, D-800) the order
+ * moves to To pack, is packed, the parcel is scanned onto the courier hand-over, and the desk
+ * sees each stage; the supervisors' team board shows who is active and who is not taking
+ * orders. Every screen is checked with axe (no serious or critical violation) and photographed
+ * in both themes into `docs/review/M41/`.
+ *
+ * Printing is not driven here. A label prints from Labels on a terminal's printer once a
+ * courier has booked the parcel (D-817, D-818); this stack has no booking and no printer on a
+ * LAN address the worker may send to (D-812). `labels.e2e.test.ts` covers that path: the
+ * printed label marks the order's slip printed and moves it to To pack (D-819). Here the order
+ * is moved through `POST /v1/orders/mark-printed`, which no console screen calls.
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -283,7 +290,7 @@ test('check 4: verification calls are logged and order the desk', async () => {
   await bothThemes(desk, 'desk-verifying');
 });
 
-test('check 5: the hub prints, packs and hands over at its location; the desk sees each stage', async () => {
+test('check 5: the hub packs and hands over at its location; the desk sees each stage', async () => {
   const order = offered ?? (await newOrder(desk, user('desk').userId));
   await api(desk, 'POST', `/v1/orders/${order.id}/confirm`, {});
 
@@ -315,21 +322,32 @@ test('check 5: the hub prints, packs and hands over at its location; the desk se
   await shot(admin, 'a-staff-desk-profile');
   await admin.keyboard.press('Escape');
 
-  await packer.goto('/orders/hub');
-  const table = packer.getByTestId('hub-table');
-  const row = table.locator(`[data-order-id="${order.id}"]`);
-  await expect(row).toBeVisible();
-  await bothThemes(packer, 'hub-to-print');
-  await row.getByRole('checkbox').check();
-  // The slips open in their own tab (a `noopener` window, so the context's page event).
-  const slips = packer.context().waitForEvent('page');
-  await packer.getByTestId('print-slips').click();
-  await (await slips).close();
-
-  await packer.getByTestId('hub-tab-hub_packing').click();
+  // M46 (D-800, D-819): the hub's stages are Packaging's tabs now, at the person's hub
+  // location. Before its label prints, the confirmed order is not on To pack.
+  expect(await api<{ hubStage: string }>(desk, 'GET', `/v1/orders/${order.id}`)).toMatchObject({
+    hubStage: 'to_print',
+  });
+  await packer.goto('/packaging');
+  await expect(packer.getByRole('heading', { name: 'Packaging', level: 1 })).toBeVisible();
+  await expect(packer.getByTestId('packaging-tab-topack')).toHaveAttribute('aria-current', 'page');
+  await expect(packer.getByRole('combobox', { name: 'Location' })).toContainText(hubName);
   await expect(
-    packer.getByTestId('hub-table').locator(`[data-order-id="${order.id}"]`),
+    packer.getByTestId('stage-hub_packing').or(packer.getByText('Nothing to pack')),
   ).toBeVisible();
+  await expect(packer.getByRole('link', { name: order.orderNo, exact: true })).toHaveCount(0);
+
+  // Not a print: the API's own route marks the slip printed, as the first printed label does
+  // (D-819). This spec does not cover printing; `labels.e2e.test.ts` does (see the header).
+  expect(
+    await api<{ marked: string[] }>(packer, 'POST', '/v1/orders/mark-printed', { ids: [order.id] }),
+  ).toMatchObject({ marked: [order.id] });
+  await packer.reload();
+  const toPack = packer
+    .getByTestId('stage-hub_packing')
+    .getByRole('row')
+    .filter({ hasText: order.orderNo });
+  await expect(toPack).toBeVisible();
+  await expect(toPack.getByRole('button', { name: 'Pack' })).toBeVisible();
   expect(await api<{ hubStage: string }>(desk, 'GET', `/v1/orders/${order.id}`)).toMatchObject({
     hubStage: 'packing',
   });
@@ -337,20 +355,32 @@ test('check 5: the hub prints, packs and hands over at its location; the desk se
 
   // Packed at the station (its own spec drives the scans); here through the same transition.
   await api(packer, 'POST', `/v1/orders/${order.id}/pack`, {});
-  await packer.getByTestId('hub-tab-hub_packed').click();
+  await packer.getByTestId('packaging-tab-packed').click();
+  await expect(
+    packer.getByTestId('stage-hub_packed').getByRole('row').filter({ hasText: order.orderNo }),
+  ).toBeVisible();
+
+  // The handover (D-808): the order's one lot is its label, scanned as it goes to the rider.
+  await packer.getByTestId('packaging-tab-handover').click();
   const handover = packer.getByTestId('handover');
-  await handover.getByLabel('Scan or type an order number').fill(order.orderNo);
-  await handover.getByRole('button', { name: 'Add' }).click();
-  await expect(handover.getByTestId('handover-list')).toContainText(order.orderNo);
+  const scan = handover.getByLabel('Scan each lot’s label');
+  await scan.fill(order.orderNo);
+  await scan.press('Enter');
+  const scanned = handover.getByTestId('handover-list').getByRole('listitem');
+  await expect(scanned.filter({ hasText: order.orderNo })).toContainText('All lots scanned');
   await noBlockingViolations(packer, 'hub-handover');
   await shot(packer, 'a-hub-handover');
   await handover.getByTestId('hand-over').click();
-  await expect(handover.getByTestId('handover-notice')).toContainText('1 parcels handed over.');
+  await expect(handover).toContainText('1 orders handed to the courier');
 
-  await packer.getByTestId('hub-tab-hub_handed').click();
-  await expect(
-    packer.getByTestId('hub-table').locator(`[data-order-id="${order.id}"]`),
-  ).toBeVisible();
+  // "Handed over today", at the hub's location: the heading's own section.
+  const handedToday = packer
+    .getByRole('heading', { name: 'Handed over today' })
+    .locator('xpath=..');
+  await expect(handedToday.getByRole('listitem').filter({ hasText: order.orderNo })).toBeVisible();
+  expect(await api<{ hubStage: string }>(desk, 'GET', `/v1/orders/${order.id}`)).toMatchObject({
+    hubStage: 'handed_over',
+  });
   await bothThemes(packer, 'hub-handed');
 
   await desk.goto('/orders/queue?tab=confirmed_today');

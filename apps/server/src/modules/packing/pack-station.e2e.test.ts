@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { withOrg, withSystem } from '@elysium/db';
 import { internalEan13 } from '@elysium/domain/barcode';
+import { lotCode, lotScanCode, orderScanCode } from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
 import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -26,7 +27,11 @@ import { FILES_QUEUE_DEFINITIONS } from '../files/files.queues.js';
 import { FilesService } from '../files/files.service.js';
 import { registerFilesJobs } from '../files/files.worker.js';
 import { seedProductWithSkus } from '../inventory/inventory.testing.js';
-import { renderLabelHtml, renderPackingSlipHtml } from '../orders/order-documents.js';
+import {
+  documentBarcodeValue,
+  renderLabelHtml,
+  renderPackingSlipHtml,
+} from '../orders/order-documents.js';
 import { SAMPLE_BRAND, SAMPLE_ORDER } from '../orders/order-documents.sample.js';
 import { applyOrderMigrations, seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { PACKING_QUEUE_DEFINITIONS } from './packing.queues.js';
@@ -232,6 +237,46 @@ async function packedWithVideo(): Promise<{
   expect((await scan(packer, sessionId, cap.barcode)).body.outcome).toBe('accepted');
   expect((await complete(packer, sessionId)).status).toBe(200);
   return { orderId: order.id, sessionId, ...video };
+}
+
+/**
+ * A copy of a seeded order under a number of the test's choosing (its own row and lines): an
+ * order's number never changes once written (migration 0041's trigger), so a test of what a
+ * number names writes it new.
+ */
+async function numbered(order: { id: string }, orderNo: string): Promise<string> {
+  return withSystem(
+    async (tx) => {
+      const rows = await tx.execute<{ id: string }>(sql`
+        insert into sales.orders (
+          org_id, branch_id, order_no, channel, customer_id,
+          ship_name, ship_phone_e164, ship_district_id, ship_thana_id, ship_address_line,
+          courier_id, location_id,
+          items_poisha, discount_poisha, delivery_charge_poisha, advance_paid_poisha,
+          cod_amount_poisha, status, assigned_to, created_by
+        )
+        select org_id, branch_id, ${orderNo}, channel, customer_id,
+               ship_name, ship_phone_e164, ship_district_id, ship_thana_id, ship_address_line,
+               courier_id, location_id,
+               items_poisha, discount_poisha, delivery_charge_poisha, advance_paid_poisha,
+               cod_amount_poisha, status, assigned_to, created_by
+        from sales.orders where org_id = ${ORG_A} and id = ${order.id}
+        returning id
+      `);
+      const id = rows[0]?.id;
+      if (id === undefined) throw new Error('copying an order returned no id');
+      await tx.execute(sql`
+        insert into sales.order_lines
+          (org_id, order_id, sku_id, sku_code, product_name, qty, unit_price_poisha,
+           discount_poisha, delivered_qty, returned_qty, dispatch_unit_cost_poisha, position)
+        select org_id, ${id}, sku_id, sku_code, product_name, qty, unit_price_poisha,
+               discount_poisha, delivered_qty, returned_qty, dispatch_unit_cost_poisha, position
+        from sales.order_lines where org_id = ${ORG_A} and order_id = ${order.id}
+      `);
+      return id;
+    },
+    { orgId: ORG_A },
+  );
 }
 
 /** The words a refused statement failed with, from the driver's error under Drizzle's. */
@@ -469,21 +514,84 @@ describe('the packing station (M38b check 1, M38 check 5)', () => {
 
   it('opens the order from the barcode printed on its packing slip and its label (M43 check 1)', async () => {
     const order = await confirmedOrder([{ sku: shirtM, qty: 1 }]);
-    const data = { ...SAMPLE_ORDER, orderNo: order.orderNo };
-    const pages = [
-      renderPackingSlipHtml({ brand: SAMPLE_BRAND, data, fonts: [] }),
-      renderPackingSlipHtml({ brand: SAMPLE_BRAND, data, fonts: [], paper: 'a5' }),
-      renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts: [] }),
+    // The order in one bag, and its second lot of three (D-806): each page's own bars.
+    for (const lot of [null, { no: 2, count: 3 }]) {
+      const data = { ...SAMPLE_ORDER, orderNo: order.orderNo, lot };
+      const pages = [
+        renderPackingSlipHtml({ brand: SAMPLE_BRAND, data, fonts: [] }),
+        renderPackingSlipHtml({ brand: SAMPLE_BRAND, data, fonts: [], paper: 'a5' }),
+        renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts: [] }),
+      ];
+      for (const html of pages) {
+        // Read from the bars, as the scanner reads them, not from the text printed beneath:
+        // what the page says they carry (D-912: the order's ten digits, a lot's twelve).
+        const svg = /<svg [^>]*data-barcode="[^"]*"[\s\S]*?<\/svg>/.exec(html)?.[0] ?? '';
+        const code = decodeCode128Svg(svg);
+        expect(code).toBe(documentBarcodeValue(data));
+        const opened = await open(packer, { code });
+        expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+        expect(opened.body).toMatchObject({ session: { status: 'open', orderNo: order.orderNo } });
+      }
+    }
+  });
+
+  it('opens the order from its ten digits and a lot’s twelve, and from every code before them (D-912)', async () => {
+    const order = await confirmedOrder([{ sku: shirtM, qty: 1 }]);
+    const digits = orderScanCode(order.orderNo) ?? '';
+    expect(digits).toMatch(/^\d{10}$/);
+    // The fixture numbers orders `TST-…`, not under the brand's prefix (`ELY`): its digits name it
+    // through the prefix-free lookup, as an order numbered before a prefix change is named.
+    expect(order.orderNo.startsWith('TST-')).toBe(true);
+    const codes = [
+      digits,
+      ` ${digits} `,
+      // A scanner that sends its symbology prefix (`]C0`) first.
+      `]C0${digits}`,
+      lotScanCode(order.orderNo, 1) ?? '',
+      lotScanCode(order.orderNo, 20) ?? '',
+      lotCode(order.orderNo, 2),
+      order.orderNo,
+      order.orderNo.toLowerCase(),
     ];
-    for (const html of pages) {
-      // Read from the bars, as the scanner reads them, not from the text printed beneath.
-      const svg = /<svg [^>]*data-barcode="[^"]*"[\s\S]*?<\/svg>/.exec(html)?.[0] ?? '';
-      const code = decodeCode128Svg(svg);
-      expect(code).toBe(order.orderNo);
+    for (const code of codes) {
       const opened = await open(packer, { code });
-      expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+      expect(opened.status, `${code}: ${JSON.stringify(opened.body)}`).toBe(200);
       expect(opened.body).toMatchObject({ session: { status: 'open', orderNo: order.orderNo } });
     }
+
+    // Digits naming no order are refused as any unknown code is: another counter, another
+    // month, a month that is none, a lot of no order, and a lot past twenty of this one.
+    const counter = Number(digits.slice(4));
+    const unknown = [
+      `${digits.slice(0, 4)}${String(counter + 500_000).padStart(6, '0')}`,
+      `2512${digits.slice(4)}`,
+      `2613${digits.slice(4)}`,
+      `${digits.slice(0, 4)}${String(counter + 500_000).padStart(6, '0')}02`,
+      `${digits}21`,
+    ];
+    for (const code of unknown) {
+      const refused = await open(packer, { code });
+      expect(refused.status, code).toBe(404);
+      expect(refused.body.code, code).toBe('SHIPMENT_NOT_FOUND');
+    }
+  });
+
+  it('opens the order under the brand’s prefix before one of another prefix with the same digits', async () => {
+    // The brand's own number now (`ELY-…`), and the same period and counter under a prefix it
+    // numbered with before: the ten digits name the one numbered as the brand numbers now.
+    const current = 'ELY-2609-70042';
+    const ours = await numbered(await confirmedOrder([{ sku: cap, qty: 1 }]), current);
+    const older = await numbered(await confirmedOrder([{ sku: cap, qty: 1 }]), 'OLD-2609-70042');
+    expect(ours).not.toBe(older);
+    for (const code of ['2609070042', '260907004203']) {
+      const opened = await open(packer, { code });
+      expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+      expect(opened.body).toMatchObject({ session: { orderId: ours, orderNo: current } });
+    }
+    // Under the old prefix alone, the period and counter still find it.
+    await numbered(await confirmedOrder([{ sku: cap, qty: 1 }]), 'OLD-2609-70043');
+    const alone = await open(packer, { code: '2609070043' });
+    expect(alone.body).toMatchObject({ session: { orderNo: 'OLD-2609-70043' } });
   });
 
   it('opens only a confirmed order', async () => {

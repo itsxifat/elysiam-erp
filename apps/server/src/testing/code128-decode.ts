@@ -7,7 +7,8 @@ import { CODE128_PATTERNS } from '@elysium/domain';
  * prints is what the packing station is then given, decoded from the bars rather than taken
  * from the text printed under them.
  *
- * Subset B only, which is all the encoder writes; anything else is a failure, not a guess.
+ * Subsets B and C, which is all the encoder writes (C for an even run of digits, D-912); anything
+ * else is a failure, not a guess.
  */
 export function decodeCode128Svg(svg: string): string {
   const bars = [...svg.matchAll(/<rect x="(\d+)" y="0" width="(\d+)"/g)].map((match) => ({
@@ -37,10 +38,14 @@ export function decodeCode128Svg(svg: string): string {
   }
 
   const [start, ...rest] = values;
-  if (start !== 104) throw new Error('not a subset B symbol');
+  if (start !== 104 && start !== 105) throw new Error('not a subset B or C symbol');
   const check = rest.pop();
   const data = rest;
-  const sum = data.reduce((total, value, index) => total + value * (index + 1), 104);
+  const sum = data.reduce((total, value, index) => total + value * (index + 1), start);
   if (check !== sum % 103) throw new Error('the check character does not match');
+  if (start === 105) {
+    if (data.some((value) => value > 99)) throw new Error('a subset C symbol is two digits');
+    return data.map((value) => String(value).padStart(2, '0')).join('');
+  }
   return data.map((value) => String.fromCharCode(value + 32)).join('');
 }

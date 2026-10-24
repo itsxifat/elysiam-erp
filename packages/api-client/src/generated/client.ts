@@ -1579,6 +1579,11 @@ export const OPERATIONS = {
     path: '/v1/courier/accounts',
     ability: 'update:CourierSettlement',
   },
+  postV1CourierConnections: {
+    method: 'POST',
+    path: '/v1/courier/connections',
+    ability: 'update:CourierSettlement',
+  },
   postV1CourierParcels: { method: 'POST', path: '/v1/courier/parcels', ability: 'update:Order' },
   postV1CourierParcelsBulk: {
     method: 'POST',
@@ -2220,7 +2225,7 @@ export const OPERATIONS = {
   postV1TerminalsByIdBind: {
     method: 'POST',
     path: '/v1/terminals/{id}/bind',
-    ability: 'update:PackingTerminal',
+    ability: 'read:PackingTerminal',
   },
   postV1TerminalsCheckIn: {
     method: 'POST',
@@ -4402,6 +4407,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/courier/accounts */
     postV1CourierAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CourierAccounts, undefined, options),
+    /** POST /v1/courier/connections */
+    postV1CourierConnections: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1CourierConnections, undefined, options),
     /** POST /v1/courier/parcels */
     postV1CourierParcels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1CourierParcels, undefined, options),

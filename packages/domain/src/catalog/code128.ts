@@ -153,6 +153,10 @@ const PATTERNS: readonly string[] = [
 
 /** Subset B's start code. */
 const START_B = 104;
+/** Subset C's start code: two digits a symbol (D-912). */
+const START_C = 105;
+/** A payload subset C carries whole: digits, an even number of them. */
+const DIGIT_PAIRS = /^(?:\d\d)+$/;
 const STOP = 106;
 
 /**
@@ -183,15 +187,25 @@ function valueOf(character: string): number {
   return point - 32;
 }
 
+/**
+ * The start code and data values a payload is written as (D-912): an even run of digits in
+ * subset C, two to a symbol, so a digits-only order code is half the bars and each bar can be
+ * twice as wide; anything else in subset B, one character a symbol. A scanner gives back the
+ * same text either way.
+ */
+function codeValues(payload: string): { readonly start: number; readonly data: number[] } {
+  if (DIGIT_PAIRS.test(payload)) {
+    const data: number[] = [];
+    for (let at = 0; at < payload.length; at += 2) data.push(Number(payload.slice(at, at + 2)));
+    return { start: START_C, data };
+  }
+  return { start: START_B, data: [...payload].map(valueOf) };
+}
+
 /** The check character's code value, exposed so a test can assert it directly. */
 export function code128CheckValue(payload: string): number {
-  let sum = START_B;
-  let position = 1;
-  for (const character of payload) {
-    sum += valueOf(character) * position;
-    position += 1;
-  }
-  return sum % 103;
+  const { start, data } = codeValues(payload);
+  return data.reduce((sum, value, index) => sum + value * (index + 1), start) % 103;
 }
 
 export interface Code128Symbol {
@@ -219,7 +233,8 @@ export function code128Encode(payload: string): Code128Symbol {
     );
   }
 
-  const values = [START_B, ...[...payload].map(valueOf), code128CheckValue(payload), STOP];
+  const { start, data } = codeValues(payload);
+  const values = [start, ...data, code128CheckValue(payload), STOP];
   const modules: number[] = [];
   for (const value of values) {
     const pattern = PATTERNS[value];

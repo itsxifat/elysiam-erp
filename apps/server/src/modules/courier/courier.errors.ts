@@ -40,6 +40,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
 
   COURIER_ACCOUNT_INVALID: 400,
   COURIER_CREDENTIALS_MISSING: 409,
+  // Keys a person just typed that the courier refused: their input, so a 400 (D-913).
+  COURIER_CREDENTIALS_REJECTED: 400,
   COURIER_UNAVAILABLE: 503,
   COURIER_BOOKING_FAILED: 409,
 

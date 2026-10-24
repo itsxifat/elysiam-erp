@@ -311,7 +311,8 @@ function History({
       </form>
 
       {calls.isPending && !needsWrapUp ? (
-        <div className="space-y-2" aria-busy="true" aria-label={t('tel.loading')}>
+        <div className="space-y-2" aria-busy="true">
+          <span className="sr-only">{t('tel.loading')}</span>
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-full" />

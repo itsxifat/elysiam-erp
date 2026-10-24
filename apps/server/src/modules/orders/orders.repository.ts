@@ -1,4 +1,5 @@
 import type { Tx } from '@elysium/db';
+import { scannedOrderParts } from '@elysium/domain/packing';
 import { sql, type SQL } from 'drizzle-orm';
 
 /**
@@ -571,12 +572,87 @@ export async function couriersByCodes(
   return [...rows];
 }
 
-export async function defaultCourier(tx: Tx, orgId: string): Promise<CourierRow | undefined> {
-  const rows = await tx.execute<CourierRow>(sql`
-    select id, code, name, is_active from sales.couriers
-    where org_id = ${orgId} and is_active order by code limit 1
+/**
+ * The courier party a delivery is posted against when the order names none (§7, §9).
+ *
+ * §9's default, never an alphabetical first: the order's own zone's default courier, else the
+ * one courier the brand's active zones name (a zone that names none is skipped), else the
+ * brand's only active courier party. Undefined when none of those names exactly one, and the
+ * caller refuses: a receivable against a courier that never carried the parcel is one no
+ * statement clears. This was once the first active party by code, so adding Carrybee (which
+ * sorts before `own_rider`) moved every such delivery onto Carrybee (D-913).
+ */
+export async function deliveryFallbackCourier(
+  tx: Tx,
+  orgId: string,
+  zoneId: string | null,
+): Promise<string | undefined> {
+  if (zoneId !== null) {
+    const zone = await zoneById(tx, orgId, zoneId);
+    if (zone?.default_courier_id != null) return zone.default_courier_id;
+  }
+  const named = new Set(
+    (await listZones(tx, orgId)).flatMap((zone) =>
+      zone.is_active && zone.default_courier_id !== null ? [zone.default_courier_id] : [],
+    ),
+  );
+  if (named.size === 1) return [...named][0];
+  if (named.size > 1) return undefined;
+  const active = await tx.execute<{ id: string }>(sql`
+    select id from sales.couriers where org_id = ${orgId} and is_active limit 2
   `);
-  return rows[0];
+  return active.length === 1 ? active[0]?.id : undefined;
+}
+
+/**
+ * The courier party with this code, made when the brand has none and switched back on when it
+ * was off (D-913: connecting a courier). One statement, so two people connecting the same
+ * courier at once get one row; an existing party keeps its own name.
+ */
+export async function ensureCourier(
+  tx: Tx,
+  orgId: string,
+  code: string,
+  name: string,
+): Promise<CourierRow & { readonly created: boolean }> {
+  const rows = await tx.execute<CourierRow & { created: boolean }>(sql`
+    insert into sales.couriers (org_id, code, name)
+    values (${orgId}, ${code}, ${name})
+    on conflict (org_id, code) do update set is_active = true, updated_at = now()
+    returning id, code, name, is_active, (xmax = 0) as created
+  `);
+  const row = rows[0];
+  if (row === undefined) throw new Error('sales.couriers upsert returned no row');
+  return row;
+}
+
+/**
+ * Lock every one of the brand's delivery zones for the rest of the transaction (D-913), in one
+ * order so two callers never deadlock. Changing the default courier takes it first: without it,
+ * two people making different couriers the default at once could each skip the zones the other
+ * had already changed, and leave the zones split between them with no default at all.
+ */
+export async function lockZones(tx: Tx, orgId: string): Promise<void> {
+  await tx.execute(sql`
+    select id from sales.delivery_zones where org_id = ${orgId} order by id for update
+  `);
+}
+
+/**
+ * Every delivery zone's default courier becomes this one (D-913). The zones it changed. The
+ * caller holds `lockZones`, so the filter reads every zone as it is now.
+ */
+export async function setZonesDefaultCourier(
+  tx: Tx,
+  orgId: string,
+  courierId: string,
+): Promise<string[]> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update sales.delivery_zones set default_courier_id = ${courierId}::uuid, updated_at = now()
+    where org_id = ${orgId} and default_courier_id is distinct from ${courierId}::uuid
+    returning id
+  `);
+  return [...rows].map((row) => row.id);
 }
 
 // --- order numbering ----------------------------------------------------------
@@ -993,6 +1069,8 @@ export async function listOrders(
   },
 ): Promise<ListedOrderRow[]> {
   const pattern = filters.q === undefined ? undefined : `%${filters.q}%`;
+  // D-912: a label or slip scanned into the search types the order's digits, not its number.
+  const scanned = filters.q === undefined ? null : scannedOrderParts(filters.q);
   const rows = await tx.execute<ListedOrderRow>(sql`
     select ${ORDER_COLUMNS},
       (select coalesce(sum(l.qty), 0)::int from sales.order_lines l
@@ -1019,7 +1097,13 @@ export async function listOrders(
       and ${
         pattern === undefined
           ? sql`true`
-          : sql`(o.order_no ilike ${pattern} or o.ship_phone_e164 ilike ${pattern} or c.name ilike ${pattern})`
+          : sql`(o.order_no ilike ${pattern} or o.ship_phone_e164 ilike ${pattern} or c.name ilike ${pattern}
+                or ${
+                  scanned === null
+                    ? sql`false`
+                    : sql`(split_part(o.order_no, '-', 2) = ${scanned.period}
+                           and split_part(o.order_no, '-', 3) = ${scanned.counter})`
+                })`
       }
       and ${
         filters.from === undefined
@@ -2025,6 +2109,29 @@ export async function orderIdByNo(
     select id from sales.orders where org_id = ${orgId} and order_no = ${orderNo}
   `);
   return rows[0]?.id;
+}
+
+/**
+ * The orders numbered `<any prefix>-<period>-<counter>`, newest first (D-912): what an order's
+ * ten digits name once the brand's prefix has changed since it was numbered. The suffix match
+ * is what migration 0043's trigram index on `order_no` serves; the parts make it exact.
+ */
+export async function orderIdsByPeriodCounter(
+  tx: Tx,
+  orgId: string,
+  period: string,
+  counter: string,
+): Promise<string[]> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select id from sales.orders
+    where org_id = ${orgId}
+      and order_no like ${`%-${period}-${counter}`}
+      and split_part(order_no, '-', 2) = ${period}
+      and split_part(order_no, '-', 3) = ${counter}
+    order by created_at desc
+    limit 5
+  `);
+  return [...rows].map((row) => row.id);
 }
 
 export interface RetentionFactRow extends Record<string, unknown> {

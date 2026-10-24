@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   Post,
   Put,
@@ -19,6 +20,7 @@ import { Public, RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { CourierAccountsService } from './accounts.service.js';
 import { BookingService } from './booking.service.js';
+import { CourierConnectionsService } from './connections.service.js';
 import { courierHttpError, mapCourierErrors } from './courier.errors.js';
 import { CourierLabelsService } from './labels.service.js';
 import { CourierReportsService } from './reports.service.js';
@@ -31,6 +33,7 @@ import {
   bookParcelSchema,
   bulkBookSchema,
   confirmHandoverSchema,
+  connectCourierSchema,
   consignmentIdParamSchema,
   escalationSchema,
   fetchSettlementsSchema,
@@ -103,6 +106,7 @@ export class CourierController {
     private readonly stuck: StuckParcelsService,
     private readonly selection: CourierSelectionService,
     private readonly labels: CourierLabelsService,
+    private readonly connections: CourierConnectionsService,
   ) {}
 
   // --- accounts -----------------------------------------------------------------
@@ -131,6 +135,22 @@ export class CourierController {
     const input = parse(upsertCourierAccountSchema, body);
     return mapCourierErrors(() =>
       this.accounts.upsert(requireContext(request), auditable(request), input),
+    );
+  }
+
+  /**
+   * Connect a courier in one step (D-913): choose it, add its keys, default or not. The keys
+   * are checked with the courier before anything is saved, and wrong ones are a 400 with the
+   * reason. `update CourierSettlement`, like the account form it simplifies. A 200 rather than
+   * Nest's 201: re-connecting the same courier is the ordinary case, and it replaces the keys.
+   */
+  @RequireAbility('update', 'CourierSettlement')
+  @Post('connections')
+  @HttpCode(200)
+  async connect(@Req() request: FastifyRequest, @Body() body: unknown) {
+    const input = parse(connectCourierSchema, body ?? {});
+    return mapCourierErrors(() =>
+      this.connections.connect(requireContext(request), auditable(request), input),
     );
   }
 

@@ -333,7 +333,8 @@ function EnrolStep({
       <div className="mt-5 space-y-5">
         <p className="text-sm text-muted-foreground">{t('portal.investor.enrolSubtitle')}</p>
         {error === null ? (
-          <div className="space-y-4" aria-busy="true" aria-label={t('common.loading')}>
+          <div className="space-y-4" aria-busy="true">
+            <span className="sr-only">{t('common.loading')}</span>
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-24 w-full" />
             <Skeleton className="h-9 w-full" />

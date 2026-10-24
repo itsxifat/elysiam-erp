@@ -200,6 +200,66 @@ const en = {
   'courier.parcel.handoverPending': 'Not confirmed',
   'courier.parcel.handoverConfirm': 'Confirm handover',
   'courier.parcel.openOrder': 'Open the order',
+  // Settings → Couriers, made simple (D-913): pick the courier, type its keys, default or not.
+  'courier.setup.caption':
+    'The couriers this brand sends parcels with. Choose one, type the keys from its merchant panel and it is connected.',
+  'courier.setup.readOnly':
+    'You can see the couriers. Changing them needs access to courier settlements.',
+  'courier.setup.add': 'Add courier',
+  'courier.setup.emptyTitle': 'No courier yet',
+  'courier.setup.emptyDetail': 'Add Steadfast, Pathao or Carrybee to start sending parcels.',
+  'courier.setup.state.connected': 'Connected',
+  'courier.setup.state.notConnected': 'Not connected',
+  'courier.setup.state.panel': 'Booked in its panel',
+  'courier.setup.state.off': 'Switched off on this server',
+  'courier.setup.default': 'Default',
+  'courier.setup.makeDefault': 'Make default',
+  'courier.setup.changeKeys': 'Change keys',
+  'courier.setup.connect': 'Connect',
+  'courier.setup.advanced': 'Advanced',
+  'courier.setup.advancedSave': 'Save advanced settings',
+  'courier.setup.advancedSaved': 'Advanced settings saved.',
+  'courier.setup.chooseTitle': 'Add a courier',
+  'courier.setup.chooseDescription': 'Which courier does this brand send parcels with?',
+  'courier.setup.choiceApi': 'Books parcels for you',
+  'courier.setup.choicePanel': 'Booked in its own panel',
+  'courier.setup.choiceOff': 'Switched off on this server',
+  'courier.setup.connectTitle': 'Connect {name}',
+  'courier.setup.addTitle': 'Add {name}',
+  'courier.setup.keysTitle': 'Change {name}’s keys',
+  'courier.setup.keysDescription':
+    'Type the keys from {name}’s merchant panel. They are checked with {name} before anything is saved.',
+  'courier.setup.keysNeverShown': 'Saved keys are never shown. Type them again to replace them.',
+  'courier.setup.panelNote':
+    '{name} has no API connection yet: book its parcels in {name}’s merchant panel.',
+  'courier.setup.useDefault': 'Use as the default courier',
+  'courier.setup.useDefaultHint': 'New orders are given the default courier. A brand has one.',
+  'courier.setup.keysForDefault': 'Type {name}’s keys again to make it the default.',
+  'courier.setup.defaultWarnMixed':
+    'Your delivery zones use different couriers now. Turning this on gives every zone {name}.',
+  'courier.setup.defaultWarnReplaces':
+    'New orders go to {current} now. Turning this on gives every delivery zone {name} instead.',
+  'courier.setup.defaultNotAllowed':
+    'Changing the default courier needs access to delivery zones, which your role does not have.',
+  'courier.setup.back': 'Back',
+  'courier.setup.checking': 'Checking…',
+  'courier.setup.connected': '{name} is connected.',
+  'courier.setup.added': '{name} is added.',
+  'courier.setup.madeDefault': '{name} is now the default courier.',
+  'courier.setup.missing': 'Type every key.',
+  'courier.setup.pairNeeded': 'Type both the email and the password, or leave both empty.',
+  'courier.setup.optionalLogin':
+    'Optional: only if Pathao gave you an email and password for its API.',
+  'courier.setup.couldNotSave': 'This could not be saved. Try again in a moment.',
+  'courier.setup.unknownCourier': 'Courier',
+  'courier.setup.field.apiKey': 'API key',
+  'courier.setup.field.secretKey': 'Secret key',
+  'courier.setup.field.clientId': 'Client ID',
+  'courier.setup.field.clientSecret': 'Client secret',
+  'courier.setup.field.storeId': 'Store ID',
+  'courier.setup.field.username': 'Email (username)',
+  'courier.setup.field.password': 'Password',
+  'courier.setup.field.accessToken': 'Access token',
 } as const;
 
 /** The keys of this section. */

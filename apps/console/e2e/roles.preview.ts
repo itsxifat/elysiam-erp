@@ -77,10 +77,12 @@ test('HR: people, attendance, payroll, targets', async ({ page }) => {
   await look(page, 'hr-targets', '/performance/targets', 'Targets');
 });
 
-test('marketing: dashboard, promo codes, leads', async ({ page }) => {
+test('marketing: dashboard, discounts, leads', async ({ page }) => {
   await signIn(page, consoleUrl(), login('marketing'));
   await inConsole(page);
   await look(page, 'marketing-dashboard', '/marketing', 'Marketing');
-  await look(page, 'marketing-promo-codes', '/campaigns', 'Promo codes', /EID10/);
+  // Promo codes became Discounts with M35a: codes and automatic discounts on one screen,
+  // still `promo.codes` underneath (D-541). The seeded code is one of them.
+  await look(page, 'marketing-discounts', '/campaigns', 'Discounts', /EID10/);
   await look(page, 'marketing-leads', '/marketing/leads', 'Leads', /Demo Lead/);
 });

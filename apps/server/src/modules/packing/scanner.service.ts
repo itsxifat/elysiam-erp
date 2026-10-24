@@ -8,6 +8,7 @@ import {
   type Tx,
 } from '@elysium/db';
 import { add, formatBdPhoneForDisplay, poisha, sub } from '@elysium/domain';
+import { readLotCode } from '@elysium/domain/packing';
 import { takaDecimal, wireMoney } from '@elysium/domain/storefront';
 import { sql } from 'drizzle-orm';
 
@@ -32,6 +33,28 @@ export interface DeviceCaller {
   readonly userId: string;
   readonly deviceId: string;
   readonly context: RequestContext;
+}
+
+/**
+ * The orders a scanned code names, and the lot when it is a lot's (M46, D-806, D-912): a lot's
+ * code in either form (`…-L2`, or twelve digits) names its order by the order's own code; any
+ * other code is a shipment code (the order number, its ten digits, a courier's consignment or
+ * tracking code). Twelve digits that read as a lot of no order are tried whole, so a courier's
+ * code of twelve digits still scans. What the packing station, the handover and the scanner
+ * phone read a code with. Newest first; empty when nothing matches.
+ */
+export async function ordersForScannedCode(
+  orders: OrdersApi,
+  tx: Tx,
+  orgId: string,
+  code: string,
+): Promise<{ readonly orderIds: readonly string[]; readonly lot: number | null }> {
+  const lotted = readLotCode(code);
+  if (lotted !== null) {
+    const orderIds = await orders.orderIdsForOrderCode(tx, orgId, lotted.orderCode);
+    if (orderIds.length > 0) return { orderIds, lot: lotted.lot };
+  }
+  return { orderIds: await orders.orderIdsForShipmentCode(tx, orgId, code), lot: null };
 }
 
 function refusal(status: number, code: string, message: string): HttpException {
@@ -138,7 +161,8 @@ export class ScannerService {
   async shipment(orgId: string, request: object, code: string, scannedBy: string | null) {
     const trimmed = code.trim();
     return withOrg({ orgId }, async (tx) => {
-      const candidates = await this.orders.orderIdsForShipmentCode(tx, orgId, trimmed);
+      // A lot's label opens its order here too, as at the packing station.
+      const { orderIds: candidates } = await ordersForScannedCode(this.orders, tx, orgId, trimmed);
       let orderId: string | null = null;
       for (const id of candidates) {
         if (await this.orders.orderVisibleTo(tx, orgId, id, request)) {

@@ -1,4 +1,5 @@
 import type { Tx } from '@elysium/db';
+import { scannedOrderParts } from '@elysium/domain/packing';
 import { sql, type SQL } from 'drizzle-orm';
 
 /**
@@ -820,6 +821,13 @@ export interface JobFilters {
 
 function jobWhere(orgId: string, filters: JobFilters): SQL {
   const pattern = filters.q === undefined ? undefined : `%${filters.q.replace(/[\\%_]/g, '\\$&')}%`;
+  // D-912: a label scanned into the search types the order's digits, not its number.
+  const scanned = filters.q === undefined ? null : scannedOrderParts(filters.q);
+  const byScan =
+    scanned === null
+      ? sql`false`
+      : sql`(split_part(j.order_no, '-', 2) = ${scanned.period}
+             and split_part(j.order_no, '-', 3) = ${scanned.counter})`;
   return sql`j.org_id = ${orgId}
     and (${filters.testPages ? sql`j.order_id is null` : sql`false`}
          or (j.order_id is not null and ${filters.orderInScope}))
@@ -829,7 +837,7 @@ function jobWhere(orgId: string, filters: JobFilters): SQL {
     and ${filters.orderId === undefined ? sql`true` : sql`j.order_id = ${filters.orderId}::uuid`}
     and ${filters.terminalId === undefined ? sql`true` : sql`j.terminal_id = ${filters.terminalId}::uuid`}
     and ${filters.printerId === undefined ? sql`true` : sql`j.printer_id = ${filters.printerId}::uuid`}
-    and ${pattern === undefined ? sql`true` : sql`j.order_no ilike ${pattern}`}
+    and ${pattern === undefined ? sql`true` : sql`(j.order_no ilike ${pattern} or ${byScan})`}
     and ${
       filters.before === undefined
         ? sql`true`
@@ -956,6 +964,11 @@ export async function saveLabelSettings(
   return row;
 }
 
+/**
+ * The order's parcel got its consignment (D-817): the row gains it, or is made with it. A row the
+ * confirm made keeps its place in the queue (`booked_at` is when it became ready, D-914); a
+ * later booking of the same order replaces the consignment.
+ */
 export async function upsertLabelOrder(
   tx: Tx,
   input: {
@@ -970,8 +983,48 @@ export async function upsertLabelOrder(
     values (${input.orgId}, ${input.orderId}, ${input.consignmentNo.slice(0, 120)},
             ${input.at.toISOString()}::timestamptz)
     on conflict (org_id, order_id) do update
-       set consignment_no = excluded.consignment_no, booked_at = excluded.booked_at,
+       set consignment_no = excluded.consignment_no,
+           booked_at = case when packing.label_orders.consignment_no is null
+                            then packing.label_orders.booked_at else excluded.booked_at end,
            updated_at = now()
+  `);
+}
+
+/**
+ * The order is ready for its label with no consignment yet (D-914): made with its number and
+ * location, or, when it is there already, given them; a consignment already on it stays.
+ */
+export async function upsertReadyOrder(
+  tx: Tx,
+  input: {
+    readonly orgId: string;
+    readonly orderId: string;
+    readonly orderNo: string;
+    readonly locationId: string | null;
+    readonly at: Date;
+  },
+): Promise<void> {
+  await tx.execute(sql`
+    insert into packing.label_orders (org_id, order_id, order_no, location_id, booked_at)
+    values (${input.orgId}, ${input.orderId}, ${input.orderNo}, ${input.locationId}::uuid,
+            ${input.at.toISOString()}::timestamptz)
+    on conflict (org_id, order_id) do update
+       set order_no = excluded.order_no, location_id = excluded.location_id, updated_at = now()
+  `);
+}
+
+/**
+ * The order is ready for its label, when it is not listed already (D-914: its booking failed).
+ * Its number and location are filled by the automatic print, which reads the order.
+ */
+export async function ensureLabelOrder(
+  tx: Tx,
+  input: { readonly orgId: string; readonly orderId: string; readonly at: Date },
+): Promise<void> {
+  await tx.execute(sql`
+    insert into packing.label_orders (org_id, order_id, booked_at)
+    values (${input.orgId}, ${input.orderId}, ${input.at.toISOString()}::timestamptz)
+    on conflict (org_id, order_id) do nothing
   `);
 }
 
@@ -994,7 +1047,8 @@ export async function fillLabelOrder(
 export interface LabelOrderRow extends Record<string, unknown> {
   readonly order_id: string;
   readonly order_no: string;
-  readonly consignment_no: string;
+  /** Null until the courier gives the parcel one, and for good when nobody books it (D-914). */
+  readonly consignment_no: string | null;
   readonly location_id: string | null;
   readonly booked_at: Instant;
   readonly lot_count: number;
@@ -1002,8 +1056,9 @@ export interface LabelOrderRow extends Record<string, unknown> {
 }
 
 /**
- * Booked orders with a lot whose label has not printed yet, oldest booking first, inside the
- * caller's scope (`orderInScope` on `lo.order_id`). The order's status is the caller's to check.
+ * Orders ready for their label with a lot whose label has not printed yet, oldest first, inside
+ * the caller's scope (`orderInScope` on `lo.order_id`, which the orders module also limits to
+ * the statuses the caller asks for, so an order that moved on never fills the page).
  */
 export async function labelOrdersReady(
   tx: Tx,
@@ -1043,11 +1098,11 @@ export async function labelOrderOf(
   tx: Tx,
   orgId: string,
   orderIds: readonly string[],
-): Promise<Map<string, { readonly consignmentNo: string; readonly bookedAt: Date }>> {
+): Promise<Map<string, { readonly consignmentNo: string | null; readonly bookedAt: Date }>> {
   if (orderIds.length === 0) return new Map();
   const rows = await tx.execute<{
     order_id: string;
-    consignment_no: string;
+    consignment_no: string | null;
     booked_at: Instant;
   }>(sql`
     select order_id, consignment_no, booked_at from packing.label_orders

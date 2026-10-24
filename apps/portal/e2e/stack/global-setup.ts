@@ -145,6 +145,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       // this one delivers into no other.
       REALTIME_ADAPTER_KEY: `e2e-portal-${randomBytes(4).toString('hex')}`,
       LOG_LEVEL: process.env.E2E_STACK_LOG_LEVEL ?? 'warn',
+      // The credential rate limits off, as the console's stack run has them: every sign-in
+      // here comes from 127.0.0.1, the same investors sign in again and again, and the
+      // limits are the server suites' to prove. Production refuses to start with this set.
+      CREDENTIAL_RATE_LIMITS: 'off',
+      // With the limits off, the API listens on this computer alone, never the LAN.
+      API_HOST: '127.0.0.1',
     };
 
     const detached = process.platform !== 'win32';

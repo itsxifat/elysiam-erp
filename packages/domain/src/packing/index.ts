@@ -93,6 +93,16 @@ export {
   type LotCountRefusal,
   type LotFinishRefusal,
 } from './lots.js';
+export {
+  LOT_SCAN_DIGITS,
+  ORDER_SCAN_DIGITS,
+  lotScanCode,
+  orderScanCode,
+  parseLotScanCode,
+  parseOrderScanCode,
+  readLotCode,
+  scannedOrderParts,
+} from './scan-code.js';
 
 export {
   PRINTER_STATUS_FRESH_MS,

@@ -88,8 +88,9 @@ function csvCell(value: string | number | null): string {
  * with its delivery queued in that same transaction: a pg-boss `labels.send` for a network
  * printer (the worker renders and sends it, no transaction open, invariant 6), or a
  * `labels.job_changed` event for a browser print station, which fetches and prints it and says
- * how it went. The auto-print rule runs as `labels.auto_print`, enqueued in the courier's booking
- * transaction (D-817). The log is the rows: nothing about a print is written anywhere else.
+ * how it went. The auto-print rule runs as `labels.auto_print`, enqueued in the confirm's
+ * transaction, or in the courier's booking transaction when the confirm queued a booking (D-817,
+ * D-914). The log is the rows: nothing about a print is written anywhere else.
  */
 @Injectable()
 export class PrintingService {
@@ -120,7 +121,7 @@ export class PrintingService {
         autoPrintSetting: row?.auto_print ?? null,
         autoSlip: row?.auto_slip ?? false,
         printers: live,
-        /** A label prints by itself only once the courier is booked (D-817, D-908). */
+        /** When the courier is booked (D-908); since D-914 a label prints on Confirm either way. */
         courierBooking,
         canEdit: defineAbilityFor(context).can('update', 'PackingTerminal'),
         updatedAt: row === undefined ? null : iso(row.updated_at),
@@ -515,15 +516,20 @@ export class PrintingService {
   }
 
   /**
-   * Orders with a consignment and a lot whose label has not printed, inside the caller's scope,
-   * at their location (or every location), oldest booking first (D-817). Confirmed orders only.
+   * Confirmed orders with a lot whose label has not printed, inside the caller's scope, at their
+   * location (or every location), oldest first (D-817). Since D-914 an order is here from its
+   * Confirm, with its consignment once the courier gives one (`consignmentNo` null until then).
+   * The status is part of the query, so orders that moved on (cancelled, packed, shipped) never
+   * take the page's places.
    */
   async ready(context: ActiveContext, request: object, query: ReadyForLabelQuery) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const rows = await repo.labelOrdersReady(tx, context.orgId, {
         locationId: query.locationId,
         limit: query.limit,
-        orderInScope: this.orders.orderInScopeSql(context.orgId, sql`lo.order_id`, request),
+        orderInScope: this.orders.orderInScopeSql(context.orgId, sql`lo.order_id`, request, [
+          'confirmed',
+        ]),
       });
       const ids = rows.map((row) => row.order_id);
       const [facts, printed] = await Promise.all([
@@ -627,12 +633,22 @@ export class PrintingService {
 
   // --- the auto-print rule (D-817), in the worker ----------------------------------------
 
-  /** An order got its consignment: print each lot's label (and slip) on its label terminal. */
+  /**
+   * An order is ready for its label (confirmed, or its consignment came back): print each lot's
+   * label (and slip) on its label terminal. A lot printed or queued already, by hand or by an
+   * earlier run, is not printed again (D-914: the confirm's print, then the consignment).
+   */
   async autoPrint(orgId: string, payload: AutoPrintPayload): Promise<void> {
     await withOrg({ orgId }, async (tx) => {
       await this.lockOrder(tx, orgId, payload.orderId);
       const [facts] = await this.orders.packingFacts(tx, orgId, [payload.orderId]);
       if (facts === undefined) return;
+      // The consignment this run carries, else the one the order's row has by now (booked
+      // between the confirm and this run), else none yet (D-914).
+      const consignmentNo =
+        payload.consignmentNo ??
+        (await repo.labelOrderOf(tx, orgId, [facts.id])).get(facts.id)?.consignmentNo ??
+        null;
       await repo.fillLabelOrder(tx, {
         orgId,
         orderId: facts.id,
@@ -696,8 +712,8 @@ export class PrintingService {
             reason: null,
             requestedBy: null,
             copies: printer.copies,
-            consignmentNo: payload.consignmentNo,
-            autoKey: `auto:${facts.id}:${payload.consignmentNo}:${document}:${String(lot)}`,
+            consignmentNo,
+            autoKey: `auto:${facts.id}:${consignmentNo ?? 'none'}:${document}:${String(lot)}`,
           });
           // Already queued by an earlier delivery of this job (its key): nothing more to do.
           if (job === undefined) continue;
@@ -1105,7 +1121,9 @@ export class PrintingService {
   /**
    * The printer a document prints on: the one named (it must print that document), else the
    * named terminal's, else the order's label terminal — the online one with the shortest queue
-   * among the active label terminals at its location or serving every location (D-817).
+   * among the active label terminals at its location or serving every location (D-817). An order
+   * with no location of its own (a desk order that names none) prints at any active label
+   * terminal (D-914): no terminal is wrong for it, and refusing left it unprinted.
    */
   private choosePrinter(input: {
     readonly printers: readonly repo.PrinterRow[];
@@ -1165,7 +1183,9 @@ export class PrintingService {
       .filter(
         (terminal) =>
           terminal.kind === 'label' &&
-          (terminal.location_id === null || terminal.location_id === input.locationId) &&
+          (input.locationId === null ||
+            terminal.location_id === null ||
+            terminal.location_id === input.locationId) &&
           usable.some((printer) => printer.terminal_id === terminal.id),
       )
       .map((terminal) => ({
@@ -1182,7 +1202,9 @@ export class PrintingService {
     if (chosen === undefined) {
       throw new PackingError(
         'PRINT_NO_PRINTER',
-        `No label terminal at this order's location has a printer for ${input.document === 'label' ? 'labels' : 'slips'}.`,
+        input.locationId === null
+          ? `No active label terminal has a printer for ${input.document === 'label' ? 'labels' : 'slips'}.`
+          : `No label terminal at this order's location has a printer for ${input.document === 'label' ? 'labels' : 'slips'}.`,
       );
     }
     return chosen;

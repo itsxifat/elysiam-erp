@@ -87,11 +87,43 @@ function credentialsOf(context: AdapterContext): SteadfastCredentials {
 
 export class SteadfastCourierAdapter implements CourierAdapter {
   readonly code = 'steadfast';
+  readonly name = 'Steadfast';
   /** See the file comment. Built from a first-party package README, not the API doc. */
   readonly verified = false;
   readonly statusMap = STEADFAST_STATUS_MAP;
   readonly supportsWebhook = true;
   readonly credentialFields = ['apiKey', 'secretKey', 'webhookToken'];
+
+  /**
+   * Whether Steadfast accepts these keys (D-913), asked with the status call this adapter
+   * already polls with (`status_by_cid`), about a consignment that cannot exist.
+   *
+   * Steadfast's package documents no call made only to check keys that this adapter uses, and
+   * an invented one is what CLAUDE.md forbids. A status question costs nothing and books
+   * nothing: with good keys Steadfast answers about the parcel (that it has none such, in
+   * whatever words), and with bad ones it refuses the keys — a 401 or 403, or a JSON answer
+   * whose own `status` says 401 or 403, which is how its answers carry their status. Any other
+   * answer means the keys got through. A courier that does not answer is `COURIER_UNAVAILABLE`.
+   */
+  async verifyCredentials(context: AdapterContext): Promise<void> {
+    const rejected = new CourierError(
+      'COURIER_CREDENTIALS_REJECTED',
+      'Steadfast did not accept these keys. Copy the API key and the secret key again from Steadfast’s merchant panel (API settings) and try once more.',
+    );
+    let body: unknown;
+    try {
+      body = await this.call(context, 'status_by_cid/0', { method: 'GET' });
+    } catch (error) {
+      if (error instanceof CourierError && error.code === 'COURIER_CREDENTIALS_MISSING') {
+        throw rejected;
+      }
+      // A 404 or a 422 about the made-up consignment: Steadfast read the keys and answered.
+      if (error instanceof CourierError && error.code === 'COURIER_BOOKING_FAILED') return;
+      throw error;
+    }
+    const status = readString(readObject(body, null), 'status');
+    if (status === '401' || status === '403') throw rejected;
+  }
 
   /**
    * The HTTP call, in one place.

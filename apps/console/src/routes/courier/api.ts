@@ -164,15 +164,44 @@ export interface CourierAccount {
   readonly pollAfterHours?: number;
   readonly settlementWalletId?: string | null;
   readonly webhookPath?: string | null;
+  /** The courier's name, as Settings → Couriers shows it (D-913). */
+  readonly name?: string;
+  /** Whether this is the brand's one default courier (D-913). */
+  readonly isDefault?: boolean;
 }
 
-/** An adapter an account can use, and the credential field names it needs (D-395). */
+/**
+ * An adapter an account can use, and the credential field names it needs (D-395).
+ *
+ * `connect` (D-913): `api` books through the courier's API with the keys typed here; `panel`
+ * is a courier with no API connection (Carrybee), whose parcels are booked in its own merchant
+ * panel, so it asks for no keys.
+ */
 export interface CourierProvider {
   readonly code: string;
   readonly verified: boolean;
   readonly enabled: boolean;
   readonly supportsWebhook: boolean;
   readonly credentialFields: readonly string[];
+  readonly name?: string;
+  readonly connect?: 'api' | 'panel';
+}
+
+/** `POST /v1/courier/connections`: choose the courier, type its keys, default or not (D-913). */
+export interface ConnectCourierInput {
+  readonly provider: string;
+  /** Write-only: sent once, sealed by the server, never returned. */
+  readonly credentials: Readonly<Record<string, string>>;
+  readonly isDefault: boolean;
+}
+
+export interface CourierConnection {
+  readonly courierId: string;
+  /** Null for a courier booked in its own panel: it has no API account. */
+  readonly accountId: string | null;
+  readonly connected: boolean;
+  readonly isDefault: boolean;
+  readonly message: string;
 }
 
 export interface ParcelTimeline {
@@ -324,11 +353,30 @@ export function saveCourierAccount(input: UpsertCourierAccountInput): Promise<Co
   return api.post('/v1/courier/accounts', input);
 }
 
+/**
+ * Connect a courier in one step (D-913): the server checks the keys with the courier first and
+ * saves nothing when they are wrong (a 400 whose message says why, in plain words).
+ */
+export function connectCourier(input: ConnectCourierInput): Promise<CourierConnection> {
+  return api.post('/v1/courier/connections', input);
+}
+
 export function parcelTimeline(consignmentId: string): Promise<ParcelTimeline> {
   return api.get(`/v1/courier/parcels/${consignmentId}`);
 }
 
-export function listAccounts(): Promise<{ items: readonly CourierAccount[] }> {
+export function listAccounts(): Promise<{
+  items: readonly CourierAccount[];
+  /**
+   * The brand's default courier as the delivery zones have it (D-913): null when they name
+   * different couriers or none. An older server leaves it out; then it is read off `isDefault`.
+   */
+  defaultCourierId?: string | null;
+  /** Its name, also for a courier with no account (the brand's own rider). */
+  defaultCourierName?: string | null;
+  /** The active zones name different couriers: making one the default replaces them all. */
+  zonesMixed?: boolean;
+}> {
   return api.get('/v1/courier/accounts');
 }
 

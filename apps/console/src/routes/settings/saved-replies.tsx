@@ -55,7 +55,8 @@ export function SavedRepliesSettings() {
       )}
       {adding ? <ReplyForm onDone={() => setAdding(false)} /> : null}
       {query.isPending ? (
-        <div className="space-y-2" aria-busy="true" aria-label={t('inbox.loading')}>
+        <div className="space-y-2" aria-busy="true">
+          <span className="sr-only">{t('inbox.loading')}</span>
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-16 w-full" />
         </div>

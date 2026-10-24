@@ -90,7 +90,8 @@ function CameraDialog({
   useEffect(() => {
     const Detector = detectorClass();
     if (Detector === undefined) return undefined;
-    const detector = new Detector({ formats: ['ean_13', 'code_128'] });
+    // D-911, D-912: the 4 × 6 label's QR code carries the order's digits, as its bars do.
+    const detector = new Detector({ formats: ['ean_13', 'code_128', 'qr_code'] });
     let stream: MediaStream | null = null;
     let timer = 0;
     let stopped = false;

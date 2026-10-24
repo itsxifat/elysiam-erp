@@ -8,7 +8,6 @@ import {
   handoverMissing,
   judgeHandoverScan,
   judgeLotCount,
-  parseLotCode,
 } from '@elysium/domain/packing';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -24,6 +23,7 @@ import {
 } from '../orders/ports/parcel-observer.port.js';
 import * as labels from './labels.repository.js';
 import { PACKING_QUEUES, type AutoPrintPayload } from './packing.queues.js';
+import { ordersForScannedCode } from './scanner.service.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as station from './station.repository.js';
 import { TerminalsService } from './terminals.service.js';
@@ -50,8 +50,10 @@ function lotWords(lots: readonly number[]): string {
 /**
  * Lots and the handover (M46, D-805 to D-808), and the two hooks the orders module calls:
  *
- * - **the parcel observer**: in the courier's booking transaction, the order is kept as ready
- *   for its label and `labels.auto_print` is enqueued (D-817);
+ * - **the parcel observer**: in the confirm's transaction the order is kept as ready for its
+ *   label and, unless a consignment is on its way, `labels.auto_print` is enqueued (D-914); in
+ *   the courier's booking transaction the row gains its consignment and the print is enqueued
+ *   (D-817); a booking that failed for good enqueues it without one (D-914);
  * - **the handover guard**: a person's Ship of an order in several lots is refused until every
  *   lot's label was scanned at the handover (D-808).
  *
@@ -97,14 +99,49 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
     },
   ): Promise<void> {
     await labels.upsertLabelOrder(tx, input);
-    const payload: AutoPrintPayload = {
-      orderId: input.orderId,
-      consignmentNo: input.consignmentNo,
-    };
-    await enqueue(tx, PACKING_QUEUES.autoPrint.name, payload, {
-      orgId: input.orgId,
-      ref: input.orderId,
-    });
+    await this.enqueueAutoPrint(tx, input.orgId, input.orderId, input.consignmentNo);
+  }
+
+  /**
+   * D-914: inside the confirm's transaction. The order is ready for its label now; it prints at
+   * once unless a consignment will come back, from the booking the confirm queued or a person's
+   * Book now (then `parcelBooked` prints it, or `bookingFailed` does without one). Its own row
+   * and an enqueue.
+   */
+  async orderConfirmed(
+    tx: Tx,
+    input: {
+      readonly orgId: string;
+      readonly orderId: string;
+      readonly orderNo: string;
+      readonly locationId: string | null;
+      readonly awaitingConsignment: boolean;
+      readonly at: Date;
+    },
+  ): Promise<void> {
+    await labels.upsertReadyOrder(tx, input);
+    if (input.awaitingConsignment) return;
+    await this.enqueueAutoPrint(tx, input.orgId, input.orderId, null);
+  }
+
+  /** D-914: the booking failed for good, in that transaction: no consignment is coming. */
+  async bookingFailed(
+    tx: Tx,
+    input: { readonly orgId: string; readonly orderId: string; readonly at: Date },
+  ): Promise<void> {
+    await labels.ensureLabelOrder(tx, input);
+    await this.enqueueAutoPrint(tx, input.orgId, input.orderId, null);
+  }
+
+  /** The automatic print, through the caller's transaction (invariant 6). */
+  private async enqueueAutoPrint(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    consignmentNo: string | null,
+  ): Promise<void> {
+    const payload: AutoPrintPayload = { orderId, consignmentNo };
+    await enqueue(tx, PACKING_QUEUES.autoPrint.name, payload, { orgId, ref: orderId });
   }
 
   /**
@@ -222,9 +259,9 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
   // --- the handover (D-808) ----------------------------------------------------------------
 
   /**
-   * One label scanned as the parcel goes to the courier: its order number (an order in one lot),
-   * its lot code (`…-L2`) or, for an order in one lot, its consignment or tracking code. An order
-   * in several lots needs each lot's own code.
+   * One label scanned as the parcel goes to the courier: its order number or ten digits (an order
+   * in one lot), its lot code (`…-L2` or twelve digits, D-912) or, for an order in one lot, its
+   * consignment or tracking code. An order in several lots needs each lot's own code.
    */
   async scan(
     context: ActiveContext,
@@ -236,8 +273,9 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const here = await this.terminals.resolve(tx, context, token, 'any');
         const code = normaliseScannedCode(input.code);
-        const lotted = parseLotCode(code);
-        const orderId = await this.findOrder(tx, context.orgId, request, lotted?.orderCode ?? code);
+        // D-912: a lot's code in letters (`…-L2`) or twelve digits; the order's in either too.
+        const found = await ordersForScannedCode(this.orders, tx, context.orgId, code);
+        const orderId = await this.findOrder(tx, context.orgId, request, found.orderIds);
         await this.lockOrder(tx, context.orgId, orderId);
         const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
         if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
@@ -255,8 +293,8 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         }
         const lotCount = await labels.lotCountOf(tx, context.orgId, orderId);
         let lot: number;
-        if (lotted !== null) {
-          lot = lotted.lot;
+        if (found.lot !== null) {
+          lot = found.lot;
         } else if (lotCount === 1) {
           lot = 1;
         } else {
@@ -437,9 +475,13 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
     };
   }
 
-  /** The order a code names, inside the caller's scope; one answer for none and hidden. */
-  private async findOrder(tx: Tx, orgId: string, request: object, code: string): Promise<string> {
-    const candidates = await this.orders.orderIdsForShipmentCode(tx, orgId, code);
+  /** The first of a code's orders inside the caller's scope; one answer for none and hidden. */
+  private async findOrder(
+    tx: Tx,
+    orgId: string,
+    request: object,
+    candidates: readonly string[],
+  ): Promise<string> {
     for (const id of candidates) {
       if (await this.orders.orderVisibleTo(tx, orgId, id, request)) return id;
     }

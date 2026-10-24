@@ -79,6 +79,8 @@ export * from './inbox-voice.js';
 export type * from './telephony.js';
 // M41: the order workflow: ownership, presence, desk profiles, calls and auto-assign.
 export * from './workflow.js';
+// D-913: connecting a courier in one step (choose it, add its keys, default or not).
+export * from './courier.js';
 // M48: a buyer's numbers and the people one number names. The schemas are the
 // `@elysium/contracts/customers` subpath's, so the console's first download does not carry them;
 // the types are here too, for the generated client (D-870 to D-889).

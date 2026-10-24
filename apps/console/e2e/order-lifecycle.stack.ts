@@ -160,22 +160,37 @@ test('an org admin opens every settings tab from the sidebar', async () => {
   await expect(admin.getByRole('row').filter({ hasText: 'inside_dhaka' })).toBeVisible();
   await bothThemes(admin, 'settings-zones');
 
+  // Couriers made simple (D-913): "Add courier" chooses Steadfast, Pathao or Carrybee, then asks
+  // only that courier's keys. The page header and the empty list both offer it.
   await tabs.getByRole('link', { name: 'Courier accounts' }).click();
-  await expect(admin.getByRole('button', { name: 'Set up a courier' })).toBeVisible();
+  const addCourier = admin.getByRole('button', { name: 'Add courier' }).first();
+  await expect(addCourier).toBeVisible();
   await bothThemes(admin, 'settings-couriers');
-  await admin.getByRole('button', { name: 'Set up a courier' }).click();
-  const courierForm = admin.getByRole('dialog', { name: 'Courier account' });
-  // The kit's Select (D-443): open the combobox, then pick from its listbox, which is drawn in
-  // a portal outside the dialog.
-  await courierForm.getByRole('combobox', { name: 'Adapter' }).click();
-  await admin.getByRole('option', { name: 'steadfast', exact: true }).click();
-  // The adapter's own credential names, as password fields, and the honesty note (D-176).
-  await expect(courierForm.locator('input[type="password"]').first()).toBeVisible();
-  await expect(
-    courierForm.getByText(/not built from the courier’s own documentation/),
-  ).toBeVisible();
+  await addCourier.click();
+  const courierForm = admin.getByRole('dialog', { name: 'Add a courier' });
+  // The honesty switch (D-176) as this screen shows it: the stack turns no unverified adapter
+  // on, so Steadfast and Pathao say they are switched off here and cannot be chosen.
+  for (const name of ['Steadfast', 'Pathao']) {
+    const choice = courierForm.getByRole('button', { name: new RegExp(`^${name}`) });
+    await expect(choice).toContainText('Switched off on this server');
+    await expect(choice).toBeDisabled();
+  }
   await shot(admin, 'settings-courier-form');
-  await courierForm.getByRole('button', { name: 'Cancel' }).click();
+  // Carrybee publishes no API: it asks for no keys and says its parcels are booked in its own
+  // panel. (Its keys-as-password-fields step for an API courier is couriers-page.test.tsx's.)
+  await courierForm.getByRole('button', { name: /^Carrybee/ }).click();
+  const carrybee = admin.getByRole('dialog', { name: 'Add Carrybee' });
+  await expect(
+    carrybee.getByText(
+      'Carrybee has no API connection yet: book its parcels in Carrybee’s merchant panel.',
+    ),
+  ).toBeVisible();
+  await expect(carrybee.locator('input')).toHaveCount(0);
+  await expect(carrybee.getByRole('switch', { name: 'Use as the default courier' })).toBeVisible();
+  // Cancelled, not saved: adding a courier here would change the default courier the specs
+  // after this one book with (D-913).
+  await carrybee.getByRole('button', { name: 'Cancel' }).click();
+  await expect(carrybee).toBeHidden();
 
   await tabs.getByRole('link', { name: 'Website order keys' }).click();
   await admin.getByRole('button', { name: 'Issue a key' }).click();

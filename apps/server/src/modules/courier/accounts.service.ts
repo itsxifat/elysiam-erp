@@ -9,7 +9,8 @@ import { adapterEnabled } from './courier.config.js';
 import { CourierError } from './courier.errors.js';
 import * as repo from './courier.repository.js';
 import { sealCredentials } from './credentials.js';
-import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
+import { ORDERS_PORT, type CourierParty, type OrdersPort } from './ports/orders.port.js';
+import { courierName, courierProviders } from './providers.js';
 import type { UpsertCourierAccountInput } from './courier.schemas.js';
 
 /**
@@ -45,21 +46,23 @@ export class CourierAccountsService {
    * One call for the whole page rather than one per account: a list of ten accounts
    * would otherwise be ten round trips for ten short words (invariant 12).
    */
-  private async courierCodes(
+  private async courierParties(
     tx: Tx,
     orgId: string,
     rows: readonly repo.CourierAccountRow[],
-  ): Promise<Map<string, string>> {
+  ): Promise<Map<string, CourierParty>> {
     const parties = await this.orders.courierParties(
       tx,
       orgId,
       rows.map((row) => row.courier_id),
     );
-    return new Map(parties.map((party) => [party.id, party.code]));
+    return new Map(parties.map((party) => [party.id, party]));
   }
 
   /**
-   * The couriers this installation has an adapter for, for the account form (D-395).
+   * The couriers a brand can choose (D-395, D-913): every adapter this installation has, and
+   * the couriers booked in their own merchant panel (Carrybee), each with its name and how it
+   * connects.
    *
    * Field *names* only — which credentials a Steadfast or Pathao account needs, so the form
    * can ask for them — and whether the adapter is verified and switched on, so the form can
@@ -67,26 +70,35 @@ export class CourierAccountsService {
    * out: it is the webhook secret, which the form asks for as its own field.
    */
   providers() {
-    return {
-      items: this.adapters.all().map((adapter) => ({
-        code: adapter.code,
-        verified: adapter.verified,
-        enabled: adapterEnabled(adapter),
-        supportsWebhook: adapter.supportsWebhook,
-        credentialFields: adapter.credentialFields.filter((field) => field !== 'webhookToken'),
-      })),
-    };
+    return { items: courierProviders(this.adapters) };
   }
 
-  /** Every account the caller may see, with no secret in it. */
+  /**
+   * Every account the caller may see, with no secret in it, and the brand's default courier as
+   * the delivery zones have it (D-913): its id and name — also when it is a courier with no
+   * account, such as the brand's own rider — and whether the zones name different couriers,
+   * so the screen never takes "no account is the default" for "there is no default".
+   */
   async list(context: ActiveContext, options: { includeInactive?: boolean } = {}) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const rows = await repo.listAccounts(tx, context.orgId, {
         includeInactive: options.includeInactive ?? false,
       });
-      const codes = await this.courierCodes(tx, context.orgId, rows);
+      const parties = await this.courierParties(tx, context.orgId, rows);
+      const zones = await this.orders.defaultCourierState(tx, context.orgId);
+      const defaultCourierId = zones.courierId;
+      const defaultParty =
+        defaultCourierId === null
+          ? undefined
+          : (parties.get(defaultCourierId) ??
+            (await this.orders.courierParties(tx, context.orgId, [defaultCourierId]))[0]);
       return {
-        items: rows.map((row) => this.view(row, context.orgId, codes.get(row.courier_id) ?? null)),
+        items: rows.map((row) =>
+          this.view(row, context.orgId, parties.get(row.courier_id), defaultCourierId),
+        ),
+        defaultCourierId,
+        defaultCourierName: defaultParty?.name ?? null,
+        zonesMixed: zones.mixed,
       };
     });
   }
@@ -233,8 +245,11 @@ export class CourierAccountsService {
       if (saved === undefined) {
         throw new CourierError('COURIER_ACCOUNT_NOT_FOUND', 'That courier account vanished.');
       }
-      const codes = await this.courierCodes(tx, context.orgId, [saved]);
-      return this.view(saved, context.orgId, codes.get(saved.courier_id) ?? null);
+      const [parties, defaultCourierId] = await Promise.all([
+        this.courierParties(tx, context.orgId, [saved]),
+        this.orders.defaultCourierId(tx, context.orgId),
+      ]);
+      return this.view(saved, context.orgId, parties.get(saved.courier_id), defaultCourierId);
     });
   }
 
@@ -247,12 +262,21 @@ export class CourierAccountsService {
    * returned instead answers the only question anybody asks — "is a key configured, and is
    * it the one I put in the vault".
    */
-  private view(row: repo.CourierAccountRow, orgId: string, courierCode: string | null) {
+  private view(
+    row: repo.CourierAccountRow,
+    orgId: string,
+    party: CourierParty | undefined,
+    defaultCourierId: string | null,
+  ) {
     return {
       id: row.id,
       courierId: row.courier_id,
       /** Null when the party row has gone: the account outlives it (invariant 12). */
-      courierCode,
+      courierCode: party?.code ?? null,
+      /** The courier's name: its party's, else the courier's own (D-913). */
+      name: party?.name ?? courierName(this.adapters, row.provider_code),
+      /** The brand's default courier: every active delivery zone names it (§9, D-913). */
+      isDefault: defaultCourierId === row.courier_id,
       providerCode: row.provider_code,
       label: row.label,
       mode: row.mode,

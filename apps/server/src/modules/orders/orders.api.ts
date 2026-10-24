@@ -14,6 +14,9 @@ import { sql, type SQL } from 'drizzle-orm';
 import {
   CALLABLE_STATUSES,
   computePartialDelivery,
+  formatOrderNo,
+  OrderError,
+  orderPrefixFor,
   parcelWeightGrams,
   poisha,
   TRANSITIONS,
@@ -26,6 +29,7 @@ import {
   type ReturnReasonCode,
 } from '@elysium/domain';
 import { returnRateBps } from '@elysium/domain/analytics';
+import { parseOrderScanCode } from '@elysium/domain/packing';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -533,6 +537,56 @@ export interface OrdersApi {
   ): Promise<ReadonlyMap<string, CourierParty & { readonly isActive: boolean }>>;
 
   /**
+   * The courier party with this code, made when the brand has none and switched back on when it
+   * was off (D-913): Settings → Couriers connects a courier by its code. In the caller's
+   * transaction; the caller's audit row names it.
+   */
+  ensureCourierParty(
+    tx: Tx,
+    orgId: string,
+    party: { readonly code: string; readonly name: string },
+  ): Promise<CourierParty & { readonly created: boolean }>;
+
+  /**
+   * The brand's default courier (§9, D-913): the one every active delivery zone names as its
+   * default, which is what a new order is given. Null when the zones name different couriers,
+   * or none, or there are no active zones.
+   */
+  defaultCourierId(tx: Tx, orgId: string): Promise<string | null>;
+
+  /**
+   * The zones' default couriers, summed up for Settings → Couriers (§9, D-913): the one every
+   * active zone names (null when they disagree or name none), whether the active zones name
+   * different couriers (a zone naming none counts as one of them), and how many are active.
+   */
+  defaultCourierState(
+    tx: Tx,
+    orgId: string,
+  ): Promise<{
+    readonly courierId: string | null;
+    readonly mixed: boolean;
+    readonly activeZones: number;
+  }>;
+
+  /**
+   * Make this courier the brand's default (D-913): every delivery zone's default courier
+   * becomes it, so each new order is given it. In the caller's transaction, unaudited here;
+   * the caller audits it. The zones are locked first, so two changes at once are one after
+   * the other, never interleaved. Answers the zones' defaults before the change.
+   */
+  setDefaultCourier(
+    tx: Tx,
+    orgId: string,
+    courierId: string,
+  ): Promise<{
+    readonly before: readonly {
+      readonly zoneCode: string;
+      readonly courierId: string | null;
+      readonly isActive: boolean;
+    }[];
+  }>;
+
+  /**
    * The brand's delivery zones, active or not (M33): what the website's shipping rule maps
    * its three zones onto (D-503). Charges are selling-side money, never a cost.
    */
@@ -747,10 +801,18 @@ export interface OrdersApi {
   editOrder(tx: Tx, actor: OrdersActor, orderId: string, patch: UpdateOrderInput): Promise<void>;
 
   /**
-   * The orders a scanned code names (M35b, D-554): its order number, else a parcel's
-   * consignment number or tracking code. Newest first; empty when nothing matches.
+   * The orders a scanned code names (M35b, D-554): its order number or its ten digits (D-912),
+   * else a parcel's consignment number or tracking code. Newest first; empty when nothing
+   * matches.
    */
   orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]>;
+
+  /**
+   * The orders an order's own code names, never a courier's (D-912): its order number, else its
+   * ten digits under the brand's prefix now, else under any prefix (one renamed since). What a
+   * lot's code names its order by. Newest first; empty when nothing matches.
+   */
+  orderIdsForOrderCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]>;
 
   /** These orders as packing sees them; ids not of this brand are absent. */
   packingFacts(
@@ -793,9 +855,15 @@ export interface OrdersApi {
    * own declared scope, for another module to put in the WHERE of a query over its own rows
    * (M38b audit: the packing station's recent list pages by the order's scope instead of
    * filtering the newest N afterwards). The SQL about `sales.orders` is written here, by its
-   * owner; the caller only embeds it (invariant 12). Marks the scope applied.
+   * owner; the caller only embeds it (invariant 12). Marks the scope applied. With `statuses`,
+   * the order must also be in one of them (D-914: "Ready for label" pages by confirmed orders).
    */
-  orderInScopeSql(orgId: string, orderId: SQL, request: object): SQL;
+  orderInScopeSql(
+    orgId: string,
+    orderId: SQL,
+    request: object,
+    statuses?: readonly OrderStatus[],
+  ): SQL;
 
   /** The SKUs with the most units delivered in the range, most first (M24). */
   topSkus(
@@ -1728,6 +1796,56 @@ export class OrdersApiService implements OrdersApi {
     );
   }
 
+  async ensureCourierParty(
+    tx: Tx,
+    orgId: string,
+    party: { readonly code: string; readonly name: string },
+  ): Promise<CourierParty & { readonly created: boolean }> {
+    const row = await repo.ensureCourier(tx, orgId, party.code, party.name);
+    return { id: row.id, code: row.code, name: row.name, created: row.created };
+  }
+
+  async defaultCourierId(tx: Tx, orgId: string): Promise<string | null> {
+    return (await this.defaultCourierState(tx, orgId)).courierId;
+  }
+
+  async defaultCourierState(
+    tx: Tx,
+    orgId: string,
+  ): Promise<{
+    readonly courierId: string | null;
+    readonly mixed: boolean;
+    readonly activeZones: number;
+  }> {
+    const active = (await repo.listZones(tx, orgId)).filter((zone) => zone.is_active);
+    const named = new Set(active.map((zone) => zone.default_courier_id));
+    const single = active.length > 0 && named.size === 1 ? ([...named][0] ?? null) : null;
+    return { courierId: single, mixed: named.size > 1, activeZones: active.length };
+  }
+
+  async setDefaultCourier(
+    tx: Tx,
+    orgId: string,
+    courierId: string,
+  ): Promise<{
+    readonly before: readonly {
+      readonly zoneCode: string;
+      readonly courierId: string | null;
+      readonly isActive: boolean;
+    }[];
+  }> {
+    // Locked before they are read, so `before` is what this change replaces and a second
+    // change at the same moment waits for this one rather than skipping its zones.
+    await repo.lockZones(tx, orgId);
+    const before = (await repo.listZones(tx, orgId)).map((zone) => ({
+      zoneCode: zone.code,
+      courierId: zone.default_courier_id,
+      isActive: zone.is_active,
+    }));
+    await repo.setZonesDefaultCourier(tx, orgId, courierId);
+    return { before };
+  }
+
   async buyerPhones(
     tx: Tx,
     orgId: string,
@@ -2247,27 +2365,77 @@ export class OrdersApiService implements OrdersApi {
     return new Set(await repo.orderIdsInScope(tx, orgId, [...new Set(orderIds)], scope));
   }
 
-  orderInScopeSql(orgId: string, orderId: SQL, request: object): SQL {
+  orderInScopeSql(
+    orgId: string,
+    orderId: SQL,
+    request: object,
+    statuses?: readonly OrderStatus[],
+  ): SQL {
     const scope = scopeWhere(request, {
       createdBy: sql`o.created_by`,
       assignedTo: sql`o.assigned_to`,
       branchId: sql`o.branch_id`,
     });
+    const status =
+      statuses === undefined
+        ? sql`true`
+        : sql`o.status = any (${sql.param([...statuses])}::sales.order_status[])`;
     return sql`exists (
-      select 1 from sales.orders o where o.org_id = ${orgId} and o.id = ${orderId} and ${scope}
+      select 1 from sales.orders o
+      where o.org_id = ${orgId} and o.id = ${orderId} and ${scope} and ${status}
     )`;
   }
 
   async orderIdsForShipmentCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {
     const trimmed = code.trim();
     if (trimmed === '') return [];
+    // An order's own code before a courier's, as the order number always was: ten digits that
+    // are both an order's code and another parcel's consignment number open the order. Every
+    // slip and label this ERP prints carries the order's code in its bars, so it is what is
+    // scanned, and it names one order by construction; a courier's number is an order's code
+    // only by beginning with a month this brand took orders in and a counter it reached (a
+    // numeric id counting up reaches ten digits at `10…`, the year 2010).
+    const byOrder = await this.orderIdsForOrderCode(tx, orgId, trimmed);
+    if (byOrder.length > 0) return byOrder;
+    const courier = this.courier.current();
+    if (courier === undefined) return [];
+    return courier.ordersByParcelCode(tx, orgId, trimmed);
+  }
+
+  async orderIdsForOrderCode(tx: Tx, orgId: string, code: string): Promise<readonly string[]> {
+    const trimmed = code.trim();
+    if (trimmed === '') return [];
     const byNumber = await repo.orderIdByNo(tx, orgId, trimmed);
     if (byNumber !== undefined) return [byNumber];
     const byNumberUpper = await repo.orderIdByNo(tx, orgId, trimmed.toUpperCase());
     if (byNumberUpper !== undefined) return [byNumberUpper];
-    const courier = this.courier.current();
-    if (courier === undefined) return [];
-    return courier.ordersByParcelCode(tx, orgId, trimmed);
+    // D-912: the ten digits a barcode carries, the order number without its prefix.
+    const digits = parseOrderScanCode(trimmed);
+    if (digits === null) return [];
+    const prefix = await this.currentOrderPrefix(tx, orgId);
+    if (prefix !== null) {
+      const sequence = Number(digits.counter);
+      const orderNo = formatOrderNo({ prefix, period: digits.period, sequence });
+      const exact = await repo.orderIdByNo(tx, orgId, orderNo);
+      if (exact !== undefined) return [exact];
+    }
+    // Numbered under a prefix the brand has changed since: the period and counter alone.
+    return repo.orderIdsByPeriodCounter(tx, orgId, digits.period, digits.counter);
+  }
+
+  /** The prefix new orders are numbered with, as `nextOrderNo` makes it; null if none is usable. */
+  private async currentOrderPrefix(tx: Tx, orgId: string): Promise<string | null> {
+    const [slug, configured] = await Promise.all([
+      repo.orgSlug(tx, orgId),
+      repo.orderNumberPrefix(tx, orgId),
+    ]);
+    try {
+      return orderPrefixFor({ slug, configured });
+    } catch (error) {
+      // A prefix setting no order could be numbered with: only the fallback can name one.
+      if (error instanceof OrderError) return null;
+      throw error;
+    }
   }
 
   async courierBooking(tx: Tx, orgId: string): Promise<CourierBookingPolicy> {

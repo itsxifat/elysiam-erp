@@ -244,6 +244,8 @@ export const ERROR_CODES = [
   'COURIER_ACCOUNT_INVALID',
   /** The account has no credentials, or the ones it has no longer work. */
   'COURIER_CREDENTIALS_MISSING',
+  /** Connecting a courier: the courier did not accept the keys typed, so nothing was saved (D-913). */
+  'COURIER_CREDENTIALS_REJECTED',
   /** The courier refused the parcel, or did not answer. Retried, then dead-lettered. */
   'COURIER_UNAVAILABLE',
   /** Every retry spent. The order is flagged and `delivery.booking_failed` is raised. */

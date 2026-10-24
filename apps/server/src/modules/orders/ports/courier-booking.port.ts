@@ -50,13 +50,13 @@ export interface CourierBookingPort {
   /**
    * Write the consignment row and enqueue the booking, in the caller's transaction. `automatic`
    * (the brand's booking setting, D-901): a courier that cannot be booked here leaves the order
-   * to be booked by hand instead of refusing the status change.
+   * to be booked by hand instead of refusing the status change: then `null`, nothing reserved.
    */
   reserveConsignment(
     tx: Tx,
     actor: { orgId: string; userId: string; requestId?: string | null },
     input: { orderId: string; courierId?: string | null; automatic?: true },
-  ): Promise<unknown>;
+  ): Promise<{ readonly consignmentId: string; readonly enqueued: boolean } | null>;
 
   /**
    * The parcel's courier and the codes a buyer can track it by, once it is booked (M34: the
@@ -71,6 +71,15 @@ export interface CourierBookingPort {
     readonly consignmentNo: string | null;
     readonly trackingCode: string | null;
   } | null>;
+
+  /**
+   * Whether the order's parcel can be booked here (D-914): its courier has an active account with
+   * an adapter that is switched on, the same test the automatic booking makes. A Confirm under
+   * booking by hand asks, so the label waits for the consignment a person's Book now brings back
+   * rather than printing without it. Optional so a test's port need not implement it (then the
+   * label prints on Confirm).
+   */
+  canBook?(tx: Tx, orgId: string, orderId: string): Promise<boolean>;
 
   /**
    * The orders whose parcel carries this consignment number or tracking code (M35b: the packing

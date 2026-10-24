@@ -140,7 +140,8 @@ export function ContactPanel({
         {t('inbox.panel.label')}
       </h2>
       {panel.isPending ? (
-        <div className="space-y-3 p-4" aria-busy="true" aria-label={t('inbox.loading')}>
+        <div className="space-y-3 p-4" aria-busy="true">
+          <span className="sr-only">{t('inbox.loading')}</span>
           <div className="flex items-center gap-3">
             <Skeleton className="size-14 rounded-full" />
             <div className="flex-1 space-y-2">

@@ -187,6 +187,20 @@ export class BookingService implements OnModuleInit {
   }
 
   /**
+   * Whether the order's parcel can be booked here (D-914): the test `reserveConsignment`'s
+   * automatic path makes (an active account for the order's courier, an adapter, switched on).
+   * A read, for a Confirm under booking by hand: its label then waits for the consignment.
+   */
+  async canBook(tx: Tx, orgId: string, orderId: string): Promise<boolean> {
+    const courierId = (await this.orders.bookingSnapshot(tx, orgId, orderId))?.courierId ?? null;
+    if (courierId === null) return false;
+    const account = await repo.accountByCourier(tx, orgId, courierId);
+    if (account?.is_active !== true) return false;
+    const adapter = this.adapters.get(account.provider_code);
+    return adapter !== undefined && adapterEnabled(adapter);
+  }
+
+  /**
    * Create the consignment row and queue the booking, inside the caller's transaction.
    *
    * The method the orders module's `enqueue_courier_booking` effect calls, and the method a
@@ -740,6 +754,23 @@ export class BookingService implements OnModuleInit {
         message: input.message ?? 'Every booking attempt failed.',
         exhausted: true,
       });
+
+      // D-914: no consignment is coming, so the label the confirm left waiting for one prints
+      // without it. In a savepoint, as a booked parcel's listeners are: a failing listener loses
+      // its own rows (the label is printed by hand), never the failure's flag.
+      try {
+        await tx.transaction((savepoint) =>
+          this.parcels.notifyBookingFailed(savepoint, {
+            orgId: input.orgId,
+            orderId: consignment.order_id,
+            at: new Date(),
+          }),
+        );
+      } catch (error) {
+        this.logger.warn(
+          `a failed booking's listeners failed for consignment ${consignment.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
 
       await emit(
         tx,

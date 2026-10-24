@@ -1,4 +1,5 @@
 import type { OrderLabelSize } from '@elysium/contracts';
+import { orderScanCode } from '@elysium/domain/packing';
 import { encode } from 'uqr';
 
 import type { FontFile } from '../files/pdf/fonts.js';
@@ -7,8 +8,8 @@ import { DOCUMENT_FONT_STACK, fontFaceCss } from '../files/pdf/fonts.js';
 /**
  * The order label sheet (M35b, D-555): the old admin's `labels` page — a thermal label or a
  * paper slip per order, with the shop's name and courier merchant id, the order number and date,
- * a QR code of the parcel's tracking code (or the order number before it is booked), the
- * courier's consignment number, the recipient, the prices and the amount to collect.
+ * a QR code of the parcel's tracking code (or the order's digits before it is booked, D-912),
+ * the courier's consignment number, the recipient, the prices and the amount to collect.
  *
  * The QR code is what the packing scanner reads (D-554): the scanner resolves a tracking code,
  * an order number or a consignment number to the packing list. Ink is pure black: a thermal
@@ -39,7 +40,10 @@ export interface OrderLabel {
   readonly orderNo: string;
   /** dd/mm/yyyy, Asia/Dhaka. */
   readonly date: string;
-  /** What the QR code carries: the tracking code, else the order number. */
+  /**
+   * What the QR code carries: the tracking code, else the order number, which the sheet prints as
+   * the order's ten digits (`qrValue`, D-912).
+   */
   readonly scan: string;
   readonly consignmentNo: string | null;
   readonly recipientName: string;
@@ -91,6 +95,16 @@ export function qrSvg(value: string, sizeMm: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(size)} ${String(size)}" width="${String(sizeMm)}mm" height="${String(sizeMm)}mm" shape-rendering="crispEdges"><rect width="${String(size)}" height="${String(size)}" fill="#fff"/><g fill="#000">${rects.join('')}</g></svg>`;
 }
 
+/**
+ * The QR code's value (D-912): the parcel's tracking code as it is, and in place of the order
+ * number the order's ten digits, the code the order's own label and slip carry, so the sheet's QR
+ * code before the parcel is booked reads the same as theirs. An order number with no digits-only
+ * code stays as it is; either form still scans.
+ */
+export function qrValue(label: OrderLabel): string {
+  return label.scan === label.orderNo ? (orderScanCode(label.orderNo) ?? label.scan) : label.scan;
+}
+
 function priceRows(label: OrderLabel): string {
   return `<div class="prices">
       <div><span>Subtotal</span><span>${esc(label.subtotal)}</span></div>
@@ -113,8 +127,9 @@ function codBlock(label: OrderLabel): string {
 function labelHtml(label: OrderLabel, options: LabelOptions): string {
   const paper = LABEL_PAPER[options.size];
   const qrSize = paper.compact ? (options.layout === 'landscape' ? 18 : 22) : 34;
+  const scan = qrValue(label);
   const qr = options.showQr
-    ? `<div class="qr">${qrSvg(label.scan, qrSize)}<div class="scan">${esc(label.scan)}</div></div>`
+    ? `<div class="qr">${qrSvg(scan, qrSize)}<div class="scan">${esc(scan)}</div></div>`
     : '';
   const head = `<header>
       <div class="shop">

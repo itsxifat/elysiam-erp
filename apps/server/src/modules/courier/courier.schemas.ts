@@ -70,6 +70,12 @@ export const upsertCourierAccountSchema = z
 
 export type UpsertCourierAccountInput = z.infer<typeof upsertCourierAccountSchema>;
 
+/**
+ * Connecting a courier in one step (D-913): the courier, its keys, default or not. Shared with
+ * the console from `@elysium/contracts`, so the screen validates against the same shape.
+ */
+export { connectCourierSchema, type ConnectCourierInput } from '@elysium/contracts';
+
 /** Booking a parcel from the desk, for an org whose policy is `manual` (§9). */
 export const bookParcelSchema = z
   .object({

@@ -30,6 +30,7 @@ export type StackRole =
   | 'merchandiser'
   | 'stocker'
   | 'webadmin'
+  | 'marketadmin'
   | 'pricer'
   | 'remover'
   | 'packer'

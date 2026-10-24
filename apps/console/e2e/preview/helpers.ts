@@ -5,7 +5,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
 
 import { totp } from '../stack/helpers.js';
-import type { PreviewInfo, PreviewLoginInfo } from './global-setup.js';
+import { PREVIEW_PORTS, type PreviewInfo, type PreviewLoginInfo } from './global-setup.js';
 
 /**
  * Signing in as the owner would, from the credentials file, and looking at a screen.
@@ -16,6 +16,15 @@ export function preview(): PreviewInfo {
   if (raw === undefined)
     throw new Error('E2E_PREVIEW is missing: run with -c e2e/preview.config.ts');
   return JSON.parse(raw) as PreviewInfo;
+}
+
+/**
+ * The preview's API, which the console, portal and till call across origins (their
+ * `VITE_API_URL`). A test asks it what a person would read off a screen, in that person's
+ * session: `page.request` carries the page's cookies.
+ */
+export function previewApiUrl(): string {
+  return `http://localhost:${String(PREVIEW_PORTS.api)}`;
 }
 
 export function login(key: string): PreviewLoginInfo {

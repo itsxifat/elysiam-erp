@@ -1967,10 +1967,15 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   for a network printer, `labels.job_changed` for a print station); the worker renders and sends
   with no transaction open and tries three times. A reprint needs a reason; the rows are the log
   (a trigger keeps what was printed, where and why fixed).
-- **Auto-print** (D-817): the courier's booking transaction tells the orders module's
-  `ParcelObserverRegistry`; packing records the order in `label_orders` (Ready for label) and
-  enqueues `labels.auto_print`, which prints each lot's label on the online label terminal with
-  the shortest queue at the order's location, once per order, consignment, document and lot.
+- **Auto-print** (D-817, D-914): the confirm's transaction tells the orders module's
+  `ParcelObserverRegistry` (`orderConfirmed`); packing records the order in `label_orders`
+  (Ready for label, no consignment yet) and, unless a consignment will come back (the confirm
+  queued its booking, or the brand books by hand and the order's courier can be booked here,
+  `CourierBookingPort.canBook`), enqueues `labels.auto_print`. The courier's booking transaction
+  (`parcelBooked`) fills the consignment and enqueues it; a booking that fails for good
+  (`bookingFailed`) enqueues it without one. It prints each lot's label on the online label
+  terminal with the shortest queue at the order's location (any label terminal for an order with
+  no location), once per order and lot, never again once a lot is printed or queued.
 - **Lots** (D-805 to D-808): `order_lots` (1–20), the lot code `<order no>-L<n>` on each lot's
   slip and label ("LOT 2 OF 3"); packing fills one lot at a time (`scans.lot_no`,
   `lot_closures`) and Finish needs every lot closed; the handover (`handover_scans`) ships an

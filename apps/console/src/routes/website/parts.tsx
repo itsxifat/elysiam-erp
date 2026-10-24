@@ -125,7 +125,8 @@ export function Loadable<T>({
   const t = useWebsiteT();
   if (query.isPending) {
     return (
-      <div className="space-y-2" aria-busy="true" aria-label={t('web.loading')}>
+      <div className="space-y-2" aria-busy="true">
+        <span className="sr-only">{t('web.loading')}</span>
         <Skeleton className="h-8 w-full" />
         <Skeleton className="h-40 w-full" />
       </div>

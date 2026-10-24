@@ -183,7 +183,7 @@ export interface LabelSettings {
   readonly autoPrintSetting: boolean | null;
   readonly autoSlip: boolean;
   readonly printers: number;
-  /** When the courier is booked: a label prints by itself only after that (D-908). */
+  /** When the courier is booked (D-908). A label prints on Confirm either way (D-914). */
   readonly courierBooking: CourierBookingPolicy;
   readonly canEdit: boolean;
 }
@@ -277,7 +277,8 @@ export const printNow = (input: PrintRequest) =>
 export interface ReadyOrder {
   readonly orderId: string;
   readonly orderNo: string;
-  readonly consignmentNo: string;
+  /** Null until the courier gives the parcel one (D-914): "Not booked yet". */
+  readonly consignmentNo: string | null;
   readonly courier: string | null;
   readonly customer: string;
   readonly locationId: string | null;

@@ -152,6 +152,13 @@ export const COURIER_ROUTE_FIXTURES: Readonly<Record<string, () => Call>> = {
       isActive: false,
     },
   }),
+  // D-913. Carrybee, booked in its own panel: it calls no courier, and leaves the default alone.
+  // Moving the default also needs `update Catalog`, a rule inside the service that the guard
+  // cannot see, so it is tested as the accounts role in `connections.e2e.test.ts`, not here.
+  'POST /v1/courier/connections': () => ({
+    url: '/v1/courier/connections',
+    body: { provider: 'carrybee', credentials: {}, isDefault: false },
+  }),
 
   'POST /v1/courier/parcels': () => ({
     url: '/v1/courier/parcels',

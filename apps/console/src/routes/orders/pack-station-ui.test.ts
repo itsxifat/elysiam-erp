@@ -99,6 +99,36 @@ describe('scanning at the table', () => {
     expect(isOrderSlip('', { ...order, trackingCode: '' })).toBe(false);
   });
 
+  it('knows it by the digits its bars carry, and one of its lots by either form (D-912)', () => {
+    expect(isOrderSlip('2610000042', order)).toBe(true);
+    expect(isOrderSlip(' 261000004202 ', order)).toBe(true);
+    expect(isOrderSlip('261000004220', order)).toBe(true);
+    expect(isOrderSlip('ELY-2610-00042-L2', order)).toBe(true);
+    expect(isOrderSlip('ely-2610-00042-l3', order)).toBe(true);
+    // Another order's code, or its lot, is not this slip.
+    expect(isOrderSlip('2610000043', order)).toBe(false);
+    expect(isOrderSlip('261000004302', order)).toBe(false);
+    expect(isOrderSlip('ELY-2610-00043-L2', order)).toBe(false);
+    // Twelve digits that are not a lot (lot 00, lot 21) are not this order's.
+    expect(isOrderSlip('261000004200', order)).toBe(false);
+    expect(isOrderSlip('261000004221', order)).toBe(false);
+  });
+
+  it('takes a lot only on the order’s own code, and a courier’s code only whole', () => {
+    const booked = { ...order, trackingCode: '', consignmentId: '2610000042' };
+    // A consignment number of ten digits matches whole, not as the order part of a lot.
+    expect(isOrderSlip('2610000042', { ...booked, orderNumber: 'ELY-2610-00099' })).toBe(true);
+    expect(isOrderSlip('261000004202', { ...booked, orderNumber: 'ELY-2610-00099' })).toBe(false);
+    expect(isOrderSlip('SF123456-L2', order)).toBe(false);
+    // A courier's twelve digits that read like a lot still match whole.
+    expect(isOrderSlip('261000004202', { ...order, consignmentId: '261000004202' })).toBe(true);
+    // An order past a million in a month has no digits; its number still finishes the box.
+    const big = { ...order, orderNumber: 'ELY-2610-1000000' };
+    expect(isOrderSlip('ELY-2610-1000000', big)).toBe(true);
+    expect(isOrderSlip('ELY-2610-1000000-L2', big)).toBe(true);
+    expect(isOrderSlip('2610000000', big)).toBe(false);
+  });
+
   it('sounds and shows a taken piece apart from every refusal', () => {
     expect(outcomeTone('accepted')).toBe('success');
     expect(outcomeTone('removed')).toBe('neutral');

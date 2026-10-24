@@ -52,11 +52,17 @@ interface FakeParcel {
 
 export class FakeCourierAdapter implements CourierAdapter {
   readonly code = 'fake';
+  readonly name = 'Fake courier';
   /** Its own docs are this file, so it is the one adapter that is honestly verified. */
   readonly verified = true;
   readonly statusMap = FAKE_STATUS_MAP;
   readonly supportsWebhook = true;
   readonly credentialFields = [];
+
+  /** It takes no keys, so there is nothing to refuse (D-913). */
+  verifyCredentials(): Promise<void> {
+    return Promise.resolve();
+  }
 
   private readonly parcels = new Map<string, FakeParcel>();
   private readonly byReference = new Map<string, string>();

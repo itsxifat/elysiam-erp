@@ -1286,6 +1286,7 @@
               "COURIER_ACCOUNT_NOT_FOUND",
               "COURIER_ACCOUNT_INVALID",
               "COURIER_CREDENTIALS_MISSING",
+              "COURIER_CREDENTIALS_REJECTED",
               "COURIER_UNAVAILABLE",
               "COURIER_BOOKING_FAILED",
               "CONSIGNMENT_NOT_FOUND",
@@ -12957,6 +12958,89 @@
       "post": {
         "operationId": "postV1CourierAccounts",
         "summary": "POST /v1/courier/accounts",
+        "tags": ["courier"],
+        "x-ability": "update:CourierSettlement",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed validation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session, or the session has expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The session has no ability for this route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A conflict: a closed period, or an Idempotency-Key reused for a different body.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Honour `retry-after`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected failure. Already logged; the detail is generic.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/courier/connections": {
+      "post": {
+        "operationId": "postV1CourierConnections",
+        "summary": "POST /v1/courier/connections",
         "tags": ["courier"],
         "x-ability": "update:CourierSettlement",
         "parameters": [
@@ -56875,7 +56959,7 @@
         "operationId": "postV1TerminalsByIdBind",
         "summary": "POST /v1/terminals/:id/bind",
         "tags": ["terminals"],
-        "x-ability": "update:PackingTerminal",
+        "x-ability": "read:PackingTerminal",
         "parameters": [
           {
             "name": "id",

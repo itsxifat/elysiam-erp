@@ -517,6 +517,75 @@ export class TestOrdersPort implements OrdersPort {
     return [...rows];
   }
 
+  /** What the real port does (D-913), M10's table written by the same statement. */
+  async ensureCourierParty(
+    tx: Tx,
+    orgId: string,
+    party: { readonly code: string; readonly name: string },
+  ): Promise<CourierParty & { readonly created: boolean }> {
+    const rows = await tx.execute<{ id: string; code: string; name: string; created: boolean }>(sql`
+      insert into sales.couriers (org_id, code, name)
+      values (${orgId}, ${party.code}, ${party.name})
+      on conflict (org_id, code) do update set is_active = true, updated_at = now()
+      returning id, code, name, (xmax = 0) as created
+    `);
+    const row = rows[0];
+    if (row === undefined) throw new Error('sales.couriers upsert returned no row');
+    return row;
+  }
+
+  async defaultCourierId(tx: Tx, orgId: string): Promise<string | null> {
+    return (await this.defaultCourierState(tx, orgId)).courierId;
+  }
+
+  async defaultCourierState(
+    tx: Tx,
+    orgId: string,
+  ): Promise<{ courierId: string | null; mixed: boolean; activeZones: number }> {
+    const rows = await tx.execute<{ default_courier_id: string | null }>(sql`
+      select default_courier_id from sales.delivery_zones where org_id = ${orgId} and is_active
+    `);
+    const named = new Set([...rows].map((row) => row.default_courier_id));
+    return {
+      courierId: rows.length === 0 || named.size !== 1 ? null : ([...named][0] ?? null),
+      mixed: named.size > 1,
+      activeZones: rows.length,
+    };
+  }
+
+  async setDefaultCourier(
+    tx: Tx,
+    orgId: string,
+    courierId: string,
+  ): Promise<{
+    readonly before: readonly {
+      readonly zoneCode: string;
+      readonly courierId: string | null;
+      readonly isActive: boolean;
+    }[];
+  }> {
+    // The zones locked, then read and written, as the real port does.
+    const before = await tx.execute<{
+      code: string;
+      default_courier_id: string | null;
+      is_active: boolean;
+    }>(sql`
+      select code, default_courier_id, is_active from sales.delivery_zones
+      where org_id = ${orgId} order by code for update
+    `);
+    await tx.execute(sql`
+      update sales.delivery_zones set default_courier_id = ${courierId}::uuid, updated_at = now()
+      where org_id = ${orgId}
+    `);
+    return {
+      before: [...before].map((row) => ({
+        zoneCode: row.code,
+        courierId: row.default_courier_id,
+        isActive: row.is_active,
+      })),
+    };
+  }
+
   async bookingSnapshot(
     tx: Tx,
     orgId: string,

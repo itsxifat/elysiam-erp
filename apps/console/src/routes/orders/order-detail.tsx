@@ -92,7 +92,8 @@ function Detail() {
         {t('orders.detail.back')}
       </Link>
       {order.isPending ? (
-        <div className="space-y-3" aria-busy="true" aria-label={t('orders.loading')}>
+        <div className="space-y-3" aria-busy="true">
+          <span className="sr-only">{t('orders.loading')}</span>
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-40 w-full" />
           <Skeleton className="h-40 w-full" />

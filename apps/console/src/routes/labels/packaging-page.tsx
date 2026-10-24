@@ -163,7 +163,8 @@ function Stage({
   });
   if (orders.isPending) {
     return (
-      <div className="space-y-2" aria-busy="true" aria-label={t('lb.loading')}>
+      <div className="space-y-2" aria-busy="true">
+        <span className="sr-only">{t('lb.loading')}</span>
         {[0, 1, 2].map((row) => (
           <Skeleton key={row} className="h-row w-full" />
         ))}

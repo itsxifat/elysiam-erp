@@ -89,7 +89,8 @@ export function AccountPage() {
         </p>
       )}
       {query.isPending ? (
-        <div className="space-y-6" aria-busy="true" aria-label={t('account.loading')}>
+        <div className="space-y-6" aria-busy="true">
+          <span className="sr-only">{t('account.loading')}</span>
           {[0, 1, 2].map((index) => (
             <div key={index} className="space-y-3 rounded-lg border border-border p-5">
               <Skeleton className="h-4 w-40" />
@@ -541,7 +542,8 @@ function DevicesSection({ onNotice }: { readonly onNotice: (message: string) => 
       }
     >
       {query.isPending ? (
-        <div className="space-y-2" aria-busy="true" aria-label={t('account.loading')}>
+        <div className="space-y-2" aria-busy="true">
+          <span className="sr-only">{t('account.loading')}</span>
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-full" />
         </div>
