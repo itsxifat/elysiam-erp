@@ -10,6 +10,7 @@ import {
   type Poisha,
 } from '@elysium/domain';
 import { lotCode } from '@elysium/domain/packing';
+import { encode as encodeQr } from 'uqr';
 
 import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fonts.js';
 
@@ -223,6 +224,30 @@ export function orderBarcode(value: string, moduleMm: number, heightMm: number):
     '<svg ',
     `<svg width="${String(width)}mm" height="${String(heightMm)}mm" data-barcode="${escapeHtml(value)}" `,
   );
+}
+
+/** One dot of a 203 dpi thermal head, in millimetres: a QR module is a whole number of them. */
+const THERMAL_DOT_MM = 25.4 / 203;
+
+/**
+ * The label's QR code (D-911): the barcode's value again, for a 2D scanner or a phone, which read
+ * a code shrunk to fit a printer, smudged or held at an angle where a 1D laser loses the bars.
+ * Error correction M and two modules of quiet zone inside the image; each module a whole number
+ * of a 203 dpi head's dots, as large as fits `maxMm`, so the squares print as solid squares.
+ */
+export function orderQr(value: string, maxMm: number): string {
+  const { data, size } = encodeQr(value, { ecc: 'M', border: 2 });
+  const dots = Math.max(6, Math.floor(maxMm / size / THERMAL_DOT_MM));
+  const sizeMm = Math.round(size * dots * THERMAL_DOT_MM * 100) / 100;
+  const rects: string[] = [];
+  for (let y = 0; y < size; y += 1) {
+    const row = data[y] ?? [];
+    for (let x = 0; x < size; x += 1) {
+      if (row[x] === true)
+        rects.push(`<rect x="${String(x)}" y="${String(y)}" width="1" height="1"/>`);
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(size)} ${String(size)}" width="${String(sizeMm)}mm" height="${String(sizeMm)}mm" shape-rendering="crispEdges" data-qr="${escapeHtml(value)}" role="img" aria-label="${escapeHtml(value)}"><rect width="${String(size)}" height="${String(size)}" fill="#fff"/><g fill="#000">${rects.join('')}</g></svg>`;
 }
 
 /** The ink, the hairlines and the type scale every page shares (§24 collapsed onto paper). */
@@ -715,15 +740,22 @@ export function renderLabelHtml(input: {
   const { brand, data, fonts } = input;
   const courier = data.courier;
   const nothing = data.codAmountPoisha <= 0n;
+  const scan = documentBarcodeValue(data);
+  // D-911: the QR code and the bars carry the same value; whichever the scanner reads.
   const body = `
     <div class="label">
-      <div class="top">
-        <div class="from">${brand.logo === null ? '' : `<img class="logo" src="${escapeHtml(brand.logo)}" alt="" />`}<span>${escapeHtml(brand.displayName)}</span></div>
-        <div class="courier">${escapeHtml(courier?.name ?? 'Courier')}</div>
+      <div class="head">
+        <div class="qr" data-field="qr">${orderQr(scan, 30)}</div>
+        <div class="head-side">
+          <div class="top">
+            <div class="from">${brand.logo === null ? '' : `<img class="logo" src="${escapeHtml(brand.logo)}" alt="" />`}<span>${escapeHtml(brand.displayName)}</span></div>
+            <div class="courier">${escapeHtml(courier?.name ?? 'Courier')}</div>
+          </div>
+          <div class="order-no" data-field="order-no">${escapeHtml(data.orderNo)}</div>
+          ${lotBadge(data)}
+        </div>
       </div>
-      <div class="barcode">${orderBarcode(documentBarcodeValue(data), 0.375, 17)}</div>
-      <div class="order-no" data-field="order-no">${escapeHtml(data.orderNo)}</div>
-      ${lotBadge(data)}
+      <div class="barcode">${orderBarcode(scan, 0.375, 18)}</div>
 
       <div class="to" data-field="recipient">
         <div class="caption">Deliver to</div>
@@ -761,16 +793,21 @@ function labelCss(fonts: readonly FontFile[]): string {
         display: flex; flex-direction: column; overflow: hidden; font-size: 9pt; line-height: 1.3;
       }
       .caption { font-size: 6.5pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
-      .top { display: flex; justify-content: space-between; align-items: center; gap: 3mm; padding-bottom: 2mm; border-bottom: 1.5pt solid #000; }
+      /* D-911: the QR code beside who sends it, the courier and the order number, over the bars. */
+      .head { display: flex; gap: 3mm; padding-bottom: 2mm; border-bottom: 1.5pt solid #000; }
+      .qr { flex: none; line-height: 0; }
+      .head-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1.6mm; }
+      .top { display: flex; justify-content: space-between; align-items: center; gap: 2mm; }
       .from { display: flex; align-items: center; gap: 2mm; min-width: 0; font-size: 10pt; font-weight: 700; }
       .from span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .logo { max-height: 7mm; max-width: 20mm; object-fit: contain; filter: grayscale(100%) contrast(140%); }
       .courier { flex: none; background: #000; color: #fff; padding: 1mm 2.4mm; font-size: 9pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-      .barcode { margin-top: 3mm; text-align: center; line-height: 0; }
+      .barcode { margin-top: 2.6mm; text-align: center; line-height: 0; }
       .barcode svg { display: inline-block; }
-      .order-no { margin-top: 1.2mm; text-align: center; font-size: 16pt; font-weight: 700; letter-spacing: 0.06em; }
+      .order-no { margin-top: auto; font-size: 17pt; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       /* M46 (D-806): one bag of several, black on white so a thermal head prints it solid. */
       .lot { margin: 1.4mm auto 0; width: fit-content; background: #000; color: #fff; padding: 1mm 3.2mm; font-size: 13pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+      .head-side .lot { margin: 0; }
       .to { margin-top: 3mm; padding-top: 2.6mm; border-top: 1.5pt solid #000; }
       .name { margin-top: 1mm; font-size: 17pt; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
       .phone { margin-top: 0.6mm; font-size: 17pt; font-weight: 700; letter-spacing: 0.02em; }

@@ -3800,3 +3800,12 @@ c.org_id and o.id = c.order_id where a.provider_code = 'steadfast' and c.booking
   refused, the assigned packer binds and checks in, Working now one row a computer);
   `route-matrix.e2e.test.ts` and `guard.test.ts` passed. Typecheck, lint, format: PASS.
 - **New dependencies:** none. **Migration:** none.
+- **Moving a bound computer (the ledger audit of D-910, W1):** the bind carries the browser's
+  binding; someone not a supervisor moves a computer only from a terminal they are also assigned
+  to, and the old binding is revoked and audited in the same transaction. `labels.e2e.test.ts`
+  13 passed.
+- **The label's QR code (D-911):** the 4 × 6 label opens with a QR code of the barcode's value
+  beside the brand, courier, order number and lot, over a full-width Code 128 18 mm tall.
+  `render.gotenberg.test.ts` 4 passed (the QR read back square for square and the bars on many
+  rows, at 203 dpi and at 96 %), `documents-review.test.ts`, `order-documents.test.ts`,
+  `pack-station.e2e.test.ts` 44 passed. Pictures in `docs/review/M46/`.

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { lotCode } from '@elysium/domain/packing';
+import { encode as encodeQr } from 'uqr';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { decodeCode128Svg } from '../../../testing/code128-decode.js';
@@ -83,6 +84,45 @@ function decodeRow(bitmap: MonoBitmap, y: number, length: number): string | null
   }
 }
 
+/**
+ * The label's QR code read back off the dots (D-911): its finder pattern found in the top-left
+ * corner, then every module's centre (a 3 × 3 majority) against the encoder's own matrix. The
+ * share of modules that print as the encoder drew them; 1 is every square right.
+ */
+function qrMatch(bitmap: MonoBitmap, value: string, widthDots: number): number {
+  let y0 = -1;
+  let x0 = -1;
+  // The QR code's column only: the brand's name starts beside it, a little higher.
+  for (let y = 0; y < 400 && y0 < 0; y += 1) {
+    for (let x = 0; x < widthDots; x += 1) {
+      if (dot(bitmap, x, y)) {
+        y0 = y;
+        x0 = x;
+        break;
+      }
+    }
+  }
+  if (y0 < 0) return 0;
+  let run = 0;
+  while (dot(bitmap, x0 + run, y0)) run += 1;
+  // The finder pattern is seven modules wide.
+  const module = run / 7;
+  const { data, size } = encodeQr(value, { ecc: 'M', border: 0 });
+  let right = 0;
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      const cx = Math.round(x0 + (col + 0.5) * module);
+      const cy = Math.round(y0 + (row + 0.5) * module);
+      let black = 0;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) if (dot(bitmap, cx + dx, cy + dy)) black += 1;
+      }
+      if (black >= 5 === (data[row]?.[col] === true)) right += 1;
+    }
+  }
+  return right / (size * size);
+}
+
 /** The dots as a picture to look at (black on white). */
 function picture(bitmap: MonoBitmap): Uint8Array {
   const data = new Uint8Array(bitmap.widthDots * bitmap.heightDots);
@@ -133,16 +173,41 @@ describe('a lot’s label and slip on a thermal printer (D-811)', () => {
     const share = ink / (812 * 1218);
     expect(share).toBeGreaterThan(0.03);
     expect(share).toBeLessThan(0.5);
-    // Somewhere in the top quarter a row of dots reads as the lot's code.
-    const expected = lotCode(SAMPLE_ORDER.orderNo, 2);
-    let read: string | null = null;
-    for (let y = 40; y < 320 && read === null; y += 2) {
-      const decoded = decodeRow(bitmap, y, expected.length);
-      if (decoded !== null) read = decoded;
-    }
-    expect(read).toBe(expected);
+    // In the top half, rows of dots read as the lot's code, all down the bars' height (D-911).
     await mkdir(REVIEW_DIR, { recursive: true });
     await writeFile(path.join(REVIEW_DIR, 'label-lot-2-of-3-tspl-203dpi.png'), picture(bitmap));
+    const expected = lotCode(SAMPLE_ORDER.orderNo, 2);
+    let reads = 0;
+    for (let y = 40; y < 600; y += 2) {
+      if (decodeRow(bitmap, y, expected.length) === expected) reads += 1;
+    }
+    expect(reads).toBeGreaterThan(30);
+    // D-911: and the QR code beside the order number prints square for square.
+    expect(qrMatch(bitmap, expected, 270)).toBe(1);
+  });
+
+  it('keeps both codes readable shrunk to 96 %, as Chrome fits a PDF to a printable area (D-911)', async (context) => {
+    if (!ready) context.skip();
+    // The same 4 × 6 page drawn at 195 dpi on 203 dpi paper: every mark 96 % of its size, so no
+    // bar or square falls on whole dots any more.
+    const page = await lotPage('label');
+    const rendered = await renderForPrinter(client, page, {
+      language: 'tspl',
+      widthUm: 101_600,
+      heightUm: 152_400,
+      dpi: 195,
+      copies: 1,
+    });
+    const bitmap = bitmapOfTspl(rendered.bytes);
+    await mkdir(REVIEW_DIR, { recursive: true });
+    await writeFile(path.join(REVIEW_DIR, 'label-lot-2-of-3-shrunk-96.png'), picture(bitmap));
+    const expected = lotCode(SAMPLE_ORDER.orderNo, 2);
+    let reads = 0;
+    for (let y = 40; y < 600; y += 2) {
+      if (decodeRow(bitmap, y, expected.length) === expected) reads += 1;
+    }
+    expect(reads).toBeGreaterThan(10);
+    expect(qrMatch(bitmap, expected, 260)).toBe(1);
   });
 
   it('shrinks the A5 slip onto a 4 × 6 label printer and a test page onto 100 × 150 mm', async (context) => {
