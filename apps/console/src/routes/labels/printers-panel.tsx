@@ -20,10 +20,8 @@ import { useT } from '../../i18n/locale.js';
 import {
   addPrinter,
   deletePrinter,
-  labelSettings,
   listPrinters,
   listTerminals,
-  saveLabelSettings,
   testPrint,
   updatePrinter,
   type Printer,
@@ -37,8 +35,8 @@ import { PrinterStateBadge } from './parts.js';
 
 /**
  * Labels → Printers (M46, D-810, D-814, D-815, D-817): the brand's printers by terminal, with
- * their state, a test print and, for a supervisor, adding and changing them; and the brand's
- * automatic printing rule.
+ * their state, a test print and, for a supervisor, adding and changing them. Nothing prints by
+ * itself (D-917): labels print from Ready for label → Print all labels.
  */
 export function PrintersPanel() {
   const t = useT();
@@ -82,7 +80,9 @@ export function PrintersPanel() {
   const canEdit = printers.data.canEdit;
   return (
     <div className="space-y-5">
-      <AutoPrintCard />
+      <p className="text-sm text-muted-foreground" data-testid="printers-how-to-print">
+        {t('lb.printers.howToPrint')}
+      </p>
       {canEdit ? (
         <div className="flex flex-wrap items-center justify-end gap-3">
           {terminals.data.terminals.length === 0 ? (
@@ -206,45 +206,6 @@ export function PrintersPanel() {
         />
       )}
     </div>
-  );
-}
-
-function AutoPrintCard() {
-  const t = useT();
-  const queryClient = useQueryClient();
-  const settings = useQuery({ queryKey: ['labels', 'settings'], queryFn: labelSettings });
-  const save = useMutation({
-    mutationFn: saveLabelSettings,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['labels', 'settings'] }),
-  });
-  if (settings.data === undefined) return null;
-  const { autoPrint, autoSlip, canEdit, autoPrintSetting } = settings.data;
-  return (
-    <section
-      className="space-y-3 rounded-lg border border-border bg-card p-5"
-      data-testid="auto-print"
-    >
-      <h2 className="text-base font-semibold">{t('lb.settings.title')}</h2>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={autoPrint}
-          disabled={!canEdit || save.isPending}
-          onCheckedChange={(value) => save.mutate({ autoPrint: value === true, autoSlip })}
-        />
-        {t('lb.settings.autoPrint')}
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={autoSlip}
-          disabled={!canEdit || !autoPrint || save.isPending}
-          onCheckedChange={(value) => save.mutate({ autoPrint, autoSlip: value === true })}
-        />
-        {t('lb.settings.autoSlip')}
-      </label>
-      {autoPrintSetting === null ? (
-        <p className="text-xs text-muted-foreground">{t('lb.settings.default')}</p>
-      ) : null}
-    </section>
   );
 }
 

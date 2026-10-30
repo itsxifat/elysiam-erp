@@ -10,7 +10,6 @@ import {
   type Poisha,
 } from '@elysium/domain';
 import { lotCode, lotScanCode, orderScanCode } from '@elysium/domain/packing';
-import { encode as encodeQr } from 'uqr';
 
 import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fonts.js';
 
@@ -26,7 +25,8 @@ import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fo
  *    digits-only code (`2610000042` for `ELY-2610-00042`, D-912), which the packing station and
  *    the scanner look an order up by; a test decodes the printed bars and opens the order at the
  *    real station with them. The order number in letters is the human copy; the label also
- *    prints the digits small under its bars.
+ *    prints the digits small under its bars. On the parcel label the courier's consignment
+ *    number comes first, in the biggest type on it (D-917).
  * 2. **The cash to collect**, in a heavy black box: the one number the rider must not get
  *    wrong.
  * 3. **The recipient** — name, phone and the full address — large and bold, because a rider
@@ -137,7 +137,7 @@ function lotOf(data: OrderDocumentData): { readonly no: number; readonly count: 
 }
 
 /**
- * What the page's barcode and QR code carry (D-806, D-912): the order's ten digits, or for one
+ * What the page's barcode carries (D-806, D-912): the order's ten digits, or for one
  * lot of several the lot's twelve (`261000004202`), which the packing station and the handover
  * read back. The owner: the brand's letters in front of the number printed hazy and the scanner
  * missed them; digits alone pair into half the symbols, so the bars can be twice as wide. An
@@ -233,7 +233,7 @@ export function orderBarcode(value: string, moduleMm: number, heightMm: number):
   );
 }
 
-/** One dot of a 203 dpi thermal head, in millimetres: a bar or a QR module is whole dots. */
+/** One dot of a 203 dpi thermal head, in millimetres: a bar is whole dots. */
 const THERMAL_DOT_MM = 25.4 / 203;
 
 /** The label's padding in millimetres, top and bottom (`y`) and either side (`x`). */
@@ -253,25 +253,48 @@ export function labelModuleMm(value: string): number {
   return Math.max(1, Math.floor(room / modules / THERMAL_DOT_MM)) * THERMAL_DOT_MM;
 }
 
+/** The consignment number's largest size on the label, in points (D-917). */
+export const LABEL_CONSIGNMENT_PT = 30;
+
+/** The consignment number's letter spacing, in ems. */
+const CONSIGNMENT_TRACKING_EM = 0.02;
+
 /**
- * The label's QR code (D-911): the barcode's value again, for a 2D scanner or a phone, which read
- * a code shrunk to fit a printer, smudged or held at an angle where a 1D laser loses the bars.
- * Error correction M and two modules of quiet zone inside the image; each module a whole number
- * of a 203 dpi head's dots, as large as fits `maxMm`, so the squares print as solid squares.
+ * Inter Bold's advance widths in ems, rounded up to the hundredth (`pnpm fonts:fetch`'s files at
+ * weight 700): a tabular digit or hyphen 0.646, the capitals one by one. Any other character is
+ * counted as Inter's widest, W, so a guess is only ever too wide.
  */
-export function orderQr(value: string, maxMm: number): string {
-  const { data, size } = encodeQr(value, { ecc: 'M', border: 2 });
-  const dots = Math.max(6, Math.floor(maxMm / size / THERMAL_DOT_MM));
-  const sizeMm = Math.round(size * dots * THERMAL_DOT_MM * 100) / 100;
-  const rects: string[] = [];
-  for (let y = 0; y < size; y += 1) {
-    const row = data[y] ?? [];
-    for (let x = 0; x < size; x += 1) {
-      if (row[x] === true)
-        rects.push(`<rect x="${String(x)}" y="${String(y)}" width="1" height="1"/>`);
-    }
+const INTER_BOLD_DIGIT_EM = 0.65;
+const INTER_BOLD_CAPITALS_EM = [
+  0.75, 0.67, 0.74, 0.73, 0.61, 0.59, 0.76, 0.75, 0.29, 0.59, 0.72, 0.57, 0.94, 0.77, 0.78, 0.65,
+  0.78, 0.66, 0.66, 0.67, 0.74, 0.75, 1.04, 0.74, 0.74, 0.67,
+] as const;
+const INTER_BOLD_WIDEST_EM = 1.04;
+
+function consignmentEms(value: string): number {
+  let ems = 0;
+  for (const character of value) {
+    const capital = character.charCodeAt(0) - 65;
+    const width = /^[0-9-]$/.test(character)
+      ? INTER_BOLD_DIGIT_EM
+      : (INTER_BOLD_CAPITALS_EM[capital] ?? INTER_BOLD_WIDEST_EM);
+    ems += width + CONSIGNMENT_TRACKING_EM;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(size)} ${String(size)}" width="${String(sizeMm)}mm" height="${String(sizeMm)}mm" shape-rendering="crispEdges" data-qr="${escapeHtml(value)}" role="img" aria-label="${escapeHtml(value)}"><rect width="${String(size)}" height="${String(size)}" fill="#fff"/><g fill="#000">${rects.join('')}</g></svg>`;
+  return ems;
+}
+
+/**
+ * The consignment number's size on the label (D-917): `LABEL_CONSIGNMENT_PT` for any number up to
+ * twelve or so characters (Steadfast's eight to ten digits, about 70 mm at 30 pt), smaller in half
+ * points only when the number would not otherwise fit the label's width on one line (Pathao's
+ * fourteen letters and digits come out about 26 pt). Worked out here from the font's widths
+ * because the renderer runs no script to measure it; never wrapped, never clipped.
+ */
+export function labelConsignmentPt(value: string): number {
+  const roomPt = ((PAPER.label.widthMm - LABEL_PAD_MM.x * 2) * 72) / 25.4 - 2;
+  const ems = consignmentEms(value);
+  if (ems <= 0) return LABEL_CONSIGNMENT_PT;
+  return Math.min(LABEL_CONSIGNMENT_PT, Math.floor((roomPt / ems) * 2) / 2);
 }
 
 /** The ink, the hairlines and the type scale every page shares (§24 collapsed onto paper). */
@@ -760,10 +783,15 @@ export function renderPackingSlipHtml(input: {
  *
  * The thermal label every Bangladeshi courier's pickup desk prints, one order per label. What
  * is on it is what a rider needs at a door: who, where, how much to collect, the courier and
- * its numbers, and the order's digits as a Code 128 barcode and a QR code (D-912, D-911) so the
+ * its consignment number, and the order's digits as a Code 128 barcode (D-912) so the
  * warehouse scans it at handover instead of typing it; the bars are as wide as the label allows
  * in whole dots (`labelModuleMm`), the digits printed small under them. All black, nothing grey:
  * a thermal head prints grey as ash.
+ *
+ * The owner (D-917): the consignment number is the most important thing on the label, so it has
+ * a block of its own under the brand and the courier, in the biggest type on the page
+ * (`labelConsignmentPt`), and "Not booked" there, smaller, until the courier has booked the
+ * parcel. The barcode is the digits alone; the QR code beside the order number (D-911) is gone.
  */
 export function renderLabelHtml(input: {
   readonly brand: DocumentBrand;
@@ -774,19 +802,24 @@ export function renderLabelHtml(input: {
   const courier = data.courier;
   const nothing = data.codAmountPoisha <= 0n;
   const scan = documentBarcodeValue(data);
-  // D-911: the QR code and the bars carry the same value; whichever the scanner reads.
+  const consignmentNo = courier?.consignmentNo?.trim() ?? '';
+  const consignment =
+    consignmentNo === ''
+      ? `<div class="consignment-none" data-field="consignment-no">Not booked</div>`
+      : `<div class="consignment-no" data-field="consignment-no" style="font-size: ${String(labelConsignmentPt(consignmentNo))}pt">${escapeHtml(consignmentNo)}</div>`;
   const body = `
     <div class="label">
-      <div class="head">
-        <div class="qr" data-field="qr">${orderQr(scan, 30)}</div>
-        <div class="head-side">
-          <div class="top">
-            <div class="from">${brand.logo === null ? '' : `<img class="logo" src="${escapeHtml(brand.logo)}" alt="" />`}<span>${escapeHtml(brand.displayName)}</span></div>
-            <div class="courier">${escapeHtml(courier?.name ?? 'Courier')}</div>
-          </div>
-          <div class="order-no" data-field="order-no">${escapeHtml(data.orderNo)}</div>
-          ${lotBadge(data)}
-        </div>
+      <div class="top">
+        <div class="from">${brand.logo === null ? '' : `<img class="logo" src="${escapeHtml(brand.logo)}" alt="" />`}<span>${escapeHtml(brand.displayName)}</span></div>
+        <div class="courier">${escapeHtml(courier?.name ?? 'Courier')}</div>
+      </div>
+      <div class="consignment" data-field="consignment">
+        <div class="caption">Consignment</div>
+        ${consignment}
+      </div>
+      <div class="order">
+        <div class="order-no" data-field="order-no">${escapeHtml(data.orderNo)}</div>
+        ${lotBadge(data)}
       </div>
       <div class="barcode">
         ${orderBarcode(scan, labelModuleMm(scan), 18)}
@@ -806,10 +839,9 @@ export function renderLabelHtml(input: {
         <div class="cod-amount">${escapeHtml(takaText(nothing ? poisha(0n) : data.codAmountPoisha))}</div>
       </div>
 
-      <div class="foot">
-        <div><div class="caption">Consignment</div><div class="value">${escapeHtml(courier?.consignmentNo ?? 'Not booked')}</div></div>
-        <div><div class="caption">Pieces</div><div class="value">${String(units(data))}</div></div>
-        <div><div class="caption">Date</div><div class="value">${escapeHtml(documentDate(data.issuedOn))}</div></div>
+      <div class="foot" data-field="foot">
+        <div><span class="caption">Pieces</span><span class="value">${String(units(data))}</span></div>
+        <div><span class="caption">Date</span><span class="value">${escapeHtml(documentDate(data.issuedOn))}</span></div>
       </div>
     </div>`;
 
@@ -829,19 +861,32 @@ function labelCss(fonts: readonly FontFile[]): string {
         padding: ${String(LABEL_PAD_MM.y)}mm ${String(LABEL_PAD_MM.x)}mm;
         display: flex; flex-direction: column; overflow: hidden; font-size: 9pt; line-height: 1.3;
       }
-      .caption { font-size: 6.5pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
-      /* D-911: the QR code beside who sends it, the courier and the order number, over the bars. */
-      .head { display: flex; gap: 3mm; padding-bottom: 2mm; border-bottom: 1.5pt solid #000; }
-      .qr { flex: none; line-height: 0; }
-      .head-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1.6mm; }
-      .top { display: flex; justify-content: space-between; align-items: center; gap: 2mm; }
+      .caption { font-size: 6.5pt; font-weight: 700; line-height: 1.15; letter-spacing: 0.14em; text-transform: uppercase; }
+      /* Who sends it and the courier that carries it. */
+      .top {
+        display: flex; justify-content: space-between; align-items: center; gap: 2mm;
+        padding-bottom: 1.6mm; border-bottom: 1.5pt solid #000;
+      }
       .from { display: flex; align-items: center; gap: 2mm; min-width: 0; font-size: 10pt; font-weight: 700; }
       .from span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .logo { max-height: 7mm; max-width: 20mm; object-fit: contain; filter: grayscale(100%) contrast(140%); }
+      .logo { max-height: 6mm; max-width: 20mm; object-fit: contain; filter: grayscale(100%) contrast(140%); }
       .courier { flex: none; background: #000; color: #fff; padding: 1mm 2.4mm; font-size: 9pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+      /* D-917: the courier's consignment number, the biggest type on the label, on one line at a
+         size worked out from its length (the inline style); "Not booked" smaller until it is. */
+      .consignment { padding: 1.4mm 0 1.6mm; border-bottom: 1.5pt solid #000; }
+      .consignment-no {
+        margin-top: 0.6mm; font-weight: 700; line-height: 1; letter-spacing: 0.02em;
+        font-variant-numeric: tabular-nums; white-space: nowrap;
+      }
+      .consignment-none { margin-top: 0.6mm; font-size: 16pt; font-weight: 700; line-height: 1.1; }
+      /* The order number in letters, the human copy of the bars under it, and the lot beside it. */
+      .order {
+        display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+        gap: 1mm 3mm; margin-top: 1.6mm;
+      }
       /* The bars' quiet zones are either side of them; above and below, the gaps pay for the
          digits under them (D-912), so a long name and a four-line address still fit. */
-      .barcode { margin-top: 2mm; text-align: center; line-height: 0; }
+      .barcode { margin-top: 1.6mm; text-align: center; line-height: 0; }
       .barcode svg { display: inline-block; }
       /* D-912: what the bars carry, small under them, for a person to type when a scan fails. The
          spacing's gap after the last digit is given back on the left, so the digits centre. */
@@ -849,23 +894,25 @@ function labelCss(fonts: readonly FontFile[]): string {
         margin-top: 0.6mm; padding-left: 0.3em; font-size: 8pt; line-height: 1.1; font-weight: 600;
         letter-spacing: 0.3em; font-variant-numeric: tabular-nums; white-space: nowrap;
       }
-      .order-no { margin-top: auto; font-size: 17pt; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .order-no { min-width: 0; font-size: 15pt; font-weight: 700; line-height: 1.2; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       /* M46 (D-806): one bag of several, black on white so a thermal head prints it solid. */
-      .lot { margin: 1.4mm auto 0; width: fit-content; background: #000; color: #fff; padding: 1mm 3.2mm; font-size: 13pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-      .head-side .lot { margin: 0; }
-      .to { margin-top: 2.4mm; padding-top: 2.2mm; border-top: 1.5pt solid #000; }
+      .lot { flex: none; background: #000; color: #fff; padding: 0.8mm 2.6mm; font-size: 12pt; font-weight: 700; line-height: 1.2; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+      .to { margin: 2mm 0 1.6mm; padding-top: 1.8mm; border-top: 1.5pt solid #000; }
       .name { margin-top: 1mm; font-size: 17pt; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
-      .phone { margin-top: 0.6mm; font-size: 17pt; font-weight: 700; letter-spacing: 0.02em; }
+      .phone { margin-top: 0.6mm; font-size: 17pt; font-weight: 700; line-height: 1.2; letter-spacing: 0.02em; }
       .address {
         margin-top: 1.6mm; font-size: 11.5pt; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere;
         display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
       }
       .area { margin-top: 0.8mm; font-size: 11.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+      /* The space left over goes above the cash box, so it and the footer sit at the bottom. */
       .cod { margin-top: auto; border: 2pt solid #000; }
-      .cod-label { background: #000; color: #fff; padding: 1.2mm 2.6mm; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
-      .cod-amount { padding: 1.6mm 2.6mm 1.8mm; font-size: 28pt; font-weight: 700; line-height: 1.05; white-space: nowrap; font-variant-numeric: tabular-nums; }
-      .foot { display: grid; grid-template-columns: 1.6fr 0.7fr 1fr; gap: 2mm; margin-top: 2.6mm; }
-      .foot .value { margin-top: 0.4mm; font-size: 9.5pt; font-weight: 700; overflow-wrap: anywhere; }`;
+      .cod-label { background: #000; color: #fff; padding: 1mm 2.6mm; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+      /* D-917: a step under the consignment number, which is the label's biggest type. */
+      .cod-amount { padding: 1.2mm 2.6mm 1.4mm; font-size: 24pt; font-weight: 700; line-height: 1.05; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .foot { display: flex; justify-content: space-between; gap: 3mm; margin-top: 1.8mm; line-height: 1.2; }
+      .foot .caption { margin-right: 1.6mm; }
+      .foot .value { font-size: 9.5pt; font-weight: 700; }`;
 }
 
 /** The inside of a document's `<body>`, for putting several documents in one file. */

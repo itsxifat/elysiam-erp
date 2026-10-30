@@ -2,23 +2,24 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { code128Encode } from '@elysium/domain';
+import { code128Encode, poisha } from '@elysium/domain';
 import { lotScanCode } from '@elysium/domain/packing';
-import { encode as encodeQr } from 'uqr';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { decodeCode128Svg } from '../../../testing/code128-decode.js';
 import { loadFonts } from '../../files/pdf/fonts.js';
-import { GotenbergClient } from '../../files/pdf/gotenberg.client.js';
+import { GotenbergClient, type GotenbergAsset } from '../../files/pdf/gotenberg.client.js';
 import {
   documentBarcodeValue,
   renderLabelHtml,
   renderPackingSlipHtml,
+  type DocumentBrand,
+  type OrderDocumentData,
 } from '../../orders/order-documents.js';
 import { SAMPLE_BRAND, SAMPLE_ORDER } from '../../orders/order-documents.sample.js';
 import { encodePng } from './png.js';
 import type { MonoBitmap } from './raster.js';
-import { renderForPrinter, testPage, type PrintPage } from './render.js';
+import { renderForPrinter, testPage, type PrinterPaper, type PrintPage } from './render.js';
 
 /**
  * A lot's label and slip made ready for a thermal printer through the real Gotenberg (M46,
@@ -33,9 +34,14 @@ import { renderForPrinter, testPage, type PrintPage } from './render.js';
  * D-912 (`ELY-2610-00042-L2`, a bar three dots on the label and under three on the slip) 72, 69
  * and 33 read as printed, every row the bars cover, and not one with a dot of print gain either
  * way; with the digits (six dots, five and a half on the slip) 72, 69 and 33 read both ways.
+ *
+ * Since D-917 the label carries no QR code: the digits-only bars are its one code, under the
+ * consignment number in the label's biggest type, and the worst case (a two-line name, the
+ * address at its four-line clamp, lot 12 of 20, a fourteen-character consignment number, a logo)
+ * still fits one label with nothing pushed into its margins.
  */
 
-/** The lot every page here is for, and what its bars and QR code carry. */
+/** The lot every page here is for, and what its bars carry. */
 const LOT_DATA = { ...SAMPLE_ORDER, lot: { no: 2, count: 3 } };
 const EXPECTED = lotScanCode(SAMPLE_ORDER.orderNo, 2) ?? '';
 
@@ -126,43 +132,24 @@ function hazyRowsReading(bitmap: MonoBitmap, expected: string): number {
   return Math.min(rowsReading(bitmap, expected, 1), rowsReading(bitmap, expected, -1));
 }
 
-/**
- * The label's QR code read back off the dots (D-911): its finder pattern found in the top-left
- * corner, then every module's centre (a 3 × 3 majority) against the encoder's own matrix. The
- * share of modules that print as the encoder drew them; 1 is every square right.
- */
-function qrMatch(bitmap: MonoBitmap, value: string, widthDots: number): number {
-  let y0 = -1;
-  let x0 = -1;
-  // The QR code's column only: the brand's name starts beside it, a little higher.
-  for (let y = 0; y < 400 && y0 < 0; y += 1) {
-    for (let x = 0; x < widthDots; x += 1) {
-      if (dot(bitmap, x, y)) {
-        y0 = y;
-        x0 = x;
-        break;
-      }
-    }
+/** The 4 × 6 label at 203 dpi, and its padding (4.5 mm a side, 4 mm top and bottom) in dots. */
+const LABEL_DOTS = { width: 812, height: 1218, padX: 36, padY: 32 } as const;
+
+/** The inked dots in a box of the label, `x0` to `x1` and `y0` to `y1` (ends excluded). */
+function inkIn(bitmap: MonoBitmap, x0: number, x1: number, y0: number, y1: number): number {
+  let ink = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) if (dot(bitmap, x, y)) ink += 1;
   }
-  if (y0 < 0) return 0;
-  let run = 0;
-  while (dot(bitmap, x0 + run, y0)) run += 1;
-  // The finder pattern is seven modules wide.
-  const module = run / 7;
-  const { data, size } = encodeQr(value, { ecc: 'M', border: 0 });
-  let right = 0;
-  for (let row = 0; row < size; row += 1) {
-    for (let col = 0; col < size; col += 1) {
-      const cx = Math.round(x0 + (col + 0.5) * module);
-      const cy = Math.round(y0 + (row + 0.5) * module);
-      let black = 0;
-      for (let dy = -1; dy <= 1; dy += 1) {
-        for (let dx = -1; dx <= 1; dx += 1) if (dot(bitmap, cx + dx, cy + dy)) black += 1;
-      }
-      if (black >= 5 === (data[row]?.[col] === true)) right += 1;
-    }
+  return ink;
+}
+
+/** The lowest row of dots with any ink on the label's 812 dots. */
+function lastInkedRow(bitmap: MonoBitmap): number {
+  for (let y = bitmap.heightDots - 1; y >= 0; y -= 1) {
+    if (inkIn(bitmap, 0, LABEL_DOTS.width, y, y + 1) > 0) return y;
   }
-  return right / (size * size);
+  return -1;
 }
 
 /** The dots as a picture to look at (black on white). */
@@ -176,22 +163,63 @@ function picture(bitmap: MonoBitmap): Uint8Array {
   return encodePng({ width: bitmap.widthDots, height: bitmap.heightDots, channels: 1, data });
 }
 
-async function lotPage(kind: 'label' | 'slip'): Promise<PrintPage> {
+async function lotPage(
+  kind: 'label' | 'slip',
+  data: OrderDocumentData = LOT_DATA,
+  brand: DocumentBrand = SAMPLE_BRAND,
+  extra: readonly GotenbergAsset[] = [],
+): Promise<PrintPage> {
   const fonts = await loadFonts();
-  const data = LOT_DATA;
   const html =
     kind === 'label'
-      ? renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts })
-      : renderPackingSlipHtml({ brand: SAMPLE_BRAND, data, fonts, paper: 'a5' });
-  const assets = fonts.map((font) => ({
-    filename: font.filename,
-    bytes: font.bytes,
-    contentType: 'font/woff2',
-  }));
+      ? renderLabelHtml({ brand, data, fonts })
+      : renderPackingSlipHtml({ brand, data, fonts, paper: 'a5' });
+  const assets = [
+    ...fonts.map((font) => ({
+      filename: font.filename,
+      bytes: font.bytes,
+      contentType: 'font/woff2',
+    })),
+    ...extra,
+  ];
   return kind === 'label'
     ? { html, assets, widthMm: 101.6, heightMm: 152.4, marginMm: 0 }
     : { html, assets, widthMm: 148, heightMm: 210, marginMm: 8 };
 }
+
+/**
+ * The most a label has to hold (D-917): a name that takes two lines, an address long enough to be
+ * cut at its four-line clamp, lot 12 of 20, Pathao's fourteen-character consignment number, a
+ * six-figure amount to collect and the brand's logo. Made up, like the sample.
+ */
+const WORST_DATA: OrderDocumentData = {
+  ...SAMPLE_ORDER,
+  customerName: 'Mohammad Abdur Rahman Chowdhury Talukder',
+  addressLine:
+    'Flat 12C, Navana Tower Residential Complex, House 45/A, Road 16 (New), Block C, Bashundhara Residential Area, behind the Jamuna Future Park north gate, beside the green pharmacy, third floor, ring the bell twice',
+  locality: 'Bashundhara, Vatara',
+  district: 'Dhaka',
+  codAmountPoisha: poisha(12_548_000n),
+  courier: { name: 'Pathao', consignmentNo: 'DL121224VS8TFZ', trackingCode: null },
+  lot: { no: 12, count: 20 },
+};
+
+/** A plain monogram standing in for a brand's logo, taller than the brand's name. */
+const LOGO: GotenbergAsset = {
+  filename: 'logo.svg',
+  bytes: new TextEncoder().encode(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240"><rect width="240" height="240" rx="40" fill="#000"/></svg>',
+  ),
+  contentType: 'image/svg+xml',
+};
+
+const LABEL_203: PrinterPaper = {
+  language: 'tspl',
+  widthUm: 101_600,
+  heightUm: 152_400,
+  dpi: 203,
+  copies: 1,
+};
 
 describe('a lot’s label and slip on a thermal printer (D-811)', () => {
   it('rasters the 4 × 6 label at 203 dpi to exactly 812 × 1218 dots, its lot barcode readable', async (context) => {
@@ -223,11 +251,11 @@ describe('a lot’s label and slip on a thermal printer (D-811)', () => {
     expect(documentBarcodeValue(LOT_DATA)).toBe(EXPECTED);
     expect(rowsReading(bitmap, EXPECTED)).toBeGreaterThanOrEqual(70);
     expect(hazyRowsReading(bitmap, EXPECTED)).toBeGreaterThanOrEqual(65);
-    // D-911: and the QR code beside the order number prints square for square, the same digits.
-    expect(qrMatch(bitmap, EXPECTED, 270)).toBe(1);
+    // D-917: the bars are the label's one code; no QR code is printed beside the order number.
+    expect(page.html).not.toContain('data-qr');
   });
 
-  it('keeps both codes readable shrunk to 96 %, as Chrome fits a PDF to a printable area (D-911)', async (context) => {
+  it('keeps the bars readable shrunk to 96 %, as Chrome fits a PDF to a printable area (D-911)', async (context) => {
     if (!ready) context.skip();
     // The same 4 × 6 page drawn at 195 dpi on 203 dpi paper: every mark 96 % of its size, so no
     // bar or square falls on whole dots any more.
@@ -246,7 +274,41 @@ describe('a lot’s label and slip on a thermal printer (D-811)', () => {
     // (before D-912: 69 rows as printed, not one with the gain).
     expect(rowsReading(bitmap, EXPECTED)).toBeGreaterThanOrEqual(66);
     expect(hazyRowsReading(bitmap, EXPECTED)).toBeGreaterThanOrEqual(60);
-    expect(qrMatch(bitmap, EXPECTED, 260)).toBe(1);
+  });
+
+  it('fits the worst case on one label, nothing pushed into its margins (D-917)', async (context) => {
+    if (!ready) context.skip();
+    const brand = { ...SAMPLE_BRAND, logo: LOGO.filename };
+    const sample = bitmapOfTspl(
+      (await renderForPrinter(client, await lotPage('label', LOT_DATA, brand, [LOGO]), LABEL_203))
+        .bytes,
+    );
+    const page = await lotPage('label', WORST_DATA, brand, [LOGO]);
+    const worst = bitmapOfTspl((await renderForPrinter(client, page, LABEL_203)).bytes);
+    expect(worst.heightDots).toBe(LABEL_DOTS.height);
+    // What makes it the worst case, on the page as rendered.
+    expect(page.html).toContain('Lot 12 of 20');
+    expect(page.html).toContain('>DL121224VS8TFZ<');
+    expect(page.html).toContain('Tk 125,480.00');
+    // The cash box and the footer sit at the foot of the label whatever is above them: had the
+    // name, the clamped address or the lot pushed them down, the last inked row would move and
+    // ink would reach the bottom margin.
+    const last = lastInkedRow(worst);
+    expect(last).toBe(lastInkedRow(sample));
+    expect(last).toBeLessThan(LABEL_DOTS.height - LABEL_DOTS.padY);
+    // Nothing reaches the margins, a millimetre in from the content's edge: the consignment number
+    // at its shrunk size fits the width, the brand's logo and the lot badge fit their rows.
+    const { width, height, padX, padY } = LABEL_DOTS;
+    const inset = 8;
+    expect(inkIn(worst, 0, padX - inset, 0, height)).toBe(0);
+    expect(inkIn(worst, width - padX + inset, width, 0, height)).toBe(0);
+    expect(inkIn(worst, 0, width, 0, padY - inset)).toBe(0);
+    expect(inkIn(worst, 0, width, height - padY + inset, height)).toBe(0);
+    // And the bars still read: lot 12's twelve digits, a dot fat or thin.
+    const lot12 = lotScanCode(SAMPLE_ORDER.orderNo, 12) ?? '';
+    expect(lot12).toBe('261000004212');
+    expect(rowsReading(worst, lot12)).toBeGreaterThanOrEqual(70);
+    expect(hazyRowsReading(worst, lot12)).toBeGreaterThanOrEqual(65);
   });
 
   it('shrinks the A5 slip onto a 4 × 6 label printer and a test page onto 100 × 150 mm', async (context) => {

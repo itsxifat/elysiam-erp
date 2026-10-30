@@ -11,7 +11,6 @@ import { withGlobal, withOrg, type Tx } from '@elysium/db';
 import {
   PRINT_MAX_ATTEMPTS,
   PRINT_SENDING_STALE_MS,
-  autoPrintOn,
   isReprint,
   pickTerminal,
   printSummary,
@@ -30,7 +29,7 @@ import { GotenbergClient } from '../files/pdf/gotenberg.client.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import * as repo from './labels.repository.js';
-import { PACKING_QUEUES, type AutoPrintPayload, type SendPrintPayload } from './packing.queues.js';
+import { PACKING_QUEUES, type SendPrintPayload } from './packing.queues.js';
 import { destinationRefusal } from './printers/destination.js';
 import {
   ippGetPrinterAttributes,
@@ -88,9 +87,9 @@ function csvCell(value: string | number | null): string {
  * with its delivery queued in that same transaction: a pg-boss `labels.send` for a network
  * printer (the worker renders and sends it, no transaction open, invariant 6), or a
  * `labels.job_changed` event for a browser print station, which fetches and prints it and says
- * how it went. The auto-print rule runs as `labels.auto_print`, enqueued in the confirm's
- * transaction, or in the courier's booking transaction when the confirm queued a booking (D-817,
- * D-914). The log is the rows: nothing about a print is written anywhere else.
+ * how it went. Every print is asked for by a person (D-917): nothing prints by itself, and the
+ * orders ready for their label wait in "Ready for label" until someone prints them, one or many
+ * at once. The log is the rows: nothing about a print is written anywhere else.
  */
 @Injectable()
 export class PrintingService {
@@ -105,8 +104,13 @@ export class PrintingService {
     private readonly audit: AuditService,
   ) {}
 
-  // --- the brand's rule (D-817) -----------------------------------------------------------
+  // --- the brand's settings (D-817; automatic printing retired, D-917) ----------------------
 
+  /**
+   * D-917: automatic printing is retired, so `autoPrint` and `autoSlip` always answer false and
+   * the saved switch has no effect. The route and its fields stay for the clients that still
+   * read and write them; `autoPrintSetting` is what was saved, for the record.
+   */
   async settings(context: ActiveContext) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const [row, printers, courierBooking] = await Promise.all([
@@ -116,12 +120,12 @@ export class PrintingService {
       ]);
       const live = printers.filter((printer) => printer.enabled).length;
       return {
-        autoPrint: autoPrintOn(row?.auto_print ?? null, live),
-        /** The saved switch, or null: the ASSUMED default (on once a printer exists). */
+        autoPrint: false,
+        /** The saved switch, or null when never saved. No effect since D-917. */
         autoPrintSetting: row?.auto_print ?? null,
-        autoSlip: row?.auto_slip ?? false,
+        autoSlip: false,
         printers: live,
-        /** When the courier is booked (D-908); since D-914 a label prints on Confirm either way. */
+        /** When the courier is booked (D-908); a label is printed by a person either way (D-917). */
         courierBooking,
         canEdit: defineAbilityFor(context).can('update', 'PackingTerminal'),
         updatedAt: row === undefined ? null : iso(row.updated_at),
@@ -129,6 +133,10 @@ export class PrintingService {
     });
   }
 
+  /**
+   * Saved and audited as before, for compatibility, but it changes nothing (D-917): nothing
+   * prints by itself, so the answer is false whatever was saved, as `settings` says.
+   */
   async saveSettings(context: ActiveContext, request: AuditableRequest, input: LabelSettingsInput) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const before = await repo.labelSettingsOf(tx, context.orgId);
@@ -150,8 +158,8 @@ export class PrintingService {
         request,
       });
       return {
-        autoPrint: row.auto_print ?? false,
-        autoSlip: row.auto_slip,
+        autoPrint: false,
+        autoSlip: false,
         updatedAt: iso(row.updated_at),
       };
     });
@@ -163,8 +171,9 @@ export class PrintingService {
    * Print these orders' documents now: every lot, or the ones named. A document already printed
    * for an order and lot is a reprint and needs a reason; the whole request is refused, naming
    * them, rather than printing half of it. The printer is the one named, or the terminal's (the
-   * one named, else the label terminal this computer is bound to), else the order's own
-   * (the auto-print rule's choice).
+   * one named, else the label terminal this computer is bound to), else the order's own label
+   * terminal at its location (D-817). Up to 100 orders at once: how a person prints everything
+   * waiting in "Ready for label" in one go (D-917).
    */
   async print(
     context: ActiveContext,
@@ -183,8 +192,8 @@ export class PrintingService {
           throw new PackingError('NOT_FOUND', 'No such order.');
         }
         // One print of an order's pages at a time, in the lock order every path takes (the
-        // order's row, then its lots; ledger audit W1, W3), so two presses of Print, or a print
-        // beside the automatic one, see each other and the second needs a reason.
+        // order's row, then its lots; ledger audit W1, W3), so two presses of Print, or two
+        // people printing the same order, see each other and the second needs a reason.
         for (const id of [...ids].sort()) await this.lockOrder(tx, context.orgId, id);
         const facts = await this.orders.packingFacts(tx, context.orgId, ids);
         for (const order of facts) {
@@ -286,7 +295,6 @@ export class PrintingService {
               labelOrders.get(entry.order.id)?.consignmentNo ??
               entry.order.parcel?.consignmentNo ??
               null,
-            autoKey: null,
           });
           if (job === undefined) throw new Error('a print job was not written');
           openJobs.set(printer.terminal_id, (openJobs.get(printer.terminal_id) ?? 0) + 1);
@@ -341,7 +349,6 @@ export class PrintingService {
           requestedBy: context.userId,
           copies: 1,
           consignmentNo: null,
-          autoKey: null,
         });
         if (job === undefined) throw new Error('a test print was not written');
         await this.dispatch(tx, context.orgId, job, printer);
@@ -629,114 +636,6 @@ export class PrintingService {
         };
       }),
     );
-  }
-
-  // --- the auto-print rule (D-817), in the worker ----------------------------------------
-
-  /**
-   * An order is ready for its label (confirmed, or its consignment came back): print each lot's
-   * label (and slip) on its label terminal. A lot printed or queued already, by hand or by an
-   * earlier run, is not printed again (D-914: the confirm's print, then the consignment).
-   */
-  async autoPrint(orgId: string, payload: AutoPrintPayload): Promise<void> {
-    await withOrg({ orgId }, async (tx) => {
-      await this.lockOrder(tx, orgId, payload.orderId);
-      const [facts] = await this.orders.packingFacts(tx, orgId, [payload.orderId]);
-      if (facts === undefined) return;
-      // The consignment this run carries, else the one the order's row has by now (booked
-      // between the confirm and this run), else none yet (D-914).
-      const consignmentNo =
-        payload.consignmentNo ??
-        (await repo.labelOrderOf(tx, orgId, [facts.id])).get(facts.id)?.consignmentNo ??
-        null;
-      await repo.fillLabelOrder(tx, {
-        orgId,
-        orderId: facts.id,
-        orderNo: facts.orderNo,
-        locationId: facts.locationId,
-      });
-      if (facts.status !== 'confirmed') return;
-      const [settings, printers, terminals, openJobs, lotCount, already] = await Promise.all([
-        repo.labelSettingsOf(tx, orgId),
-        repo.printersOf(tx, orgId),
-        repo.terminalsOf(tx, orgId),
-        repo.openJobsByTerminal(tx, orgId),
-        repo.lotCountOf(tx, orgId, facts.id),
-        repo.printedCounts(tx, orgId, [facts.id], { pending: true }),
-      ]);
-      const live = printers.filter((printer) => printer.enabled);
-      if (!autoPrintOn(settings?.auto_print ?? null, live.length)) return;
-      const stationSeen = await this.stationsSeen(tx, orgId);
-      const documents: PrintedDocument[] =
-        settings?.auto_slip === true ? ['label', 'packing_slip'] : ['label'];
-      let printerFor: repo.PrinterRow | undefined;
-      try {
-        printerFor = this.choosePrinter({
-          printers,
-          terminals,
-          openJobs,
-          stationSeen,
-          document: 'label',
-          printerId: undefined,
-          terminalId: undefined,
-          locationId: facts.locationId,
-        });
-      } catch {
-        this.logger.warn(`auto-print: no label printer for an order of org ${orgId}`);
-        return;
-      }
-      for (let lot = 1; lot <= lotCount; lot += 1) {
-        for (const document of documents) {
-          // The slip on the same terminal's slip printer, when it has one; else not at all.
-          const printer =
-            document === 'label'
-              ? printerFor
-              : live.find(
-                  (candidate) =>
-                    candidate.terminal_id === printerFor?.terminal_id &&
-                    candidate.documents.includes('packing_slip'),
-                );
-          if (printer === undefined) continue;
-          // Printed by hand already (or on its way): the rule does not print it again.
-          if ((already.get(`${facts.id}:${document}:${String(lot)}`) ?? 0) > 0) continue;
-          const job = await repo.insertJob(tx, {
-            orgId,
-            orderId: facts.id,
-            orderNo: facts.orderNo,
-            document,
-            lotNo: lot,
-            lotCount,
-            printerId: printer.id,
-            terminalId: printer.terminal_id,
-            source: 'auto',
-            reason: null,
-            requestedBy: null,
-            copies: printer.copies,
-            consignmentNo,
-            autoKey: `auto:${facts.id}:${consignmentNo ?? 'none'}:${document}:${String(lot)}`,
-          });
-          // Already queued by an earlier delivery of this job (its key): nothing more to do.
-          if (job === undefined) continue;
-          await this.dispatch(tx, orgId, job, printer);
-          await this.audit.record(tx, {
-            orgId,
-            actorUserId: null,
-            operation: 'create',
-            action: 'labels.auto_print_queued',
-            entityType: 'print_job',
-            entityId: job.id,
-            after: {
-              orderId: facts.id,
-              document,
-              lot,
-              lotCount,
-              printerId: printer.id,
-              terminalId: printer.terminal_id,
-            },
-          });
-        }
-      }
-    });
   }
 
   // --- sending to a network printer (D-813), in the worker -------------------------------

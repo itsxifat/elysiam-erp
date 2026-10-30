@@ -19,9 +19,9 @@ import { LogPanel, QueuePanel, ReadyPanel } from './queue-panels.js';
 import { TerminalsPanel } from './terminals-panel.js';
 
 /**
- * Labels (M46, D-800): the label desks' own area. Ready for label (orders with a consignment and
- * a lot not yet labelled), the queue, the print log, the printers and the automatic printing
- * rule, the label terminals, and the browser print station. Keyboard- and scanner-first; a
+ * Labels (M46, D-800): the label desks' own area. Ready for label (confirmed orders with a lot
+ * not yet labelled, waiting until someone prints them all, D-917), the queue, the print log, the
+ * printers, the label terminals, and the browser print station. Keyboard- and scanner-first; a
  * printed or a failed job is heard (M44a's tones).
  */
 

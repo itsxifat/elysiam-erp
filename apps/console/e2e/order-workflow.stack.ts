@@ -18,11 +18,11 @@ import { enrolSecondFactor, signIn, stack, user } from './stack/helpers.js';
  * orders. Every screen is checked with axe (no serious or critical violation) and photographed
  * in both themes into `docs/review/M41/`.
  *
- * Printing is not driven here. A label prints from Labels on a terminal's printer once a
- * courier has booked the parcel (D-817, D-818); this stack has no booking and no printer on a
- * LAN address the worker may send to (D-812). `labels.e2e.test.ts` covers that path: the
- * printed label marks the order's slip printed and moves it to To pack (D-819). Here the order
- * is moved through `POST /v1/orders/mark-printed`, which no console screen calls.
+ * Printing is not driven here. Nothing prints by itself: a confirmed order waits on Labels →
+ * Ready for label until someone prints it there (Print all labels, D-917, D-818); this stack
+ * has no printer on a LAN address the worker may send to (D-812). `labels.e2e.test.ts` covers
+ * that path: the printed label marks the order's slip printed and moves it to To pack (D-819).
+ * Here the order is moved through `POST /v1/orders/mark-printed`, which no console screen calls.
  */
 
 test.describe.configure({ mode: 'serial' });

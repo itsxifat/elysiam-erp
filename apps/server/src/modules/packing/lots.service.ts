@@ -14,7 +14,6 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
-import { enqueue } from '../../platform/jobs/enqueue.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import { HandoverGuardRegistry, type HandoverGuard } from '../orders/ports/handover-guard.port.js';
 import {
@@ -22,7 +21,6 @@ import {
   type ParcelObserver,
 } from '../orders/ports/parcel-observer.port.js';
 import * as labels from './labels.repository.js';
-import { PACKING_QUEUES, type AutoPrintPayload } from './packing.queues.js';
 import { ordersForScannedCode } from './scanner.service.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as station from './station.repository.js';
@@ -51,9 +49,9 @@ function lotWords(lots: readonly number[]): string {
  * Lots and the handover (M46, D-805 to D-808), and the two hooks the orders module calls:
  *
  * - **the parcel observer**: in the confirm's transaction the order is kept as ready for its
- *   label and, unless a consignment is on its way, `labels.auto_print` is enqueued (D-914); in
- *   the courier's booking transaction the row gains its consignment and the print is enqueued
- *   (D-817); a booking that failed for good enqueues it without one (D-914);
+ *   label (D-914); in the courier's booking transaction the row gains its consignment (D-817); a
+ *   booking that failed for good keeps it ready without one (D-914). Nothing prints by itself
+ *   (D-917): the order waits in "Ready for label" until a person prints it, one or many at once;
  * - **the handover guard**: a person's Ship of an order in several lots is refused until every
  *   lot's label was scanned at the handover (D-808).
  *
@@ -88,7 +86,10 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
 
   // --- the orders module's hooks -----------------------------------------------------------
 
-  /** D-817: inside the courier's booking transaction. Writes its own row and enqueues; no call. */
+  /**
+   * D-817: inside the courier's booking transaction. The order's row in "Ready for label" gains
+   * its consignment (or is made with it); nothing is printed (D-917). Its own rows only.
+   */
   async parcelBooked(
     tx: Tx,
     input: {
@@ -99,14 +100,13 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
     },
   ): Promise<void> {
     await labels.upsertLabelOrder(tx, input);
-    await this.enqueueAutoPrint(tx, input.orgId, input.orderId, input.consignmentNo);
+    await this.fillFromOrder(tx, input.orgId, input.orderId);
   }
 
   /**
-   * D-914: inside the confirm's transaction. The order is ready for its label now; it prints at
-   * once unless a consignment will come back, from the booking the confirm queued or a person's
-   * Book now (then `parcelBooked` prints it, or `bookingFailed` does without one). Its own row
-   * and an enqueue.
+   * D-914: inside the confirm's transaction. The order is ready for its label now, with its
+   * consignment once a booking brings one (`parcelBooked`). Nothing is printed (D-917): it waits
+   * in "Ready for label" until a person prints it. Its own row only.
    */
   async orderConfirmed(
     tx: Tx,
@@ -115,33 +115,38 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
       readonly orderId: string;
       readonly orderNo: string;
       readonly locationId: string | null;
-      readonly awaitingConsignment: boolean;
       readonly at: Date;
     },
   ): Promise<void> {
     await labels.upsertReadyOrder(tx, input);
-    if (input.awaitingConsignment) return;
-    await this.enqueueAutoPrint(tx, input.orgId, input.orderId, null);
   }
 
-  /** D-914: the booking failed for good, in that transaction: no consignment is coming. */
+  /**
+   * D-914: the booking failed for good, in that transaction: no consignment is coming, and the
+   * order stays ready for its label without one. Nothing is printed (D-917).
+   */
   async bookingFailed(
     tx: Tx,
     input: { readonly orgId: string; readonly orderId: string; readonly at: Date },
   ): Promise<void> {
     await labels.ensureLabelOrder(tx, input);
-    await this.enqueueAutoPrint(tx, input.orgId, input.orderId, null);
+    await this.fillFromOrder(tx, input.orgId, input.orderId);
   }
 
-  /** The automatic print, through the caller's transaction (invariant 6). */
-  private async enqueueAutoPrint(
-    tx: Tx,
-    orgId: string,
-    orderId: string,
-    consignmentNo: string | null,
-  ): Promise<void> {
-    const payload: AutoPrintPayload = { orderId, consignmentNo };
-    await enqueue(tx, PACKING_QUEUES.autoPrint.name, payload, { orgId, ref: orderId });
+  /**
+   * The row's order number and location, read from the order (D-917: the automatic print used
+   * to fill them in the worker). A row the booking made has neither, and its location decides
+   * which hub's "Ready for label" lists it.
+   */
+  private async fillFromOrder(tx: Tx, orgId: string, orderId: string): Promise<void> {
+    const order = await this.orders.summary(tx, orgId, orderId);
+    if (order === undefined) return;
+    await labels.fillLabelOrder(tx, {
+      orgId,
+      orderId,
+      orderNo: order.orderNo,
+      locationId: order.locationId,
+    });
   }
 
   /**

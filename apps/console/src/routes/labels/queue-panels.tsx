@@ -71,6 +71,14 @@ function Failed({ onRetry }: { readonly onRetry: () => void }) {
 
 // --- Ready for label --------------------------------------------------------------------------
 
+/** `POST /v1/labels/print` takes at most this many orders at once; the list shows the oldest. */
+const PRINT_BATCH = 100;
+
+/**
+ * Ready for label (D-917): nothing prints by itself. A confirmed order waits here until someone
+ * releases the queue with Print all labels, which prints the label of every order listed; a
+ * ticked few can go with Print selected. Labels only: the slip is not printed from here.
+ */
 export function ReadyPanel() {
   const t = useT();
   const { locale } = useLocale();
@@ -91,16 +99,21 @@ export function ReadyPanel() {
   });
 
   const items = ready.data?.items ?? [];
+  const all = items.slice(0, PRINT_BATCH).map((item) => item.orderId);
   const ids = items.filter((item) => selected.has(item.orderId)).map((item) => item.orderId);
   const every = items.length > 0 && ids.length === items.length;
 
   return (
     <div className="space-y-4">
+      <p className="text-sm text-muted-foreground" data-testid="ready-lead">
+        {t('lb.ready.lead')}
+      </p>
       <div className="flex flex-wrap items-center gap-3">
         <LocationSelect value={chosen} onChange={setLocation} />
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
             checked={every}
+            disabled={items.length === 0}
             onCheckedChange={() =>
               setSelected(every ? new Set() : new Set(items.map((item) => item.orderId)))
             }
@@ -113,21 +126,24 @@ export function ReadyPanel() {
         </span>
         <Button
           size="sm"
+          variant="outline"
           disabled={ids.length === 0 || printer.busy}
-          data-testid="print-labels"
+          data-testid="print-selected-labels"
           onClick={() => printer.print({ orderIds: ids, documents: ['label'] })}
         >
           <Tag aria-hidden />
-          {t('lb.ready.printLabels')}
+          {t('lb.ready.printSelected')}
         </Button>
         <Button
           size="sm"
-          variant="outline"
-          disabled={ids.length === 0 || printer.busy}
-          onClick={() => printer.print({ orderIds: ids, documents: ['label', 'packing_slip'] })}
+          className="ml-auto"
+          disabled={all.length === 0 || printer.busy}
+          aria-busy={printer.busy}
+          data-testid="print-all-labels"
+          onClick={() => printer.print({ orderIds: all, documents: ['label'] })}
         >
           <Printer aria-hidden />
-          {t('lb.ready.printBoth')}
+          {`${t('lb.ready.printAll')} (${String(all.length)})`}
         </Button>
       </div>
       {notice === null && printer.error === null ? null : (

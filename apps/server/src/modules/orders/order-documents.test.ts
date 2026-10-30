@@ -13,6 +13,8 @@ import {
   channelWords,
   documentBarcodeValue,
   documentDate,
+  LABEL_CONSIGNMENT_PT,
+  labelConsignmentPt,
   labelModuleMm,
   orderTotal,
   PAPER,
@@ -375,6 +377,29 @@ describe('the invoice', () => {
   });
 });
 
+/** The label's consignment block, its number's element and the size it prints at. */
+function consignmentOf(html: string): { text: string; element: string; pt: number } {
+  const element = /<div class="consignment-(?:no|none)"[^>]*>/.exec(html)?.[0] ?? '';
+  const inline = /font-size: ([\d.]+)pt/.exec(element)?.[1];
+  const fromCss = /\.consignment-none \{[^}]*font-size: ([\d.]+)pt/.exec(html)?.[1];
+  return {
+    text: field(html, 'consignment-no'),
+    element,
+    pt: Number(inline ?? fromCss ?? Number.NaN),
+  };
+}
+
+/** Every type size the label sets, in points: its style block's and the inline ones. */
+function labelSizesPt(html: string): number[] {
+  return [...html.matchAll(/font-size: ([\d.]+)pt/g)].map((match) => Number(match[1]));
+}
+
+/** Inter Bold's widest glyph (W) and the consignment number's tracking, in ems. */
+const WIDEST_EM = 1.04 + 0.02;
+
+/** The label's width inside its padding, in points. */
+const LABEL_ROOM_PT = ((PAPER.label.widthMm - 2 * 4.5) * 72) / 25.4;
+
 describe('the parcel label', () => {
   it('carries who, where, how much, the courier and its number, and no items or notes', () => {
     const html = renderLabelHtml({ brand: SAMPLE_BRAND, data: SAMPLE_ORDER, fonts: [] });
@@ -383,15 +408,112 @@ describe('the parcel label', () => {
     expect(field(html, 'recipient')).toContain('01700-000123');
     expect(field(html, 'recipient')).toContain('Dhanmondi, Dhanmondi, Dhaka');
     expect(field(html, 'collect')).toContain('Tk 8,460.00');
-    expect(html).toContain('127403991');
     expect(html).toContain('Steadfast');
     expect(html).not.toContain('Linen Panjabi');
     expect(html).not.toContain('Call before delivery');
-    // D-911, D-912: the QR code carries what the bars do, the order's digits.
-    expect(html).toContain(`data-qr="${ORDER_DIGITS}"`);
     expect(html).toContain(`data-barcode="${ORDER_DIGITS}"`);
     // Ink is black: no grey a thermal head would dither into ash.
     expect(html).not.toMatch(/#(?!000\b|fff\b)[0-9a-f]{3,6}\b/i);
+  });
+
+  it('prints the digits-only bars and no QR code (D-917)', () => {
+    for (const data of [SAMPLE_ORDER, { ...SAMPLE_ORDER, lot: { no: 2, count: 3 } }]) {
+      const html = renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts: [] });
+      // One drawing on the label, and it is the Code 128 of the digits.
+      expect(html.match(/<svg\b/g)).toHaveLength(1);
+      expect(html).not.toContain('data-qr');
+      expect(html).not.toContain('data-field="qr"');
+      expect(html).not.toMatch(/class="qr"/);
+      const { svg, value } = sized(html);
+      expect(value).toMatch(/^\d+$/);
+      expect(decodeCode128Svg(svg)).toBe(documentBarcodeValue(data));
+      expect(field(html, 'scan-digits')).toBe(value);
+    }
+  });
+
+  it('leads with the consignment number, in the biggest type on the label (D-917)', () => {
+    const html = renderLabelHtml({ brand: SAMPLE_BRAND, data: SAMPLE_ORDER, fonts: [] });
+    expect(field(html, 'consignment')).toBe('Consignment 127403991');
+    const consignment = consignmentOf(html);
+    expect(consignment.text).toBe('127403991');
+    expect(consignment.element).toContain('class="consignment-no"');
+    // Steadfast's nine digits print at the full 30 pt, bold, on one line.
+    expect(consignment.pt).toBe(LABEL_CONSIGNMENT_PT);
+    expect(consignment.pt).toBeGreaterThanOrEqual(24);
+    expect(/\.consignment-no \{[^}]*font-weight: 700/.test(html)).toBe(true);
+    expect(/\.consignment-no \{[^}]*white-space: nowrap/.test(html)).toBe(true);
+    // Nothing on the label is as large: the cash to collect, the next largest, is a step under.
+    const others = labelSizesPt(html).filter((pt) => pt !== consignment.pt);
+    expect(Math.max(...others)).toBeLessThan(consignment.pt);
+    expect(cssPt(html, '\\.cod-amount \\{[^}]*font-size')).toBeLessThan(consignment.pt);
+    // Its own block, after the brand and courier row and before the order number and the bars.
+    const at = (marker: string) => html.indexOf(marker);
+    expect(at('class="courier"')).toBeLessThan(at('data-field="consignment"'));
+    expect(at('data-field="consignment"')).toBeLessThan(at('data-field="order-no"'));
+    expect(at('data-field="order-no"')).toBeLessThan(at('data-barcode='));
+    // The number is printed once: not again in the footer, which keeps the pieces and the date.
+    expect(html.split('127403991')).toHaveLength(2);
+    expect(field(html, 'foot')).toBe('Pieces 7 Date 11 Oct 2026');
+  });
+
+  it('says "Not booked" in the consignment block, smaller, until the courier books it', () => {
+    const unbooked = [
+      { ...SAMPLE_ORDER, courier: { name: 'Pathao', consignmentNo: null, trackingCode: null } },
+      { ...SAMPLE_ORDER, courier: { name: 'Pathao', consignmentNo: '  ', trackingCode: null } },
+      { ...SAMPLE_ORDER, courier: null },
+    ];
+    for (const data of unbooked) {
+      const html = renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts: [] });
+      expect(field(html, 'consignment')).toBe('Consignment Not booked');
+      const consignment = consignmentOf(html);
+      expect(consignment.text).toBe('Not booked');
+      expect(consignment.element).toContain('class="consignment-none"');
+      // Visible, bold, larger than the body, but not the booked number's size.
+      expect(consignment.pt).toBeGreaterThanOrEqual(14);
+      expect(consignment.pt).toBeLessThan(24);
+      expect(/\.consignment-none \{[^}]*font-weight: 700/.test(html)).toBe(true);
+      expect(field(html, 'foot')).toBe('Pieces 7 Date 11 Oct 2026');
+    }
+  });
+
+  it('fits a long consignment number on one line, smaller only when it has to (D-917)', () => {
+    // Steadfast's consignment ids, eight to ten digits, and twelve: the full size.
+    for (const value of ['12740399', '127403991', '1274039912', '127403991234']) {
+      expect(labelConsignmentPt(value), value).toBe(LABEL_CONSIGNMENT_PT);
+    }
+    // Pathao's fourteen letters and digits: shrunk a little, still over 24 pt.
+    for (const value of ['DL121224VS8TFZ', 'DT081222MXSPRL']) {
+      const pt = labelConsignmentPt(value);
+      expect(pt, value).toBeGreaterThanOrEqual(24);
+      expect(pt, value).toBeLessThan(LABEL_CONSIGNMENT_PT);
+    }
+    // Even counted at Inter's widest glyph, a value made of it fits the label's width; and the
+    // size steps in half points.
+    for (const value of ['W'.repeat(14), 'W'.repeat(20), 'x'.repeat(24), '#'.repeat(30)]) {
+      const pt = labelConsignmentPt(value);
+      expect(value.length * WIDEST_EM * pt, value).toBeLessThanOrEqual(LABEL_ROOM_PT);
+      expect(pt * 2, value).toBe(Math.round(pt * 2));
+    }
+    const long = renderLabelHtml({
+      brand: SAMPLE_BRAND,
+      data: {
+        ...SAMPLE_ORDER,
+        courier: { name: 'Pathao', consignmentNo: 'DL121224VS8TFZ', trackingCode: null },
+      },
+      fonts: [],
+    });
+    expect(consignmentOf(long).text).toBe('DL121224VS8TFZ');
+    expect(consignmentOf(long).pt).toBe(labelConsignmentPt('DL121224VS8TFZ'));
+    // Escaped like every other value on the page.
+    const odd = renderLabelHtml({
+      brand: SAMPLE_BRAND,
+      data: {
+        ...SAMPLE_ORDER,
+        courier: { name: 'Pathao', consignmentNo: '<b>1</b>', trackingCode: null },
+      },
+      fonts: [],
+    });
+    expect(odd).not.toContain('<b>1</b>');
   });
 
   it('says plainly when nothing is to be collected', () => {

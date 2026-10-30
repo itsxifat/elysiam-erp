@@ -115,9 +115,9 @@ export const PACKING_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
     body: { name: 'Matrix', rtspUrl: 'rtsp://192.0.2.10:554/stream1', enabled: false },
   }),
   // M46: terminals, printers, the print queue, lots and the handover (D-800 to D-826). A new
-  // terminal and the auto-print rule are written for real; everything else is asked about a
-  // terminal, printer, job, order or session that does not exist (404 for every admitted role),
-  // and a computer with no binding is refused as not bound.
+  // terminal and the label settings (no effect since D-917) are written for real; everything
+  // else is asked about a terminal, printer, job, order or session that does not exist (404 for
+  // every admitted role), and a computer with no binding is refused as not bound.
   'GET /v1/terminals': () => ({ url: '/v1/terminals' }),
   'POST /v1/terminals': () => ({
     url: '/v1/terminals',

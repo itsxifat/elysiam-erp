@@ -8,6 +8,7 @@ import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
+import { enqueueWith } from '../../platform/jobs/enqueue.js';
 import { JobsRuntime } from '../../platform/jobs/jobs.runtime.js';
 import {
   ORG_A,
@@ -26,7 +27,7 @@ import { makeLocation, seedProductWithSkus, warehouseId } from '../inventory/inv
 import { ORDERS_API } from '../orders/orders.api.js';
 import { applyOrderMigrations, seedCustomer, seedStockLevel } from '../orders/orders.testing.js';
 import { ParcelObserverRegistry } from '../orders/ports/parcel-observer.port.js';
-import { PACKING_QUEUE_DEFINITIONS } from './packing.queues.js';
+import { PACKING_QUEUES, PACKING_QUEUE_DEFINITIONS } from './packing.queues.js';
 import { registerPackingJobs } from './packing.worker.js';
 import { encodePng } from './printers/png.js';
 import type { PrinterTransport } from './printers/transport.js';
@@ -43,7 +44,10 @@ import { PackingVideoService } from './video.service.js';
  * through the real routes; a parcel's booking is the courier's observer call in a transaction,
  * as `BookingService.runBooking` makes it.
  *
- * 1. A booked parcel is queued and printed on its terminal's printer without a click, and logged.
+ * 1. A confirmed order waits in "Ready for label", with its consignment once a booking brings
+ *    one, and nothing prints by itself (D-917, which retired D-817's automatic print); a person
+ *    prints every waiting order at once, one label per order and lot on its terminal's printer,
+ *    and it is logged.
  * 2. A reprint needs a reason; the log says how many times, when, by whom and where.
  * 3. An order in three lots prints three labels and slips; packing refuses Finish until every
  *    lot is closed, and the handover (and a person's Ship) until every lot is scanned.
@@ -70,17 +74,27 @@ interface Sent {
   readonly host: string;
   readonly port: number;
   readonly bytes: Buffer;
-  /** Other connections of this database idle inside a transaction while the bytes went. */
+  /**
+   * Other connections of this database idle inside a transaction that wrote print jobs, while
+   * the bytes went: the print's own transaction left open around the send (invariant 6).
+   */
   readonly idleInTransaction: number;
 }
 const sent: Sent[] = [];
 
+/*
+ * Only a transaction holding a lock on `packing.print_jobs` counts. Counting every connection
+ * idle in a transaction also caught pg-boss's own housekeeping between two of its statements,
+ * which under the whole suite's load made the check fail by chance (D-917's verify run).
+ */
 async function idleInTransaction(): Promise<number> {
   return withGlobal(async (tx) => {
     const [row] = await tx.execute<{ n: number }>(sql`
-      select count(*)::int as n from pg_stat_activity
-      where datname = current_database() and pid <> pg_backend_pid()
-        and state like 'idle in transaction%'
+      select count(distinct a.pid)::int as n
+      from pg_stat_activity a join pg_locks l on l.pid = a.pid
+      where a.datname = current_database() and a.pid <> pg_backend_pid()
+        and a.state like 'idle in transaction%'
+        and l.relation = 'packing.print_jobs'::regclass
     `);
     return row?.n ?? 0;
   });
@@ -196,12 +210,21 @@ async function readyItem(orderId: string): Promise<ReadyView | undefined> {
   return (ready.body.items as ReadyView[]).find((item) => item.orderId === orderId);
 }
 
-/** What packing keeps for the order (D-914): its consignment, or null while it has none. */
-async function labelRow(orderId: string): Promise<{ consignment_no: string | null } | undefined> {
+interface LabelRow extends Record<string, unknown> {
+  readonly consignment_no: string | null;
+  readonly order_no: string;
+  readonly location_id: string | null;
+}
+
+/**
+ * What packing keeps for the order (D-914): its consignment, or null while it has none, and the
+ * order's number and location.
+ */
+async function labelRow(orderId: string): Promise<LabelRow | undefined> {
   const [row] = await withSystem(
     (tx) =>
-      tx.execute<{ consignment_no: string | null }>(sql`
-        select consignment_no from packing.label_orders
+      tx.execute<LabelRow>(sql`
+        select consignment_no, order_no, location_id from packing.label_orders
         where org_id = ${ORG_A} and order_id = ${orderId}
       `),
     { orgId: ORG_A },
@@ -209,13 +232,56 @@ async function labelRow(orderId: string): Promise<{ consignment_no: string | nul
   return row;
 }
 
+/** The order as an order confirmed before D-914 is: no row in "Ready for label" yet. */
+async function dropLabelRow(orderId: string): Promise<void> {
+  await withSystem(
+    (tx) =>
+      tx.execute(sql`
+        delete from packing.label_orders where org_id = ${ORG_A} and order_id = ${orderId}
+      `),
+    { orgId: ORG_A },
+  );
+}
+
 /** Long enough for the worker (polling every half second) to have run anything queued. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 2_500));
 
-/** The brand's automatic printing rule. */
-async function autoPrinting(autoPrint: boolean): Promise<void> {
-  const saved = await call(admin, 'PUT', '/v1/labels/settings', { autoPrint, autoSlip: false });
-  expect(saved.status, saved.text).toBe(200);
+/** `labels.auto_print` jobs ever enqueued for the order: none since D-917. */
+async function autoPrintJobs(orderId: string): Promise<number> {
+  const [row] = await withSystem((tx) =>
+    tx.execute<{ n: number }>(sql`
+      select count(*)::int as n from pgboss.job
+      where name = ${PACKING_QUEUES.autoPrint.name} and data->>'ref' = ${orderId}
+    `),
+  );
+  return row?.n ?? -1;
+}
+
+/** A pg-boss job's state ('created', 'active', 'completed', …), or undefined when there is none. */
+async function bossJobState(jobId: string): Promise<string | undefined> {
+  const [row] = await withSystem((tx) =>
+    tx.execute<{ state: string }>(sql`select state from pgboss.job where id::text = ${jobId}`),
+  );
+  return row?.state;
+}
+
+/** Print every order waiting in "Ready for label" at once, labels only: an agent's release. */
+async function printAllReady(): Promise<{ orderIds: string[]; lots: number; jobs: JobView[] }> {
+  const ready = await call(admin, 'GET', '/v1/labels/ready');
+  expect(ready.status, ready.text).toBe(200);
+  const items = ready.body.items as ReadyView[];
+  expect(items.length).toBeGreaterThan(0);
+  expect(items.length).toBeLessThanOrEqual(100);
+  const printed = await call(admin, 'POST', '/v1/labels/print', {
+    orderIds: items.map((item) => item.orderId),
+    documents: ['label'],
+  });
+  expect(printed.status, printed.text).toBe(200);
+  return {
+    orderIds: items.map((item) => item.orderId),
+    lots: items.reduce((sum, item) => sum + item.lotCount, 0),
+    jobs: printed.body.jobs as JobView[],
+  };
 }
 
 /** When the courier is booked (Settings → Order workflow), for the length of `body`. */
@@ -344,7 +410,7 @@ afterAll(async () => {
   await harness?.close();
 }, 60_000);
 
-describe('auto-print (M46 check 1, D-817, D-914)', () => {
+describe('Ready for label, printed by a person (M46 check 1, D-817, D-914, D-917)', () => {
   it('tells the Labels page when the courier is booked (D-908)', async () => {
     await bookingOn('on_confirm', async () => {
       const settings = await call(admin, 'GET', '/v1/labels/settings');
@@ -352,42 +418,167 @@ describe('auto-print (M46 check 1, D-817, D-914)', () => {
     });
   });
 
-  it('booked on Confirm: waits for the consignment, then prints once with it, without a click', async () => {
+  it('answers that nothing prints by itself, whatever the saved switch says (D-917)', async () => {
     const settings = await call(admin, 'GET', '/v1/labels/settings');
-    // ASSUMED default: on once the brand has a printer.
+    expect(settings.status, settings.text).toBe(200);
     expect(settings.body).toMatchObject({
-      autoPrint: true,
+      autoPrint: false,
       autoPrintSetting: null,
+      autoSlip: false,
       printers: 1,
       courierBooking: 'manual',
     });
+    // The route stays for the clients that still write it: saved and audited, to no effect. It
+    // is left on for the rest of the suite, so every test after this one shows it changes nothing.
+    const saved = await call(admin, 'PUT', '/v1/labels/settings', {
+      autoPrint: true,
+      autoSlip: true,
+    });
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.body).toMatchObject({ autoPrint: false, autoSlip: false });
+    const after = await call(admin, 'GET', '/v1/labels/settings');
+    expect(after.body).toMatchObject({ autoPrint: false, autoPrintSetting: true, autoSlip: false });
+  });
 
+  it('own rider, booked by hand: Confirm and the booking only fill "Ready for label"; one Print releases every waiting order, one label per order and lot', async () => {
+    // A courier party with no account here, under the brand's default of booking by hand.
+    const rider = await makeCourier(ORG_A, 'own_rider', 'Own rider');
+    const before = sent.length;
+    const single = await confirmedOrder(1, { courier: rider });
+    const split = await confirmedOrder(2, { courier: rider });
+    // The second goes in two bags: two lots, so two labels.
+    const lots = await call(packer, 'PUT', `/v1/packing/orders/${split.id}/lots`, { count: 2 });
+    expect(lots.status, lots.text).toBe(200);
+
+    // Confirmed: in "Ready for label" with no consignment yet, and nothing printed or queued.
+    for (const [order, lotCount] of [
+      [single, 1],
+      [split, 2],
+    ] as const) {
+      expect(await readyItem(order.id)).toMatchObject({
+        orderNo: order.orderNo,
+        consignmentNo: null,
+        courier: null,
+        lotCount,
+        labelsPrinted: 0,
+      });
+      expect(await labelRow(order.id)).toEqual({
+        consignment_no: null,
+        order_no: order.orderNo,
+        location_id: location,
+      });
+    }
+    await settle();
+    for (const order of [single, split]) {
+      expect(await jobsOf(order.id)).toEqual([]);
+      expect(await autoPrintJobs(order.id)).toBe(0);
+    }
+
+    // Booked by hand afterwards: the row gains the consignment, and still nothing prints.
+    const consignmentNo = await booked(single.id);
+    expect(await labelRow(single.id)).toMatchObject({ consignment_no: consignmentNo });
+    expect(await readyItem(single.id)).toMatchObject({ consignmentNo, labelsPrinted: 0 });
+    await settle();
+    expect(await jobsOf(single.id)).toEqual([]);
+    expect(await autoPrintJobs(single.id)).toBe(0);
+    expect(sent.length).toBe(before);
+
+    // An agent releases the queue: one Print of every waiting order, labels only.
+    const released = await printAllReady();
+    expect(released.orderIds).toEqual(expect.arrayContaining([single.id, split.id]));
+    expect(released.jobs).toHaveLength(released.lots);
+    for (const job of released.jobs) {
+      expect(job).toMatchObject({
+        document: 'label',
+        source: 'manual',
+        requestedBy: { id: admin.userId },
+      });
+    }
+    // Exactly one job per order and lot.
+    const keys = released.jobs.map(
+      (job) => `${job.orderId ?? ''}:${String(job.lot)}/${String(job.lotCount)}`,
+    );
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toEqual(
+      expect.arrayContaining([`${single.id}:1/1`, `${split.id}:1/2`, `${split.id}:2/2`]),
+    );
+
+    for (const orderId of released.orderIds) {
+      await until(async () => (await jobsOf(orderId)).every((job) => job.state === 'printed'));
+      // No slip was asked for, and none printed.
+      expect((await jobsOf(orderId)).map((job) => job.document)).not.toContain('packing_slip');
+    }
+    const singleLog = await jobsOf(single.id);
+    expect(singleLog).toHaveLength(1);
+    expect(singleLog[0]).toMatchObject({
+      document: 'label',
+      lot: 1,
+      lotCount: 1,
+      source: 'manual',
+      state: 'printed',
+      consignmentNo,
+      terminal: { id: labelTerminalId, name: 'Label 1' },
+      printer: { id: labelPrinterId },
+    });
+    expect(
+      (await jobsOf(split.id))
+        .map((job) => `${job.document}:${String(job.lot)}/${String(job.lotCount)}:${job.source}`)
+        .sort(),
+    ).toEqual(['label:1/2:manual', 'label:2/2:manual']);
+    // One page on the wire per order and lot, to the label terminal's printer. (Sent side by
+    // side, each one's probe can catch another's short transaction, so the "no transaction open
+    // while sending" check is the single print's, in the next test.)
+    const wire = sent.slice(before);
+    expect(wire).toHaveLength(released.lots);
+    for (const page of wire) {
+      expect(page.host).toBe('192.168.250.10');
+      expect(page.port).toBe(9100);
+    }
+
+    // Printed, the orders moved on at the hub: out of "Ready for label", into "To pack".
+    expect(await readyItem(single.id)).toBeUndefined();
+    expect(await readyItem(split.id)).toBeUndefined();
+    const toPack = await call(admin, 'GET', '/v1/orders?queue=hub_packing&limit=100');
+    expect((toPack.body.items as { id: string }[]).map((item) => item.id)).toEqual(
+      expect.arrayContaining([single.id, split.id]),
+    );
+  });
+
+  it('booked on Confirm: the consignment comes back and the order waits, unprinted, until a person prints it', async () => {
     await bookingOn('on_confirm', async () => {
-      // The suite's courier has an account: the Confirm queues its booking (D-901), so the label
-      // waits for the consignment. The order is ready for its label already, not booked yet.
+      // The suite's courier has an account: the Confirm queues its booking (D-901). The order
+      // is ready for its label already, not booked yet.
       const order = await confirmedOrder();
       expect(await readyItem(order.id)).toMatchObject({
         orderNo: order.orderNo,
         consignmentNo: null,
       });
-      expect(await labelRow(order.id)).toEqual({ consignment_no: null });
+      expect(await labelRow(order.id)).toMatchObject({ consignment_no: null });
+
+      // The row gains its consignment in the booking's transaction; nothing prints.
+      const consignmentNo = await booked(order.id);
+      expect(await labelRow(order.id)).toMatchObject({ consignment_no: consignmentNo });
       await settle();
       expect(await jobsOf(order.id)).toEqual([]);
+      expect(await autoPrintJobs(order.id)).toBe(0);
+      expect(await readyItem(order.id)).toMatchObject({ consignmentNo, labelsPrinted: 0 });
 
+      // A person prints it: the label carries the consignment, on the label terminal's printer.
       const before = sent.length;
-      const consignmentNo = await booked(order.id);
-      // The row gains its consignment in the booking's transaction.
-      expect(await labelRow(order.id)).toEqual({ consignment_no: consignmentNo });
+      const printed = await call(packer, 'POST', '/v1/labels/print', {
+        orderIds: [order.id],
+        documents: ['label'],
+      });
+      expect(printed.status, printed.text).toBe(200);
       await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
-
       const log = await jobsOf(order.id);
       expect(log).toHaveLength(1);
       expect(log[0]).toMatchObject({
         document: 'label',
         lot: 1,
         lotCount: 1,
-        source: 'auto',
-        requestedBy: null,
+        source: 'manual',
+        requestedBy: { id: packer.userId },
         state: 'printed',
         consignmentNo,
         terminal: { id: labelTerminalId, name: 'Label 1' },
@@ -401,78 +592,20 @@ describe('auto-print (M46 check 1, D-817, D-914)', () => {
       // Check 5's second half: nothing of this database waited in a transaction while it went.
       expect(wire[0]?.idleInTransaction).toBe(0);
 
-      // The same booking delivered again, a confirm's run with no consignment and a later
-      // booking of the same order each queue nothing new (the rule's key, then "printed").
-      await printing.autoPrint(ORG_A, { orderId: order.id, consignmentNo });
-      await printing.autoPrint(ORG_A, { orderId: order.id, consignmentNo: null });
+      // A later booking of the same order prints nothing either.
       await booked(order.id);
       await settle();
       expect(await jobsOf(order.id)).toHaveLength(1);
-
-      // Printed, the order moved on at the hub: out of "Ready for label", into "To pack".
       expect(await readyItem(order.id)).toBeUndefined();
-      const toPack = await call(admin, 'GET', '/v1/orders?queue=hub_packing&limit=100');
-      expect((toPack.body.items as { id: string }[]).map((item) => item.id)).toContain(order.id);
     });
   });
 
-  it('an own rider’s order, booked by hand: ready on Confirm with no consignment, printed at once', async () => {
-    // A courier party with no account here, under the brand's default of booking by hand: no
-    // booking job ever brings a consignment back, which is what left these orders unprinted.
-    const rider = await makeCourier(ORG_A, 'own_rider', 'Own rider');
-
-    // With automatic printing off, the order waits in "Ready for label" from its Confirm.
-    await autoPrinting(false);
-    const waiting = await confirmedOrder(1, { courier: rider });
-    expect(await readyItem(waiting.id)).toMatchObject({
-      orderNo: waiting.orderNo,
-      consignmentNo: null,
-      courier: null,
-      lotCount: 1,
-      labelsPrinted: 0,
-    });
-    await settle();
-    expect(await jobsOf(waiting.id)).toEqual([]);
-
-    // With it on, the next one prints on the label terminal's printer without a click.
-    await autoPrinting(true);
-    const order = await confirmedOrder(1, { courier: rider });
-    await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
-    const log = await jobsOf(order.id);
-    expect(log).toHaveLength(1);
-    expect(log[0]).toMatchObject({
-      document: 'label',
-      lot: 1,
-      source: 'auto',
-      requestedBy: null,
-      state: 'printed',
-      consignmentNo: null,
-      terminal: { id: labelTerminalId },
-      printer: { id: labelPrinterId },
-    });
-    expect(await readyItem(order.id)).toBeUndefined();
-
-    // Booked by hand afterwards: the row gains the consignment and nothing prints twice; a
-    // second confirm's run does not either.
-    const consignmentNo = await booked(order.id);
-    expect(await labelRow(order.id)).toEqual({ consignment_no: consignmentNo });
-    await printing.autoPrint(ORG_A, { orderId: order.id, consignmentNo: null });
-    await settle();
-    expect(await jobsOf(order.id)).toHaveLength(1);
-  });
-
-  it('booked by hand with a courier that has an account: ready on Confirm, printed once with the consignment after Book now', async () => {
-    // The brands with a courier account that book by hand (D-914 review): a label printed on
-    // Confirm would stop the one automatic print, so it waits for the consignment Book now brings.
-    await autoPrinting(true);
+  it('booked by hand with a courier that has an account: Book now brings the consignment, and nothing prints', async () => {
     const order = await confirmedOrder();
     expect(await readyItem(order.id)).toMatchObject({
       orderNo: order.orderNo,
       consignmentNo: null,
     });
-    expect(await labelRow(order.id)).toEqual({ consignment_no: null });
-    await settle();
-    expect(await jobsOf(order.id)).toEqual([]);
 
     // The desk's Book now queues the booking (the real route); nothing prints while it is out.
     const bookNow = await call(admin, 'POST', '/v1/courier/parcels', { orderId: order.id });
@@ -480,26 +613,38 @@ describe('auto-print (M46 check 1, D-817, D-914)', () => {
     await settle();
     expect(await jobsOf(order.id)).toEqual([]);
 
-    // The booking comes back: the row gains the consignment, and one automatic label carries it.
+    // The booking comes back: the row gains the consignment, and the order still waits.
     const consignmentNo = await booked(order.id);
-    expect(await labelRow(order.id)).toEqual({ consignment_no: consignmentNo });
-    await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
-    const log = await jobsOf(order.id);
-    expect(log).toHaveLength(1);
-    expect(log[0]).toMatchObject({
-      document: 'label',
-      source: 'auto',
-      state: 'printed',
-      consignmentNo,
-      terminal: { id: labelTerminalId },
-      printer: { id: labelPrinterId },
-    });
+    expect(await labelRow(order.id)).toMatchObject({ consignment_no: consignmentNo });
+    await settle();
+    expect(await jobsOf(order.id)).toEqual([]);
+    expect(await autoPrintJobs(order.id)).toBe(0);
+    expect(await readyItem(order.id)).toMatchObject({ consignmentNo, labelsPrinted: 0 });
+  });
+
+  it('a booking for an order with no row yet (confirmed before D-914) lists it with its number and location', async () => {
+    const order = await confirmedOrder();
+    await dropLabelRow(order.id);
     expect(await readyItem(order.id)).toBeUndefined();
+    const consignmentNo = await booked(order.id);
+    expect(await labelRow(order.id)).toEqual({
+      consignment_no: consignmentNo,
+      order_no: order.orderNo,
+      location_id: location,
+    });
+    expect(await readyItem(order.id)).toMatchObject({
+      orderNo: order.orderNo,
+      consignmentNo,
+      labelsPrinted: 0,
+    });
+    await settle();
+    expect(await jobsOf(order.id)).toEqual([]);
   });
 
   it('an order with no location prints at a label terminal that stands at a location', async () => {
     // The brand's shape: the label terminal is at the hub, the desk's orders name no location and
-    // go with an own rider (no account here), so the label prints on Confirm.
+    // go with an own rider (no account here). Printed with no printer or terminal named, the
+    // order's label goes to that terminal.
     const rider = await makeCourier(ORG_A, 'own_rider', 'Own rider');
     const moved = await call(admin, 'PUT', `/v1/terminals/${labelTerminalId}`, {
       name: 'Label 1',
@@ -508,15 +653,22 @@ describe('auto-print (M46 check 1, D-817, D-914)', () => {
     });
     expect(moved.status, moved.text).toBe(200);
     try {
-      await autoPrinting(true);
       const order = await confirmedOrder(1, { courier: rider, location: null });
       const detail = await call(admin, 'GET', `/v1/orders/${order.id}`);
       expect(detail.body.locationId).toBeNull();
+      expect(await readyItem(order.id)).toMatchObject({ orderNo: order.orderNo });
+      await settle();
+      expect(await jobsOf(order.id)).toEqual([]);
+      const printed = await call(admin, 'POST', '/v1/labels/print', {
+        orderIds: [order.id],
+        documents: ['label'],
+      });
+      expect(printed.status, printed.text).toBe(200);
       await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
       const log = await jobsOf(order.id);
       expect(log).toHaveLength(1);
       expect(log[0]).toMatchObject({
-        source: 'auto',
+        source: 'manual',
         consignmentNo: null,
         terminal: { id: labelTerminalId },
         printer: { id: labelPrinterId },
@@ -532,25 +684,18 @@ describe('auto-print (M46 check 1, D-817, D-914)', () => {
   });
 
   it('a cancelled order leaves "Ready for label"', async () => {
-    await autoPrinting(false);
-    try {
-      const order = await confirmedOrder();
-      expect(await readyItem(order.id)).toMatchObject({ consignmentNo: null });
-      const cancelled = await call(admin, 'POST', `/v1/orders/${order.id}/cancel`, {
-        reason: 'Buyer changed their mind',
-      });
-      expect(cancelled.status, cancelled.text).toBeLessThan(300);
-      expect(await readyItem(order.id)).toBeUndefined();
-    } finally {
-      await autoPrinting(true);
-    }
+    const order = await confirmedOrder();
+    expect(await readyItem(order.id)).toMatchObject({ consignmentNo: null });
+    const cancelled = await call(admin, 'POST', `/v1/orders/${order.id}/cancel`, {
+      reason: 'Buyer changed their mind',
+    });
+    expect(cancelled.status, cancelled.text).toBeLessThan(300);
+    expect(await readyItem(order.id)).toBeUndefined();
   });
 
-  it('a booking that fails for good prints the label without a consignment', async () => {
+  it('a booking that fails for good keeps the order ready without a consignment, unprinted', async () => {
     await bookingOn('on_confirm', async () => {
       const order = await confirmedOrder();
-      await settle();
-      expect(await jobsOf(order.id)).toEqual([]);
       const [parcel] = await withSystem(
         (tx) =>
           tx.execute<{ id: string }>(sql`
@@ -559,17 +704,50 @@ describe('auto-print (M46 check 1, D-817, D-914)', () => {
         { orgId: ORG_A },
       );
       expect(parcel).toBeDefined();
+      // As an order confirmed before D-914: the failure lists it, with its number and location.
+      await dropLabelRow(order.id);
       // What the dead-letter handler and a refusal no retry can change both call (D-914).
       await harness.app.get(BookingService, { strict: false }).reportBookingFailed({
         orgId: ORG_A,
         consignmentId: parcel?.id ?? '',
         code: 'COURIER_REJECTED',
       });
-      await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
-      const log = await jobsOf(order.id);
-      expect(log).toHaveLength(1);
-      expect(log[0]).toMatchObject({ source: 'auto', consignmentNo: null, state: 'printed' });
+      expect(await labelRow(order.id)).toEqual({
+        consignment_no: null,
+        order_no: order.orderNo,
+        location_id: location,
+      });
+      expect(await readyItem(order.id)).toMatchObject({
+        orderNo: order.orderNo,
+        consignmentNo: null,
+        labelsPrinted: 0,
+      });
+      await settle();
+      expect(await jobsOf(order.id)).toEqual([]);
+      expect(await autoPrintJobs(order.id)).toBe(0);
     });
+  });
+
+  it('a job left in labels.auto_print from before D-917 completes without printing', async () => {
+    const runtime = jobs;
+    if (runtime === undefined) throw new Error('no jobs runtime');
+    const order = await confirmedOrder();
+    const before = sent.length;
+    // What the confirm enqueued before D-917, still waiting on a live server at the deploy.
+    const jobId = await withOrg({ orgId: ORG_A, userId: 'usr_labels_test' }, (tx) =>
+      enqueueWith(
+        runtime,
+        tx,
+        PACKING_QUEUES.autoPrint.name,
+        { orderId: order.id, consignmentNo: null },
+        { orgId: ORG_A, ref: order.id },
+      ),
+    );
+    expect(jobId).not.toBeNull();
+    await until(async () => (await bossJobState(jobId ?? '')) === 'completed');
+    expect(await jobsOf(order.id)).toEqual([]);
+    expect(sent.length).toBe(before);
+    expect(await readyItem(order.id)).toMatchObject({ orderNo: order.orderNo, labelsPrinted: 0 });
   });
 });
 
@@ -577,6 +755,12 @@ describe('reprints and the log (M46 check 2, D-818)', () => {
   it('asks for a reason, then logs how many times, when, by whom and where', async () => {
     const order = await confirmedOrder();
     await booked(order.id);
+    // The first print is a person's too (D-917).
+    const first = await call(admin, 'POST', '/v1/labels/print', {
+      orderIds: [order.id],
+      documents: ['label'],
+    });
+    expect(first.status, first.text).toBe(200);
     await until(async () => (await jobsOf(order.id)).some((job) => job.state === 'printed'));
 
     const refused = await call(packer, 'POST', '/v1/labels/print', {
@@ -602,7 +786,11 @@ describe('reprints and the log (M46 check 2, D-818)', () => {
       last: { by: 'warehouse', auto: false, terminal: 'Label 1' },
     });
     const log = await jobsOf(order.id);
-    expect(log.map((job) => job.source).sort()).toEqual(['auto', 'reprint']);
+    expect(log.map((job) => job.source).sort()).toEqual(['manual', 'reprint']);
+    expect(log.find((job) => job.source === 'manual')).toMatchObject({
+      reason: null,
+      requestedBy: { id: admin.userId },
+    });
     expect(log.find((job) => job.source === 'reprint')).toMatchObject({
       reason: 'Label torn at the table',
       requestedBy: { id: packer.userId },
@@ -612,22 +800,18 @@ describe('reprints and the log (M46 check 2, D-818)', () => {
     expect(csv.status).toBe(200);
     expect(csv.text).toContain('Label torn at the table');
     expect(csv.text.split('\r\n')[0]).toContain('requested_by');
-    expect(csv.text).toContain(',auto,');
+    expect(csv.text).toContain(',manual,');
+    expect(csv.text).toContain(',reprint,');
   });
 });
 
 describe('lots (M46 check 3, D-805 to D-808)', () => {
   it('prints three slips and labels, and refuses packing and handover until every lot is done', async () => {
-    const off = await call(admin, 'PUT', '/v1/labels/settings', {
-      autoPrint: false,
-      autoSlip: false,
-    });
-    expect(off.status, off.text).toBe(200);
     const order = await confirmedOrder(3);
     const lots = await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: 3 });
     expect(lots.status, lots.text).toBe(200);
     await booked(order.id);
-    // Auto-print is off: the order waits in "Ready for label", three lots unprinted.
+    // Nothing prints by itself (D-917): the order waits in "Ready for label", three lots unprinted.
     await until(async () => {
       const ready = await call(packer, 'GET', '/v1/labels/ready');
       return (ready.body.items as { orderId: string }[]).some((item) => item.orderId === order.id);
@@ -785,11 +969,6 @@ describe('the digits-only codes (D-912)', () => {
   const hand = (code: string) => call(packer, 'POST', '/v1/packing/handover/scans', { code });
 
   it('counts each lot from its twelve digits at the handover and ships when the last is scanned', async () => {
-    const off = await call(admin, 'PUT', '/v1/labels/settings', {
-      autoPrint: false,
-      autoSlip: false,
-    });
-    expect(off.status, off.text).toBe(200);
     const order = await confirmedOrder(2);
     await booked(order.id);
     const digits = orderScanCode(order.orderNo) ?? '';
@@ -912,11 +1091,6 @@ describe('the digits-only codes (D-912)', () => {
   });
 
   it('finds the order’s prints in the Labels log from the digits a scanner types', async () => {
-    const off = await call(admin, 'PUT', '/v1/labels/settings', {
-      autoPrint: false,
-      autoSlip: false,
-    });
-    expect(off.status, off.text).toBe(200);
     const order = await confirmedOrder();
     const other = await confirmedOrder();
     for (const each of [order, other]) {
@@ -1249,7 +1423,6 @@ describe('after the ledger audit (W1 to W4, N7)', () => {
   });
 
   it('W3: a second press of Print before the first prints is a reprint and needs a reason', async () => {
-    await call(admin, 'PUT', '/v1/labels/settings', { autoPrint: false, autoSlip: false });
     const order = await confirmedOrder();
     const first = await call(packer, 'POST', '/v1/labels/print', {
       orderIds: [order.id],

@@ -55,12 +55,14 @@ const en = {
   'lb.col.waiting': 'Waiting since',
   'lb.col.items': 'Items',
 
+  'lb.ready.lead':
+    'Confirmed orders wait here until someone prints their labels. Nothing prints by itself: Print all labels prints every order listed at once.',
   'lb.ready.empty': 'Nothing is waiting for a label',
-  'lb.ready.emptyDetail': 'An order shows here once it is confirmed.',
+  'lb.ready.emptyDetail': 'A confirmed order waits here until its label is printed.',
   'lb.ready.notBooked': 'Not booked yet',
-  'lb.ready.printLabels': 'Print labels',
-  'lb.ready.printBoth': 'Print labels and slips',
-  'lb.ready.queued': 'print jobs queued',
+  'lb.ready.printAll': 'Print all labels',
+  'lb.ready.printSelected': 'Print selected',
+  'lb.ready.queued': 'labels queued',
 
   'lb.lots.title': 'Lots',
   'lb.lots.set': 'Set lots',
@@ -118,6 +120,8 @@ const en = {
   'lb.printers.emptyDetail':
     'Add the label desk’s printer: a thermal label printer on the shop’s network, an office printer, or this browser.',
   'lb.printers.noTerminal': 'Add a terminal first (Terminals tab): every printer sits at one.',
+  'lb.printers.howToPrint':
+    'Nothing prints by itself. Labels print from Ready for label → Print all labels.',
   'lb.printer.edit': 'Edit printer',
   'lb.printer.name': 'Name',
   'lb.printer.terminal': 'Terminal',
@@ -161,12 +165,6 @@ const en = {
   'lb.printer.state.error': 'Error',
   'lb.printer.state.unknown': 'Not checked yet',
   'lb.printer.state.off': 'Off',
-
-  'lb.settings.title': 'Automatic printing',
-  'lb.settings.autoPrint':
-    'Print each lot’s label as soon as an order is confirmed (when the courier is booked on Confirm, once its consignment comes back)',
-  'lb.settings.autoSlip': 'Print the packing slip with it',
-  'lb.settings.default': 'On by default once the brand has a printer.',
 
   'lb.terminals.add': 'Add terminal',
   'lb.terminals.empty': 'No terminals yet',

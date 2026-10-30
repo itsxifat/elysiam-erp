@@ -1,4 +1,4 @@
-import { TERMINAL_DEVICE_HEADER, type CourierBookingPolicy } from '@elysium/contracts';
+import { TERMINAL_DEVICE_HEADER } from '@elysium/contracts';
 
 import { api, request } from '../../api.js';
 import { env } from '../../env.js';
@@ -177,20 +177,6 @@ export const updatePrinter = (id: string, input: PrinterInput) =>
   api.put<Printer>(`/v1/labels/printers/${id}`, input);
 export const deletePrinter = (id: string) => api.delete(`/v1/labels/printers/${id}`);
 export const testPrint = (id: string) => api.post(`/v1/labels/printers/${id}/test`);
-
-export interface LabelSettings {
-  readonly autoPrint: boolean;
-  readonly autoPrintSetting: boolean | null;
-  readonly autoSlip: boolean;
-  readonly printers: number;
-  /** When the courier is booked (D-908). A label prints on Confirm either way (D-914). */
-  readonly courierBooking: CourierBookingPolicy;
-  readonly canEdit: boolean;
-}
-
-export const labelSettings = () => api.get<LabelSettings>('/v1/labels/settings');
-export const saveLabelSettings = (input: { autoPrint: boolean; autoSlip: boolean }) =>
-  api.put('/v1/labels/settings', input);
 
 // --- the queue and the log -------------------------------------------------------------------
 

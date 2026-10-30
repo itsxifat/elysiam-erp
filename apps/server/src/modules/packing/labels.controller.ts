@@ -61,8 +61,10 @@ const NO_ROWS = 'printers and the auto-print rule are the hub’s, not an order�
 /**
  * Labels over HTTP (M46, D-810 to D-819).
  *
- * - The printers and the brand's auto-print rule: `read PackingTerminal` to see them, `create`
+ * - The printers and the brand's label settings: `read PackingTerminal` to see them, `create`
  *   and `update PackingTerminal` (the hub's supervisors) to change them and print a test page.
+ * - Printing an order is always a person's request (D-917): `POST /print` takes up to 100 orders,
+ *   which is how everything waiting in "Ready for label" is printed in one go.
  * - Printing an order, the queue, the log and its CSV, retrying and cancelling: `update Order`,
  *   the hub's own grant (§6: the warehouse org-wide), with the caller's scope applied to every
  *   order before it is read or printed. The order page's print record is `read Order`.
@@ -76,6 +78,10 @@ export class LabelsController {
     private readonly printers: PrintersService,
   ) {}
 
+  /*
+   * D-917: automatic printing is retired. Both settings routes stay for compatibility: GET
+   * answers `autoPrint: false`, and PUT still saves and audits the switch, to no effect.
+   */
   @RequireAbility('read', 'PackingTerminal')
   @Get('settings')
   async settings(@Req() request: FastifyRequest) {

@@ -110,7 +110,6 @@ export {
   PRINT_MAX_ATTEMPTS,
   PRINT_SENDING_STALE_MS,
   STATION_SEEN_MS,
-  autoPrintOn,
   isOpenPrintJob,
   isReprint,
   ordersPerHour,

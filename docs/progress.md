@@ -3875,3 +3875,27 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
   module and domain courier suites 309 passed, 1 skipped (the live sandbox smoke test without
   keys). Typecheck and lint: PASS.
 - **New dependencies:** none. **Migration:** none.
+
+## 2026-10-30 · fix · labels print when someone releases the queue; the consignment number leads the label
+
+- **Decision:** D-917. The owner: the label printer was printing slips (Elysium's automatic
+  rule printed the label and, with `auto_slip` on, the packing slip for every confirmed order),
+  the consignment number must be the label's biggest text, the QR code goes, and nothing prints
+  by itself: confirmed orders wait in the queue until an agent prints them all.
+- **Server:** Confirm, a booking and a failed booking only keep the order in Ready for label
+  (the row now fills its order number and location itself, `fillFromOrder`); `labels.auto_print`
+  is never enqueued and a job left in it completes without printing; the label settings route
+  answers `autoPrint` false. `POST /v1/labels/print` with `['label']` is how the queue is
+  released.
+- **Console:** Ready for label has **Print all labels (N)** and **Print selected** (labels
+  only); the label-and-slip button and the Automatic printing card are gone.
+- **Label:** no QR code; the consignment number in its own block under the brand and courier,
+  bold, up to 30 pt (`labelConsignmentPt` sizes it from Inter Bold's widths so a 14-character
+  Pathao number fits), "Not booked" when there is none; the digits-only bars below; the cash
+  amount 24 pt. One page in the worst case (two-line name, clamped address, lot 12 of 20).
+- **Tests:** `labels.e2e.test.ts` 27, packing and domain 111, handover and workflow 40, route
+  matrix 2, courier db 85, `order-documents.test.ts` 28, `render.gotenberg.test.ts` 5,
+  `documents-review.test.ts` 3, `pack-station.e2e.test.ts` 22, console labels 9: all passed.
+- **Follow-up:** `transitions.service.ts` still works out `awaitingConsignment` at Confirm
+  (a lookup nothing needs since D-917); remove it with the port field.
+- **New dependencies:** none. **Migration:** none.

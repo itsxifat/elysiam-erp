@@ -587,25 +587,25 @@ export interface JobInsert {
   readonly lotCount: number;
   readonly printerId: string;
   readonly terminalId: string;
-  readonly source: 'auto' | 'manual' | 'reprint' | 'test';
+  /** Never `auto` again (D-917): the log keeps the automatic prints from before, written then. */
+  readonly source: 'manual' | 'reprint' | 'test';
   readonly reason: string | null;
-  readonly requestedBy: string | null;
+  /** A person asks for every print now (D-917); `auto_key` stays null, as it must without `auto`. */
+  readonly requestedBy: string;
   readonly copies: number;
   readonly consignmentNo: string | null;
-  readonly autoKey: string | null;
 }
 
-/** A job, or nothing when the auto-print rule already queued this one (its key). */
+/** A job a person asked for, written in the caller's transaction. */
 export async function insertJob(tx: Tx, input: JobInsert): Promise<JobRow | undefined> {
   const rows = await tx.execute<JobRow>(sql`
     insert into packing.print_jobs
       (org_id, order_id, order_no, document, lot_no, lot_count, printer_id, terminal_id, source,
-       reason, requested_by, copies, consignment_no, auto_key)
+       reason, requested_by, copies, consignment_no)
     values (${input.orgId}, ${input.orderId}::uuid, ${input.orderNo}, ${input.document},
             ${input.lotNo}, ${input.lotCount}, ${input.printerId}, ${input.terminalId},
             ${input.source}, ${input.reason}, ${input.requestedBy}, ${input.copies},
-            ${input.consignmentNo}, ${input.autoKey})
-    on conflict (org_id, auto_key) do nothing
+            ${input.consignmentNo})
     returning ${JOB_COLUMNS}
   `);
   return rows[0];
@@ -763,7 +763,7 @@ export async function queuedJobsOfPrinter(
   return [...rows];
 }
 
-/** Jobs queued or sending on each terminal: the queue the auto-print rule balances (D-817). */
+/** Jobs queued or sending on each terminal: the queue an order's own printer balances (D-817). */
 export async function openJobsByTerminal(tx: Tx, orgId: string): Promise<Map<string, number>> {
   const rows = await tx.execute<{ terminal_id: string; n: number }>(sql`
     select terminal_id, count(*)::int as n from packing.print_jobs
@@ -924,8 +924,9 @@ export async function printedCounts(
   );
 }
 
-// --- the auto-print rule and the orders ready for a label (D-817) -------------------------------
+// --- the label settings and the orders ready for a label (D-817) --------------------------------
 
+/** The brand's saved switches: kept for compatibility, with no effect since D-917. */
 export interface LabelSettingsRow extends Record<string, unknown> {
   readonly auto_print: boolean | null;
   readonly auto_slip: boolean;
@@ -1015,7 +1016,7 @@ export async function upsertReadyOrder(
 
 /**
  * The order is ready for its label, when it is not listed already (D-914: its booking failed).
- * Its number and location are filled by the automatic print, which reads the order.
+ * Its number and location are filled from the order next (`fillLabelOrder`).
  */
 export async function ensureLabelOrder(
   tx: Tx,
@@ -1028,6 +1029,7 @@ export async function ensureLabelOrder(
   `);
 }
 
+/** The row's order number and location, as the orders module has them now. */
 export async function fillLabelOrder(
   tx: Tx,
   input: {

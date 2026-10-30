@@ -32,11 +32,10 @@ export const PACKING_QUEUES = {
     expireInSeconds: 600,
   },
   /**
-   * M46 (D-817, D-914): an order is ready for its label; print each lot's parcel label (and its
-   * slip, if the brand asks) on the label terminal for its location. Enqueued in the confirm's
-   * transaction (unless a consignment is on its way), in the courier's booking transaction, and
-   * when a booking fails for good. Idempotent: each job has its key (order, consignment or
-   * `none`, document, lot), and a lot already printed or queued is not printed again.
+   * Retired (D-917). It printed an order's labels (and slips) by itself once the order was
+   * confirmed or booked (D-817, D-914); nothing prints by itself now, and nothing enqueues here.
+   * Kept declared and worked so the jobs still sitting in it on a live server when D-917 is
+   * deployed are completed without printing, and the queue checks see the same set of queues.
    */
   autoPrint: {
     name: 'labels.auto_print',
@@ -74,12 +73,6 @@ export interface CameraCutPayload {
   readonly sessionId: string;
   /** M46 (D-804): one of the session's other cameras; absent cuts its first camera. */
   readonly cameraId?: string;
-}
-
-/** M46: an order's parcel was booked, or (D-914, null) the order is ready with none. */
-export interface AutoPrintPayload {
-  readonly orderId: string;
-  readonly consignmentNo: string | null;
 }
 
 /** M46: one print job to send. */

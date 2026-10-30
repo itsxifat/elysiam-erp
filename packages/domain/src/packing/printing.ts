@@ -80,11 +80,6 @@ export function pickTerminal(candidates: readonly TerminalCandidate[]): Terminal
   return best;
 }
 
-/** The brand's auto-print rule (D-817, ASSUMED): its own switch, or on once a printer exists. */
-export function autoPrintOn(setting: boolean | null, printers: number): boolean {
-  return setting ?? printers > 0;
-}
-
 export type PrinterState = 'online' | 'offline' | 'error' | 'unknown';
 
 /** Whether a printer can take a job now, from its last probe or its station's check-in. */

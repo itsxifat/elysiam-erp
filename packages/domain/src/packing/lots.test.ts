@@ -14,7 +14,7 @@ import {
   parseLotCode,
   piecesByLot,
 } from './index.js';
-import { autoPrintOn, ordersPerHour, pickTerminal, printJobAfter, printSummary } from './index.js';
+import { ordersPerHour, pickTerminal, printJobAfter, printSummary } from './index.js';
 
 /**
  * M46's lot rules (D-805 to D-808) and the print queue's (D-813 to D-819), as properties: a lot
@@ -270,13 +270,6 @@ describe('the print queue (D-813, D-817, D-818)', () => {
     expect(printJobAfter('printed', 'cancel')).toBeNull();
     expect(printJobAfter('cancelled', 'retry')).toBeNull();
     expect(printJobAfter('queued', 'cancel')).toBe('cancelled');
-  });
-
-  it('auto-prints by the brand’s switch, or once a printer exists', () => {
-    expect(autoPrintOn(null, 0)).toBe(false);
-    expect(autoPrintOn(null, 1)).toBe(true);
-    expect(autoPrintOn(false, 3)).toBe(false);
-    expect(autoPrintOn(true, 0)).toBe(true);
   });
 
   it('counts the printed jobs only and names the newest', () => {
