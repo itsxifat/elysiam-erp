@@ -3914,10 +3914,17 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
 - **Console:** the delivery record panel on the order desk and the order page; Settings →
   Couriers' Check connection and the three-step Live parcel updates (full URL, a token made
   here, Copy, whether updates arrive); the webhook fields gone from Advanced.
-- **Tests:** domain `delivery-record.test.ts` 4 (one property); `courier.adapter.test.ts` 23
-  and 1 skipped (the live smoke test without keys); `connections.e2e.test.ts` 20 (record,
-  half-hour reuse, balance, the payout notice answered and not stored, the last update); console
-  `couriers-page.test.tsx` 11. Every courier suite: 319 passed, 1 skipped, 1 failed that fails
-  on the base too (`GET /v1/courier/labels` needs Gotenberg, not running here). Typecheck, lint,
-  `check:i18n`, `check:routes` and `check:api-client`: PASS.
+- **Ledger audit:** one critical and two warnings, all fixed before landing. C1: the record
+  answered 500 to sales, branch managers and resellers (their `own`/`branch` customer scope hit
+  the scope backstop); the route now declares no row dimension and resellers are refused. W2:
+  any number could be looked up unrecorded; each courier call now spends a per-user and
+  per-brand hourly budget and writes an audit row with the phone masked. W3: a status update
+  with an unreadable status was skipped silently; it is refused again.
+- **Tests:** domain `delivery-record.test.ts` 4 (one property); `courier.adapter.test.ts` 24
+  and 1 skipped (the live smoke test without keys); `connections.e2e.test.ts` 23 (record,
+  half-hour reuse, the audit row, a sales agent served and a reseller refused, the budget,
+  balance, the payout notice answered and not stored, the last update); console
+  `couriers-page.test.tsx` 11; `route-matrix.e2e.test.ts` 2 (every route as every role, with
+  Gotenberg up). Every courier suite: 334 passed, 1 skipped. Typecheck, lint, `check:i18n`,
+  `check:routes`, `check:api-client` and `check:bundle` (248.5 of 250 KB): PASS.
 - **New dependencies:** none. **Migration:** none.

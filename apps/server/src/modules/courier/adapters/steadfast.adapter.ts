@@ -354,12 +354,16 @@ export class SteadfastCourierAdapter implements CourierAdapter {
        * tells of a return list accepted and a payout made, and a tracking note can arrive with
        * no status: those are answered 200 and kept nowhere. Refusing them made Steadfast count
        * the address as failing, and a webhook that keeps failing is one a courier switches off.
+       * A `delivery_status` entry with no readable status is still refused below: its cash may
+       * be in it, and the poll that would recover the status never carries the collected amount.
        */
       const notification = readString(row, 'notification_type');
       if (notification !== null && notification !== 'delivery_status') continue;
       const consignmentNo = readString(row, 'consignment_id');
       const rawStatus = readString(row, 'status') ?? readString(row, 'delivery_status');
-      if (consignmentNo !== null && rawStatus === null) continue;
+      const trackingNote =
+        notification === null && rawStatus === null && readString(row, 'tracking_message') !== null;
+      if (trackingNote) continue;
       if (consignmentNo === null || rawStatus === null) {
         // A body that names no parcel or no status is not an event. Refused rather than
         // skipped: silently dropping it would leave a parcel stuck at `shipped` with

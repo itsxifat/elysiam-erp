@@ -424,6 +424,27 @@ describe('the Steadfast adapter (UNVERIFIED — see the file comment)', () => {
     ]);
   });
 
+  it('still refuses a status update whose status cannot be read (the ledger audit’s W3)', async () => {
+    // Its collected amount may be in it, and the hourly poll never brings that back.
+    for (const entry of [
+      { notification_type: 'delivery_status', consignment_id: 1424110, cod_amount: '600' },
+      { consignment_id: 1424111, cod_amount: '600' },
+    ]) {
+      // Thrown as the call is made (the sync service's `await` turns it into a rejection).
+      await expect(
+        Promise.resolve().then(() =>
+          adapter.parseWebhook(CONTEXT, {
+            headers: { authorization: 'Bearer token-0123456789abcdef' },
+            raw: Buffer.from(JSON.stringify(entry), 'utf8'),
+          }),
+        ),
+      ).rejects.toSatisfy(
+        (error: unknown) =>
+          error instanceof CourierError && error.code === 'CONSIGNMENT_EVENT_INVALID',
+      );
+    }
+  });
+
   it('strips the characters Steadfast strips and cuts to its lengths (D-918)', async () => {
     expect(steadfastText('House 4; Road {7} <Gulshan> $', 100)).toBe('House 4 Road 7 Gulshan');
     expect(steadfastText('a'.repeat(600), 490)).toHaveLength(490);

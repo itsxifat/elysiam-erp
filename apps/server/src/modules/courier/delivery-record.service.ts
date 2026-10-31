@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withOrg } from '@elysium/db';
-import { isNormalizableBdPhone, normalizeBdPhone } from '@elysium/domain';
+import { isNormalizableBdPhone, maskPhone, normalizeBdPhone } from '@elysium/domain';
 import {
   deliveryRisk,
   deliverySuccessPercent,
@@ -9,7 +9,10 @@ import {
   type DeliveryRisk,
 } from '@elysium/domain/courier';
 
+import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
 import type { ActiveContext } from '../../platform/http/context.js';
+import type { RateLimitStore } from '../../platform/http/rate-limit.js';
 import {
   COURIER_ADAPTERS,
   type AdapterContext,
@@ -21,16 +24,22 @@ import { CourierError } from './courier.errors.js';
 import * as repo from './courier.repository.js';
 import { openCredentials } from './credentials.js';
 import { courierName } from './providers.js';
+import { TRACKING_RATE_LIMITER } from './tracking.service.js';
 
 /** How long a phone's record is reused before the courier is asked again. */
 const RECORD_TTL_MS = 30 * 60 * 1000;
 /** Phones remembered per process; the oldest is forgotten first. */
 const RECORD_CACHE_SIZE = 5000;
+/**
+ * Calls to the courier an hour (ASSUMED, D-918): a desk agent checks a few dozen numbers in a
+ * busy hour, a brand a few hundred; Steadfast allows 1,000 a minute on keys that also book.
+ */
+export const RECORD_LIMITS = { windowSeconds: 3600, perUser: 100, perBrand: 1000 } as const;
 
 export interface DeliveryRecordAnswer {
-  /** False when no connected courier publishes a record, or it did not answer. */
+  /** False when no connected courier publishes a record, it did not answer, or the budget is spent. */
   readonly available: boolean;
-  readonly reason: 'no_courier' | 'unavailable' | null;
+  readonly reason: 'no_courier' | 'unavailable' | 'limited' | null;
   readonly courier: { readonly code: string; readonly name: string } | null;
   readonly record:
     (DeliveryRecord & { readonly parcels: number; readonly successPercent: number | null }) | null;
@@ -56,9 +65,32 @@ export interface DeliveryRecordAnswer {
 export class DeliveryRecordService {
   private readonly cache = new Map<string, { at: number; answer: DeliveryRecordAnswer }>();
 
-  constructor(@Inject(COURIER_ADAPTERS) private readonly adapters: CourierAdapterRegistry) {}
+  constructor(
+    @Inject(COURIER_ADAPTERS) private readonly adapters: CourierAdapterRegistry,
+    // The public tracking page's store, shared through Valkey when the API has one: a budget,
+    // not tracking state, under its own key prefix.
+    @Inject(TRACKING_RATE_LIMITER) private readonly limiter: RateLimitStore,
+    private readonly audit: AuditService,
+  ) {}
 
-  async lookup(context: ActiveContext, phoneInput: string): Promise<DeliveryRecordAnswer> {
+  /**
+   * The record for one phone, for the brand's staff (D-918). A reseller holds `read Customer`
+   * too, for their own buyers, but a delivery record is another merchant's word about a
+   * person, asked on the brand's keys: it is the brand's staff's alone (the desk's own rule,
+   * `desk.service.ts`).
+   *
+   * Each call that reaches the courier spends the caller's and the brand's hourly budget and
+   * writes an audit row naming who asked, with the phone masked: the lookup reaches any number,
+   * so it must not be a quiet way to collect other shops' reports on people.
+   */
+  async lookup(
+    context: ActiveContext,
+    request: AuditableRequest,
+    phoneInput: string,
+  ): Promise<DeliveryRecordAnswer> {
+    if (!context.isSuperAdmin && !context.roles.some((role) => role !== 'reseller')) {
+      throw new CourierError('FORBIDDEN', 'Delivery records are for the brand’s own staff.');
+    }
     if (!isNormalizableBdPhone(phoneInput)) {
       throw new CourierError('COURIER_ACCOUNT_INVALID', 'That is not a Bangladeshi mobile number.');
     }
@@ -74,11 +106,36 @@ export class DeliveryRecordService {
     }
     const courier = { code: adapter.code, name: adapter.name };
 
+    const [mine, brand] = await Promise.all([
+      this.limiter.hit(
+        `delivery-record:user:${context.orgId}:${context.userId}`,
+        RECORD_LIMITS.perUser,
+        RECORD_LIMITS.windowSeconds,
+      ),
+      this.limiter.hit(
+        `delivery-record:org:${context.orgId}`,
+        RECORD_LIMITS.perBrand,
+        RECORD_LIMITS.windowSeconds,
+      ),
+    ]);
+    if (!mine.allowed || !brand.allowed) {
+      const minutes = Math.max(
+        1,
+        Math.ceil(Math.max(mine.retryAfterSeconds ?? 0, brand.retryAfterSeconds ?? 0) / 60),
+      );
+      return unavailable(
+        'limited',
+        courier,
+        `Many numbers were checked in the last hour. Try again in ${String(minutes)} min.`,
+      );
+    }
+
     let record: DeliveryRecord;
     try {
       record = await adapter.deliveryRecord(source.context, phone);
     } catch (error) {
       if (!(error instanceof CourierError)) throw error;
+      await this.audited(context, request, source.accountId, phone, courier.code, null);
       return unavailable(
         'unavailable',
         courier,
@@ -87,6 +144,14 @@ export class DeliveryRecordService {
           : `${courier.name} did not answer. Try again in a minute.`,
       );
     }
+    await this.audited(
+      context,
+      request,
+      source.accountId,
+      phone,
+      courier.code,
+      deliveryRisk(record),
+    );
 
     const answer: DeliveryRecordAnswer = {
       available: true,
@@ -132,10 +197,35 @@ export class DeliveryRecordService {
     return { balancePoisha, checkedAt: new Date().toISOString() };
   }
 
+  /** Who asked the courier about which number (masked), on whose keys, and what came back. */
+  private async audited(
+    context: ActiveContext,
+    request: AuditableRequest,
+    accountId: string,
+    phone: string,
+    courierCode: string,
+    risk: DeliveryRisk | null,
+  ): Promise<void> {
+    await withOrg({ orgId: context.orgId, userId: context.userId }, (tx) =>
+      this.audit.record(tx, {
+        orgId: context.orgId,
+        actorUserId: context.userId,
+        operation: 'create',
+        action: 'courier.delivery_record.checked',
+        entityType: 'CourierSettlement',
+        entityId: accountId,
+        before: null,
+        after: { phone: maskPhone(phone), courier: courierCode, risk, answered: risk !== null },
+        requestId: context.requestId,
+        request,
+      }),
+    );
+  }
+
   /** The brand's connected courier that publishes delivery records, Steadfast first. */
   private async recordSource(
     context: ActiveContext,
-  ): Promise<{ adapter: CourierAdapter; context: AdapterContext } | null> {
+  ): Promise<{ adapter: CourierAdapter; context: AdapterContext; accountId: string } | null> {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const accounts = await repo.listAccounts(tx, context.orgId, { includeInactive: false });
       const usable = accounts
@@ -152,7 +242,11 @@ export class DeliveryRecordService {
       const first = usable[0];
       return first === undefined
         ? null
-        : { adapter: first.adapter, context: adapterContextFor(context.orgId, first.account) };
+        : {
+            adapter: first.adapter,
+            context: adapterContextFor(context.orgId, first.account),
+            accountId: first.account.id,
+          };
     });
   }
 

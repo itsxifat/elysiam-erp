@@ -17,6 +17,7 @@ import { z } from 'zod';
 
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { Public, RequireAbility } from '../../platform/auth/abilities.js';
+import { scopeHasNoRowDimension } from '../../platform/auth/scope.js';
 import { requireContext } from '../../platform/http/context.js';
 import { CourierAccountsService } from './accounts.service.js';
 import { BookingService } from './booking.service.js';
@@ -170,13 +171,22 @@ export class CourierController {
   /**
    * A buyer's delivery record with the brand's courier (D-918): Steadfast's official fraud
    * check for this phone, for the order desk and the order page. `read Customer`, like the
-   * desk's own phone lookup; the phone is in the query, which the request log redacts.
+   * desk's own phone lookup, for the brand's staff only (a reseller is refused in the service);
+   * the phone is in the query, which the request log redacts.
    */
   @RequireAbility('read', 'Customer')
   @Get('delivery-record')
   async deliveryRecord(@Req() request: FastifyRequest, @Query() query: unknown) {
     const { phone } = parse(z.object({ phone: z.string().trim().min(1).max(20) }), query);
-    return mapCourierErrors(() => this.records.lookup(requireContext(request), phone));
+    // The record is the courier's about a phone, often one no buyer has yet: there is no row
+    // of ours to scope, and a sales agent's `own` reach must not hide a new buyer's record.
+    scopeHasNoRowDimension(
+      request,
+      'a delivery record is the courier’s answer about a phone number, not a row of ours',
+    );
+    return mapCourierErrors(() =>
+      this.records.lookup(requireContext(request), auditable(request), phone),
+    );
   }
 
   // --- parcels ------------------------------------------------------------------

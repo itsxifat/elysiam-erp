@@ -385,7 +385,8 @@ export type DeliveryRisk = 'new' | 'good' | 'caution' | 'risky';
  */
 export interface DeliveryRecordAnswer {
   readonly available: boolean;
-  readonly reason: 'no_courier' | 'unavailable' | null;
+  /** `limited`: the hour's budget of courier calls is spent (D-918); `message` says when. */
+  readonly reason: 'no_courier' | 'unavailable' | 'limited' | null;
   readonly courier: { readonly code: string; readonly name: string } | null;
   readonly record: {
     readonly delivered: number;

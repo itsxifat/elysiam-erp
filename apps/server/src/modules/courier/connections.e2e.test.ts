@@ -11,6 +11,7 @@ import {
   type RoleClient,
 } from '../../testing/http-harness.js';
 import { resetCourierEnv } from './courier.config.js';
+import { RECORD_LIMITS } from './delivery-record.service.js';
 import { applyCourierMigrations, makeBankWallet } from './courier.testing.js';
 
 /**
@@ -40,6 +41,9 @@ let admin: RoleClient;
 let hr: RoleClient;
 /** `update CourierSettlement` but only `read Catalog`: may connect, may not move the default. */
 let accounts: RoleClient;
+/** `read Customer` scoped `own` (D-918's desk agent), and an outside reseller with the same grant. */
+let sales: RoleClient;
+let reseller: RoleClient;
 const realFetch = globalThis.fetch;
 const courierCalls: { url: string; headers: Record<string, string> }[] = [];
 
@@ -113,6 +117,8 @@ beforeAll(async () => {
   admin = await harness.asRole('org_admin', ORG_A);
   hr = await harness.asRole('hr', ORG_A);
   accounts = await harness.asRole('accounts', ORG_A);
+  sales = await harness.asRole('sales', ORG_A);
+  reseller = await harness.asRole('reseller', ORG_A);
 
   vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -687,6 +693,57 @@ describe('a connected Steadfast (D-918)', () => {
     const notAPhone = await admin.client.request('GET', '/v1/courier/delivery-record?phone=12345');
     expect(notAPhone.statusCode).toBe(400);
     expect(courierCalls).toHaveLength(1);
+
+    // The one call that reached Steadfast left a row naming who asked, the phone masked.
+    const [account] = await accountsFor('steadfast');
+    const checked = (await auditRowsFor(ORG_A, account?.id ?? '')).filter(
+      (row) => row.action === 'courier.delivery_record.checked',
+    );
+    expect(checked).toHaveLength(1);
+    expect(checked[0]?.actor_user_id).toBe(admin.userId);
+    expect(JSON.stringify(checked[0]?.after)).not.toContain('01712345678');
+    expect(checked[0]?.after).toMatchObject({
+      courier: 'steadfast',
+      risk: 'risky',
+      answered: true,
+    });
+  });
+
+  it('serves a sales agent, whose customers are their own, and refuses a reseller', async () => {
+    // The ledger audit's C1: `read Customer` scoped `own` reached the scope backstop's 500.
+    const forSales = await sales.client.request(
+      'GET',
+      '/v1/courier/delivery-record?phone=01812345678',
+    );
+    expect(forSales.statusCode, forSales.body).toBe(200);
+    expect(json(forSales)).toMatchObject({ available: true, risk: 'risky' });
+
+    courierCalls.length = 0;
+    const forReseller = await reseller.client.request(
+      'GET',
+      '/v1/courier/delivery-record?phone=01912345678',
+    );
+    expect(forReseller.statusCode, forReseller.body).toBe(403);
+    expect(courierCalls).toEqual([]);
+  });
+
+  it('stops asking Steadfast for one person after the hour’s budget, without failing', async () => {
+    courierCalls.length = 0;
+    let last: InjectedResponse | undefined;
+    // Numbers nobody else in this file asks about, so none is answered from the cache.
+    for (let index = 0; index <= RECORD_LIMITS.perUser; index += 1) {
+      last = await sales.client.request(
+        'GET',
+        `/v1/courier/delivery-record?phone=0155${String(index).padStart(7, '0')}`,
+      );
+    }
+    expect(last?.statusCode, last?.body).toBe(200);
+    expect(json(last ?? ({ body: '{}' } as InjectedResponse))).toMatchObject({
+      available: false,
+      reason: 'limited',
+    });
+    // The first call for sales was in the test above: this run spent the rest of the hundred.
+    expect(courierCalls).toHaveLength(RECORD_LIMITS.perUser - 1);
   });
 
   it('checks the connection with the balance, in poisha', async () => {
