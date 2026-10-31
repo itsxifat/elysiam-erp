@@ -88,7 +88,11 @@ export class DeliveryRecordService {
     request: AuditableRequest,
     phoneInput: string,
   ): Promise<DeliveryRecordAnswer> {
-    if (!context.isSuperAdmin && !context.roles.some((role) => role !== 'reseller')) {
+    // Staff: a role that is neither a reseller nor an investor (both are outside the brand).
+    if (
+      !context.isSuperAdmin &&
+      !context.roles.some((role) => role !== 'reseller' && role !== 'investor')
+    ) {
       throw new CourierError('FORBIDDEN', 'Delivery records are for the brand’s own staff.');
     }
     if (!isNormalizableBdPhone(phoneInput)) {
@@ -106,22 +110,27 @@ export class DeliveryRecordService {
     }
     const courier = { code: adapter.code, name: adapter.name };
 
-    const [mine, brand] = await Promise.all([
-      this.limiter.hit(
-        `delivery-record:user:${context.orgId}:${context.userId}`,
-        RECORD_LIMITS.perUser,
-        RECORD_LIMITS.windowSeconds,
-      ),
-      this.limiter.hit(
-        `delivery-record:org:${context.orgId}`,
-        RECORD_LIMITS.perBrand,
-        RECORD_LIMITS.windowSeconds,
-      ),
-    ]);
-    if (!mine.allowed || !brand.allowed) {
+    /*
+     * The caller's budget first, and the brand's only when the caller's allows the call: a
+     * refused hit still counts, so spending both at once let one person past their own limit
+     * use up the brand's and switch the panel off for every agent (the ledger audit's re-check).
+     */
+    const mine = await this.limiter.hit(
+      `delivery-record:user:${context.orgId}:${context.userId}`,
+      RECORD_LIMITS.perUser,
+      RECORD_LIMITS.windowSeconds,
+    );
+    const brand = mine.allowed
+      ? await this.limiter.hit(
+          `delivery-record:org:${context.orgId}`,
+          RECORD_LIMITS.perBrand,
+          RECORD_LIMITS.windowSeconds,
+        )
+      : null;
+    if (!mine.allowed || brand?.allowed !== true) {
       const minutes = Math.max(
         1,
-        Math.ceil(Math.max(mine.retryAfterSeconds ?? 0, brand.retryAfterSeconds ?? 0) / 60),
+        Math.ceil(Math.max(mine.retryAfterSeconds ?? 0, brand?.retryAfterSeconds ?? 0) / 60),
       );
       return unavailable(
         'limited',

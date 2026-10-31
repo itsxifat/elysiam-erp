@@ -12,6 +12,8 @@ import {
 } from '../../testing/http-harness.js';
 import { resetCourierEnv } from './courier.config.js';
 import { RECORD_LIMITS } from './delivery-record.service.js';
+import { TRACKING_RATE_LIMITER } from './tracking.service.js';
+import type { RateLimitStore } from '../../platform/http/rate-limit.js';
 import { applyCourierMigrations, makeBankWallet } from './courier.testing.js';
 
 /**
@@ -744,6 +746,13 @@ describe('a connected Steadfast (D-918)', () => {
     });
     // The first call for sales was in the test above: this run spent the rest of the hundred.
     expect(courierCalls).toHaveLength(RECORD_LIMITS.perUser - 1);
+
+    // The brand's budget counts only the calls that went through: the admin's one, and the
+    // sales agent's hundred. The two refused past the agent's limit spent none of it.
+    const store = harness.app.get<RateLimitStore>(TRACKING_RATE_LIMITER, { strict: false });
+    expect((await store.peek(`delivery-record:org:${ORG_A}`)).count).toBe(
+      1 + RECORD_LIMITS.perUser,
+    );
   });
 
   it('checks the connection with the balance, in poisha', async () => {

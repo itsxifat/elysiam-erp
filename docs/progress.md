@@ -3919,10 +3919,17 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
   the scope backstop); the route now declares no row dimension and resellers are refused. W2:
   any number could be looked up unrecorded; each courier call now spends a per-user and
   per-brand hourly budget and writes an audit row with the phone masked. W3: a status update
-  with an unreadable status was skipped silently; it is refused again.
+  with an unreadable status was skipped silently; it is refused again. The auditor's re-check
+  confirmed all three and found one more: a refused call still spent the brand's budget, so
+  one account could switch the panel off for the brand; the brand's is now spent only after
+  the caller's allows the call. Its note: an investor-and-reseller passed the staff rule;
+  investors are excluded too.
+- **Follow-up:** `desk.service.ts:63` and `orders.service.ts:1683` use the same staff rule
+  without excluding investors; align them when the desk is next touched.
 - **Tests:** domain `delivery-record.test.ts` 4 (one property); `courier.adapter.test.ts` 24
-  and 1 skipped (the live smoke test without keys); `connections.e2e.test.ts` 23 (record,
-  half-hour reuse, the audit row, a sales agent served and a reseller refused, the budget,
+  and 1 skipped (the live smoke test without keys); `connections.e2e.test.ts` 22 (record,
+  half-hour reuse, the audit row, a sales agent served and a reseller refused, the budget and
+  the brand's counting only calls that went through,
   balance, the payout notice answered and not stored, the last update); console
   `couriers-page.test.tsx` 11; `route-matrix.e2e.test.ts` 2 (every route as every role, with
   Gotenberg up). Every courier suite: 334 passed, 1 skipped. Typecheck, lint, `check:i18n`,
