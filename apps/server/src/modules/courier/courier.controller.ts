@@ -21,6 +21,7 @@ import { requireContext } from '../../platform/http/context.js';
 import { CourierAccountsService } from './accounts.service.js';
 import { BookingService } from './booking.service.js';
 import { CourierConnectionsService } from './connections.service.js';
+import { DeliveryRecordService } from './delivery-record.service.js';
 import { courierHttpError, mapCourierErrors } from './courier.errors.js';
 import { CourierLabelsService } from './labels.service.js';
 import { CourierReportsService } from './reports.service.js';
@@ -107,6 +108,7 @@ export class CourierController {
     private readonly selection: CourierSelectionService,
     private readonly labels: CourierLabelsService,
     private readonly connections: CourierConnectionsService,
+    private readonly records: DeliveryRecordService,
   ) {}
 
   // --- accounts -----------------------------------------------------------------
@@ -152,6 +154,29 @@ export class CourierController {
     return mapCourierErrors(() =>
       this.connections.connect(requireContext(request), auditable(request), input),
     );
+  }
+
+  /**
+   * What the courier holds for the brand (D-918): Settings → Couriers' "Check connection",
+   * which also proves the saved keys still work. Changes nothing, so `read`.
+   */
+  @RequireAbility('read', 'CourierSettlement')
+  @Get('accounts/:id/balance')
+  async balance(@Req() request: FastifyRequest, @Param('id') id: string) {
+    const accountId = parse(z.string().uuid(), id);
+    return mapCourierErrors(() => this.records.balance(requireContext(request), accountId));
+  }
+
+  /**
+   * A buyer's delivery record with the brand's courier (D-918): Steadfast's official fraud
+   * check for this phone, for the order desk and the order page. `read Customer`, like the
+   * desk's own phone lookup; the phone is in the query, which the request log redacts.
+   */
+  @RequireAbility('read', 'Customer')
+  @Get('delivery-record')
+  async deliveryRecord(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const { phone } = parse(z.object({ phone: z.string().trim().min(1).max(20) }), query);
+    return mapCourierErrors(() => this.records.lookup(requireContext(request), phone));
   }
 
   // --- parcels ------------------------------------------------------------------

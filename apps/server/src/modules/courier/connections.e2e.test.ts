@@ -129,7 +129,25 @@ beforeAll(async () => {
     if (apiKey === INACTIVE.apiKey) return answer(403, { message: 'Account inactive.' });
     const known = KNOWN.has(`${apiKey}:${headers['secret-key'] ?? ''}`);
     if (!known) return answer(401, { message: 'Unauthenticated.' });
-    if (url.endsWith('/get_balance')) return answer(200, { status: 200, current_balance: 0 });
+    if (url.endsWith('/get_balance')) return answer(200, { status: 200, current_balance: 2181 });
+    // The shape `fraud_check/score/{phone}` answered with real keys (D-918), its numbers kept.
+    if (url.includes('/fraud_check/score/')) {
+      return answer(200, {
+        status: 200,
+        score: null,
+        level: null,
+        reasons: [],
+        scoring_disabled: true,
+        doubtful_reports: false,
+        total_reports: 24,
+        delivery_ratio: 24,
+        volume_band: 'high',
+        volume_range: '50+',
+        delivered_count: 15,
+        cancelled_count: 47,
+        fraud_categories: { fake_order: 5, no_response: 3 },
+      });
+    }
     // Not the caller's parcel: Steadfast's document answers 401 for it, good keys or not.
     return answer(401, { message: 'Unauthenticated.' });
   });
@@ -630,5 +648,138 @@ describe('the other refusals', () => {
   it('refuses a role without update CourierSettlement', async () => {
     const response = await connect(hr, { provider: 'carrybee', credentials: {}, isDefault: true });
     expect(response.statusCode, response.body).toBe(403);
+  });
+});
+
+describe('a connected Steadfast (D-918)', () => {
+  it('reads a buyer’s delivery record once per half hour, for a role that reads customers', async () => {
+    expect(
+      (await connect(admin, { provider: 'steadfast', credentials: GOOD, isDefault: false }))
+        .statusCode,
+    ).toBe(200);
+    courierCalls.length = 0;
+
+    const first = await admin.client.request(
+      'GET',
+      '/v1/courier/delivery-record?phone=01712345678',
+    );
+    expect(first.statusCode, first.body).toBe(200);
+    expect(json(first)).toMatchObject({
+      available: true,
+      courier: { code: 'steadfast', name: 'Steadfast' },
+      risk: 'risky',
+      record: { delivered: 15, cancelled: 47, parcels: 62, successPercent: 24, reports: 24 },
+    });
+    // The local form, with the saved keys.
+    expect(courierCalls.map((call) => call.url)).toEqual([
+      `${STEADFAST}fraud_check/score/01712345678`,
+    ]);
+    expect(courierCalls[0]?.headers['api-key']).toBe(GOOD.apiKey);
+
+    // The same number in another spelling is the same phone, and is not asked again.
+    const again = await admin.client.request(
+      'GET',
+      '/v1/courier/delivery-record?phone=%2B8801712345678',
+    );
+    expect(json(again)).toMatchObject({ available: true, risk: 'risky' });
+    expect(courierCalls).toHaveLength(1);
+
+    const notAPhone = await admin.client.request('GET', '/v1/courier/delivery-record?phone=12345');
+    expect(notAPhone.statusCode).toBe(400);
+    expect(courierCalls).toHaveLength(1);
+  });
+
+  it('checks the connection with the balance, in poisha', async () => {
+    const [account] = await accountsFor('steadfast');
+    const response = await admin.client.request(
+      'GET',
+      `/v1/courier/accounts/${account?.id ?? ''}/balance`,
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    expect(json(response)).toMatchObject({ balancePoisha: '218100' });
+    expect(
+      (await hr.client.request('GET', `/v1/courier/accounts/${account?.id ?? ''}/balance`))
+        .statusCode,
+    ).toBe(403);
+  });
+
+  it('answers a payout notice without keeping it, and shows when a status update arrived', async () => {
+    const [account] = await accountsFor('steadfast');
+    const token = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+    const saved = await admin.client.request('POST', '/v1/courier/accounts', {
+      body: {
+        courierId: account?.courier_id,
+        providerCode: 'steadfast',
+        label: account?.label,
+        mode: account?.mode,
+        webhookSecret: token,
+        pollAfterHours: account?.poll_after_hours,
+        isActive: true,
+      },
+    });
+    expect(saved.statusCode, saved.body).toBeLessThan(300);
+
+    const view = async () =>
+      json<{
+        items: { providerCode: string; hasWebhookSecret: boolean; lastWebhookAt: string | null }[];
+      }>(await admin.client.request('GET', '/v1/courier/accounts')).items.find(
+        (item) => item.providerCode === 'steadfast',
+      );
+    expect(await view()).toMatchObject({ hasWebhookSecret: true, lastWebhookAt: null });
+
+    const deliveries = async () =>
+      withSystem(
+        async (tx) =>
+          Number(
+            (
+              await tx.execute<{ count: string }>(sql`
+                select count(*) as count from courier.webhook_deliveries
+                where org_id = ${ORG_A} and provider_code = 'steadfast'
+              `)
+            )[0]?.count ?? 0,
+          ),
+        { orgId: ORG_A },
+      );
+    const post = (body: unknown) =>
+      harness.server.inject({
+        method: 'POST',
+        url: `/v1/courier/webhooks/${ORG_A}/steadfast`,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        payload: JSON.stringify(body),
+      });
+
+    const before = await deliveries();
+    const payout = await post({ notification_type: 'payment', payment_id: 77 });
+    expect(payout.statusCode, payout.body).toBeLessThan(300);
+    expect(await deliveries()).toBe(before);
+    expect((await view())?.lastWebhookAt).toBeNull();
+
+    // A wrong token is still refused, and stores nothing.
+    const forged = await harness.server.inject({
+      method: 'POST',
+      url: `/v1/courier/webhooks/${ORG_A}/steadfast`,
+      headers: { 'content-type': 'application/json', authorization: 'Bearer not-the-token' },
+      payload: JSON.stringify({ notification_type: 'payment', payment_id: 78 }),
+    });
+    expect(forged.statusCode).toBe(401);
+
+    /*
+     * A stored status update, as the webhook route writes one. Written here rather than posted:
+     * a stored update enqueues its job in the same transaction, and this suite runs no job
+     * queue (the M15 suite posts one through its own).
+     */
+    await withSystem(
+      async (tx) => {
+        await tx.execute(sql`
+          insert into courier.webhook_deliveries
+            (org_id, courier_account_id, provider_code, body_hash, body, received_at)
+          values (${ORG_A}, ${account?.id ?? ''}, 'steadfast', 'd-918-test', '[]'::jsonb,
+                  '2026-10-31T11:20:00Z')
+        `);
+      },
+      { orgId: ORG_A },
+    );
+    expect(await deliveries()).toBe(before + 1);
+    expect((await view())?.lastWebhookAt).toBe('2026-10-31T11:20:00.000Z');
   });
 });

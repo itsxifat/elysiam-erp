@@ -1,4 +1,5 @@
 import type {
+  DeliveryRecord,
   ParcelInput,
   ParcelRef,
   ParcelResult,
@@ -150,6 +151,16 @@ export interface CourierAdapter {
    * expected and harmless, because the importer recognises it by fingerprint.
    */
   fetchSettlements?(context: AdapterContext, since: string): Promise<readonly SettlementBatch[]>;
+
+  /**
+   * A buyer's delivery record with this courier across its merchants (D-918): Steadfast's
+   * `fraud_check/score/{phone}`. Only couriers that publish one implement it. The phone is
+   * E.164; the adapter sends the courier's own form.
+   */
+  deliveryRecord?(context: AdapterContext, phoneE164: string): Promise<DeliveryRecord>;
+
+  /** What the courier holds for the brand now, in poisha as a decimal string (D-918). */
+  balance?(context: AdapterContext): Promise<{ readonly balancePoisha: string }>;
 
   /**
    * What the webhook route must answer with, when the courier specifies it.

@@ -152,6 +152,15 @@ export class CourierSyncService {
     if (events === null) {
       throw new CourierError('WEBHOOK_SIGNATURE_INVALID', 'That webhook was not accepted.');
     }
+    if (events.length === 0) {
+      // Authentic, and about no parcel's status (a payout, a return list, D-918): answered, kept nowhere.
+      return {
+        accepted: true,
+        deliveryId: null,
+        duplicate: false,
+        acknowledgement: adapter.webhookAcknowledgement ?? null,
+      };
+    }
 
     const stored = await withOrg({ orgId: input.orgId, userId: 'system:courier' }, async (tx) => {
       const delivery = await repo.insertWebhookDelivery(tx, {

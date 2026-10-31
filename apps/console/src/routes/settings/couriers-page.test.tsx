@@ -120,6 +120,11 @@ beforeEach(() => {
       if (url.pathname === '/v1/courier/accounts') {
         return Promise.resolve(respond(200, { items: accounts, ...accountsDefault }));
       }
+      if (url.pathname === '/v1/courier/accounts/a-1/balance') {
+        return Promise.resolve(
+          respond(200, { balancePoisha: '218100', checkedAt: '2026-10-31T11:30:00.000Z' }),
+        );
+      }
       if (url.pathname === '/v1/courier/providers') {
         return Promise.resolve(respond(200, { items: PROVIDERS }));
       }
@@ -443,5 +448,87 @@ describe('Settings → Couriers', () => {
     expect(form?.textContent).toContain(
       'Changing the default courier needs access to delivery zones, which your role does not have.',
     );
+  });
+});
+
+describe('Settings → Couriers, a connected courier (D-918)', () => {
+  const connected = (overrides: Record<string, unknown> = {}) => ({
+    id: 'a-1',
+    courierId: 'c-1',
+    label: 'Steadfast',
+    providerCode: 'steadfast',
+    mode: 'live',
+    pollAfterHours: 1,
+    isActive: true,
+    verified: false,
+    hasCredentials: true,
+    hasWebhookSecret: false,
+    supportsWebhook: true,
+    webhookPath: '/v1/courier/webhooks/org-1/steadfast',
+    lastWebhookAt: null,
+    reportsBalance: true,
+    name: 'Steadfast',
+    isDefault: true,
+    ...overrides,
+  });
+
+  it('checks the connection and shows what the courier holds', async () => {
+    accounts = [connected()];
+    await render();
+    await click(button('Check connection'));
+    expect(host.textContent).toContain('The connection works. Steadfast holds for you:');
+    expect(host.textContent).toContain('2,181');
+  });
+
+  it('gives the full callback URL, makes a token and saves it as the webhook secret', async () => {
+    accounts = [connected()];
+    await render();
+    const setup = host.querySelector('details');
+    expect(setup?.open).toBe(true);
+    expect(setup?.textContent).toContain('Not set up');
+    const inputs = [...(setup?.querySelectorAll('input') ?? [])];
+    expect(nth(inputs, 0).value).toBe('http://api.test/v1/courier/webhooks/org-1/steadfast');
+    expect(nth(inputs, 0).readOnly).toBe(true);
+
+    await click(button('Make a token', setup ?? document));
+    const token = nth(inputs, 1).value;
+    expect(token).toMatch(/^[0-9a-f]{40}$/);
+
+    await click(button('Save token', setup ?? document));
+    expect(posted).toEqual([
+      {
+        path: '/v1/courier/accounts',
+        body: {
+          courierId: 'c-1',
+          providerCode: 'steadfast',
+          label: 'Steadfast',
+          mode: 'live',
+          webhookSecret: token,
+          pollAfterHours: 1,
+          isActive: true,
+        },
+      },
+    ]);
+    expect(setup?.textContent).toContain('Token saved.');
+  });
+
+  it('refuses a token too short to be one, and says updates arrive once they do', async () => {
+    accounts = [connected()];
+    await render();
+    const setup = host.querySelector('details');
+    type(nth([...(setup?.querySelectorAll('input') ?? [])], 1), 'short');
+    await click(button('Save token', setup ?? document));
+    expect(posted).toEqual([]);
+    expect(setup?.textContent).toContain('at least 16 characters');
+
+    act(() => root?.unmount());
+    root = null;
+    queryClient.clear();
+    accounts = [connected({ hasWebhookSecret: true, lastWebhookAt: '2026-10-31T11:20:00.000Z' })];
+    await render();
+    const working = host.querySelector('details');
+    expect(working?.open).toBe(false);
+    expect(working?.textContent).toContain('Receiving updates');
+    expect(working?.textContent).toContain('Last update 31 Oct, 17:20');
   });
 });

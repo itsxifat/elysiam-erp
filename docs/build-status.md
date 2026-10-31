@@ -162,8 +162,8 @@ Nothing here blocks building; each one blocks going live.
 - **Deploy a security fix on the current website.** Its public settings address handed out the
   ncom.bd connection secrets to anyone. The fix is on the website repo's branch
   `fix/settings-public-allowlist`. After deploying it, issue new ncom keys (rotate them).
-- **The courier-history fraud check** the old admin panel had: carry it into the ERP or not?
-  You removed the ERP's own fraud check on 2026-10-02. Until you answer, it is not carried over.
+- ~~**The courier-history fraud check**~~ answered 2026-10-31: Steadfast's official fraud check
+  shows each buyer's delivery record on the order desk and the order page (D-918).
 - **Two DNS records in Cloudflare** (DNS only, grey cloud): `erp` and `demo`, both A to
   `103.129.209.29`. Elysium's ERP goes online as soon as `erp` resolves.
 - **Change the server password**: it was shared in chat again on 2026-10-05.

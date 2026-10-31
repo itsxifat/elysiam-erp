@@ -16,6 +16,7 @@ import {
   type CourierProvider,
 } from '../courier/api.js';
 import { listZones } from './api.js';
+import { ConnectedTools } from './courier-connected.js';
 import {
   connectionBody,
   connectOf,
@@ -45,9 +46,15 @@ import { control, Field, Loadable, messageOf, SettingsPage } from './parts.js';
  * asks for no keys: it is booked in Carrybee's own merchant panel.
  *
  * **Secrets go one way.** Keys are typed into password fields and sent; nothing sends them
- * back, and nothing prefills them. The older settings (mode, API address, webhook secret,
- * polling, settlement wallet, active) stay on each account under a collapsed "Advanced",
- * saved through `POST /v1/courier/accounts` as before.
+ * back, and nothing prefills them. The older settings (mode, API address, polling, settlement
+ * wallet, active) stay on each account under a collapsed "Advanced", saved through
+ * `POST /v1/courier/accounts` as before.
+ *
+ * **A connected courier says it works (D-918).** "Check connection" asks the courier for its
+ * balance, so a person sees the keys work and what the courier holds; and "Live parcel
+ * updates" is its own section: three numbered steps, the full callback URL and a token made
+ * here, both with Copy, and whether updates are arriving. It used to be a relative path and a
+ * secret to invent, under Advanced.
  */
 
 type Editing =
@@ -334,6 +341,14 @@ function CourierRowItem({
           {problem}
         </p>
       )}
+      {row.state === 'connected' && row.account !== null ? (
+        <ConnectedTools
+          account={row.account}
+          name={row.name}
+          supportsWebhook={row.provider?.supportsWebhook ?? row.account.supportsWebhook === true}
+          mayUpdate={mayUpdate}
+        />
+      ) : null}
       {mayUpdate && actions.advanced && row.account !== null ? (
         <details
           className="group mt-2 text-sm"
@@ -352,7 +367,7 @@ function CourierRowItem({
             />
             {c('courier.setup.advanced')}
           </summary>
-          {advancedOpen ? <AdvancedSettings account={row.account} provider={row.provider} /> : null}
+          {advancedOpen ? <AdvancedSettings account={row.account} /> : null}
         </details>
       ) : null}
     </li>
@@ -683,18 +698,12 @@ function DefaultSwitch({
 
 /**
  * An account's older settings, under its collapsed "Advanced" (M12; D-395): the label, sandbox
- * or live, an API address override, the webhook secret, how soon to ask the courier for news,
- * the settlement wallet and whether the account books at all. Saved through
- * `POST /v1/courier/accounts`; the keys are left as they are (none are sent), and a blank
- * webhook secret keeps the saved one, as the server does.
+ * or live, an API address override, how soon to ask the courier for news, the settlement
+ * wallet and whether the account books at all. Saved through `POST /v1/courier/accounts`; the
+ * keys and the webhook token are left as they are (none are sent). The webhook has its own
+ * section since D-918.
  */
-function AdvancedSettings({
-  account,
-  provider,
-}: {
-  readonly account: CourierAccount;
-  readonly provider: CourierProvider | undefined;
-}) {
+function AdvancedSettings({ account }: { readonly account: CourierAccount }) {
   const t = useSettingsT();
   const c = useCourierSetupT();
   const id = useId();
@@ -704,13 +713,11 @@ function AdvancedSettings({
   const [label, setLabel] = useState(account.label);
   const [mode, setMode] = useState<'sandbox' | 'live'>(account.mode ?? 'live');
   const [baseUrl, setBaseUrl] = useState(account.baseUrl ?? '');
-  const [webhookSecret, setWebhookSecret] = useState('');
   const [pollAfterHours, setPollAfterHours] = useState(String(account.pollAfterHours ?? 6));
   const [walletId, setWalletId] = useState(account.settlementWalletId ?? '');
   const [active, setActive] = useState(account.isActive);
   const [problem, setProblem] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const supportsWebhook = provider?.supportsWebhook ?? account.supportsWebhook === true;
 
   const save = useMutation({
     mutationFn: () =>
@@ -720,13 +727,11 @@ function AdvancedSettings({
         label: label.trim() === '' ? account.label : label.trim(),
         mode,
         ...(baseUrl.trim() === '' ? {} : { baseUrl: baseUrl.trim() }),
-        ...(webhookSecret.trim() === '' ? {} : { webhookSecret: webhookSecret.trim() }),
         pollAfterHours: Number.parseInt(pollAfterHours, 10) || 6,
         ...(walletId === '' ? {} : { settlementWalletId: walletId }),
         isActive: active,
       }),
     onSuccess: async () => {
-      setWebhookSecret('');
       setSaved(true);
       await queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       await queryClient.invalidateQueries({ queryKey: ['courier'] });
@@ -753,8 +758,6 @@ function AdvancedSettings({
             ? `${t('settings.couriers.keysSet')} · ${account.credentialsFingerprint ?? ''}`
             : t('settings.couriers.keysMissing')}
         </dd>
-        <dt className="text-muted-foreground">{t('settings.couriers.webhookPath')}</dt>
-        <dd className="font-mono break-all">{account.webhookPath ?? '—'}</dd>
       </dl>
       {account.verified ? null : (
         <p role="note" className="text-xs text-muted-foreground">
@@ -794,25 +797,6 @@ function AdvancedSettings({
             />
           </Field>
         </div>
-        {supportsWebhook ? (
-          <Field
-            id={`${id}-webhook`}
-            label={t('settings.couriers.fieldWebhookSecret')}
-            {...(account.hasWebhookSecret === true
-              ? { hint: t('settings.couriers.keepSecret') }
-              : {})}
-          >
-            <input
-              id={`${id}-webhook`}
-              type="password"
-              autoComplete="new-password"
-              value={webhookSecret}
-              maxLength={500}
-              className={control}
-              onChange={(event) => setWebhookSecret(event.target.value)}
-            />
-          </Field>
-        ) : null}
         <Field id={`${id}-poll`} label={t('settings.couriers.fieldPoll')}>
           <input
             id={`${id}-poll`}

@@ -159,6 +159,14 @@ export const COURIER_ROUTE_FIXTURES: Readonly<Record<string, () => Call>> = {
     url: '/v1/courier/connections',
     body: { provider: 'carrybee', credentials: {}, isDefault: false },
   }),
+  // D-918. No such account (a 404 for the roles allowed), so no courier is called.
+  'GET /v1/courier/accounts/:id/balance': () => ({
+    url: '/v1/courier/accounts/00000000-0000-4000-8000-000000000918/balance',
+  }),
+  // D-918. The fixture brand has no Steadfast account, so the answer is "no courier", no call.
+  'GET /v1/courier/delivery-record': () => ({
+    url: '/v1/courier/delivery-record?phone=01712345678',
+  }),
 
   'POST /v1/courier/parcels': () => ({
     url: '/v1/courier/parcels',

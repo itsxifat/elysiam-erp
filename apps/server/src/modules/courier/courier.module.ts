@@ -22,6 +22,7 @@ import { RedxCourierAdapter } from './adapters/redx.adapter.js';
 import { SteadfastCourierAdapter } from './adapters/steadfast.adapter.js';
 import { BookingService } from './booking.service.js';
 import { CourierController } from './courier.controller.js';
+import { DeliveryRecordService } from './delivery-record.service.js';
 import { CourierLabelsService } from './labels.service.js';
 import { CourierReportsService } from './reports.service.js';
 import { ReturnsService } from './returns.service.js';
@@ -151,6 +152,8 @@ import { CourierReferencesBinding } from './references.binding.js';
     CourierAccountsService,
     // D-913: connecting a courier in one step.
     CourierConnectionsService,
+    // D-918: a buyer's delivery record with Steadfast, and a courier's balance.
+    DeliveryRecordService,
     BookingService,
     CourierSyncService,
     ReturnsService,

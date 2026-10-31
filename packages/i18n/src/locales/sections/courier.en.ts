@@ -200,6 +200,37 @@ const en = {
   'courier.parcel.handoverPending': 'Not confirmed',
   'courier.parcel.handoverConfirm': 'Confirm handover',
   'courier.parcel.openOrder': 'Open the order',
+  // A buyer's delivery record with the courier, on the desk and the order page (D-918).
+  'courier.record.title': 'Delivery record',
+  'courier.record.source': 'From {name}, across every shop it delivers for.',
+  'courier.record.risk.new': 'New buyer',
+  'courier.record.risk.good': 'Good',
+  'courier.record.risk.caution': 'Caution',
+  'courier.record.risk.risky': 'Risky',
+  'courier.record.riskHint.new': 'No parcel has gone to this number yet.',
+  'courier.record.riskHint.good': 'Most parcels to this number were delivered.',
+  'courier.record.riskHint.caution':
+    'Some parcels came back, or a shop reported this number. Confirm by phone.',
+  'courier.record.riskHint.risky':
+    'Many parcels came back, or shops reported this number. Call before confirming, or ask for an advance.',
+  'courier.record.delivered': 'Delivered',
+  'courier.record.cancelled': 'Returned',
+  'courier.record.success': 'Success',
+  'courier.record.reports': 'Shop reports',
+  'courier.record.doubtful': 'The courier marks some of these reports as doubtful.',
+  'courier.record.volume': 'Parcels with the courier',
+  'courier.record.courierLevel': 'The courier’s own rating',
+  'courier.record.reason.fake_order': 'Fake order',
+  'courier.record.reason.no_response': 'Did not answer',
+  'courier.record.reason.blocked': 'Blocked',
+  'courier.record.reason.cancelled_after_confirm': 'Cancelled after confirming',
+  'courier.record.reason.other': 'Other',
+  'courier.record.loading': 'Asking the courier…',
+  'courier.record.noCourier':
+    'Connect Steadfast in Settings → Couriers to see each buyer’s delivery record here.',
+  'courier.record.unavailable': 'The courier did not answer. Try again in a minute.',
+  'courier.record.retry': 'Try again',
+  'courier.record.checked': 'Checked {when}',
   // Settings → Couriers, made simple (D-913): pick the courier, type its keys, default or not.
   'courier.setup.caption':
     'The couriers this brand sends parcels with. Choose one, type the keys from its merchant panel and it is connected.',
@@ -260,6 +291,34 @@ const en = {
   'courier.setup.field.username': 'Email (username)',
   'courier.setup.field.password': 'Password',
   'courier.setup.field.accessToken': 'Access token',
+  // Check connection and live parcel updates, on each connected courier (D-918).
+  'courier.setup.check': 'Check connection',
+  'courier.setup.checkingConnection': 'Checking…',
+  'courier.setup.checkWorks': 'The connection works. {name} holds for you:',
+  'courier.setup.checkFailed': 'Could not check {name}.',
+  'courier.setup.webhook.title': 'Live parcel updates',
+  'courier.setup.webhook.intro':
+    '{name} can tell the ERP the moment a parcel moves. Set it up once in {name}’s merchant panel; without it the ERP still asks {name} about each parcel every hour.',
+  'courier.setup.webhook.working': 'Receiving updates',
+  'courier.setup.webhook.waiting': 'Waiting for the first update',
+  'courier.setup.webhook.off': 'Not set up',
+  'courier.setup.webhook.last': 'Last update {when}',
+  'courier.setup.webhook.step1': 'Copy the callback URL.',
+  'courier.setup.webhook.step2':
+    'Make a token and copy it, or paste the one {name} gave you, then save it.',
+  'courier.setup.webhook.step3':
+    'In {name}’s merchant panel, open the webhook settings, paste the URL and the token, and save.',
+  'courier.setup.webhook.url': 'Callback URL',
+  'courier.setup.webhook.token': 'Auth token (Bearer)',
+  'courier.setup.webhook.generate': 'Make a token',
+  'courier.setup.webhook.tokenSaved':
+    'A token is saved and is never shown again. Make a new one only if you will paste it into {name} too.',
+  'courier.setup.webhook.tokenShort': 'A token needs at least 16 characters.',
+  'courier.setup.webhook.save': 'Save token',
+  'courier.setup.webhook.saved': 'Token saved. Paste the same token into {name}.',
+  'courier.setup.webhook.copy': 'Copy',
+  'courier.setup.webhook.copied': 'Copied',
+  'courier.setup.webhook.copyFailed': 'Could not copy. Select the text and copy it yourself.',
 } as const;
 
 /** The keys of this section. */

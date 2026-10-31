@@ -85,6 +85,7 @@ export class CourierAccountsService {
         includeInactive: options.includeInactive ?? false,
       });
       const parties = await this.courierParties(tx, context.orgId, rows);
+      const webhooks = await repo.lastWebhookTimes(tx, context.orgId);
       const zones = await this.orders.defaultCourierState(tx, context.orgId);
       const defaultCourierId = zones.courierId;
       const defaultParty =
@@ -94,7 +95,13 @@ export class CourierAccountsService {
             (await this.orders.courierParties(tx, context.orgId, [defaultCourierId]))[0]);
       return {
         items: rows.map((row) =>
-          this.view(row, context.orgId, parties.get(row.courier_id), defaultCourierId),
+          this.view(
+            row,
+            context.orgId,
+            parties.get(row.courier_id),
+            defaultCourierId,
+            webhooks.get(row.id) ?? null,
+          ),
         ),
         defaultCourierId,
         defaultCourierName: defaultParty?.name ?? null,
@@ -245,11 +252,18 @@ export class CourierAccountsService {
       if (saved === undefined) {
         throw new CourierError('COURIER_ACCOUNT_NOT_FOUND', 'That courier account vanished.');
       }
-      const [parties, defaultCourierId] = await Promise.all([
+      const [parties, defaultCourierId, webhooks] = await Promise.all([
         this.courierParties(tx, context.orgId, [saved]),
         this.orders.defaultCourierId(tx, context.orgId),
+        repo.lastWebhookTimes(tx, context.orgId),
       ]);
-      return this.view(saved, context.orgId, parties.get(saved.courier_id), defaultCourierId);
+      return this.view(
+        saved,
+        context.orgId,
+        parties.get(saved.courier_id),
+        defaultCourierId,
+        webhooks.get(saved.id) ?? null,
+      );
     });
   }
 
@@ -267,6 +281,7 @@ export class CourierAccountsService {
     orgId: string,
     party: CourierParty | undefined,
     defaultCourierId: string | null,
+    lastWebhookAt: string | null,
   ) {
     return {
       id: row.id,
@@ -301,6 +316,10 @@ export class CourierAccountsService {
       webhookPath: row.supports_webhook
         ? `/v1/courier/webhooks/${orgId}/${row.provider_code}`
         : null,
+      /** When the courier's webhook last reached this account and was accepted (D-918). */
+      lastWebhookAt,
+      /** Whether the courier reports what it holds for the brand (D-918). */
+      reportsBalance: this.adapters.get(row.provider_code)?.balance !== undefined,
     };
   }
 }

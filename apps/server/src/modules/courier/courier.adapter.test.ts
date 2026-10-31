@@ -11,7 +11,7 @@ import {
 import { FakeCourierAdapter } from './adapters/fake.adapter.js';
 import { PathaoCourierAdapter } from './adapters/pathao.adapter.js';
 import { RedxCourierAdapter } from './adapters/redx.adapter.js';
-import { SteadfastCourierAdapter } from './adapters/steadfast.adapter.js';
+import { SteadfastCourierAdapter, steadfastText } from './adapters/steadfast.adapter.js';
 import { parseCsvStatement } from './adapters/csv-statement.js';
 import type { AdapterContext, CourierAdapter } from './adapters/courier-adapter.js';
 import { resetCourierEnv } from './courier.config.js';
@@ -399,6 +399,121 @@ describe('the Steadfast adapter (UNVERIFIED — see the file comment)', () => {
         { headers: { authorization: 'Bearer anything' }, raw: Buffer.from('{}', 'utf8') },
       ),
     ).resolves.toBeNull();
+  });
+
+  it('answers a payout or a tracking note with no event, and still reads a status (D-918)', async () => {
+    const raw = Buffer.from(
+      JSON.stringify([
+        { notification_type: 'payment', payment_id: 77 },
+        {
+          notification_type: 'tracking_update',
+          consignment_id: 1424107,
+          tracking_message: 'At hub',
+        },
+        { consignment_id: 1424108, tracking_message: 'Rider assigned' },
+        { notification_type: 'delivery_status', consignment_id: 1424109, status: 'cancelled' },
+      ]),
+      'utf8',
+    );
+    const events = await adapter.parseWebhook(CONTEXT, {
+      headers: { authorization: 'Bearer token-0123456789abcdef' },
+      raw,
+    });
+    expect(events?.map((event) => [event.consignmentNo, event.rawStatus])).toEqual([
+      ['1424109', 'cancelled'],
+    ]);
+  });
+
+  it('strips the characters Steadfast strips and cuts to its lengths (D-918)', async () => {
+    expect(steadfastText('House 4; Road {7} <Gulshan> $', 100)).toBe('House 4 Road 7 Gulshan');
+    expect(steadfastText('a'.repeat(600), 490)).toHaveLength(490);
+
+    fetchMock.mockResolvedValue(jsonResponse(CREATE_ORDER_RESPONSE));
+    await adapter.createParcel(CONTEXT, parcel({ note: 'Call first; <fragile>' }));
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(typeof init.body === 'string' ? init.body : '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(body.note).toBe('Call first fragile');
+  });
+
+  it('reads a delivery record from the official fraud check (D-918)', async () => {
+    // The shape `fraud_check/score/{phone}` answered with real keys, its numbers kept.
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        status: 200,
+        phone: '01712345678',
+        score: null,
+        level: null,
+        reasons: [],
+        scoring_disabled: true,
+        doubtful_reports: false,
+        total_reports: 24,
+        delivery_ratio: 24,
+        cancellation_ratio: 75,
+        volume_band: 'high',
+        volume_range: '50+',
+        delivered_count: 15,
+        cancelled_count: 47,
+        fraud_categories: {
+          fake_order: 5,
+          no_response: 3,
+          blocked: 3,
+          cancelled_after_confirm: 2,
+          other: 1,
+        },
+        return_ratio: 75,
+      }),
+    );
+    const record = await adapter.deliveryRecord(CONTEXT, '+8801712345678');
+    expect(String((fetchMock.mock.calls[0] as [string])[0])).toBe(
+      'https://courier.example.test/api/v1/fraud_check/score/01712345678',
+    );
+    expect(record).toMatchObject({
+      delivered: 15,
+      cancelled: 47,
+      reports: 24,
+      volumeBand: 'high',
+      volumeRange: '50+',
+      doubtfulReports: false,
+      courierLevel: null,
+    });
+    expect(record.reportReasons[0]).toEqual({ code: 'fake_order', count: 5 });
+    expect(record.reportReasons.map((reason) => reason.code)).toEqual([
+      'fake_order',
+      'blocked',
+      'no_response',
+      'cancelled_after_confirm',
+      'other',
+    ]);
+
+    // No reports: Steadfast sends `[]` where the object would be.
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        status: 200,
+        delivered_count: 1,
+        cancelled_count: 0,
+        total_reports: 0,
+        fraud_categories: [],
+      }),
+    );
+    await expect(adapter.deliveryRecord(CONTEXT, '+8801712345678')).resolves.toMatchObject({
+      reports: 0,
+      reportReasons: [],
+    });
+
+    fetchMock.mockResolvedValue(jsonResponse({ status: 200, message: 'nothing here' }));
+    await expect(adapter.deliveryRecord(CONTEXT, '+8801712345678')).rejects.toBeInstanceOf(
+      CourierError,
+    );
+  });
+
+  it('reads the balance in poisha (D-918)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ status: 200, current_balance: 2181 }));
+    await expect(adapter.balance(CONTEXT)).resolves.toEqual({ balancePoisha: '218100' });
+    fetchMock.mockResolvedValue(jsonResponse({ status: 200, current_balance: '1250.5' }));
+    await expect(adapter.balance(CONTEXT)).resolves.toEqual({ balancePoisha: '125050' });
   });
 });
 

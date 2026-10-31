@@ -250,6 +250,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/courier/providers',
   'POST /v1/courier/accounts',
   'POST /v1/courier/connections',
+  'GET /v1/courier/accounts/:id/balance',
+  'GET /v1/courier/delivery-record',
   'POST /v1/courier/parcels',
   'GET /v1/courier/parcels/:id',
   'POST /v1/courier/parcels/:id/handover',

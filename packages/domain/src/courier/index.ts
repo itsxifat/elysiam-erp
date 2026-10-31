@@ -24,6 +24,8 @@ export * from './stuck.js';
 export * from './performance.js';
 export * from './tracking.js';
 export * from './settlement-fetch.js';
+// A buyer's delivery record with a courier, and its word for the desk (D-918).
+export * from './delivery-record.js';
 
 /**
  * §7's two settlement posting rules, re-exported.

@@ -89,6 +89,18 @@ export function todayInDhaka(now: Date = new Date()): string {
   }).format(now);
 }
 
+/** A moment as Dhaka's clock shows it, `31 Oct, 17:20` (invariant 8). */
+export function dhakaDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Dhaka',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(iso));
+}
+
 /** An Asia/Dhaka calendar date `days` before `date`. Calendar arithmetic, not a duration. */
 export function daysBefore(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number);

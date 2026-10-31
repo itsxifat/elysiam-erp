@@ -29,6 +29,7 @@ import {
   type TimelineEntry,
 } from './api.js';
 import { AdvancesPanel } from './advances-panel.js';
+import { DeliveryRecordPanel } from '../courier/delivery-record.js';
 import { CallsPanel } from './calls-panel.js';
 import { OrderPeople } from '../people/order-people.js';
 import { OwnerGuardProvider, OwnershipBanner } from './owner-guard.js';
@@ -354,6 +355,8 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             </section>
 
             <CallsPanel order={order} nameOf={nameOf} />
+
+            <DeliveryRecordPanel phone={order.shipTo.phone} />
 
             <ParcelPanel order={order} mayUpdate={mayUpdate} />
 

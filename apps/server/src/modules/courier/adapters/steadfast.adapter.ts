@@ -2,6 +2,7 @@ import {
   assertParcelInput,
   codAmountAsTaka,
   STEADFAST_STATUS_MAP,
+  type DeliveryRecord,
   type ParcelInput,
   type ParcelRef,
   type ParcelResult,
@@ -48,6 +49,12 @@ import type {
  * A decisions.md row (D-176) says all of this in the place the client will read it, and
  * the report for this milestone says it too. When credentials arrive, the live sandbox
  * smoke test in `courier.adapter.test.ts` is the thing to run first.
+ *
+ * Since D-916 and D-918 the owner has sent Steadfast's own API guide (base
+ * `https://portal.packzy.com/api/v1`, the 18 endpoints, the status reference, the codes, the
+ * characters Steadfast strips and the lengths it cuts to), and `get_balance` and
+ * `fraud_check/score/{phone}` were read with real keys. What is still a guess is the body
+ * `create_order` answers and the webhook's: both are parsed defensively as before.
  *
  * ## Why the fields are what they are
  *
@@ -237,8 +244,8 @@ export class SteadfastCourierAdapter implements CourierAdapter {
     const body = await this.call(context, 'create_order', {
       method: 'POST',
       body: {
-        invoice: input.reference,
-        recipient_name: input.address.recipientName,
+        invoice: steadfastText(input.reference, STEADFAST_LIMITS.invoice),
+        recipient_name: steadfastText(input.address.recipientName, STEADFAST_LIMITS.name),
         /*
          * Local form, not E.164.
          *
@@ -247,9 +254,9 @@ export class SteadfastCourierAdapter implements CourierAdapter {
          * either be rejected or stored with a prefix the rider's app cannot dial.
          */
         recipient_phone: input.address.recipientPhoneE164.replace(/^\+880/, '0'),
-        recipient_address: address,
+        recipient_address: steadfastText(address, STEADFAST_LIMITS.address),
         cod_amount: codAmountAsTaka(input.codAmountPoisha),
-        ...(input.note === null ? {} : { note: input.note }),
+        ...(input.note === null ? {} : { note: steadfastText(input.note, STEADFAST_LIMITS.note) }),
       },
     });
 
@@ -342,8 +349,17 @@ export class SteadfastCourierAdapter implements CourierAdapter {
     const events: RawCourierEvent[] = [];
     for (const entry of entries) {
       const row = readObject(entry, null);
+      /*
+       * Only a parcel's status is an event (D-918). Steadfast's guide says its webhook also
+       * tells of a return list accepted and a payout made, and a tracking note can arrive with
+       * no status: those are answered 200 and kept nowhere. Refusing them made Steadfast count
+       * the address as failing, and a webhook that keeps failing is one a courier switches off.
+       */
+      const notification = readString(row, 'notification_type');
+      if (notification !== null && notification !== 'delivery_status') continue;
       const consignmentNo = readString(row, 'consignment_id');
       const rawStatus = readString(row, 'status') ?? readString(row, 'delivery_status');
+      if (consignmentNo !== null && rawStatus === null) continue;
       if (consignmentNo === null || rawStatus === null) {
         // A body that names no parcel or no status is not an event. Refused rather than
         // skipped: silently dropping it would leave a parcel stuck at `shipped` with
@@ -376,6 +392,62 @@ export class SteadfastCourierAdapter implements CourierAdapter {
   }
 
   /**
+   * A buyer's delivery record (D-918): `GET /fraud_check/score/{phone}`, Steadfast's official
+   * fraud check, in place of the `fraudjs` scraper D-010 waited for. Read with real keys:
+   * `delivered_count`, `cancelled_count`, `total_reports`, `fraud_categories` (an object of
+   * reason to count, or `[]` when there are none), `volume_band`, `volume_range`,
+   * `doubtful_reports`, and `level`, which is null while `scoring_disabled`. The ratios it also
+   * sends are recomputed from the counts (`deliverySuccessPercent`), so one rule reads them.
+   */
+  async deliveryRecord(context: AdapterContext, phoneE164: string): Promise<DeliveryRecord> {
+    const local = phoneE164.replace(/^\+880/, '0');
+    const body = readObject(
+      await this.call(context, `fraud_check/score/${encodeURIComponent(local)}`, {
+        method: 'GET',
+      }),
+      null,
+    );
+    const delivered = readCount(body, 'delivered_count');
+    const cancelled = readCount(body, 'cancelled_count');
+    if (delivered === null || cancelled === null) {
+      throw new CourierError(
+        'COURIER_UNAVAILABLE',
+        'Steadfast’s delivery record had no delivered or cancelled count.',
+        true,
+      );
+    }
+    const categories = readObject(body, 'fraud_categories');
+    const reportReasons = Object.entries(categories ?? {})
+      .map(([code, count]) => ({ code, count: typeof count === 'number' ? count : 0 }))
+      .filter((reason) => Number.isInteger(reason.count) && reason.count > 0)
+      .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+    return {
+      delivered,
+      cancelled,
+      reports: readCount(body, 'total_reports') ?? 0,
+      reportReasons,
+      volumeBand: readString(body, 'volume_band'),
+      volumeRange: readString(body, 'volume_range'),
+      doubtfulReports: body?.doubtful_reports === true,
+      courierLevel: body?.scoring_disabled === true ? null : readString(body, 'level'),
+    };
+  }
+
+  /** What Steadfast holds for the brand: `GET /get_balance`'s `current_balance`, in taka (D-918). */
+  async balance(context: AdapterContext): Promise<{ balancePoisha: string }> {
+    const body = readObject(await this.call(context, 'get_balance', { method: 'GET' }), null);
+    const balancePoisha = takaFieldToPoisha(body, 'current_balance');
+    if (balancePoisha === null) {
+      throw new CourierError(
+        'COURIER_UNAVAILABLE',
+        'Steadfast’s balance answer had no current_balance.',
+        true,
+      );
+    }
+    return { balancePoisha };
+  }
+
+  /**
    * Steadfast's settlement sheet, as a column-mapped CSV (§9).
    *
    * Steadfast publishes no settlement-file format at all — the merchant portal exports a
@@ -402,6 +474,37 @@ export class SteadfastCourierAdapter implements CourierAdapter {
       rows,
     });
   }
+}
+
+/**
+ * The lengths Steadfast cuts each field to (its API guide). Cut here instead, so what the
+ * brand's books hold is what the courier's do.
+ */
+export const STEADFAST_LIMITS = {
+  invoice: 100,
+  name: 100,
+  address: 490,
+  note: 480,
+} as const;
+
+/**
+ * Text as Steadfast will store it (its guide: each of `{ } ; < > $` becomes a space, and an
+ * over-long value is cut). Spaces run together are one, so a stripped character never leaves
+ * a double gap on the rider's screen.
+ */
+export function steadfastText(value: string, max: number): string {
+  return value
+    .replace(/[{};<>$]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
+    .trimEnd();
+}
+
+/** A whole, non-negative count, or null. */
+function readCount(row: Record<string, unknown> | null, key: string): number | null {
+  const value = row?.[key];
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 /** A nested object, or null. Never throws: the body is somebody else's. */

@@ -3899,3 +3899,25 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
 - **Follow-up:** `transitions.service.ts` still works out `awaitingConsignment` at Confirm
   (a lookup nothing needs since D-917); remove it with the port field.
 - **New dependencies:** none. **Migration:** none.
+
+## 2026-10-31 · fix · Steadfast's delivery record on the desk, and a courier setup a person can follow
+
+- **Decisions:** D-918 (Steadfast's official fraud check replaces `fraudjs`; D-010 closed),
+  D-919 (Check connection and Live parcel updates in Settings → Couriers; the webhook answers
+  payouts and tracking notes instead of refusing them), D-920 (Steadfast's stripped characters
+  and lengths applied before booking).
+- **Server:** `SteadfastCourierAdapter.deliveryRecord` and `balance` (both read with the owner's
+  keys), `DeliveryRecordService`, `GET /v1/courier/delivery-record` (`read Customer`) and
+  `GET /v1/courier/accounts/:id/balance` (`read CourierSettlement`), `lastWebhookAt` and
+  `reportsBalance` on the account view, the webhook's non-status entries skipped,
+  `steadfastText`. Domain: `deliveryRisk` and `deliverySuccessPercent`.
+- **Console:** the delivery record panel on the order desk and the order page; Settings →
+  Couriers' Check connection and the three-step Live parcel updates (full URL, a token made
+  here, Copy, whether updates arrive); the webhook fields gone from Advanced.
+- **Tests:** domain `delivery-record.test.ts` 4 (one property); `courier.adapter.test.ts` 23
+  and 1 skipped (the live smoke test without keys); `connections.e2e.test.ts` 20 (record,
+  half-hour reuse, balance, the payout notice answered and not stored, the last update); console
+  `couriers-page.test.tsx` 11. Every courier suite: 319 passed, 1 skipped, 1 failed that fails
+  on the base too (`GET /v1/courier/labels` needs Gotenberg, not running here). Typecheck, lint,
+  `check:i18n`, `check:routes` and `check:api-client`: PASS.
+- **New dependencies:** none. **Migration:** none.

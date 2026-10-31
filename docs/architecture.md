@@ -958,7 +958,7 @@ interface CourierAdapter {
   - `(phone_hash, provider)`, `total, delivered, returned_or_cancelled, ratio, fetched_at, raw jsonb`
   - 72-hour TTL by default
   - providers implement `FraudSignalProvider`
-  - The first provider is Steadfast, wrapping the user's `fraudjs` package if they provide it (D-010).
+  - The first provider was to be Steadfast through the user's `fraudjs` package (D-010). The fraud module was deleted (D-291); since D-918 a buyer's delivery record is read live from Steadfast's official `fraud_check/score/{phone}` through the courier adapter, as advice on the order desk and order page, with nothing stored.
 - `fraud.address_signals` (Phase 2, v2): trigram similarity on normalized addresses to catch repeat-return addresses.
 - **Trust score:** a pure function that returns 0–100 plus `reasons[]`. It combines:
   - internal delivery ratio, weighted by volume
@@ -1331,7 +1331,7 @@ Jobs run on pg-boss, with queues named `module.action`.
 | Integration                                      | Phase       | Interface                       | Notes                                                      |
 | ------------------------------------------------ | ----------- | ------------------------------- | ---------------------------------------------------------- |
 | Couriers (Steadfast, Pathao, RedX; others later) | 1–2         | CourierAdapter                  | Official docs and user credentials only                    |
-| Fraud providers (Steadfast via fraudjs; others)  | 1–2         | FraudSignalProvider             | Cached, throttled                                          |
+| Delivery records (Steadfast fraud check, D-918)  | 1–2         | CourierAdapter.deliveryRecord   | Cached 30 min per phone, no table                          |
 | Cloudflare Turnstile, R2                         | 1           | —                               |                                                            |
 | BD SMS gateway                                   | 2           | SmsProvider                     | Branded sender IDs need approval, so apply early (D-012)   |
 | Advance payment gateway (bKash or aggregator)    | 2, optional | PaymentProvider                 | Only if the client wants online collection (D-013)         |

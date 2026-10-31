@@ -168,6 +168,10 @@ export interface CourierAccount {
   readonly name?: string;
   /** Whether this is the brand's one default courier (D-913). */
   readonly isDefault?: boolean;
+  /** When the courier's webhook last reached this account (D-918); null before the first. */
+  readonly lastWebhookAt?: string | null;
+  /** Whether "Check connection" can ask the courier for its balance (D-918). */
+  readonly reportsBalance?: boolean;
 }
 
 /**
@@ -359,6 +363,49 @@ export function saveCourierAccount(input: UpsertCourierAccountInput): Promise<Co
  */
 export function connectCourier(input: ConnectCourierInput): Promise<CourierConnection> {
   return api.post('/v1/courier/connections', input);
+}
+
+/** What the courier holds for the brand, which also proves the saved keys work (D-918). */
+export function courierBalance(
+  accountId: string,
+): Promise<{ readonly balancePoisha: string; readonly checkedAt: string }> {
+  return api.get(`/v1/courier/accounts/${accountId}/balance`);
+}
+
+/** The full address a courier's webhook is sent to: the API's host and the account's path. */
+export function webhookUrl(path: string): string {
+  return new URL(path, env.VITE_API_URL).href;
+}
+
+export type DeliveryRisk = 'new' | 'good' | 'caution' | 'risky';
+
+/**
+ * A buyer's delivery record with the brand's courier (D-918): Steadfast's own fraud check,
+ * counts across every shop it delivers for. Counts and percentages, no recipient data.
+ */
+export interface DeliveryRecordAnswer {
+  readonly available: boolean;
+  readonly reason: 'no_courier' | 'unavailable' | null;
+  readonly courier: { readonly code: string; readonly name: string } | null;
+  readonly record: {
+    readonly delivered: number;
+    readonly cancelled: number;
+    readonly parcels: number;
+    readonly successPercent: number | null;
+    readonly reports: number;
+    readonly reportReasons: readonly { readonly code: string; readonly count: number }[];
+    readonly volumeBand: string | null;
+    readonly volumeRange: string | null;
+    readonly doubtfulReports: boolean;
+    readonly courierLevel: string | null;
+  } | null;
+  readonly risk: DeliveryRisk | null;
+  readonly checkedAt: string | null;
+  readonly message: string | null;
+}
+
+export function deliveryRecord(phone: string): Promise<DeliveryRecordAnswer> {
+  return api.get(`/v1/courier/delivery-record?phone=${encodeURIComponent(phone)}`);
 }
 
 export function parcelTimeline(consignmentId: string): Promise<ParcelTimeline> {

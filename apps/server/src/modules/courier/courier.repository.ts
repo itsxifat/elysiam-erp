@@ -98,6 +98,17 @@ export async function listAccounts(
   return [...rows];
 }
 
+/** When each account last received a webhook it accepted (D-918), by account id. */
+export async function lastWebhookTimes(tx: Tx, orgId: string): Promise<Map<string, string>> {
+  const rows = await tx.execute<{ courier_account_id: string; at: string }>(sql`
+    select courier_account_id, max(received_at)::text as at
+    from courier.webhook_deliveries
+    where org_id = ${orgId}
+    group by courier_account_id
+  `);
+  return new Map(rows.map((row) => [row.courier_account_id, new Date(row.at).toISOString()]));
+}
+
 export interface NewCourierAccount {
   readonly orgId: string;
   readonly courierId: string;

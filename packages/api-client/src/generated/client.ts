@@ -527,6 +527,16 @@ export const OPERATIONS = {
     path: '/v1/courier/accounts',
     ability: 'read:CourierSettlement',
   },
+  getV1CourierAccountsByIdBalance: {
+    method: 'GET',
+    path: '/v1/courier/accounts/{id}/balance',
+    ability: 'read:CourierSettlement',
+  },
+  getV1CourierDeliveryRecord: {
+    method: 'GET',
+    path: '/v1/courier/delivery-record',
+    ability: 'read:Customer',
+  },
   getV1CourierLabels: { method: 'GET', path: '/v1/courier/labels', ability: 'read:Order' },
   getV1CourierParcels: { method: 'GET', path: '/v1/courier/parcels', ability: 'read:Order' },
   getV1CourierParcelsById: {
@@ -3189,6 +3199,15 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/courier/accounts */
     getV1CourierAccounts: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierAccounts, undefined, options),
+    /** GET /v1/courier/accounts/:id/balance */
+    getV1CourierAccountsByIdBalance: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierAccountsByIdBalance, input, options),
+    /** GET /v1/courier/delivery-record */
+    getV1CourierDeliveryRecord: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1CourierDeliveryRecord, undefined, options),
     /** GET /v1/courier/labels */
     getV1CourierLabels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1CourierLabels, undefined, options),

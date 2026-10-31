@@ -51,6 +51,7 @@ import {
   toAsciiDigits,
   type DeskLine,
 } from './desk-logic.js';
+import { DeliveryRecordPanel } from '../courier/delivery-record.js';
 import { getOrderDraft, getPhoneFlags, type OrderDraft } from '../inbox/api.js';
 import { useInboxT } from '../inbox/messages.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
@@ -1229,6 +1230,8 @@ function Desk() {
               )}
             </section>
           ) : null}
+          {/* Steadfast's delivery record for this number, once it is whole (D-918). */}
+          <DeliveryRecordPanel phone={normalized} />
           {draft.data === undefined ? null : (
             <p className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
               {tInbox('inbox.desk.fromChat')}
