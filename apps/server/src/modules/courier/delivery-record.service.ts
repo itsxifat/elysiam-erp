@@ -270,7 +270,7 @@ export class DeliveryRecordService {
 }
 
 function unavailable(
-  reason: 'no_courier' | 'unavailable',
+  reason: NonNullable<DeliveryRecordAnswer['reason']>,
   courier: DeliveryRecordAnswer['courier'],
   message: string | null,
 ): DeliveryRecordAnswer {
