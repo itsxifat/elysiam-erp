@@ -728,8 +728,8 @@ describe('Settings → Order workflow books the courier on Confirm (D-901, D-903
     const read = await admin.client.request('GET', '/v1/orders/workflow-settings');
     expect(read.statusCode, read.body).toBe(200);
     const before = body<Settings>(read);
-    // A brand that never chose books by hand, and waits five hours for its courier.
-    expect(before.courierBooking).toBe('manual');
+    // A brand that never chose books on Confirm (D-927), and waits five hours for its courier.
+    expect(before.courierBooking).toBe('on_confirm');
     expect(before.notReceivedHours).toBe(5);
     const base = {
       autoAssign: before.autoAssign,

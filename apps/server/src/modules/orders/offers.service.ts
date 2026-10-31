@@ -95,13 +95,12 @@ export class OffersService {
 
   async settingsIn(tx: Tx, orgId: string): Promise<WorkflowSettings> {
     const row = await offers.settingsOf(tx, orgId);
-    const booking = await repo.courierBookingSetting(tx, orgId);
     return {
       autoAssign: row?.auto_assign ?? false,
       offerSeconds: row?.offer_seconds ?? OFFER_SECONDS_DEFAULT,
       maxOpen: row?.max_open ?? MAX_OPEN_DEFAULT,
-      // The transition service's reading of the same key: anything else is `manual`.
-      courierBooking: booking === 'on_confirm' || booking === 'on_pack' ? booking : 'manual',
+      // The transition service's reading of the same key (`on_confirm` until chosen, D-927).
+      courierBooking: await repo.courierBookingSetting(tx, orgId),
       notReceivedHours:
         (await repo.notReceivedHoursSetting(tx, orgId)) ?? NOT_RECEIVED_HOURS.default,
     };

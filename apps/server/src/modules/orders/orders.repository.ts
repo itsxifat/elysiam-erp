@@ -1,3 +1,4 @@
+import type { CourierBookingPolicy } from '@elysium/contracts';
 import type { Tx } from '@elysium/db';
 import { scannedOrderParts } from '@elysium/domain/packing';
 import { sql, type SQL } from 'drizzle-orm';
@@ -690,18 +691,19 @@ export async function orgSlug(tx: Tx, orgId: string): Promise<string> {
 }
 
 /**
- * The org's courier booking trigger (§9's `orders.courier_booking`).
+ * The org's courier booking trigger (§9's `orders.courier_booking`), the one reading of it.
  *
- * Returns the raw setting; the caller decides what an unrecognised value means. A brand
- * that has never chosen has no row, and the transition service reads that as `manual` —
- * the only default that cannot book a parcel somebody did not ask for.
+ * A brand that has never chosen has no row, and that is `on_confirm` (D-927): a confirmed
+ * order goes to its courier and comes back with a consignment, as the owner asked. Only a
+ * brand that picks `on_pack` or `manual` in Settings → Order workflow waits. An order whose
+ * courier cannot be booked here (an own rider, no account) still confirms (D-901).
  */
-export async function courierBookingSetting(tx: Tx, orgId: string): Promise<string | null> {
+export async function courierBookingSetting(tx: Tx, orgId: string): Promise<CourierBookingPolicy> {
   const rows = await tx.execute<{ value: unknown }>(sql`
     select value from org.settings where org_id = ${orgId} and key = 'orders.courier_booking'
   `);
   const value = rows[0]?.value;
-  return typeof value === 'string' ? value : null;
+  return value === 'on_pack' || value === 'manual' ? value : 'on_confirm';
 }
 
 /**

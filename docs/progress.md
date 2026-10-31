@@ -3998,3 +3998,14 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
   double-click or Home puts it back; it stays inside the window and is remembered per browser.
 - **Tests:** console calls suites 12 passed; typecheck, lint, `check:i18n`, `check:bundle`: PASS.
 - **New dependencies:** none. **Migration:** none.
+
+## 2026-10-31 · fix · a confirmed order is booked with its courier by default
+
+- **Decision:** D-927. The owner: a confirmed order must go to the courier and come back with
+  its consignment. Live Elysiam had never chosen a booking time (no `orders.courier_booking`
+  row), so it booked by hand: 9 confirmed orders, an active live Steadfast account, 0 parcels.
+  A brand that never chose now books on Confirm; On pack and By hand stay choosable in
+  Settings → Order workflow. Orders confirmed before the deploy are booked from the desk.
+- **Tests:** server typecheck and prettier: PASS. `handover.e2e.test.ts`'s default assertion
+  now expects `on_confirm`; not run here (Testcontainers), per the minimal-tests rule.
+- **New dependencies:** none. **Migration:** none.

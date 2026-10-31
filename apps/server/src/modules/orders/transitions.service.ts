@@ -208,10 +208,10 @@ export class TransitionsService {
      *
      * Read here rather than passed in by the caller, because the policy belongs to the
      * *org* and not to the request: a confirm from the desk, from the portal and from a
-     * job all have to make the same parcel. An unset or unrecognised value is `manual`,
-     * which enqueues nothing — the only default that cannot book a parcel a brand did not
-     * ask for, and the only safe one while a courier account is still being set up. Kept for
-     * the confirm's label below (D-914).
+     * job all have to make the same parcel. An unset value is `on_confirm` (D-927): the
+     * owner wants every confirmed order sent to its courier for a consignment, and an order
+     * whose courier cannot be booked here confirms without one (D-901). Kept for the
+     * confirm's label below (D-914).
      */
     const bookingPolicy = await this.bookingPolicy(tx, context.orgId);
     const result = transition({
@@ -364,10 +364,9 @@ export class TransitionsService {
     return { result, order: after ?? order, journalId: posted.journalId };
   }
 
-  /** §9's booking trigger for this org, defaulting to `manual`. */
+  /** §9's booking trigger for this org, `on_confirm` until the brand chooses (D-927). */
   private async bookingPolicy(tx: Tx, orgId: string): Promise<'on_confirm' | 'on_pack' | 'manual'> {
-    const value = await repo.courierBookingSetting(tx, orgId);
-    return value === 'on_confirm' || value === 'on_pack' ? value : 'manual';
+    return repo.courierBookingSetting(tx, orgId);
   }
 
   /** Whether a parcel is live with a courier, asked of the module that owns the row. */

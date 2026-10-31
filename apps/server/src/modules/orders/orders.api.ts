@@ -2439,8 +2439,7 @@ export class OrdersApiService implements OrdersApi {
   }
 
   async courierBooking(tx: Tx, orgId: string): Promise<CourierBookingPolicy> {
-    const value = await repo.courierBookingSetting(tx, orgId);
-    return value === 'on_confirm' || value === 'on_pack' ? value : 'manual';
+    return repo.courierBookingSetting(tx, orgId);
   }
 
   async packingFacts(
