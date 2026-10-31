@@ -1,8 +1,9 @@
 import type { MessageKey } from '@elysium/i18n';
-import { Button, Monogram, Money, StatusBadge, cn } from '@elysium/ui';
+import { Button, Monogram, Money, StatusBadge, buttonVariants, cn } from '@elysium/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
+  GripHorizontal,
   Grid3x3,
   PanelRightOpen,
   Phone,
@@ -29,7 +30,8 @@ import {
   type MyPhone,
 } from './api.js';
 import { CallerPanelHost } from './caller-panel-host.js';
-import { openCallerPanel } from './caller-panel-store.js';
+import { openCallerPanel, useOpenCallerPanel } from './caller-panel-store.js';
+import { attachDockDrag } from './dock-drag.js';
 import { useTelT, type TelT } from './messages.js';
 import { lookupAgainIn, nationalDigits, takeRingBack } from './phone-store.js';
 import {
@@ -212,8 +214,14 @@ function StatusBar({
   readonly onDismiss: () => void;
   readonly tone: 'error' | 'muted';
 }) {
+  const panelOpen = useOpenCallerPanel() !== null;
   return (
-    <div className="pointer-events-none fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md justify-center">
+    <div
+      className={cn(
+        'pointer-events-none fixed inset-x-4 bottom-4 z-50 flex max-w-md justify-center',
+        !panelOpen && 'mx-auto',
+      )}
+    >
       <div
         role="status"
         className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-popover"
@@ -459,6 +467,19 @@ export function Dock({ phone }: { readonly phone: MyPhone }) {
     refetchInterval: (query) => lookupAgainIn(card, query.state.data?.customer ?? null, Date.now()),
   });
 
+  // The owner (2026-10-31): the card hid the caller panel and could not be moved. With the panel
+  // open the card sits at the left, clear of it, and its handle moves it anywhere.
+  const panelOpen = useOpenCallerPanel() !== null;
+  const cardRef = useRef<HTMLElement>(null);
+  const handleRef = useRef<HTMLButtonElement>(null);
+  const showing = card !== null;
+  useEffect(() => {
+    const node = cardRef.current;
+    const handle = handleRef.current;
+    if (!showing || node === null || handle === null) return undefined;
+    return attachDockDrag(node, handle);
+  }, [showing]);
+
   const restart = () => {
     setProblem(null);
     setRegistration('starting');
@@ -520,8 +541,14 @@ export function Dock({ phone }: { readonly phone: MyPhone }) {
     ORDER_STATUSES.has(status) ? appT(`orders.status.${status}` as MessageKey) : null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md justify-center">
+    <div
+      className={cn(
+        'pointer-events-none fixed inset-x-4 bottom-4 z-50 flex max-w-md justify-center',
+        !panelOpen && 'mx-auto',
+      )}
+    >
       <section
+        ref={cardRef}
         aria-label={t('tel.phone.title')}
         className={cn(
           'pointer-events-auto w-full rounded-xl border border-border bg-card p-4 shadow-popover',
@@ -560,9 +587,23 @@ export function Dock({ phone }: { readonly phone: MyPhone }) {
               </p>
             ) : null}
           </div>
-          <StatusBadge tone="neutral">
-            {t('tel.phone.ext', { extension: phone.extension })}
-          </StatusBadge>
+          <div className="flex items-center gap-1">
+            <StatusBadge tone="neutral">
+              {t('tel.phone.ext', { extension: phone.extension })}
+            </StatusBadge>
+            <button
+              type="button"
+              ref={handleRef}
+              className={cn(
+                buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
+                'cursor-grab touch-none',
+              )}
+              aria-label={t('tel.phone.move')}
+              title={t('tel.phone.move')}
+            >
+              <GripHorizontal aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         {lookup?.customer == null ? null : (

@@ -20,6 +20,8 @@ const en = {
 
   'tel.phone.title': 'Phone',
   'tel.phone.ext': 'Ext {extension}',
+  'tel.phone.move':
+    'Move the call card. Drag it, or use the arrow keys; double-click puts it back.',
   'tel.phone.online': 'Online',
   'tel.phone.connecting': 'Connecting…',
   'tel.phone.offline': 'Offline',
