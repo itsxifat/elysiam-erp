@@ -639,6 +639,11 @@ export const orders = sales.table(
     resellerId: uuid('reseller_id'),
     /** The order this one replaces (§9's `delivered → exchange`). */
     exchangeOfOrderId: uuid('exchange_of_order_id'),
+    /**
+     * M50 (D-922): the packed order this one replaced. A packed order is never edited; it is
+     * cancelled and this order is created in the same transaction with the changed items.
+     */
+    replacesOrderId: uuid('replaces_order_id'),
     notes: text('notes'),
     /**
      * M48 (D-878): whom the order was placed for. The buyer (`customer_id`) is who ordered and
@@ -714,6 +719,15 @@ export const orders = sales.table(
       foreignColumns: [table.orgId, table.id],
     }).onDelete('restrict'),
     foreignKey({
+      name: 'orders_org_id_replaces_order_id_fk',
+      columns: [table.orgId, table.replacesOrderId],
+      foreignColumns: [table.orgId, table.id],
+    }).onDelete('restrict'),
+    // M50: "replaced by" on the cancelled order's page.
+    index('orders_org_replaces_idx')
+      .on(table.orgId, table.replacesOrderId)
+      .where(sql`${table.replacesOrderId} is not null`),
+    foreignKey({
       name: 'orders_org_id_recipient_customer_id_fk',
       columns: [table.orgId, table.recipientCustomerId],
       foreignColumns: [customers.orgId, customers.id],
@@ -762,6 +776,10 @@ export const orders = sales.table(
     check(
       'orders_exchange_not_self',
       sql`${table.exchangeOfOrderId} is null or ${table.exchangeOfOrderId} <> ${table.id}`,
+    ),
+    check(
+      'orders_replaces_not_self',
+      sql`${table.replacesOrderId} is null or ${table.replacesOrderId} <> ${table.id}`,
     ),
     // A held order holds its stock somewhere (D-532): the location it was reserved at.
     check(

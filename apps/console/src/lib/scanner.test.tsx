@@ -2,7 +2,13 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { describe, expect, it } from 'vitest';
 
-import { currentScanHandler, isTypingTarget, useScanHandler } from './scanner.js';
+import {
+  currentScanHandler,
+  fillInput,
+  isCaptureTarget,
+  isTypingTarget,
+  useScanHandler,
+} from './scanner.js';
 
 /**
  * Where a scan goes (M38a, D-605): the key presses the console-wide listener leaves alone
@@ -65,5 +71,24 @@ describe('useScanHandler', () => {
     act(() => page.unmount());
     expect(currentScanHandler()).toBeUndefined();
     expect(seen).toEqual(['dialog:111', 'page:222']);
+  });
+});
+
+describe('scans into search boxes (M50, D-925)', () => {
+  it('fills a box so React hears it, and takes a scan out of a capturing screen’s boxes', () => {
+    const input = element('<input type="search" data-scan-search="">') as HTMLInputElement;
+    let heard = '';
+    input.addEventListener('input', () => {
+      heard = input.value;
+    });
+    fillInput(input, '2000000000015');
+    expect(heard).toBe('2000000000015');
+
+    const screen = element(
+      '<div data-scan-capture=""><input id="qty"><input id="find" data-scan-search=""></div>',
+    );
+    expect(isCaptureTarget(screen.querySelector('#qty'))).toBe(true);
+    expect(isCaptureTarget(screen.querySelector('#find'))).toBe(false);
+    expect(isCaptureTarget(element('<input>'))).toBe(false);
   });
 });

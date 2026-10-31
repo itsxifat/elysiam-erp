@@ -2,6 +2,13 @@ import type { Tx } from '@elysium/db';
 import type { Poisha } from '@elysium/domain';
 
 import type { ActiveContext } from '../../../platform/http/context.js';
+import type {
+  AppliedDiscountView,
+  AppliedOnOrder,
+  DiscountQuote,
+  OfferView,
+  OffersInput,
+} from '../../promo/promo.api.js';
 
 /**
  * What the order desk needs from promo codes (M16; invariant 12).
@@ -107,6 +114,41 @@ export interface PromoPort {
     fromCustomerId: string,
     toCustomerId: string,
   ): Promise<number>;
+
+  /**
+   * M50 (D-921): every live offer for this buyer, each with what it gives the edited basket or
+   * why it does not. The order's own uses are left out of the counts.
+   */
+  offersForOrder(tx: Tx, orgId: string, input: OffersInput): Promise<readonly OfferView[]>;
+
+  /** M50: what the chosen offers give the basket. Claims nothing. */
+  quoteChosen(
+    tx: Tx,
+    orgId: string,
+    input: OffersInput & { readonly discountIds: readonly string[] },
+  ): Promise<DiscountQuote>;
+
+  /** M50: take a use of every discount a quote applied, against this order, in its transaction. */
+  redeem(
+    tx: Tx,
+    orgId: string,
+    input: {
+      readonly orderId: string;
+      readonly customerId: string | null;
+      readonly applied: readonly AppliedDiscountView[];
+    },
+  ): Promise<{ readonly redemptionIds: readonly string[] }>;
+
+  /** M50: the discounts applied to an order now. */
+  appliedOnOrder(tx: Tx, orgId: string, orderId: string): Promise<readonly AppliedOnOrder[]>;
+
+  /** M50: lock the order's discounts and the chosen ones, in id order, before re-pricing. */
+  lockForReprice(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    chosenIds: readonly string[],
+  ): Promise<void>;
 }
 
 export const PROMO_PORT = Symbol('OrdersPromoPort');

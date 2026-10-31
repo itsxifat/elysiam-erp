@@ -24,3 +24,5 @@ export * from './discount-ceiling.js';
 export * from './ownership.js';
 // M48: a buyer's numbers, the people one number names, and orders for someone else (D-870 to D-889).
 export * from './buyers.js';
+// M50: what the rider collects when the buyer keeps part of a parcel, re-priced (D-924).
+export * from './return-reprice.js';

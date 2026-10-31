@@ -73,6 +73,10 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   CUSTOMER_ADDRESS_NOT_FOUND: 404,
   // About who is asking: a supervisor changes a buyer or merges two (D-886).
   CUSTOMER_SUPERVISOR_ONLY: 403,
+  // M50 (D-921): a chosen offer stopped applying since the panel priced it; look again.
+  PROMO_NOT_APPLICABLE: 409,
+  // M50: offers are a staff tool, and applying one is the "apply codes" grant (§6).
+  FORBIDDEN: 403,
 };
 
 export class OrdersError extends Error {

@@ -212,9 +212,14 @@ export const promoRedemptions = promo.table(
       table.codeId,
       table.customerId,
     ),
-    uniqueIndex('promo_redemptions_org_code_order_idx')
+    /*
+     * One applied redemption of a code per order (M50, D-921): an edited order releases its
+     * discounts and takes the ones chosen again, so a released row stays as history and the
+     * same code can be applied anew.
+     */
+    uniqueIndex('promo_redemptions_org_code_order_applied_idx')
       .on(table.orgId, table.codeId, table.orderId)
-      .where(sql`${table.orderId} is not null`),
+      .where(sql`${table.orderId} is not null and ${table.status} = 'applied'`),
     uniqueIndex('promo_redemptions_org_code_sale_idx')
       .on(table.orgId, table.codeId, table.posSaleId)
       .where(sql`${table.posSaleId} is not null`),

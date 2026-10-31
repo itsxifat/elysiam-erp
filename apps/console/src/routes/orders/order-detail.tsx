@@ -12,7 +12,7 @@ import {
 } from '@elysium/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowLeft, ClipboardList, FileText, Tag } from 'lucide-react';
+import { ArrowLeft, ClipboardList, FileText, PackageOpen, Pencil, Tag } from 'lucide-react';
 import { useMemo } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -20,6 +20,7 @@ import { useAbility } from '../../auth/session.js';
 import { useLocale, useT } from '../../i18n/locale.js';
 import { useStaffNames } from '../../staff-names.js';
 import '../../i18n/workflow.js';
+import '../../i18n/order-edit.js';
 import {
   documentUrl,
   getOrder,
@@ -203,6 +204,25 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {/* M50 (D-921 to D-924): edit before packing, change a packed order, return items. */}
+            {mayUpdate && ['pending', 'confirmed', 'on_hold', 'packed'].includes(order.status) ? (
+              <Link
+                to={ordersPath(`/orders/${order.id}/edit`)}
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
+                <Pencil aria-hidden="true" />
+                {order.status === 'packed' ? tw('oe.detail.change') : tw('oe.detail.edit')}
+              </Link>
+            ) : null}
+            {mayUpdate && order.status === 'shipped' ? (
+              <Link
+                to={ordersPath(`/orders/${order.id}/return`)}
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
+                <PackageOpen aria-hidden="true" />
+                {tw('oe.detail.return')}
+              </Link>
+            ) : null}
             <OrderActions order={order} mayUpdate={mayUpdate} />
             <a
               href={documentUrl(order.id, 'invoice')}
@@ -235,6 +255,27 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
         </header>
 
         <OwnershipBanner order={order} nameOf={nameOf} />
+
+        {order.replaces == null && order.replacedBy == null ? null : (
+          <p className="flex flex-wrap gap-3 text-sm">
+            {order.replaces == null ? null : (
+              <Link
+                to={ordersPath(`/orders/${order.replaces.id}`)}
+                className="rounded-sm text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                {tw('oe.detail.replaces').replace('{no}', order.replaces.orderNo)}
+              </Link>
+            )}
+            {order.replacedBy == null ? null : (
+              <Link
+                to={ordersPath(`/orders/${order.replacedBy.id}`)}
+                className="rounded-sm text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                {tw('oe.detail.replacedBy').replace('{no}', order.replacedBy.orderNo)}
+              </Link>
+            )}
+          </p>
+        )}
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="space-y-5">
@@ -340,6 +381,15 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
               <dl className="space-y-1.5 text-sm">
                 <Row label={t('orders.desk.itemsTotal')} poisha={order.amounts.itemsPoisha} />
                 <Row label={t('orders.desk.discountTotal')} poisha={order.amounts.discountPoisha} />
+                {(order.appliedOffers ?? []).length === 0 ? null : (
+                  <div className="text-xs text-muted-foreground">
+                    <dt className="sr-only">{tw('oe.detail.offers')}</dt>
+                    <dd>
+                      {tw('oe.detail.offers')}:{' '}
+                      {(order.appliedOffers ?? []).map((offer) => offer.title).join(', ')}
+                    </dd>
+                  </div>
+                )}
                 <Row
                   label={t('orders.desk.deliveryTotal')}
                   poisha={order.amounts.deliveryChargePoisha}

@@ -33,6 +33,7 @@ import {
   orderPrefixFor,
   placedForOf,
   poisha,
+  repriceReturn,
   sub,
   TRANSITIONS,
   type PlacedFor,
@@ -56,6 +57,7 @@ import { CustomersService } from './customers.service.js';
 import { addNumber, sourceForOrder } from './numbers.helpers.js';
 import { HandoverGuardRegistry } from './ports/handover-guard.port.js';
 import { PROMO_PORT, type PricedPromo, type PromoPort } from './ports/promo.port.js';
+import type { AppliedDiscountView, OfferView } from '../promo/promo.api.js';
 import { TransitionsService, type MoveOptions } from './transitions.service.js';
 import { TEAM_API, type TeamApi } from '../team/team.api.js';
 import { OffersService } from './offers.service.js';
@@ -76,7 +78,9 @@ import type {
   AvailabilityQuery,
   CreateOrderInput,
   ExchangeOrderInput,
+  OrderOffersInput,
   OrderQuery,
+  ReplaceOrderInput,
   UpdateOrderInput,
 } from './orders.schemas.js';
 
@@ -517,6 +521,9 @@ export class OrdersService {
           ],
           context,
         );
+        // M50: the offers on the order now, and the packed order it replaced or that replaced it.
+        const appliedOffers = await this.promo.appliedOnOrder(tx, context.orgId, order.id);
+        const links = await repo.replacementLinks(tx, context.orgId, order.id);
         return {
           ...toOrderView(order),
           lines: lines.map(toLineView),
@@ -524,6 +531,9 @@ export class OrdersService {
           timeline,
           owners,
           transitions: transitionsFor(context, order),
+          appliedOffers,
+          replaces: links.replaces,
+          replacedBy: links.replacedBy,
         };
       }),
     );
@@ -1032,7 +1042,7 @@ export class OrdersService {
     request: AuditableRequest,
     id: string,
     patch: UpdateOrderInput,
-    options: { readonly system?: true } = {},
+    options: { readonly system?: true; readonly offersChecked?: true } = {},
   ) {
     const order =
       options.system === true
@@ -1068,7 +1078,13 @@ export class OrdersService {
     const holds = repricing
       ? await this.promo.holdsOnOrder(tx, context.orgId, order.id)
       : { appliedDiscounts: 0, flashClaims: 0 };
-    if (repricing && (order.promo_code_id !== null || holds.appliedDiscounts > 0)) {
+    /*
+     * M50 (D-921): an edit that names its offers re-prices them on purpose. The order's
+     * discounts are given back and the chosen ones priced against the edited basket and taken
+     * again, in this transaction, so the use spent and the price charged stay one number.
+     */
+    const offersMode = patch.discountIds !== undefined;
+    if (!offersMode && repricing && (order.promo_code_id !== null || holds.appliedDiscounts > 0)) {
       throw new OrdersError(
         'ORDER_IMMUTABLE',
         'A promo code priced this order, so its lines, discount and delivery charge are fixed. Cancel it and take it again to change them.',
@@ -1106,19 +1122,39 @@ export class OrdersService {
       (total, line) => total + BigInt(line.discount_poisha),
       0n,
     );
-    const orderDiscountPoisha =
+    const existingOrderLevel = bigintMax(BigInt(order.discount_poisha) - existingLineDiscounts, 0n);
+    // M50: what the offers on the order gave, so the typed discount and the charge before any
+    // offer can be told apart from them.
+    const existingOffers = offersMode
+      ? await this.promo.appliedOnOrder(tx, context.orgId, order.id)
+      : [];
+    const existingOfferGoods = existingOffers.reduce(
+      (total, offer) => total + BigInt(offer.discountPoisha),
+      0n,
+    );
+    const existingOfferDelivery = existingOffers.reduce(
+      (total, offer) => total + BigInt(offer.deliveryDiscountPoisha),
+      0n,
+    );
+    const existingTyped = bigintMax(existingOrderLevel - existingOfferGoods, 0n);
+    // The person's own order discount: in offers mode, without what the offers give.
+    const typedDiscountPoisha =
       patch.discountPoisha !== undefined
         ? BigInt(patch.discountPoisha)
-        : bigintMax(BigInt(order.discount_poisha) - existingLineDiscounts, 0n);
+        : offersMode
+          ? existingTyped
+          : existingOrderLevel;
 
     if (
       options.system !== true &&
       (patch.lines !== undefined || patch.discountPoisha !== undefined)
     ) {
+      // An offer is the brand's discount, not the person's: only the typed one meets the
+      // role's ceiling (D-364).
       await this.assertDiscountCeiling(
         tx,
         context,
-        { lines, orderDiscountPoisha },
+        { lines, orderDiscountPoisha: typedDiscountPoisha },
         {
           lines: existing.map((line) => ({
             skuId: line.sku_id,
@@ -1126,15 +1162,54 @@ export class OrdersService {
             unitPricePoisha: BigInt(line.unit_price_poisha),
             discountPoisha: BigInt(line.discount_poisha),
           })),
-          orderDiscountPoisha: bigintMax(BigInt(order.discount_poisha) - existingLineDiscounts, 0n),
+          orderDiscountPoisha: offersMode ? existingTyped : existingOrderLevel,
         },
       );
     }
 
-    const deliveryChargePoisha =
-      patch.deliveryChargePoisha === undefined
-        ? BigInt(order.delivery_charge_poisha)
-        : BigInt(patch.deliveryChargePoisha);
+    const baseDeliveryChargePoisha =
+      patch.deliveryChargePoisha !== undefined
+        ? BigInt(patch.deliveryChargePoisha)
+        : BigInt(order.delivery_charge_poisha) + existingOfferDelivery;
+
+    let offerGoods = 0n;
+    let offerDelivery = 0n;
+    let chosen: Awaited<ReturnType<PromoPort['quoteChosen']>> | null = null;
+    if (offersMode) {
+      // Applying an offer the order does not carry is the "apply codes" grant (§6).
+      const carried = new Set(existingOffers.map((offer) => offer.discountId));
+      if (
+        options.system !== true &&
+        options.offersChecked !== true &&
+        (patch.discountIds ?? []).some((id) => !carried.has(id))
+      ) {
+        assertMayApplyOffers(context);
+      }
+      await this.promo.lockForReprice(tx, context.orgId, order.id, patch.discountIds ?? []);
+      await this.promo.releaseForOrder(tx, context.orgId, order.id);
+      chosen = await this.promo.quoteChosen(tx, context.orgId, {
+        lines: lines.map((line) => ({
+          skuId: line.skuId,
+          qty: line.qty,
+          netPoisha: sub(
+            mulQty(poisha(line.unitPricePoisha), line.qty),
+            poisha(line.discountPoisha),
+          ).toString(),
+        })),
+        orderDiscountPoisha: typedDiscountPoisha.toString(),
+        deliveryChargePoisha: baseDeliveryChargePoisha.toString(),
+        channel: order.channel,
+        customerId: order.customer_id,
+        excludeOrderId: order.id,
+        now: new Date(),
+        discountIds: patch.discountIds ?? [],
+      });
+      assertAllChosenApply(patch.discountIds ?? [], chosen);
+      offerGoods = BigInt(chosen.discountPoisha);
+      offerDelivery = BigInt(chosen.deliveryDiscountPoisha);
+    }
+    const orderDiscountPoisha = typedDiscountPoisha + offerGoods;
+    const deliveryChargePoisha = bigintMax(baseDeliveryChargePoisha - offerDelivery, 0n);
 
     const totals = computeOrderTotals({
       lines: lines.map((line) => ({
@@ -1240,6 +1315,20 @@ export class OrdersService {
         'This order moved while the edit was in flight; reload and try again.',
       );
     }
+    if (chosen !== null) {
+      // After the row, like an order's create: the uses are taken in this transaction, so an
+      // offer that ran out since the quote rolls the whole edit back.
+      await this.promo.redeem(tx, context.orgId, {
+        orderId: order.id,
+        customerId: order.customer_id,
+        applied: chosen.applied,
+      });
+      await repo.setOrderPromoCode(tx, {
+        orgId: context.orgId,
+        orderId: order.id,
+        promoCodeId: chosen.applied.find((entry) => entry.method === 'code')?.discountId ?? null,
+      });
+    }
 
     if (rewriteReservation) {
       // Resolved from the order *as edited*, not as read: passing the old row here
@@ -1278,6 +1367,7 @@ export class OrdersService {
         codAmountPoisha: BigInt(totals.codAmountPoisha).toString(),
         lines: lines.length,
         linesChanged,
+        ...(chosen === null ? {} : { offers: chosen.applied.map((entry) => entry.discountId) }),
       },
       request,
     });
@@ -1292,6 +1382,437 @@ export class OrdersService {
 
     const after = await repo.orderById(tx, context.orgId, order.id);
     return after === undefined ? { id: order.id } : toOrderView(after);
+  }
+
+  // --- M50: the order editor (D-921 to D-924) ----------------------------------------------
+
+  /**
+   * The editor's offers panel and its totals (M50, D-921). Reads only; nothing is claimed.
+   *
+   * `edit` prices the lines as edited at the server's own prices (`priceLines`), with the
+   * person's typed discount and the charge before any offer. `return` prices what the buyer
+   * keeps of a parcel with the courier at the order's own prices (`repriceReturn`, D-924). Either
+   * way every live offer comes back with what it gives or why it does not, and the chosen ones
+   * are quoted through the engine the save uses, so the panel shows what will be charged.
+   */
+  async editorOffers(context: ActiveContext, request: object, id: string, input: OrderOffersInput) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        // Offers are a staff tool: a reseller's own order shows no brand's codes (D-098).
+        if (!context.isSuperAdmin && !context.roles.some((role) => role !== 'reseller')) {
+          throw new OrdersError('FORBIDDEN', 'Offers are for the brand’s staff.');
+        }
+        // A read the editor repeats as the person types: no row lock.
+        const order = await repo.orderByIdInScope(
+          tx,
+          context.orgId,
+          id,
+          orderScopeSql(context, request),
+        );
+        if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+        // A code's word is shown only to someone who may apply codes.
+        const showCodes = defineAbilityFor(context).can('read', 'LandingPage');
+        const offerView = (offer: OfferView) => toOfferView(offer, showCodes);
+        const appliedView = (entry: AppliedDiscountView) => toAppliedView(entry, showCodes);
+        const shared = {
+          channel: order.channel,
+          customerId: order.customer_id,
+          excludeOrderId: order.id,
+          now: new Date(),
+        };
+        const fee = BigInt(input.deliveryChargePoisha);
+
+        if (input.mode === 'edit') {
+          const lines = await this.priceLines(tx, context, input.lines);
+          const typed = BigInt(input.discountPoisha ?? '0');
+          const basket = {
+            ...shared,
+            lines: lines.map((line) => ({
+              skuId: line.skuId,
+              qty: line.qty,
+              netPoisha: sub(
+                mulQty(poisha(line.unitPricePoisha), line.qty),
+                poisha(line.discountPoisha),
+              ).toString(),
+            })),
+            orderDiscountPoisha: typed.toString(),
+            deliveryChargePoisha: fee.toString(),
+          };
+          const offers = await this.promo.offersForOrder(tx, context.orgId, basket);
+          const chosen = await this.promo.quoteChosen(tx, context.orgId, {
+            ...basket,
+            discountIds: input.discountIds,
+          });
+          const totals = computeOrderTotals({
+            lines: lines.map((line) => ({
+              qty: line.qty,
+              unitPricePoisha: poisha(line.unitPricePoisha),
+              lineDiscountPoisha: poisha(line.discountPoisha),
+            })),
+            orderDiscountPoisha: poisha(typed + BigInt(chosen.discountPoisha)),
+            deliveryChargePoisha: poisha(
+              bigintMax(fee - BigInt(chosen.deliveryDiscountPoisha), 0n),
+            ),
+            advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
+          });
+          return {
+            mode: 'edit' as const,
+            offers: offers.map(offerView),
+            applied: chosen.applied.map(appliedView),
+            offerDiscountPoisha: chosen.discountPoisha.toString(),
+            offerDeliveryDiscountPoisha: chosen.deliveryDiscountPoisha.toString(),
+            totals: {
+              itemsPoisha: totals.itemsPoisha.toString(),
+              discountPoisha: totals.discountPoisha.toString(),
+              deliveryChargePoisha: totals.deliveryChargePoisha.toString(),
+              advancePaidPoisha: totals.advancePaidPoisha.toString(),
+              codAmountPoisha: totals.codAmountPoisha.toString(),
+            },
+          };
+        }
+
+        if (order.status !== 'shipped') {
+          throw new OrdersError(
+            'ORDER_TRANSITION_INVALID',
+            'Only an order that is with the courier can be returned here.',
+          );
+        }
+        const lines = await repo.orderLines(tx, context.orgId, order.id);
+        const keep = new Map(input.keep.map((entry) => [entry.skuId, entry.qty]));
+        for (const skuId of keep.keys()) {
+          if (!lines.some((line) => line.sku_id === skuId)) {
+            throw new OrdersError('ORDER_LINES_INVALID', 'That item is not on this order.');
+          }
+        }
+        const lineDiscounts = lines.reduce(
+          (total, line) => total + BigInt(line.discount_poisha),
+          0n,
+        );
+        const orderLevel = poisha(bigintMax(BigInt(order.discount_poisha) - lineDiscounts, 0n));
+        // The person's own part of it: what is left after the order's offers (ledger audit C1).
+        const offersGave = (await this.promo.appliedOnOrder(tx, context.orgId, order.id)).reduce(
+          (total, offer) => total + BigInt(offer.discountPoisha),
+          0n,
+        );
+        const typedOrderDiscount = poisha(bigintMax(orderLevel - offersGave, 0n));
+        const repriceLines = lines.map((line) => ({
+          qty: line.qty,
+          unitPricePoisha: poisha(BigInt(line.unit_price_poisha)),
+          lineDiscountPoisha: poisha(BigInt(line.discount_poisha)),
+          keptQty: keep.get(line.sku_id) ?? line.qty,
+        }));
+        const kept = repriceReturn({
+          lines: repriceLines,
+          orderDiscountPoisha: orderLevel,
+          deliveryChargePoisha: poisha(BigInt(order.delivery_charge_poisha)),
+          advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
+          offerDiscountPoisha: poisha(0n),
+          typedOrderDiscountPoisha: typedOrderDiscount,
+          newDeliveryChargePoisha: poisha(fee),
+        });
+        if (kept.keptUnits === 0) {
+          return {
+            mode: 'return' as const,
+            wholeReturn: true,
+            offers: [],
+            applied: [],
+            offerDiscountPoisha: '0',
+            offerDeliveryDiscountPoisha: '0',
+            keptNetPoisha: '0',
+            typedDiscountPoisha: '0',
+            deliveryChargePoisha: '0',
+            advanceAppliedPoisha: '0',
+            expectedPoisha: '0',
+            collectPoisha: '0',
+          };
+        }
+        const basket = {
+          ...shared,
+          lines: lines.flatMap((line, index) => {
+            const qty = repriceLines[index]?.keptQty ?? 0;
+            const net = kept.keptLineNetPoisha[index];
+            return qty === 0 || net === undefined
+              ? []
+              : [{ skuId: line.sku_id, qty, netPoisha: net.toString() }];
+          }),
+          // Offers are priced after the person's own discount, as on the desk (W3).
+          orderDiscountPoisha: kept.keptTypedDiscountPoisha.toString(),
+          deliveryChargePoisha: fee.toString(),
+        };
+        const offers = await this.promo.offersForOrder(tx, context.orgId, basket);
+        const chosen = await this.promo.quoteChosen(tx, context.orgId, {
+          ...basket,
+          discountIds: input.discountIds,
+        });
+        const charge = bigintMax(fee - BigInt(chosen.deliveryDiscountPoisha), 0n);
+        const priced = repriceReturn({
+          lines: repriceLines,
+          orderDiscountPoisha: orderLevel,
+          deliveryChargePoisha: poisha(BigInt(order.delivery_charge_poisha)),
+          advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
+          offerDiscountPoisha: poisha(BigInt(chosen.discountPoisha)),
+          typedOrderDiscountPoisha: typedOrderDiscount,
+          newDeliveryChargePoisha: poisha(charge),
+        });
+        return {
+          mode: 'return' as const,
+          wholeReturn: false,
+          offers: offers.map(offerView),
+          applied: chosen.applied.map(appliedView),
+          typedDiscountPoisha: priced.keptTypedDiscountPoisha.toString(),
+          offerDiscountPoisha: chosen.discountPoisha.toString(),
+          offerDeliveryDiscountPoisha: chosen.deliveryDiscountPoisha.toString(),
+          keptNetPoisha: priced.keptNetPoisha.toString(),
+          deliveryChargePoisha: charge.toString(),
+          advanceAppliedPoisha: priced.advanceAppliedPoisha.toString(),
+          expectedPoisha: priced.expectedPoisha.toString(),
+          collectPoisha: priced.collectPoisha.toString(),
+        };
+      }),
+    );
+  }
+
+  /**
+   * The editor's product picker (M50, D-923): active products for what was typed (a name, a
+   * SKU or parent SKU, a barcode, a website slug), or every product newest first when nothing
+   * was, a page at a time to the last; or the products of these SKUs (an order's lines). Each
+   * with its photo and every active size and colour at its selling price with the units in hand
+   * at the location named, else where the desk sells from. Selling prices only, never a cost.
+   */
+  async picker(
+    context: ActiveContext,
+    query: {
+      readonly q?: string | undefined;
+      readonly offset?: number | undefined;
+      readonly skuIds?: readonly string[] | undefined;
+      readonly locationId?: string | undefined;
+    },
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        let page: Awaited<ReturnType<CatalogApi['pickerProducts']>>;
+        if (query.skuIds !== undefined) {
+          const skus = await this.catalog.skusByIds(tx, context.orgId, query.skuIds);
+          page = await this.catalog.pickerProducts(tx, context.orgId, {
+            ids: [...new Set(skus.map((sku) => sku.productId))],
+            limit: 100,
+          });
+        } else {
+          page = await this.catalog.pickerProducts(tx, context.orgId, {
+            q: query.q ?? '',
+            limit: PICKER_PAGE,
+            offset: query.offset ?? 0,
+          });
+        }
+        if (page.items.length === 0) return { items: [], nextOffset: page.nextOffset };
+        const skus = await this.catalog.webSkus(
+          tx,
+          context.orgId,
+          page.items.map((product) => product.id),
+        );
+        const location =
+          query.locationId ?? (await repo.defaultFulfilmentLocation(tx, context.orgId, null))?.id;
+        const available =
+          location === undefined
+            ? new Map<string, number>()
+            : await this.inventory.availability(
+                tx,
+                context.orgId,
+                location,
+                skus.map((sku) => sku.id),
+              );
+        return {
+          items: page.items.map((product) => ({
+            id: product.id,
+            name: product.name,
+            imageFileId: product.imageFileId,
+            matchedSkuId: product.matchedSkuId,
+            variants: skus
+              .filter((sku) => sku.productId === product.id)
+              .map((sku) => ({
+                skuId: sku.id,
+                code: sku.code,
+                size: sku.values.find((value) => value.kind === 'size')?.label ?? null,
+                colour: sku.values.find((value) => value.kind === 'colour')?.label ?? null,
+                label: sku.values.map((value) => value.label).join(' / '),
+                pricePoisha: sku.pricePoisha.toString(),
+                compareAtPoisha: sku.compareAtPoisha?.toString() ?? null,
+                available: available.get(sku.id) ?? 0,
+              })),
+          })),
+          nextOffset: page.nextOffset,
+        };
+      }),
+    );
+  }
+
+  /**
+   * A packed order changed (M50, D-922): cancelled and replaced, in one transaction.
+   *
+   * The owner's rule: "if the order is packed once but not sent to courier it has to be
+   * cancelled then create another one". So a packed order is never edited in place. The
+   * replacement is created with the changed terms (same buyer, address, courier, location,
+   * branch and owner unless changed), the packed order is cancelled with the reason and the
+   * replacement's number (its stock released, its parcel's booking cancelled, its discounts
+   * given back, by the cancel's own effects), the chosen offers are applied to the replacement,
+   * and the replacement is confirmed (its stock reserved, its label queued). If any step is
+   * refused nothing happens: the packed order stays packed.
+   *
+   * An order holding an advance is refused for now: the cancel would turn the advance into a
+   * refund owed rather than carry it to the replacement (follow-up in progress.md).
+   */
+  async replace(
+    context: ActiveContext,
+    request: AuditableRequest,
+    id: string,
+    input: ReplaceOrderInput,
+  ) {
+    return mapOrderErrors(async () =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const order = await this.lockForAct(tx, context, request, id, 'edit');
+        if (order.status !== 'packed') {
+          throw new OrdersError(
+            'ORDER_TRANSITION_INVALID',
+            ['pending', 'confirmed', 'on_hold'].includes(order.status)
+              ? 'This order is not packed yet; edit it instead.'
+              : `An order that is ${order.status} cannot be replaced.`,
+          );
+        }
+        if (BigInt(order.advance_paid_poisha) > 0n) {
+          throw new OrdersError(
+            'ORDER_IMMUTABLE',
+            'This order holds an advance, so it cannot be replaced here yet. Cancel it and take the new order on the desk, or ask accounts to move the advance.',
+          );
+        }
+
+        const existing = await repo.orderLines(tx, context.orgId, order.id);
+        const offers = await this.promo.appliedOnOrder(tx, context.orgId, order.id);
+        const carried = new Set(offers.map((offer) => offer.discountId));
+        if ((input.discountIds ?? []).some((discountId) => !carried.has(discountId))) {
+          assertMayApplyOffers(context);
+        }
+        // An inbox order's conversation is named only by someone who answers the inbox (D-742).
+        const source: Record<string, unknown> = {
+          ...((order.source ?? {}) as Record<string, unknown>),
+        };
+        if (!defineAbilityFor(context).can('read', 'Conversation')) {
+          delete source.inboxConversationId;
+        }
+        const lineDiscounts = existing.reduce(
+          (total, line) => total + BigInt(line.discount_poisha),
+          0n,
+        );
+        const offerGoods = offers.reduce(
+          (total, offer) => total + BigInt(offer.discountPoisha),
+          0n,
+        );
+        const offerDelivery = offers.reduce(
+          (total, offer) => total + BigInt(offer.deliveryDiscountPoisha),
+          0n,
+        );
+        const typed =
+          input.discountPoisha ??
+          bigintMax(BigInt(order.discount_poisha) - lineDiscounts - offerGoods, 0n).toString();
+        const baseFee =
+          input.deliveryChargePoisha ??
+          (BigInt(order.delivery_charge_poisha) + offerDelivery).toString();
+        const notes = input.notes ?? order.notes;
+
+        const created = await this.createIn(
+          tx,
+          context,
+          request,
+          {
+            channel: order.channel as CreateOrderInput['channel'],
+            source,
+            customerId: order.customer_id,
+            shipTo: input.shipTo ?? {
+              name: order.ship_name,
+              phone: order.ship_phone_e164,
+              districtId: order.ship_district_id,
+              thanaId: order.ship_thana_id,
+              ...(order.ship_area === null ? {} : { area: order.ship_area }),
+              addressLine: order.ship_address_line,
+            },
+            placedFor: order.placed_for === 'someone_else' ? 'someone_else' : 'self',
+            ...(order.recipient_customer_id === null
+              ? {}
+              : { recipientCustomerId: order.recipient_customer_id }),
+            ...(order.placed_for_note === null ? {} : { placedForNote: order.placed_for_note }),
+            ...(order.branch_id === null ? {} : { branchId: order.branch_id }),
+            ...(order.location_id === null ? {} : { locationId: order.location_id }),
+            ...(order.delivery_zone_id === null ? {} : { deliveryZoneId: order.delivery_zone_id }),
+            ...(order.courier_id === null ? {} : { courierId: order.courier_id }),
+            ...(order.assigned_to === null ? {} : { assignedTo: order.assigned_to }),
+            deliveryChargePoisha: baseFee,
+            discountPoisha: typed,
+            ...(notes === null ? {} : { notes }),
+            lines: input.lines,
+          },
+          {},
+        );
+
+        // Within the order history's 500 characters.
+        const prefix = `Replaced by ${created.orderNo}: `;
+        await this.transitions.move(tx, context, request, order, 'cancel', {
+          reason: `${prefix}${input.reason.slice(0, 500 - prefix.length)}`,
+        });
+
+        if ((input.discountIds ?? []).length > 0) {
+          await this.editIn(
+            tx,
+            context,
+            request,
+            created.id,
+            {
+              discountIds: input.discountIds ?? [],
+              discountPoisha: typed,
+              deliveryChargePoisha: baseFee,
+            },
+            { offersChecked: true },
+          );
+        }
+        await repo.setReplacesOrder(tx, {
+          orgId: context.orgId,
+          orderId: created.id,
+          replacesOrderId: order.id,
+        });
+
+        const replacement = await repo.orderForUpdate(tx, context.orgId, created.id);
+        if (replacement === undefined) throw new Error('the replacement written here is gone');
+        const confirmed = await this.transitions.move(
+          tx,
+          context,
+          request,
+          replacement,
+          'confirm',
+          {},
+        );
+
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: 'order.replaced',
+          entityType: 'order',
+          entityId: order.id,
+          before: { status: order.status, codAmountPoisha: String(order.cod_amount_poisha) },
+          after: {
+            replacementId: created.id,
+            replacementNo: created.orderNo,
+            codAmountPoisha: String(confirmed.order.cod_amount_poisha),
+          },
+          request,
+        });
+
+        return {
+          id: created.id,
+          orderNo: created.orderNo,
+          replacedOrderId: order.id,
+          replacedOrderNo: order.order_no,
+        };
+      }),
+    );
   }
 
   /** A system caller's lock on an order of the brand, with no person's scope to apply. */
@@ -2471,6 +2992,67 @@ function toCallView(row: repo.CallAttemptRow) {
     calledBy: row.called_by,
     calledAt: new Date(row.called_at).toISOString(),
   };
+}
+
+/** How many products one page of the editor's picker lists (M50, D-923). */
+const PICKER_PAGE = 24;
+
+/**
+ * Applying an offer is §6's "apply codes" grant, `read LandingPage` (sales, branch managers,
+ * marketing, org admins): a role that may not type a taka off may not pick a code either
+ * (ledger audit C2).
+ */
+function assertMayApplyOffers(context: ActiveContext): void {
+  if (!defineAbilityFor(context).can('read', 'LandingPage')) {
+    throw new OrdersError('FORBIDDEN', 'Your role cannot apply offers to an order.');
+  }
+}
+
+/** An offer as the editor's panel reads it: money as strings, the word only for who may use it. */
+function toOfferView(offer: OfferView, showCode: boolean) {
+  return {
+    discountId: offer.discountId,
+    method: offer.method,
+    code: showCode ? offer.code : null,
+    title: offer.title,
+    description: offer.description,
+    kind: offer.kind,
+    allowStacking: offer.allowStacking,
+    qualifies: offer.qualifies,
+    discountPoisha: offer.discountPoisha.toString(),
+    deliveryDiscountPoisha: offer.deliveryDiscountPoisha.toString(),
+    reason: offer.reason,
+  };
+}
+
+function toAppliedView(entry: AppliedDiscountView, showCode: boolean) {
+  return {
+    discountId: entry.discountId,
+    method: entry.method,
+    code: showCode ? entry.code : null,
+    title: entry.title,
+    discountPoisha: entry.discountPoisha.toString(),
+    deliveryDiscountPoisha: entry.deliveryDiscountPoisha.toString(),
+  };
+}
+
+/**
+ * Every offer the person chose is one the engine applied (M50, D-921). The panel priced the
+ * same choice a moment ago, so a difference means something changed since (a limit reached,
+ * a discount paused, two that do not stack); saving without it would change the cash on
+ * delivery behind their back, so the edit is refused and the panel shows the offers again.
+ */
+function assertAllChosenApply(
+  chosenIds: readonly string[],
+  quote: { readonly applied: readonly { readonly discountId: string }[] },
+): void {
+  const applied = new Set(quote.applied.map((entry) => entry.discountId));
+  if ([...new Set(chosenIds)].some((id) => !applied.has(id))) {
+    throw new OrdersError(
+      'PROMO_NOT_APPLICABLE',
+      'One of the chosen offers no longer applies to this order, or it does not combine with the others. Look at the offers again.',
+    );
+  }
 }
 
 function bigintMax(left: bigint, right: bigint): bigint {

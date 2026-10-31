@@ -106,6 +106,83 @@ export async function activeAutomatic(tx: Tx, orgId: string): Promise<PromoCodeR
   return [...rows];
 }
 
+/**
+ * M50 (D-921): every switched-on discount a person may offer on one buyer's order, codes and
+ * automatic ones alike, minus other buyers' personal codes. The engine decides which apply.
+ */
+export async function liveForBuyer(
+  tx: Tx,
+  orgId: string,
+  customerId: string | null,
+): Promise<PromoCodeRow[]> {
+  const rows = await tx.execute<PromoCodeRow>(sql`
+    select ${CODE_COLUMNS} from promo.codes c
+    where c.org_id = ${orgId} and c.status = 'active'
+      and ${customerId === null ? sql`c.customer_id is null` : sql`(c.customer_id is null or c.customer_id = ${customerId})`}
+    order by c.priority desc, c.id
+    limit 300
+  `);
+  return [...rows];
+}
+
+/** Row locks on these discounts, in id order, so two transactions take them the same way (M50). */
+export async function lockCodes(tx: Tx, orgId: string, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await tx.execute(sql`
+    select c.id from promo.codes c
+    where c.org_id = ${orgId} and c.id = any (${sql.param([...ids])}::uuid[])
+    order by c.id
+    for update
+  `);
+}
+
+/** These discounts by id, any status: a paused one is refused by the engine, not lost. */
+export async function codesByIds(
+  tx: Tx,
+  orgId: string,
+  ids: readonly string[],
+): Promise<PromoCodeRow[]> {
+  if (ids.length === 0) return [];
+  const rows = await tx.execute<PromoCodeRow>(sql`
+    select ${CODE_COLUMNS} from promo.codes c
+    where c.org_id = ${orgId} and c.id = any (${sql.param([...ids])}::uuid[])
+  `);
+  return [...rows];
+}
+
+/** The applied redemptions on an order with their discount's title and word (M50). */
+export async function appliedOnOrder(
+  tx: Tx,
+  orgId: string,
+  orderId: string,
+): Promise<
+  {
+    code_id: string;
+    method: string;
+    code: string | null;
+    title: string;
+    discount_poisha: string;
+    delivery_discount_poisha: string;
+  }[]
+> {
+  const rows = await tx.execute<{
+    code_id: string;
+    method: string;
+    code: string | null;
+    title: string;
+    discount_poisha: string;
+    delivery_discount_poisha: string;
+  }>(sql`
+    select r.code_id, c.method, c.code, c.title, r.discount_poisha::text,
+           r.delivery_discount_poisha::text
+    from promo.redemptions r
+    join promo.codes c on c.org_id = r.org_id and c.id = r.code_id
+    where r.org_id = ${orgId} and r.order_id = ${orderId} and r.status = 'applied'
+    order by r.code_id
+  `);
+  return [...rows];
+}
+
 export async function codeById(
   tx: Tx,
   orgId: string,
@@ -296,6 +373,8 @@ export async function usageOfMany(
   orgId: string,
   codeIds: readonly string[],
   customerId: string | null,
+  /** M50: an order being edited, whose own uses are about to be given back. */
+  excludeOrderId: string | null = null,
 ): Promise<Map<string, { total: number; byCustomer: number }>> {
   if (codeIds.length === 0) return new Map();
   const rows = await tx.execute<{ code_id: string; total: number; by_customer: number }>(sql`
@@ -307,6 +386,7 @@ export async function usageOfMany(
     from promo.redemptions r
     where r.org_id = ${orgId} and r.code_id = any (${sql.param([...codeIds])}::uuid[])
       and r.status = 'applied'
+      and ${excludeOrderId === null ? sql`true` : sql`r.order_id is distinct from ${excludeOrderId}::uuid`}
     group by r.code_id
   `);
   return new Map(

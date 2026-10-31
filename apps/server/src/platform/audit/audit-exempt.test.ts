@@ -36,6 +36,8 @@ describe('auditNothingChanged', () => {
     expect(sites.sort()).toEqual([
       // M46 (D-803): a bound computer's check-in, which moves only its last-seen instant and
       // who is signed in there; binding and revoking are audited by the service.
+      // M50 (D-921): the order editor's offers quote, a read sent as a POST for its basket.
+      'modules/orders/orders.controller.ts',
       'modules/packing/terminals.controller.ts',
       // M41 (D-713): a presence beat that changed nothing but the caller's last-seen instant.
       'modules/team/team.controller.ts',

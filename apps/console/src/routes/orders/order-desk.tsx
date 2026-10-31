@@ -12,6 +12,7 @@ import {
   Kbd,
   PageHeader,
   Select,
+  Dialog,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearch } from '@tanstack/react-router';
@@ -28,7 +29,9 @@ import {
 
 import { ApiError } from '../../api.js';
 import { useAbility, useSession } from '../../auth/session.js';
-import { useLocale } from '../../i18n/locale.js';
+import { useLocale, useT } from '../../i18n/locale.js';
+import '../../i18n/order-edit.js';
+import { OrderProductPicker } from './order-product-picker.js';
 import {
   availability,
   checkPromo,
@@ -442,6 +445,10 @@ function Desk() {
   });
   const availableOf = (skuId: string): number | null =>
     stock.data?.items.find((item) => item.skuId === skuId)?.availableQty ?? null;
+
+  // M50 (D-923): every product with its photo, sizes, prices and stock, in a dialog.
+  const [browsing, setBrowsing] = useState(false);
+  const tw = useT();
 
   function addHit(index: number) {
     const hit = hits[index] ?? hits[0];
@@ -940,6 +947,8 @@ function Desk() {
               <Input
                 id={`${ids}-sku`}
                 ref={skuRef}
+                // M50 (D-925): a scan anywhere on the desk lands here.
+                data-scan-search=""
                 role="combobox"
                 aria-expanded={hits.length > 0}
                 aria-controls={`${ids}-sku-list`}
@@ -959,6 +968,9 @@ function Desk() {
               <p id={`${ids}-sku-hint`} className="text-xs text-muted-foreground">
                 {t('orders.desk.skuHint')}
               </p>
+              <Button type="button" variant="outline" size="sm" onClick={() => setBrowsing(true)}>
+                {tw('oe.picker.open')}
+              </Button>
               {skuQuery.trim().length >= 3 ? (
                 <ul
                   id={`${ids}-sku-list`}
@@ -1389,6 +1401,36 @@ function Desk() {
       </div>
 
       <ShortcutsHelp open={helpOpen} onOpenChange={setHelpOpen} shortcuts={shortcuts} />
+      {browsing ? (
+        <Dialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setBrowsing(false);
+          }}
+          title={tw('oe.picker.open')}
+          closeLabel={tw('oe.picker.close')}
+          className="w-[min(44rem,calc(100vw-2rem))]"
+        >
+          <div className="mt-4">
+            <OrderProductPicker
+              autoFocus
+              onOrder={new Set(lines.map((line) => line.skuId))}
+              onAdd={(product, variant) =>
+                setLines((current) =>
+                  addLine(current, {
+                    skuId: variant.skuId,
+                    skuCode: variant.code,
+                    name: `${product.name} ${variant.label}`.trim(),
+                    qty: 1,
+                    unitPricePoisha: variant.pricePoisha,
+                    availableQty: variant.available,
+                  }),
+                )
+              }
+            />
+          </div>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

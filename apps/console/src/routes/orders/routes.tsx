@@ -86,5 +86,31 @@ export function ordersRoutes<TRoot extends AnyRoute>(rootRoute: TRoot) {
     component: lazyRouteComponent(() => import('./order-detail.js'), 'OrderDetailPage'),
   });
 
-  return [list, desk, queue, buyers, returns, scan, packing, hub, team, detail] as const;
+  // M50 (D-921 to D-924): edit an order (or change a packed one), and return items from a parcel.
+  const edit = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/orders/$orderId/edit',
+    component: lazyRouteComponent(() => import('./order-edit.js'), 'OrderEditPage'),
+  });
+
+  const returnItems = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/orders/$orderId/return',
+    component: lazyRouteComponent(() => import('./order-return.js'), 'OrderReturnPage'),
+  });
+
+  return [
+    list,
+    desk,
+    queue,
+    buyers,
+    returns,
+    scan,
+    packing,
+    hub,
+    team,
+    detail,
+    edit,
+    returnItems,
+  ] as const;
 }

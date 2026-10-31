@@ -333,6 +333,8 @@ const READS_SENT_AS_POSTS: ReadonlySet<string> = new Set([
   'POST /v1/telephony/lookup',
   'POST /v1/telephony/caller-panel',
   'POST /v1/telephony/calls/search',
+  // M50 (D-921): the order editor's offers quote, a POST for its basket, repeated as a person types.
+  'POST /v1/orders/:id/offers',
 ]);
 
 function testedRoutes(): RouteDeclaration[] {

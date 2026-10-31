@@ -1427,3 +1427,21 @@ The owner's ask of 2026-10-19: a rounder, organised inbox that looks like a mess
 4. The buyer page's address book adds, replaces, makes default and removes, always keeping one default.
 5. A search matching 25 products lists all 25 over two pages, none twice.
 6. The inbox stack spec passes with the new panel, its screenshots in both themes and no serious or critical accessibility violation; the first download stays within 250 KB.
+
+## M50: Order edit, replace and returns with offers
+
+The owner's request of 2026-10-31 (plan: `docs/plans/M50.md`; D-921 to D-925).
+
+- **Edit:** an order before packing is edited in place on `/orders/$orderId/edit`: items, delivery charge, the person's discount, and the offers it qualifies for (D-921).
+- **Change a packed order:** the same screen cancels it and creates a confirmed replacement in one transaction, each naming the other (D-922).
+- **Return items:** `/orders/$orderId/return` marks the pieces the buyer gave back (or scans them), re-prices what was kept with the offers panel and a new delivery charge, and records the partial delivery or the whole return (D-924).
+- **Product picker:** every product with its photo, sizes, colours, prices, SKUs and stock, a page at a time; search by name, SKU, barcode or slug; on the desk too (D-923).
+- **Scans:** a scan fills the page's search box wherever focus is (D-925).
+
+**Acceptance checks**
+
+1. An edit that drops a piece lists the offer the order no longer qualifies for with its reason and refuses it on save; the chosen offer is applied, the old use given back, and the same code can be applied again later.
+2. A packed order changed is cancelled and a confirmed replacement created in one transaction; an unpacked order is refused there.
+3. A return quote for a parcel with the courier gives nothing to collect for a whole return and, for a partial one, the kept goods less the chosen offer plus the typed charge, beside §7's expectation.
+4. The picker lists every product with nothing typed and finds one by barcode; a scan with focus anywhere on a list page fills its search box.
+5. Typecheck, lint, the route matrix, i18n, migrations, schema drift, the API client and the first-download budget pass.

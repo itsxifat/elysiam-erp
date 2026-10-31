@@ -234,10 +234,75 @@ export const updateOrderSchema = z
     discountPoisha: poishaString.optional(),
     notes: z.string().trim().max(2000).optional(),
     lines: z.array(createOrderLineSchema).min(1).max(100).optional(),
+    /**
+     * M50 (D-921): the offers the person chose in the editor's panel. Present, the order's
+     * discounts are given back and these are priced and taken again; `discountPoisha` and
+     * `deliveryChargePoisha` are then the typed discount and the charge before any offer.
+     */
+    discountIds: z.array(uuid).max(10).optional(),
   })
   .strict();
 
 export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;
+
+/**
+ * M50 (D-922): a packed order changed. It is cancelled and replaced by a new order with these
+ * terms, in one transaction; the reason goes on the cancelled order.
+ */
+export const replaceOrderSchema = z
+  .object({
+    reason,
+    shipTo: addressSchema
+      .extend({ name: z.string().trim().min(1).max(200).optional(), phone: phoneInput.optional() })
+      .optional(),
+    deliveryChargePoisha: poishaString.optional(),
+    discountPoisha: poishaString.optional(),
+    notes: z.string().trim().max(2000).optional(),
+    lines: z.array(createOrderLineSchema).min(1).max(100),
+    discountIds: z.array(uuid).max(10).optional(),
+  })
+  .strict();
+
+export type ReplaceOrderInput = z.infer<typeof replaceOrderSchema>;
+
+/**
+ * M50 (D-921): the editor's offers panel. `edit` prices the order's lines as edited; `return`
+ * prices what the buyer keeps of a parcel already with the courier, at the order's own prices.
+ */
+export const orderOffersSchema = z.discriminatedUnion('mode', [
+  z
+    .object({
+      mode: z.literal('edit'),
+      lines: z.array(createOrderLineSchema).min(1).max(100),
+      discountPoisha: poishaString.optional(),
+      deliveryChargePoisha: poishaString,
+      discountIds: z.array(uuid).max(10).default([]),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal('return'),
+      keep: z
+        .array(z.object({ skuId: uuid, qty: z.number().int().min(0).max(100_000) }).strict())
+        .min(1)
+        .max(100),
+      deliveryChargePoisha: poishaString,
+      discountIds: z.array(uuid).max(10).default([]),
+    })
+    .strict(),
+]);
+
+export type OrderOffersInput = z.infer<typeof orderOffersSchema>;
+
+/** M50: the order editor's product picker. Nothing typed lists every product, newest first. */
+export const orderPickerQuerySchema = z
+  .object({
+    q: z.string().trim().max(100).optional(),
+    offset: z.coerce.number().int().min(0).max(100_000).optional(),
+  })
+  .strict();
+
+export type OrderPickerQuery = z.infer<typeof orderPickerQuerySchema>;
 
 /** The order list's queues (M11, M41). */
 export const ORDER_QUEUES = [

@@ -232,6 +232,7 @@ export function ProductPicker({ recentIds, preset, pushed, onPick, inputRef }: P
           ref={inputRef}
           id={`${ids}-q`}
           type="search"
+          data-scan-search=""
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onInputKey}

@@ -203,6 +203,10 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/order-advances/:id/void',
   'GET /v1/orders/return-reasons',
   'POST /v1/orders/:id/exchange',
+  // M50: the order editor's offers panel, a packed order's replacement and the product picker.
+  'POST /v1/orders/:id/offers',
+  'POST /v1/orders/:id/replace',
+  'GET /v1/orders/picker',
   'GET /v1/orders/:id/document',
   'GET /v1/customers',
   'POST /v1/customers',

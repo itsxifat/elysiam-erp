@@ -958,6 +958,7 @@ export const OPERATIONS = {
   },
   getV1OrdersDocuments: { method: 'GET', path: '/v1/orders/documents', ability: 'read:Order' },
   getV1OrdersDuplicates: { method: 'GET', path: '/v1/orders/duplicates', ability: 'read:Order' },
+  getV1OrdersPicker: { method: 'GET', path: '/v1/orders/picker', ability: 'read:Catalog' },
   getV1OrdersReturnReasons: {
     method: 'GET',
     path: '/v1/orders/return-reasons',
@@ -2028,6 +2029,7 @@ export const OPERATIONS = {
     ability: 'create:Order',
   },
   postV1OrdersByIdHold: { method: 'POST', path: '/v1/orders/{id}/hold', ability: 'update:Order' },
+  postV1OrdersByIdOffers: { method: 'POST', path: '/v1/orders/{id}/offers', ability: 'read:Order' },
   postV1OrdersByIdPack: { method: 'POST', path: '/v1/orders/{id}/pack', ability: 'update:Order' },
   postV1OrdersByIdPartialDelivery: {
     method: 'POST',
@@ -2042,6 +2044,11 @@ export const OPERATIONS = {
   postV1OrdersByIdReleaseHold: {
     method: 'POST',
     path: '/v1/orders/{id}/release-hold',
+    ability: 'update:Order',
+  },
+  postV1OrdersByIdReplace: {
+    method: 'POST',
+    path: '/v1/orders/{id}/replace',
     ability: 'update:Order',
   },
   postV1OrdersByIdShip: { method: 'POST', path: '/v1/orders/{id}/ship', ability: 'update:Order' },
@@ -3661,6 +3668,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/orders/duplicates */
     getV1OrdersDuplicates: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1OrdersDuplicates, undefined, options),
+    /** GET /v1/orders/picker */
+    getV1OrdersPicker: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1OrdersPicker, undefined, options),
     /** GET /v1/orders/return-reasons */
     getV1OrdersReturnReasons: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1OrdersReturnReasons, undefined, options),
@@ -4894,6 +4904,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdHold, input, options),
+    /** POST /v1/orders/:id/offers */
+    postV1OrdersByIdOffers: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdOffers, input, options),
     /** POST /v1/orders/:id/pack */
     postV1OrdersByIdPack: (
       input: { readonly path: { readonly id: string } },
@@ -4916,6 +4931,11 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdReleaseHold, input, options),
+    /** POST /v1/orders/:id/replace */
+    postV1OrdersByIdReplace: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.postV1OrdersByIdReplace, input, options),
     /** POST /v1/orders/:id/ship */
     postV1OrdersByIdShip: (
       input: { readonly path: { readonly id: string } },

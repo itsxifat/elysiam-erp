@@ -2466,3 +2466,57 @@ export async function inboxOriginOf(
   `);
   return rows[0];
 }
+
+// --- M50: order edit, replace and returns with offers (D-921, D-922) ---------------------------
+
+/** The replacement names the packed order it replaced, once, while it is new. */
+export async function setReplacesOrder(
+  tx: Tx,
+  input: { readonly orgId: string; readonly orderId: string; readonly replacesOrderId: string },
+): Promise<void> {
+  await tx.execute(sql`
+    update sales.orders set replaces_order_id = ${input.replacesOrderId}::uuid, updated_at = now()
+    where org_id = ${input.orgId} and id = ${input.orderId} and replaces_order_id is null
+  `);
+}
+
+/** The order this one replaced, and the order that replaced it, by number. */
+export async function replacementLinks(
+  tx: Tx,
+  orgId: string,
+  orderId: string,
+): Promise<{
+  replaces: { id: string; orderNo: string } | null;
+  replacedBy: { id: string; orderNo: string } | null;
+}> {
+  const rows = await tx.execute<{ id: string; order_no: string; side: string }>(sql`
+    select p.id, p.order_no, 'replaces' as side
+    from sales.orders o
+    join sales.orders p on p.org_id = o.org_id and p.id = o.replaces_order_id
+    where o.org_id = ${orgId} and o.id = ${orderId}
+    union all
+    select n.id, n.order_no, 'replaced_by' as side
+    from sales.orders n
+    where n.org_id = ${orgId} and n.replaces_order_id = ${orderId}
+  `);
+  const pick = (side: string) => {
+    const row = rows.find((entry) => entry.side === side);
+    return row === undefined ? null : { id: row.id, orderNo: row.order_no };
+  };
+  return { replaces: pick('replaces'), replacedBy: pick('replaced_by') };
+}
+
+/**
+ * The desk's single promo code reference follows the offers an edit applied (M50): the first
+ * code among them, or none. The redemptions are the record; this column only names one.
+ */
+export async function setOrderPromoCode(
+  tx: Tx,
+  input: { readonly orgId: string; readonly orderId: string; readonly promoCodeId: string | null },
+): Promise<void> {
+  await tx.execute(sql`
+    update sales.orders set promo_code_id = ${input.promoCodeId}::uuid, updated_at = now()
+    where org_id = ${input.orgId} and id = ${input.orderId}
+      and status in ('pending', 'confirmed', 'on_hold')
+  `);
+}

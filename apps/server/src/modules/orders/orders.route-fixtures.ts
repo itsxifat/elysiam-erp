@@ -486,6 +486,26 @@ export const ORDERS_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> 
     };
   },
 
+  // --- M50: the order editor ---------------------------------------------------
+
+  'POST /v1/orders/:id/offers': async () => ({
+    url: `/v1/orders/${await freshOrder('pending')}/offers`,
+    body: {
+      mode: 'edit',
+      lines: [{ skuId: sku(0).id, qty: 1 }],
+      deliveryChargePoisha: '6000',
+      discountIds: [],
+    },
+  }),
+
+  'POST /v1/orders/:id/replace': async () => ({
+    // Packed and still holding its units: the cancel releases them for the replacement.
+    url: `/v1/orders/${await freshOrder('packed', { reserve: true })}/replace`,
+    body: { reason: 'The buyer changed the size', lines: [{ skuId: sku(0).id, qty: 1 }] },
+  }),
+
+  'GET /v1/orders/picker': () => ({ url: '/v1/orders/picker' }),
+
   'GET /v1/orders/:id/document': async () => ({
     url: `/v1/orders/${await freshOrder('pending')}/document?kind=invoice`,
   }),

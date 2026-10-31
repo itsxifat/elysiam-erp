@@ -8,10 +8,32 @@ import * as flashRepo from './flash.repository.js';
 import { FlashService, type FlashClaimLine, type StorefrontFlashSale } from './flash.service.js';
 import { PromoError, promoHttpError } from './promo.errors.js';
 import * as repo from './promo.repository.js';
-import { PromoService, type AppliedDiscountView, type DiscountQuote } from './promo.service.js';
+import {
+  PromoService,
+  type AppliedDiscountView,
+  type DiscountQuote,
+  type OfferView,
+  type OffersInput,
+} from './promo.service.js';
 import * as references from './references.repository.js';
 
-export type { AppliedDiscountView, DiscountQuote, QuoteRefusal } from './promo.service.js';
+export type {
+  AppliedDiscountView,
+  DiscountQuote,
+  OfferView,
+  OffersInput,
+  QuoteRefusal,
+} from './promo.service.js';
+
+/** A discount applied to an order, as the order's page shows it (M50). */
+export interface AppliedOnOrder {
+  readonly discountId: string;
+  readonly method: 'code' | 'automatic';
+  readonly code: string | null;
+  readonly title: string;
+  readonly discountPoisha: string;
+  readonly deliveryDiscountPoisha: string;
+}
 export type { FlashClaimLine, StorefrontFlashSale } from './flash.service.js';
 
 /**
@@ -284,6 +306,30 @@ export interface PromoApi {
     orgId: string,
     orderId: string,
   ): Promise<{ readonly appliedDiscounts: number; readonly flashClaims: number }>;
+
+  /**
+   * M50 (D-921): the order editor's offers panel. Every live discount for this buyer, each with
+   * what it gives the basket or why it does not. Claims nothing.
+   */
+  offersForOrder(tx: Tx, orgId: string, input: OffersInput): Promise<readonly OfferView[]>;
+
+  /** M50 (D-921): what the chosen discounts give the basket, through the one engine. */
+  quoteChosen(
+    tx: Tx,
+    orgId: string,
+    input: OffersInput & { readonly discountIds: readonly string[] },
+  ): Promise<DiscountQuote>;
+
+  /** M50: the discounts applied to an order now, with their titles. */
+  appliedOnOrder(tx: Tx, orgId: string, orderId: string): Promise<readonly AppliedOnOrder[]>;
+
+  /** M50: lock the order's discounts and the chosen ones, in id order, before re-pricing. */
+  lockForReprice(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    chosenIds: readonly string[],
+  ): Promise<void>;
 }
 
 export const PROMO_API = Symbol('PromoApi');
@@ -499,5 +545,37 @@ export class PromoApiService implements PromoApi {
       appliedDiscounts: await this.promo.appliedCount(tx, orgId, orderId),
       flashClaims: await this.flash.claimsHeld(tx, orgId, orderId),
     };
+  }
+
+  async offersForOrder(tx: Tx, orgId: string, input: OffersInput): Promise<readonly OfferView[]> {
+    return asHttp(() => this.promo.offers(tx, orgId, input));
+  }
+
+  async quoteChosen(
+    tx: Tx,
+    orgId: string,
+    input: OffersInput & { readonly discountIds: readonly string[] },
+  ): Promise<DiscountQuote> {
+    return asHttp(() => this.promo.quoteChosen(tx, orgId, input));
+  }
+
+  lockForReprice(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    chosenIds: readonly string[],
+  ): Promise<void> {
+    return this.promo.lockForReprice(tx, orgId, orderId, chosenIds);
+  }
+
+  async appliedOnOrder(tx: Tx, orgId: string, orderId: string): Promise<readonly AppliedOnOrder[]> {
+    return (await repo.appliedOnOrder(tx, orgId, orderId)).map((row) => ({
+      discountId: row.code_id,
+      method: row.method === 'automatic' ? 'automatic' : 'code',
+      code: row.code,
+      title: row.title,
+      discountPoisha: row.discount_poisha,
+      deliveryDiscountPoisha: row.delivery_discount_poisha,
+    }));
   }
 }

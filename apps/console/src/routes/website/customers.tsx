@@ -31,6 +31,7 @@ export function WebsiteCustomersPage() {
             <input
               id={`${id}-search`}
               type="search"
+              data-scan-search=""
               value={search}
               maxLength={64}
               className={control}

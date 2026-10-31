@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -17,7 +18,10 @@ import { customerAddressSchema } from '@elysium/contracts/customers';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
-import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
+import {
+  auditNothingChanged,
+  type AuditableRequest,
+} from '../../platform/audit/audit.interceptor.js';
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { BuyersService } from './buyers.service.js';
@@ -49,9 +53,12 @@ import {
   exchangeOrderSchema,
   holdOrderSchema,
   orderIdSchema,
+  orderOffersSchema,
+  orderPickerQuerySchema,
   orderQuerySchema,
   reengagementExportQuerySchema,
   reengagementQuerySchema,
+  replaceOrderSchema,
   returnOrderSchema,
   shipOrderSchema,
   startReturnSchema,
@@ -168,6 +175,33 @@ export class OrdersController {
     return this.desk.duplicates(requireContext(request), request, parsed);
   }
 
+  /**
+   * The order editor's product picker (M50, D-923): `?q=` (a name, SKU, parent SKU, barcode or
+   * slug; nothing lists every product, newest first) with `&offset=` for the next page, or
+   * `?skuIds=` for an order's lines; `&locationId=` for the stock in hand there. `read Catalog`,
+   * the grant the order desk's SKU search already declares. Selling prices only.
+   */
+  @RequireAbility('read', 'Catalog')
+  @Get('picker')
+  async picker(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const raw = (query ?? {}) as Record<string, unknown>;
+    const { skuIds, locationId, ...rest } = raw;
+    const parsed = parse(orderPickerQuerySchema, rest);
+    const ids =
+      typeof skuIds === 'string'
+        ? parse(
+            z.array(z.string().uuid()).min(1).max(100),
+            skuIds.split(',').filter((part) => part !== ''),
+          )
+        : undefined;
+    const location = locationId === undefined ? undefined : parse(orderIdSchema, locationId);
+    return this.orders.picker(requireContext(request), {
+      ...parsed,
+      ...(ids === undefined ? {} : { skuIds: ids }),
+      ...(location === undefined ? {} : { locationId: location }),
+    });
+  }
+
   /** The people who act on orders, for the agent filter and the timeline's names. */
   @RequireAbility('read', 'Order')
   @Get('agents')
@@ -257,6 +291,40 @@ export class OrdersController {
       auditable(request),
       parse(orderIdSchema, id),
       patch,
+    );
+  }
+
+  /**
+   * The order editor's offers panel (M50, D-921): every live offer for the basket as edited, or
+   * for what the buyer keeps of a parcel, with what the chosen ones come to. Reads only, in the
+   * caller's read scope; the save (`PATCH`, `replace`, a partial delivery) checks again.
+   */
+  @RequireAbility('read', 'Order')
+  @Post(':id/offers')
+  @HttpCode(200)
+  async offers(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    // A read sent as a POST for its basket; the editor repeats it as the person types.
+    auditNothingChanged(auditable(request), 'the order editor’s offers quote reads only');
+    return this.orders.editorOffers(
+      requireContext(request),
+      request,
+      parse(orderIdSchema, id),
+      parse(orderOffersSchema, body),
+    );
+  }
+
+  /**
+   * A packed order changed (M50, D-922): cancelled and replaced by a confirmed order with the
+   * new terms, in one transaction. Answers the replacement's id and number.
+   */
+  @RequireAbility('update', 'Order')
+  @Post(':id/replace')
+  async replace(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.orders.replace(
+      requireContext(request),
+      auditable(request),
+      parse(orderIdSchema, id),
+      parse(replaceOrderSchema, body),
     );
   }
 

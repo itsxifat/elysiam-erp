@@ -3935,3 +3935,66 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
   Gotenberg up). Every courier suite: 334 passed, 1 skipped. Typecheck, lint, `check:i18n`,
   `check:routes`, `check:api-client` and `check:bundle` (248.5 of 250 KB): PASS.
 - **New dependencies:** none. **Migration:** none.
+
+## 2026-10-31 · M50 · order edit, packed-order change, returns with offers, every product, scans fill search
+
+- **The owner's request:** edit an order any time before it is packed; a packed order is
+  cancelled and a new one created; a parcel with the courier can come back whole or in part;
+  after removing or returning items a side panel shows which of the brand's offers the order
+  now qualifies for, to choose and apply; the delivery charge can be changed; the product
+  picker shows photos and every detail, every product (not 20), and finds by name, SKU or
+  barcode; a barcode scan fills the search wherever focus is, on every search box.
+- **Decisions:** D-921 (an edit names its offers; 0164's redemption index counts applied rows
+  only), D-922 (a packed order is replaced, never edited; refused while it holds an advance),
+  D-923 (the editor's picker lists every product), D-924 (a return re-prices what was kept and
+  books it through the existing partial delivery), D-925 (a scan fills the page's search box).
+- **Server:** `POST /v1/orders/:id/offers` (`read Order`, staff only, no row lock, no audit
+  row; codes' words only for `read LandingPage`), `POST /v1/orders/:id/replace`
+  (`update Order`), `GET /v1/orders/picker` (`read Catalog`); `PATCH /v1/orders/:id` takes
+  `discountIds` (gives the order's discounts back and takes the chosen ones in one
+  transaction, the codes locked in id order first; applying an offer the order does not carry
+  needs `read LandingPage`); order detail carries `appliedOffers`, `replaces`, `replacedBy`.
+  Promo: `offers`, `quoteChosen`, `lockForReprice`, `appliedOnOrder`; first-order offers leave
+  the order being edited out of the buyer's history. Domain: `repriceReturn`.
+- **Console:** `/orders/$orderId/edit` (edit, or "Change order" for a packed one, with the
+  offers panel, delivery charge, your discount and the server's totals), `/orders/$orderId/return`
+  (pieces returned by click or scan, offers on what was kept, delivery charge, what the rider
+  collects; records a partial delivery or the whole parcel returning, on the parcel when there
+  is one), the order page's Edit order / Change order / Return items, applied offers and
+  replacement links; the product picker (photos, every size and colour with price, SKU and
+  stock, 24 a page to the last, any word); "Browse products" on the desk. Every `SearchInput`
+  (and the desk's SKU box, the inbox and offer pickers) is a scan target; the editor screens
+  take every scan and put a box back if a scan was typed into it.
+- **Ledger audit:** two critical and five warnings, fixed before landing. C1: the Return page
+  dropped the order's typed discount, so the rider would have been told to collect its kept
+  share too much; the kept pieces now keep their share (as §7 splits it). C2: offers bypassed
+  the "apply codes" grant (a warehouse user could apply a 50% code) and `/offers` showed every
+  code's word to resellers; applying a new offer now needs `read LandingPage`, resellers are
+  refused and words hidden. W1: a first-order offer was refused on its own order's edit. W2: an
+  offer larger than what was left after an advance was clamped away; it is refused now. W3:
+  migration meta files formatted. Notes fixed: lock order across release and redeem, no row lock
+  on the quote, no audit row per quote, the cancel reason within 500 characters, an inbox
+  order's conversation dropped from a replacement for a role without the inbox.
+- **Tests:** `order-edit.e2e.test.ts` 4 (offers re-applied with uses given back and the same
+  code again, refusal of a no-longer-qualifying offer, replace, return quotes, warehouse and
+  reseller refused), `audit-exempt.test.ts`, `route-matrix.e2e.test.ts` 2 (every route as every
+  role), `promo.db.test.ts` 14, domain `return-reprice.test.ts` 7, console
+  `order-edit-logic.test.ts` 5 and `scanner.test.tsx` 5: all passed. Typecheck, lint,
+  `check:i18n`, `check:migrations`, `check:schema`, `check:routes`, `check:api-client`,
+  `check:bundle` (248.8 of 250 KB): PASS.
+- **Follow-ups:** replacing a packed order that holds an advance; a changed delivery charge on a
+  return goes to Sales discounts rather than delivery income; offers chosen on a return take no
+  use (W5); a paid return (delivery charge only); a replacement counts as a cancelled order in the
+  buyer's stats; the typed/offer split lives in three places (one domain function); a
+  parallel-transaction test of two edits racing for a code's last use; `liveForBuyer` stops at
+  300 discounts; telling the courier the new COD amount (no verified endpoint).
+- **New dependencies:** none. **Migration:** 0164.
+
+## 2026-10-31 · fix · the call card steps aside of the caller panel and can be moved
+
+- **Decision:** D-926. The owner's screenshot: the call card sat over the caller panel's details
+  and could not be dragged. With the caller panel open the card and the phone's status bar sit at
+  the bottom left, clear of it; the card's new handle drags it, the arrow keys nudge it, a
+  double-click or Home puts it back; it stays inside the window and is remembered per browser.
+- **Tests:** console calls suites 12 passed; typecheck, lint, `check:i18n`, `check:bundle`: PASS.
+- **New dependencies:** none. **Migration:** none.

@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./money": {
+      "types": "./dist/money/index.d.ts",
+      "default": "./dist/money/index.js"
+    },
     "./courier": {
       "types": "./dist/courier/index.d.ts",
       "default": "./dist/courier/index.js"

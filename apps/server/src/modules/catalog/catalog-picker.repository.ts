@@ -42,6 +42,24 @@ export async function pickerProductIds(
   offset = 0,
 ): Promise<{ ids: string[]; matchedSkus: Map<string, string>; more: boolean }> {
   const raw = q.trim();
+  if (raw === '') {
+    /*
+     * Nothing typed (M50, D-923): every active product, newest first, a page at a time, so the
+     * order editor's picker can be browsed through to the last product rather than stopping at
+     * a screenful.
+     */
+    const rows = await tx.execute<{ id: string }>(sql`
+      select p.id from catalog.products p
+      where p.org_id = ${orgId} and p.status = 'active'
+      order by p.sequence desc, p.id
+      limit ${limit + 1} offset ${offset}
+    `);
+    return {
+      ids: rows.slice(0, limit).map((row) => row.id),
+      matchedSkus: new Map(),
+      more: rows.length > limit,
+    };
+  }
   const lower = raw.toLowerCase();
   const pinned: string[] = [];
   const matchedSkus = new Map<string, string>();

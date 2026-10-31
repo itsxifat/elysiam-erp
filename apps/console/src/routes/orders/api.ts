@@ -172,6 +172,18 @@ export interface OrderDetail extends OrderRow {
   readonly owners?: readonly { readonly userId: string; readonly name: string | null }[];
   /** What the server will accept next, from the domain's own table. */
   readonly transitions: readonly AvailableTransition[];
+  /** M50: the offers applied to the order now. */
+  readonly appliedOffers?: readonly {
+    readonly discountId: string;
+    readonly method: 'code' | 'automatic';
+    readonly code: string | null;
+    readonly title: string;
+    readonly discountPoisha: string;
+    readonly deliveryDiscountPoisha: string;
+  }[];
+  /** M50 (D-922): the packed order this one replaced, and the order that replaced this one. */
+  readonly replaces?: { readonly id: string; readonly orderNo: string } | null;
+  readonly replacedBy?: { readonly id: string; readonly orderNo: string } | null;
 }
 
 export interface OrderListQuery {

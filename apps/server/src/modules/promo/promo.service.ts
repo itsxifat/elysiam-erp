@@ -89,6 +89,45 @@ export interface AppliedDiscountView {
 /** A refusal from the engine, or a word that names no discount of this brand. */
 export type QuoteRefusal = DiscountReason | 'not_found';
 
+/** One offer in the order editor's panel (M50, D-921): what it gives this basket, or why not. */
+export interface OfferView {
+  readonly discountId: string;
+  readonly method: 'code' | 'automatic';
+  readonly code: string | null;
+  readonly title: string;
+  readonly description: string;
+  readonly kind: DiscountKind;
+  readonly allowStacking: boolean;
+  readonly qualifies: boolean;
+  readonly discountPoisha: Poisha;
+  readonly deliveryDiscountPoisha: Poisha;
+  /** Why it does not apply; null when it qualifies. */
+  readonly reason: DiscountReason | null;
+}
+
+/** The basket an order editor prices, with the order whose own uses are given back first. */
+export interface OffersInput {
+  readonly lines: readonly PricedLine[];
+  readonly orderDiscountPoisha?: string | undefined;
+  readonly deliveryChargePoisha: string;
+  readonly channel: string;
+  readonly customerId: string | null;
+  readonly excludeOrderId: string | null;
+  readonly now: Date;
+}
+
+/**
+ * Reasons that mean the discount is not on offer here at all, rather than "not for this
+ * basket": the panel leaves these out instead of listing every paused or ended code.
+ */
+const NOT_ON_OFFER: ReadonlySet<DiscountReason> = new Set([
+  'inactive',
+  'not_yet_valid',
+  'expired',
+  'personal_code',
+  'wrong_channel',
+]);
+
 @Injectable()
 export class PromoService {
   constructor(
@@ -228,6 +267,145 @@ export class PromoService {
   }
 
   /**
+   * The order editor's offers panel (M50, D-921).
+   *
+   * Every switched-on discount, codes and automatic ones, evaluated against the basket as the
+   * person has edited it (or what the buyer kept after a return), so they see which offers it
+   * qualifies for and why the others do not. Discounts that cannot be offered here at all are
+   * left out (`NOT_ON_OFFER`). Usage leaves out the order's own uses, because applying a choice
+   * gives those back first. Claims nothing.
+   */
+  async offers(tx: Tx, orgId: string, input: OffersInput): Promise<OfferView[]> {
+    const rows = await repo.liveForBuyer(tx, orgId, input.customerId);
+    if (rows.length === 0) return [];
+    const discounts = await this.discountsOf(tx, orgId, rows);
+    const basket = await this.basketFor(tx, orgId, {
+      lines: input.lines,
+      orderDiscountPoisha: input.orderDiscountPoisha,
+      deliveryChargePoisha: input.deliveryChargePoisha,
+      channel: input.channel,
+      customerId: input.customerId,
+      now: input.now,
+      on: undefined,
+      needsHistory: discounts.some((discount) => discount.firstOrderOnly),
+      excludeOrderId: input.excludeOrderId,
+    });
+    const usage = await repo.usageOfMany(
+      tx,
+      orgId,
+      rows.map((row) => row.id),
+      input.customerId,
+      input.excludeOrderId,
+    );
+    const views: OfferView[] = [];
+    discounts.forEach((discount, index) => {
+      const row = rows[index];
+      if (row === undefined) return;
+      const verdict = evaluateDiscount(
+        discount,
+        basket,
+        usage.get(discount.id) ?? { total: 0, byCustomer: 0 },
+      );
+      if (!verdict.ok && NOT_ON_OFFER.has(verdict.reason)) return;
+      views.push({
+        discountId: discount.id,
+        method: discount.method,
+        code: discount.code,
+        title: row.title,
+        description: row.description,
+        kind: discount.kind,
+        allowStacking: discount.allowStacking,
+        qualifies: verdict.ok,
+        discountPoisha: verdict.ok ? verdict.discountPoisha : poisha(0n),
+        deliveryDiscountPoisha: verdict.ok ? verdict.deliveryDiscountPoisha : poisha(0n),
+        reason: verdict.ok ? null : verdict.reason,
+      });
+    });
+    // What qualifies first, the most generous first; then the rest in priority order.
+    return views.sort((a, b) => {
+      if (a.qualifies !== b.qualifies) return a.qualifies ? -1 : 1;
+      const difference =
+        b.discountPoisha + b.deliveryDiscountPoisha - (a.discountPoisha + a.deliveryDiscountPoisha);
+      return difference === 0n ? 0 : difference > 0n ? 1 : -1;
+    });
+  }
+
+  /**
+   * What the discounts a person chose give this basket, through the one engine (M50, D-921).
+   *
+   * The chosen discounts are the only candidates, and a chosen code counts as typed. The engine
+   * still decides: two that do not stack give the better one, never both. Usage leaves out the
+   * order's own uses, as `offers` does. Claims nothing: `redeemQuote` takes the uses.
+   */
+  async quoteChosen(
+    tx: Tx,
+    orgId: string,
+    input: OffersInput & { readonly discountIds: readonly string[] },
+  ): Promise<DiscountQuote> {
+    const ids = [...new Set(input.discountIds)];
+    const rows = await repo.codesByIds(tx, orgId, ids);
+    if (rows.length !== ids.length) {
+      throw new PromoError('PROMO_NOT_FOUND', 'One of those discounts is not in this brand.');
+    }
+    if (rows.length === 0) {
+      return {
+        applied: [],
+        refused: [],
+        discountPoisha: poisha(0n),
+        deliveryDiscountPoisha: poisha(0n),
+      };
+    }
+    const discounts = await this.discountsOf(tx, orgId, rows);
+    const basket = await this.basketFor(tx, orgId, {
+      lines: input.lines,
+      orderDiscountPoisha: input.orderDiscountPoisha,
+      deliveryChargePoisha: input.deliveryChargePoisha,
+      channel: input.channel,
+      customerId: input.customerId,
+      now: input.now,
+      on: undefined,
+      needsHistory: discounts.some((discount) => discount.firstOrderOnly),
+      excludeOrderId: input.excludeOrderId,
+    });
+    const usage = await repo.usageOfMany(tx, orgId, ids, input.customerId, input.excludeOrderId);
+    const words = rows.flatMap((row) =>
+      row.method === 'code' && row.code !== null ? [row.code] : [],
+    );
+    const result = computeDiscounts({ discounts, basket, codes: words, usage });
+    const titles = new Map(rows.map((row) => [row.id, row.title]));
+    return {
+      applied: result.applied.map((entry) => ({
+        discountId: entry.discount.id,
+        method: entry.discount.method,
+        code: entry.discount.code,
+        title: titles.get(entry.discount.id) ?? '',
+        kind: entry.discount.kind,
+        discountPoisha: entry.discountPoisha,
+        deliveryDiscountPoisha: entry.deliveryDiscountPoisha,
+      })),
+      refused: result.refused,
+      discountPoisha: result.discountPoisha,
+      deliveryDiscountPoisha: result.deliveryDiscountPoisha,
+    };
+  }
+
+  /**
+   * Lock every discount an edit touches, the order's current ones and the chosen ones, in one
+   * pass in id order (M50, ledger audit note). Release then locks the old ones and redeem the
+   * new ones; taken one set at a time, two edits swapping codes X and Y could each hold one and
+   * wait for the other.
+   */
+  async lockForReprice(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    chosenIds: readonly string[],
+  ): Promise<void> {
+    const current = (await repo.appliedForOrder(tx, orgId, orderId)).map((row) => row.code_id);
+    await repo.lockCodes(tx, orgId, [...new Set([...current, ...chosenIds])].sort());
+  }
+
+  /**
    * Take a use of every discount a quote applied and record each against the order, in the
    * order's transaction (M35a).
    *
@@ -297,6 +475,8 @@ export class PromoService {
       readonly now: Date;
       readonly on: string | undefined;
       readonly needsHistory: boolean;
+      /** M50: an order being edited, which is not an earlier order of its own buyer. */
+      readonly excludeOrderId?: string | null;
     },
   ): Promise<DiscountBasket> {
     const skuIds = [...new Set(input.lines.map((line) => line.skuId))];
@@ -332,7 +512,7 @@ export class PromoService {
       customerId: input.customerId,
       // Asked only when a discount needs it: the answer costs the orders module a query.
       isFirstOrder: input.needsHistory
-        ? await this.buyers.isFirstOrder(tx, orgId, input.customerId)
+        ? await this.buyers.isFirstOrder(tx, orgId, input.customerId, input.excludeOrderId ?? null)
         : false,
       on: input.on === undefined ? businessDate(input.now) : toIsoDate(input.on),
       now: input.now,

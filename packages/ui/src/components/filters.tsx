@@ -13,9 +13,21 @@ export type SearchInputProps = Omit<InputProps, 'type'> & {
   /** Rendered as a clear button inside the field once there is text. */
   readonly onClear?: () => void;
   readonly clearLabel?: string;
+  /**
+   * A barcode scan anywhere on the page fills this box (M50, D-925), unless a screen listening
+   * for scans takes it first. On by default; off for a box a scan has no business in.
+   */
+  readonly scanTarget?: boolean;
 };
 
-export function SearchInput({ className, onClear, clearLabel, value, ...rest }: SearchInputProps) {
+export function SearchInput({
+  className,
+  onClear,
+  clearLabel,
+  value,
+  scanTarget = true,
+  ...rest
+}: SearchInputProps) {
   const hasValue = typeof value === 'string' ? value !== '' : value !== undefined;
   return (
     <div className={cn('relative w-full sm:w-72', className)}>
@@ -25,6 +37,7 @@ export function SearchInput({ className, onClear, clearLabel, value, ...rest }: 
       />
       <input
         type="search"
+        {...(scanTarget ? { 'data-scan-search': '' } : {})}
         {...(value === undefined ? {} : { value })}
         className={cn(
           controlClassName,

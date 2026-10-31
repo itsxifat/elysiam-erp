@@ -945,6 +945,7 @@ function ProductPicker({
           id={`${id}-search`}
           className={control}
           type="search"
+          data-scan-search=""
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />

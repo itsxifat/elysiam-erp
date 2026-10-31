@@ -1439,6 +1439,7 @@ function InterestsSection({ ctx }: { readonly ctx: Ctx }) {
           <Input
             id={`${ids}-search`}
             type="search"
+            data-scan-search=""
             value={q}
             placeholder={t('inbox.panel.interestSearch')}
             onChange={(event) => setQ(event.target.value)}

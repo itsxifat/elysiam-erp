@@ -60,3 +60,53 @@ export function isTypingTarget(target: EventTarget | null): boolean {
     type,
   );
 }
+
+/**
+ * The search box a scan fills when no screen is listening (M50, D-925): the owner's words,
+ * "if we scan any barcode with barcode scanner it must auto fill for product search, no need to
+ * click the input field … do this trick for all other input fields for searching anything".
+ * A search box opts in with `data-scan-search`; the last visible one in the page wins, which is
+ * the one in an open dialog, because dialogs render at the end of the page.
+ */
+export function visibleScanSearch(): HTMLInputElement | null {
+  const fields = [...document.querySelectorAll<HTMLInputElement>('input[data-scan-search]')].filter(
+    (field) => !field.disabled && field.getClientRects().length > 0,
+  );
+  return fields.at(-1) ?? null;
+}
+
+/**
+ * Put a value into an input the way typing would, so React's `onChange` hears it: through the
+ * native setter (React tracks the value it last set) and a bubbling `input` event.
+ */
+export function fillInput(
+  field: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+  options: { readonly focus?: boolean } = {},
+): void {
+  const prototype =
+    field instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(field, value);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  if (options.focus !== false) {
+    field.focus();
+    if (field instanceof HTMLInputElement && field.type !== 'number') {
+      field.setSelectionRange(value.length, value.length);
+    }
+  }
+}
+
+/**
+ * A text field inside a screen that takes every scan (M50): `data-scan-capture` on the screen.
+ * A scan typed into one of its quantity or charge boxes is taken back out of the box and goes
+ * where scans go there; its search boxes (`data-scan-search`) keep what is typed into them.
+ */
+export function isCaptureTarget(
+  target: EventTarget | null,
+): target is HTMLInputElement | HTMLTextAreaElement {
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return false;
+  if (target.hasAttribute('data-scan-search')) return false;
+  return target.closest('[data-scan-capture]') !== null && isTypingTarget(target);
+}

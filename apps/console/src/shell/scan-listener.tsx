@@ -8,7 +8,13 @@ import { ApiError, api } from '../api.js';
 import { useAbility } from '../auth/session.js';
 import { useT } from '../i18n/locale.js';
 import '../i18n/stock-tools.js';
-import { currentScanHandler, isTypingTarget } from '../lib/scanner.js';
+import {
+  currentScanHandler,
+  fillInput,
+  isCaptureTarget,
+  isTypingTarget,
+  visibleScanSearch,
+} from '../lib/scanner.js';
 import { CameraScanButton } from '../routes/catalog/camera-scan.js';
 
 /**
@@ -19,8 +25,9 @@ import { CameraScanButton } from '../routes/catalog/camera-scan.js';
  * last, ended by Enter). Key presses inside a text box are left alone, so typing into a form
  * is never mistaken for a scan, unless the box opted in (`data-scan="accept"`).
  *
- * A scan goes to the stock screen that is listening (`useScanHandler`), or, with none,
- * opens the product at that variant. Enter's own action is cancelled, so a scan with focus
+ * A scan goes to the stock screen that is listening (`useScanHandler`); with none, into the
+ * page's search box (`data-scan-search`, M50), and with no search box either, it opens the
+ * product at that variant. Enter's own action is cancelled, so a scan with focus
  * on a button does not also press it.
  *
  * Loaded as its own chunk once the shell has painted: it costs the first screen nothing.
@@ -49,6 +56,12 @@ export function ScanListener() {
       const handler = currentScanHandler();
       if (handler !== undefined) {
         handler(code);
+        return;
+      }
+      // M50 (D-925): a page with a search box takes the scan into it, wherever focus is.
+      const search = visibleScanSearch();
+      if (search !== null) {
+        fillInput(search, code);
         return;
       }
       if (!mayOpen) {
@@ -80,19 +93,32 @@ export function ScanListener() {
 
   useEffect(() => {
     const detector = createScanDetector();
+    // M50: what a capturing screen's box held before a burst began, to put back after a scan.
+    let before: { field: HTMLInputElement | HTMLTextAreaElement; value: string } | null = null;
     function onKeyDown(event: KeyboardEvent) {
       if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
         detector.reset();
+        before = null;
         return;
       }
-      if (isTypingTarget(event.target)) {
+      const capture = isCaptureTarget(event.target);
+      if (!capture && isTypingTarget(event.target)) {
         detector.reset();
+        before = null;
         return;
       }
       const step = detector.push({ key: event.key, at: event.timeStamp });
+      if (capture && step.kind === 'pending' && step.length === 1) {
+        // Keydown comes before the character lands, so this is the box as the person left it.
+        before = { field: event.target, value: event.target.value };
+      }
       if (step.kind !== 'scan') return;
       event.preventDefault();
       event.stopPropagation();
+      if (capture && before !== null && before.field === event.target) {
+        fillInput(before.field, before.value, { focus: false });
+      }
+      before = null;
       void open(step.code);
     }
     // Capture, so the scan is seen before a dialog's own key handling.
