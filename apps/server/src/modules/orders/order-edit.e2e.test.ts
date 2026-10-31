@@ -382,7 +382,7 @@ describe('who may apply offers (D-921, ledger audit C2)', () => {
       },
     });
     expect(quote.statusCode).toBe(200);
-    const listed = json<OffersBody & { offers: readonly { code: string | null }[] }>(quote);
+    const listed = json<{ readonly offers: readonly { readonly code: string | null }[] }>(quote);
     expect(listed.offers.length).toBeGreaterThan(0);
     expect(listed.offers.every((offer) => offer.code === null)).toBe(true);
   });
