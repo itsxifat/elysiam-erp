@@ -95,6 +95,9 @@ const en = {
   'common.save': 'Save',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
+  // D-929: a product's photo, clicked to see it large.
+  'common.viewPhoto': 'View the photo larger',
+  'common.noPhoto': 'No photo',
   'common.confirm': 'Confirm',
   'common.back': 'Back',
   'common.next': 'Next',

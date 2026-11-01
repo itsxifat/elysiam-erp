@@ -10,7 +10,7 @@ import {
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ImageOff, Smartphone } from 'lucide-react';
+import { Smartphone } from 'lucide-react';
 import { useId, useState } from 'react';
 
 import { ApiError } from '../../api.js';
@@ -29,6 +29,7 @@ import {
 import { OrdersNav, OrderStatusBadge } from './parts.js';
 import { ordersPath } from './paths.js';
 import type { OrderStatus } from './api.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Orders → Scan (M35b, D-554): what goes in the parcel.
@@ -163,13 +164,7 @@ function PackingList({ order }: { readonly order: PackingOrder }) {
       <ul className="divide-y divide-border border-t border-border">
         {order.items.map((item) => (
           <li key={item.skuId} className="flex items-center gap-4 px-5 py-3">
-            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-              {item.image === '' ? (
-                <ImageOff aria-hidden className="size-5 text-muted-foreground" />
-              ) : (
-                <img src={item.image} alt="" className="size-full object-cover" />
-              )}
-            </div>
+            <ProductImage skuId={item.skuId} alt={item.name} size="md" />
             <div className="min-w-0 flex-1 text-sm">
               <p className="truncate font-medium">{item.name}</p>
               <p className="text-xs text-muted-foreground">

@@ -71,6 +71,7 @@ import {
   type Behalf,
   type BuyerChoice,
 } from '../people/desk-people.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * The order desk (M11 Build list; acceptance check 1).
@@ -999,10 +1000,13 @@ function Desk() {
                             addHit(index);
                           }}
                         >
-                          <span className="min-w-0">
-                            <span className="block font-medium tabular-nums">{hit.skuCode}</span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {hit.name}
+                          <span className="flex min-w-0 items-center gap-2">
+                            <ProductImage skuId={hit.skuId} alt={hit.name} size="xs" />
+                            <span className="min-w-0">
+                              <span className="block font-medium tabular-nums">{hit.skuCode}</span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {hit.name}
+                              </span>
                             </span>
                           </span>
                           <span className="flex shrink-0 items-center gap-2">
@@ -1045,17 +1049,22 @@ function Desk() {
                     return (
                       <tr key={line.skuId} className="h-row border-b border-border">
                         <td className="py-1.5">
-                          <span className="block font-medium tabular-nums">{line.skuCode}</span>
-                          <span className="block text-xs text-muted-foreground">
-                            {line.name}
-                            {available !== null && available < line.qty ? (
-                              <>
-                                {' · '}
-                                <span className="text-destructive">
-                                  {t('orders.desk.outOfStock')}
-                                </span>
-                              </>
-                            ) : null}
+                          <span className="flex items-center gap-2">
+                            <ProductImage skuId={line.skuId} alt={line.name} size="xs" />
+                            <span className="min-w-0">
+                              <span className="block font-medium tabular-nums">{line.skuCode}</span>
+                              <span className="block text-xs text-muted-foreground">
+                                {line.name}
+                                {available !== null && available < line.qty ? (
+                                  <>
+                                    {' · '}
+                                    <span className="text-destructive">
+                                      {t('orders.desk.outOfStock')}
+                                    </span>
+                                  </>
+                                ) : null}
+                              </span>
+                            </span>
                           </span>
                         </td>
                         <td className="py-1.5 text-right">

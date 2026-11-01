@@ -54,6 +54,7 @@ import {
   type SellDraft,
 } from './sell-logic.js';
 import { useSellT } from './sell-messages.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value);
@@ -410,6 +411,7 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
                 className="alive-in space-y-1.5 rounded-md border border-border p-2"
               >
                 <div className="flex items-start gap-2">
+                  <ProductImage skuId={line.skuId} alt={line.productName} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{line.productName}</p>
                     <p className="truncate text-xs text-muted-foreground">

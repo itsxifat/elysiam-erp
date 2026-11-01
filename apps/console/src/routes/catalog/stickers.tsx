@@ -34,6 +34,7 @@ import {
   type StickerPrefs,
   type StickerSizeProblem,
 } from './stickers-plan.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Print barcode stickers (M38a, D-604): one per piece, on a thermal roll, an A4 sheet, or a
@@ -444,9 +445,14 @@ export function StickerDialog({
                 return (
                   <tr key={item.skuId} className="border-b border-border last:border-b-0">
                     <td className="px-3 py-1.5">
-                      <span className="font-medium">{item.label}</span>
-                      <span className="ms-2 text-xs text-muted-foreground tabular-nums">
-                        {item.skuCode}
+                      <span className="flex items-center gap-2">
+                        <ProductImage skuId={item.skuId} alt={item.label} size="xs" />
+                        <span>
+                          <span className="font-medium">{item.label}</span>
+                          <span className="ms-2 text-xs text-muted-foreground tabular-nums">
+                            {item.skuCode}
+                          </span>
+                        </span>
                       </span>
                     </td>
                     <td className="px-3 py-1.5 text-right">

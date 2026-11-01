@@ -13,7 +13,6 @@ import { Link } from '@tanstack/react-router';
 import {
   CheckCircle2,
   FileText,
-  ImageOff,
   Layers,
   Minus,
   PackageCheck,
@@ -61,6 +60,7 @@ import {
 } from './pack-station-api.js';
 import { OrdersNav } from './parts.js';
 import { ordersPath, useSchemaSearch } from './paths.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Orders → Pack: the packing station (M38b, D-610).
@@ -696,13 +696,7 @@ function Lines({
             data-state={line.state}
             className="flex flex-wrap items-center gap-4 px-5 py-3"
           >
-            <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-              {line.image === '' ? (
-                <ImageOff aria-hidden className="size-5 text-muted-foreground" />
-              ) : (
-                <img src={line.image} alt="" className="size-full object-cover" />
-              )}
-            </div>
+            <ProductImage skuId={line.skuId} alt={line.name} size="md" />
             <div className="min-w-0 flex-1 text-sm">
               <p className="truncate font-medium">{line.name}</p>
               <p className="text-xs text-muted-foreground">

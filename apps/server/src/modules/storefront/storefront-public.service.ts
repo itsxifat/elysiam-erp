@@ -581,6 +581,56 @@ export class StorefrontPublicService {
     };
   }
 
+  /**
+   * Product photos for the console's lists (D-929): each SKU's (its colour's, else its product's
+   * first), each product's first, and any product photo named by its file, as the website's own
+   * thumb and full URLs. Only this brand's public product photos come back; the rest are absent,
+   * which the console shows as no photo. No price, no cost.
+   */
+  async productImages(
+    context: { readonly orgId: string; readonly userId: string },
+    input: {
+      readonly skuIds: readonly string[];
+      readonly productIds: readonly string[];
+      readonly fileIds: readonly string[];
+    },
+  ) {
+    const { orgId } = context;
+    return withOrg({ orgId, userId: context.userId }, async (tx) => {
+      const skus = await this.catalog.skuImages(tx, orgId, input.skuIds);
+      const products = await this.catalog.productSummaries(tx, orgId, input.productIds);
+      const files = [
+        ...skus.map((sku) => sku.fileId),
+        ...products.map((product) => product.imageFileId),
+        ...input.fileIds,
+      ].filter((id): id is string => id !== null);
+      const media = await this.files.publicImagesIn(tx, orgId, files, ['product-image']);
+      const items: {
+        kind: 'sku' | 'product' | 'file';
+        id: string;
+        name: string | null;
+        thumb: string;
+        full: string;
+      }[] = [];
+      const push = (
+        kind: 'sku' | 'product' | 'file',
+        id: string,
+        name: string | null,
+        fileId: string | null,
+      ) => {
+        if (fileId === null) return;
+        const image = this.image(orgId, fileId, name, media);
+        if (image !== null)
+          items.push({ kind, id, name, thumb: image.urls.thumb, full: image.urls.full });
+      };
+      for (const sku of skus) push('sku', sku.skuId, sku.name, sku.fileId);
+      for (const product of products)
+        push('product', product.id, product.name, product.imageFileId);
+      for (const fileId of new Set(input.fileIds)) push('file', fileId, null, fileId);
+      return { items };
+    });
+  }
+
   /** An image as the website is told about it: absolute URLs for each size. */
   image(
     orgId: string,

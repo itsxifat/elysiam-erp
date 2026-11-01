@@ -44,6 +44,7 @@ import {
 } from './pricing-api.js';
 import { CopyCode, EanBars } from './stickers.js';
 import { marginCost, parseGrams, positivePrice, total, variantLabel } from './variant-grid.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * The product page's variants and stock (D-420), with M39b's prices (D-636, D-640, D-644,
@@ -581,6 +582,9 @@ export function VariantTable({
                       </td>
                     ) : null}
                     <td className="h-row px-3 whitespace-nowrap">
+                      <span className="me-2 inline-flex align-middle">
+                        <ProductImage skuId={sku.id} alt={label || sku.skuCode} size="xs" />
+                      </span>
                       <span className="font-medium">{label}</span>
                       {sku.status === 'archived' ? (
                         <span className="ms-2">

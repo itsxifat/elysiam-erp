@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
 } from '@nestjs/common';
 import {
@@ -28,9 +29,23 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { RequireAbility } from '../../platform/auth/abilities.js';
 import { requireContext } from '../../platform/http/context.js';
 import { mapStorefrontErrors } from './storefront.errors.js';
+import { StorefrontPublicService } from './storefront-public.service.js';
 import { StorefrontService } from './storefront.service.js';
 
 const idSchema = z.string().uuid('No such record.');
+
+/** A comma-separated list of ids in a query string, at most 100 (D-929). */
+const idListSchema = z
+  .string()
+  .optional()
+  .transform((value) => (value ?? '').split(',').filter((part) => part !== ''))
+  .pipe(z.array(z.string().uuid('No such record.')).max(100, 'At most 100 at once.'));
+
+const productImagesQuerySchema = z.object({
+  skuIds: idListSchema,
+  productIds: idListSchema,
+  fileIds: idListSchema,
+});
 
 const auditable = (request: FastifyRequest): AuditableRequest =>
   request as unknown as AuditableRequest;
@@ -59,7 +74,25 @@ function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
  */
 @Controller('v1/storefront')
 export class StorefrontController {
-  constructor(private readonly storefront: StorefrontService) {}
+  constructor(
+    private readonly storefront: StorefrontService,
+    private readonly publicService: StorefrontPublicService,
+  ) {}
+
+  /**
+   * Product photos for every list the console shows products in (D-929): `?skuIds=`,
+   * `?productIds=` and `?fileIds=`, comma-separated, up to 100 each, answered with the website's
+   * own thumb and full URLs. `read Catalog`, the grant the order desk's picker declares (every
+   * grant brand-wide, so no handler narrows by row).
+   */
+  @RequireAbility('read', 'Catalog')
+  @Get('product-images')
+  async productImages(@Req() request: FastifyRequest, @Query() query: unknown) {
+    const input = parse(productImagesQuerySchema, query ?? {});
+    return mapStorefrontErrors(() =>
+      this.publicService.productImages(requireContext(request), input),
+    );
+  }
 
   // --- settings -------------------------------------------------------------------------------
 

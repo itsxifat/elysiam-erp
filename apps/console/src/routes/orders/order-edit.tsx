@@ -36,7 +36,7 @@ import { OrderProductPicker } from './order-product-picker.js';
 import { OwnerGuardProvider, useOwnerGuard } from './owner-guard.js';
 import { OrderStatusBadge } from './parts.js';
 import { ordersPath } from './paths.js';
-import { ProductThumb } from '../inbox/product-thumb.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 const EDITABLE = new Set(['pending', 'confirmed', 'on_hold']);
 
@@ -300,7 +300,7 @@ function Editor({ order }: { readonly order: OrderDetail }) {
                       <tr key={row.skuId} className="border-b border-border last:border-b-0">
                         <td className="py-2.5">
                           <span className="flex items-center gap-3">
-                            <ProductThumb fileId={look.imageFileId} alt="" size="sm" />
+                            <ProductImage skuId={row.skuId} alt={item} />
                             <span className="min-w-0">
                               <span className="block font-medium">{row.name}</span>
                               <span className="block text-xs text-muted-foreground tabular-nums">

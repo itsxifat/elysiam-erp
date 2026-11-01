@@ -1470,7 +1470,7 @@ function InterestsSection({ ctx }: { readonly ctx: Ctx }) {
                     key={product.id}
                     className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 hover:bg-accent"
                   >
-                    <ProductThumb fileId={product.imageFileId} alt="" size="sm" />
+                    <ProductThumb fileId={product.imageFileId} alt={product.name} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{product.name}</span>
                       {product.minPricePoisha === null ? null : (

@@ -39,6 +39,7 @@ import {
 } from './api.js';
 import { daysInclusive, dhakaToday, duration, monthStart, percent, roas } from './format.js';
 import { fill, isAnalyticsKey, useAnalyticsT, type AnalyticsMessageKey } from './messages.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /** Its own chunk: the figures render first, the picture follows (§24, check:bundle). */
 const TrendChart = lazy(() =>
@@ -469,7 +470,12 @@ function Dashboard() {
               {(data?.topSkus ?? []).map((row) => (
                 <tr key={row.skuId} className="border-b border-border last:border-0">
                   <td className={`${CELL} font-mono text-xs`}>{row.skuCode}</td>
-                  <td className={CELL}>{row.productName}</td>
+                  <td className={CELL}>
+                    <span className="flex items-center gap-2">
+                      <ProductImage skuId={row.skuId} alt={row.productName} size="xs" />
+                      {row.productName}
+                    </span>
+                  </td>
                   <td className={NUMERIC}>{row.units}</td>
                 </tr>
               ))}

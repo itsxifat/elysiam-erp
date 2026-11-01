@@ -32,7 +32,6 @@ import {
   Eye,
   EyeOff,
   FileUp,
-  ImageOff,
   MoreHorizontal,
   Plus,
   Printer,
@@ -50,13 +49,7 @@ import '../../i18n/catalog-pricing.js';
 import { formatSort, keysetPage, mergeSearch, parseSort } from '../../lib/table-search.js';
 import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
 import { listSizeCharts } from '../website/api.js';
-import {
-  getProduct,
-  imageUrl,
-  listCategories,
-  listProducts,
-  type CatalogProductListItem,
-} from './api.js';
+import { getProduct, listCategories, listProducts, type CatalogProductListItem } from './api.js';
 import { copiesProblem, parseCopies, type CopiesProblem } from './duplicate-copies.js';
 import { useCatalogT } from './messages.js';
 import {
@@ -69,6 +62,7 @@ import {
 } from './pricing-api.js';
 import { StickerDialog, type StickerItem } from './stickers.js';
 import { variantLabel } from './variant-table.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * The product list (M06 Build list: "product list with pg_trgm search and filters").
@@ -803,23 +797,9 @@ export function CatalogProductsPage() {
   );
 }
 
-/** A row's photo: the first one, small, through a short-lived address. */
+/** A row's photo: the first one, small, and its large view on a click (D-929). */
 function ListThumb({ fileId, alt }: { readonly fileId: string | null; readonly alt: string }) {
-  const url = useQuery({
-    queryKey: ['files', 'url', fileId],
-    queryFn: () => imageUrl(fileId ?? ''),
-    enabled: fileId !== null,
-    staleTime: 4 * 60_000,
-  });
-  return (
-    <div className="flex size-10 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-      {url.data === undefined ? (
-        <ImageOff aria-hidden className="size-4 text-muted-foreground" />
-      ) : (
-        <img src={url.data.url} alt={alt} className="size-full object-cover" loading="lazy" />
-      )}
-    </div>
-  );
+  return <ProductImage fileId={fileId} alt={alt} />;
 }
 
 /** "{n} new products: ELY-HAWA-0021 to ELY-HAWA-0024." */

@@ -1,9 +1,7 @@
 import { Button } from '@elysium/ui';
-import { useQuery } from '@tanstack/react-query';
-import { ImageOff } from 'lucide-react';
 import { cloneElement, useId, type ReactElement } from 'react';
 
-import { imageUrl } from './api.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Small pieces the new-product form, the product page and the setup screen share
@@ -50,23 +48,9 @@ export function ChipGroup({
   );
 }
 
-/** A product photo, through a short-lived signed address. */
+/** A product photo, and its large view on a click (D-929). */
 export function Thumb({ fileId, alt }: { readonly fileId: string; readonly alt: string }) {
-  const url = useQuery({
-    queryKey: ['files', 'url', fileId],
-    queryFn: () => imageUrl(fileId),
-    // The address expires; re-ask well before it does.
-    staleTime: 4 * 60_000,
-  });
-  return (
-    <div className="flex size-24 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
-      {url.data === undefined ? (
-        <ImageOff aria-hidden className="size-5 text-muted-foreground" />
-      ) : (
-        <img src={url.data.url} alt={alt} className="size-full object-cover" />
-      )}
-    </div>
-  );
+  return <ProductImage fileId={fileId} alt={alt} size="lg" className="rounded-lg" />;
 }
 
 /**

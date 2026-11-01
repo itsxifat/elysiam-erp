@@ -31,6 +31,7 @@ import { StickerDialog, type StickerItem } from '../catalog/stickers.js';
 import { listLocations, listStock, stockValuation, type StockRow } from './api.js';
 import { StockHeader } from './stock-nav.js';
 import { useStockT } from './messages.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Stock levels (M07 Build list: "available quantity for all roles; cost and stock
@@ -160,13 +161,16 @@ export function StockLevelsPage() {
       column.accessor('productName', {
         header: st('stock.colProduct'),
         cell: (cell) => (
-          <Link
-            to="/catalog/$productId"
-            params={{ productId: cell.row.original.productId }}
-            className="font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
-          >
-            {cell.getValue()}
-          </Link>
+          <span className="flex items-center gap-2">
+            <ProductImage skuId={cell.row.original.skuId} alt={cell.getValue()} size="xs" />
+            <Link
+              to="/catalog/$productId"
+              params={{ productId: cell.row.original.productId }}
+              className="font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+            >
+              {cell.getValue()}
+            </Link>
+          </span>
         ),
       }),
       column.accessor('variantLabel', {

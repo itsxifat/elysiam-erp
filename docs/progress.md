@@ -4027,3 +4027,16 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
   `order-lifecycle.stack.ts`, `packing.stack.ts`) need the same, plus tests for the new
   refusals.
 - **New dependencies:** none. **Migration:** none.
+
+## 2026-11-01 · fix · every product listed shows its photo, clicked to see it large
+
+- **Decision:** D-929. `ProductImage` in every console screen that lists products (orders,
+  order edit and return, the desk, the inbox, packing, stock, supply, flash sales, catalog,
+  analytics); one batched `GET /v1/storefront/product-images` for the website's public URLs.
+- **Tests:** server and console typecheck, eslint, prettier, `check:bundle` (248.9 of
+  250 KB): PASS. Console suites for orders, stock, catalog, inbox, courier, supply and
+  campaigns: 171 passed; `pack-live-preview.test.tsx`'s 3 fail alone with "document is not
+  defined" when run outside the package's test environment and touch nothing changed here.
+- **Follow-ups:** the till (Sell and Returns lines) has no photos yet; native selects (stock
+  adjust and transfer, supplier returns) cannot show one; a route-matrix run for the new route.
+- **New dependencies:** none. **Migration:** none.

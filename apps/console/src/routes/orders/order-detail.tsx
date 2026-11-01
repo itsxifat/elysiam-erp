@@ -43,6 +43,7 @@ import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { OrderStatusBadge } from './parts.js';
 import { DEFAULT_ORDER_SEARCH } from './search.js';
 import { ordersPath } from './paths.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * One order: who, where, what, how much, how risky, and its timeline (M11 Build list:
@@ -324,9 +325,14 @@ function Loaded({ order }: { readonly order: OrderDetail }) {
                   {order.lines.map((line) => (
                     <tr key={line.id} className="border-b border-border last:border-b-0">
                       <td className="py-2.5">
-                        <span className="block font-medium tabular-nums">{line.skuCode}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {line.productName}
+                        <span className="flex items-center gap-3">
+                          <ProductImage skuId={line.skuId} alt={line.productName} />
+                          <span className="min-w-0">
+                            <span className="block font-medium tabular-nums">{line.skuCode}</span>
+                            <span className="block text-xs text-muted-foreground">
+                              {line.productName}
+                            </span>
+                          </span>
                         </span>
                       </td>
                       <td className="text-right tabular-nums">{line.qty}</td>

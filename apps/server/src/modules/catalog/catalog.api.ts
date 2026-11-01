@@ -210,6 +210,16 @@ export interface CatalogApi {
    */
   productSummaries(tx: Tx, orgId: string, productIds: readonly string[]): Promise<ProductSummary[]>;
 
+  /**
+   * Each SKU's photo (D-929): its colour's, else its product's first, else null; any status. For
+   * every screen that shows a product line. Ids not of this brand are absent.
+   */
+  skuImages(
+    tx: Tx,
+    orgId: string,
+    skuIds: readonly string[],
+  ): Promise<{ skuId: string; productId: string; name: string; fileId: string | null }[]>;
+
   /** These products' images, in order, each with the colour it shows (M39b, D-643) or null. */
   webImages(
     tx: Tx,
@@ -843,6 +853,15 @@ export class CatalogApiService implements CatalogApi {
       name: row.name,
       status: row.status as ProductSummary['status'],
       imageFileId: row.image_file_id,
+    }));
+  }
+
+  async skuImages(tx: Tx, orgId: string, skuIds: readonly string[]) {
+    return (await repo.skuImagesOf(tx, orgId, [...new Set(skuIds)])).map((row) => ({
+      skuId: row.sku_id,
+      productId: row.product_id,
+      name: row.name,
+      fileId: row.file_id,
     }));
   }
 

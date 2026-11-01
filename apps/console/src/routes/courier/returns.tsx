@@ -27,6 +27,7 @@ import {
 import { useCourierT, type CourierMessageKey } from './messages.js';
 import { RETURN_REASONS, type ReturnReason } from '../orders/returns-logic.js';
 import { useOrdersT, type OrdersMessageKey } from '../orders/messages.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Returns receiving, with per-line inspection (M12's returns path; §7, §8).
@@ -301,7 +302,12 @@ export function ReceiveDialog({
             <tbody>
               {(lines.data?.lines ?? []).map((line) => (
                 <tr key={line.skuId} className="border-b border-border last:border-0">
-                  <td className="py-2 font-medium tabular-nums">{line.skuCode}</td>
+                  <td className="py-2 font-medium tabular-nums">
+                    <span className="flex items-center gap-2">
+                      <ProductImage skuId={line.skuId} alt={line.skuCode} size="xs" />
+                      {line.skuCode}
+                    </span>
+                  </td>
                   <td className="py-2 text-right tabular-nums">{line.outstandingQty}</td>
                   <td className="py-2 text-right">
                     <input

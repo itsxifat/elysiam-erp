@@ -1268,3 +1268,37 @@ export async function productSummariesOf(
   `);
   return [...rows];
 }
+
+/**
+ * Each SKU's photo (D-929): the first of its product's photos showing the SKU's colour, else the
+ * product's first photo, else none. Any status, so an old order's line still shows what it was.
+ */
+export async function skuImagesOf(
+  tx: Tx,
+  orgId: string,
+  skuIds: readonly string[],
+): Promise<{ sku_id: string; product_id: string; name: string; file_id: string | null }[]> {
+  if (skuIds.length === 0) return [];
+  const rows = await tx.execute<{
+    sku_id: string;
+    product_id: string;
+    name: string;
+    file_id: string | null;
+  }>(sql`
+    select s.id as sku_id, s.product_id, p.name,
+           coalesce(
+             (select i.file_id from catalog.product_images i
+               where i.org_id = s.org_id and i.product_id = s.product_id
+                 and i.colour_value_id in (select sv.value_id from catalog.sku_values sv
+                                            where sv.org_id = s.org_id and sv.sku_id = s.id)
+               order by i.position, i.created_at limit 1),
+             (select i.file_id from catalog.product_images i
+               where i.org_id = s.org_id and i.product_id = s.product_id
+               order by i.position, i.created_at limit 1)
+           ) as file_id
+    from catalog.skus s
+    join catalog.products p on p.org_id = s.org_id and p.id = s.product_id
+    where s.org_id = ${orgId} and s.id = any (${sql.param([...skuIds])}::uuid[])
+  `);
+  return [...rows];
+}

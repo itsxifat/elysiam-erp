@@ -40,6 +40,7 @@ import {
 } from './flash-form.js';
 import { FLASH_TONE } from './flash-sales.js';
 import { useCampaignsT, type CampaignsMessageKey } from './messages.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * One flash sale, new or existing (M35a, D-542): its page on the website, its window and
@@ -557,8 +558,13 @@ function ItemRow({
   return (
     <tr className="align-top">
       <td className="px-3 py-2">
-        <span className="block font-medium">{name}</span>
-        <span className="font-mono text-xs text-muted-foreground">{item.skuCode}</span>
+        <span className="flex items-center gap-2">
+          <ProductImage skuId={item.skuId} alt={name} size="xs" />
+          <span className="min-w-0">
+            <span className="block font-medium">{name}</span>
+            <span className="font-mono text-xs text-muted-foreground">{item.skuCode}</span>
+          </span>
+        </span>
         {error === undefined ? null : (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {t(error)}

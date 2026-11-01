@@ -359,6 +359,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'GET /v1/crm/reengagement/export',
   // M33: the brand's website (Storefront, D-508).
   'GET /v1/storefront/settings',
+  // D-929: product photos for the console's lists.
+  'GET /v1/storefront/product-images',
   'PATCH /v1/storefront/settings',
   'GET /v1/storefront/hero-slides',
   'POST /v1/storefront/hero-slides',

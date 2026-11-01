@@ -50,6 +50,7 @@ import {
   TH_NUMERIC,
   TR,
 } from './supply-nav.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Supply entries: the qty-only draft and the priced receipt (D-005).
@@ -756,8 +757,13 @@ export function SupplyEntriesPage() {
                     {(draft.data?.lines ?? []).map((line) => (
                       <tr key={line.id} className={TR}>
                         <td className={TD}>
-                          <span className="font-medium tabular-nums">{line.skuCode}</span>
-                          <span className="text-muted-foreground"> · {line.productName}</span>
+                          <span className="flex items-center gap-2">
+                            <ProductImage skuId={line.skuId} alt={line.productName} size="xs" />
+                            <span>
+                              <span className="font-medium tabular-nums">{line.skuCode}</span>
+                              <span className="text-muted-foreground"> · {line.productName}</span>
+                            </span>
+                          </span>
                         </td>
                         <td className={TD_NUMERIC}>{line.qty}</td>
                         <td className={`${TD} py-2`}>

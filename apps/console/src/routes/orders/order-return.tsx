@@ -23,7 +23,7 @@ import { useLocale, useT } from '../../i18n/locale.js';
 import '../../i18n/order-edit.js';
 import { useScanHandler } from '../../lib/scanner.js';
 import { setParcelStatus } from '../courier/api.js';
-import { ProductThumb } from '../inbox/product-thumb.js';
+import { ProductImage } from '../../ui/product-image.js';
 import { deliverPartially, getOrder, startReturn, type OrderDetail } from './api.js';
 import { pickProducts, productsOfSkus, quoteReturn } from './edit-api.js';
 import { OffersPanel } from './offers-panel.js';
@@ -320,7 +320,7 @@ function Returner({ order }: { readonly order: OrderDetail }) {
                   <tr key={line.id} className="border-b border-border last:border-b-0">
                     <td className="py-2.5">
                       <span className="flex items-center gap-3">
-                        <ProductThumb fileId={look.imageFileId} alt="" size="sm" />
+                        <ProductImage skuId={line.skuId} alt={item} />
                         <span className="min-w-0">
                           <span className="block font-medium">{line.productName}</span>
                           <span className="block text-xs text-muted-foreground tabular-nums">

@@ -36,6 +36,7 @@ import {
 } from './api.js';
 import { useBranchesT, type BranchesMessageKey } from './messages.js';
 import { DatePicker } from '../../ui/date-picker.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * One showroom: what it sold, how it was paid, what is waiting, and the day close
@@ -230,9 +231,14 @@ export function BranchDetailPage() {
                   {summary.data.topSkus.map((sku) => (
                     <tr key={sku.skuId} className="border-b border-border last:border-0">
                       <td className="h-row px-4">
-                        {sku.name}
-                        <span className="ml-2 font-mono text-xs text-muted-foreground">
-                          {sku.skuCode}
+                        <span className="flex items-center gap-2">
+                          <ProductImage skuId={sku.skuId} alt={sku.name} size="xs" />
+                          <span>
+                            {sku.name}
+                            <span className="ml-2 font-mono text-xs text-muted-foreground">
+                              {sku.skuCode}
+                            </span>
+                          </span>
                         </span>
                       </td>
                       <td className="h-row px-4 text-right tabular-nums">{sku.qty}</td>

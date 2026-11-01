@@ -24,6 +24,7 @@ import { offeredActions } from './order-actions-logic.js';
 import { useOwnerGuard } from './owner-guard.js';
 import { liveParcelOf, useOrderParcels } from './parcel-panel.js';
 import { RETURN_REASONS, type ReturnReason } from './returns-logic.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * The order's lifecycle buttons (D-392).
@@ -385,24 +386,26 @@ function ActionDialog({
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">{t('orders.action.partialLines')}</legend>
             {order.lines.map((line) => (
-              <label
-                key={line.skuId}
-                className="flex items-center justify-between gap-3 text-sm"
-                htmlFor={`${id}-qty-${line.skuId}`}
-              >
-                <span className="tabular-nums">
-                  {line.skuCode} <span className="text-muted-foreground">/ {line.qty}</span>
-                </span>
-                <input
-                  id={`${id}-qty-${line.skuId}`}
-                  inputMode="numeric"
-                  value={delivered[line.skuId] ?? ''}
-                  className={`${control.replace('w-full', 'w-20')} text-right tabular-nums`}
-                  onChange={(event) =>
-                    setDelivered((current) => ({ ...current, [line.skuId]: event.target.value }))
-                  }
-                />
-              </label>
+              <div key={line.skuId} className="flex items-center gap-3">
+                <ProductImage skuId={line.skuId} alt={line.productName} size="xs" />
+                <label
+                  className="flex flex-1 items-center justify-between gap-3 text-sm"
+                  htmlFor={`${id}-qty-${line.skuId}`}
+                >
+                  <span className="tabular-nums">
+                    {line.skuCode} <span className="text-muted-foreground">/ {line.qty}</span>
+                  </span>
+                  <input
+                    id={`${id}-qty-${line.skuId}`}
+                    inputMode="numeric"
+                    value={delivered[line.skuId] ?? ''}
+                    className={`${control.replace('w-full', 'w-20')} text-right tabular-nums`}
+                    onChange={(event) =>
+                      setDelivered((current) => ({ ...current, [line.skuId]: event.target.value }))
+                    }
+                  />
+                </label>
+              </div>
             ))}
           </fieldset>
         ) : null}

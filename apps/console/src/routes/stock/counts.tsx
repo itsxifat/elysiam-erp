@@ -30,6 +30,7 @@ import {
   TR,
 } from './stock-nav.js';
 import { useStockT, type StockMessageKey } from './messages.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Stock counts (M07 Build list: "count sessions with variance approval").
@@ -274,7 +275,12 @@ export function StockCountsPage() {
                 <tbody>
                   {current.lines.map((line) => (
                     <tr key={line.skuId} className={TR}>
-                      <td className={`${TD} font-medium tabular-nums`}>{line.skuCode}</td>
+                      <td className={`${TD} font-medium tabular-nums`}>
+                        <span className="flex items-center gap-2">
+                          <ProductImage skuId={line.skuId} alt={line.skuCode} size="xs" />
+                          {line.skuCode}
+                        </span>
+                      </td>
                       <td className={TD_NUM}>{line.snapshotQty}</td>
                       <td className={`${TD} text-right`}>
                         <label className="sr-only" htmlFor={`count-${line.skuId}`}>

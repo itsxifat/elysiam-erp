@@ -334,7 +334,7 @@ export function ProductPicker({ recentIds, preset, pushed, onPick, inputRef }: P
                 productIndex === active.product ? 'bg-selected' : 'hover:bg-accent',
               )}
             >
-              <ProductThumb fileId={product.imageFileId} alt="" size="sm" />
+              <ProductThumb fileId={product.imageFileId} alt={product.name} size="sm" />
               <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="flex items-baseline gap-2">
                   <p className="min-w-0 flex-1 truncate text-sm font-medium">{product.name}</p>

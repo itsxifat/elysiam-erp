@@ -273,6 +273,7 @@ async function allIds(table: 'hero_slides' | 'nav_items'): Promise<string[]> {
 
 export const STOREFRONT_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call> | Call>> = {
   'GET /v1/storefront/settings': () => ({ url: '/v1/storefront/settings' }),
+  'GET /v1/storefront/product-images': () => ({ url: '/v1/storefront/product-images' }),
   'PATCH /v1/storefront/settings': () => ({
     url: '/v1/storefront/settings',
     body: {

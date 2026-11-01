@@ -56,6 +56,7 @@ import {
   TH_NUM,
   TR,
 } from './stock-nav.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * Stock in hand at the start (M38a, D-602): the stock the brand already holds when it starts
@@ -660,9 +661,14 @@ function NewEntry({
               {lines.map((line) => (
                 <tr key={line.skuId} className={TR}>
                   <td className={TD}>
-                    <span className="font-medium">{line.label}</span>
-                    <span className="ms-2 text-xs text-muted-foreground tabular-nums">
-                      {line.skuCode}
+                    <span className="flex items-center gap-2">
+                      <ProductImage skuId={line.skuId} alt={line.label} size="xs" />
+                      <span>
+                        <span className="font-medium">{line.label}</span>
+                        <span className="ms-2 text-xs text-muted-foreground tabular-nums">
+                          {line.skuCode}
+                        </span>
+                      </span>
                     </span>
                   </td>
                   <td className={`${TD} text-right`}>
@@ -1017,6 +1023,7 @@ function PriceDraftDialog({
         )}
         {lines.map((line) => (
           <div key={line.skuId} className="flex items-center gap-3 text-sm">
+            <ProductImage skuId={line.skuId} alt={line.productName} size="xs" />
             <span className="min-w-0 flex-1 truncate">
               {line.variantLabel === ''
                 ? line.productName

@@ -37,6 +37,7 @@ import {
   requestKey,
   variantForCode,
 } from './variant-grid.js';
+import { ProductImage } from '../../ui/product-image.js';
 
 /**
  * The product page's three stock actions (D-420): receive, adjust and transfer, each a
@@ -203,9 +204,20 @@ function QtyTable({
             return (
               <tr key={variant.id} className="border-b border-border last:border-b-0">
                 <td className="px-3 py-2">
-                  <span className="font-medium">{variant.label === '' ? '—' : variant.label}</span>
-                  <span className="ms-2 text-xs text-muted-foreground tabular-nums">
-                    {variant.skuCode}
+                  <span className="flex items-center gap-2">
+                    <ProductImage
+                      skuId={variant.id}
+                      alt={variant.label === '' ? variant.skuCode : variant.label}
+                      size="xs"
+                    />
+                    <span>
+                      <span className="font-medium">
+                        {variant.label === '' ? '—' : variant.label}
+                      </span>
+                      <span className="ms-2 text-xs text-muted-foreground tabular-nums">
+                        {variant.skuCode}
+                      </span>
+                    </span>
                   </span>
                 </td>
                 {max === undefined ? null : (
