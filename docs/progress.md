@@ -4152,6 +4152,16 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   Gotenberg (the barcode decoded off the dots), the domain and console tests, and
   `e2e/pack-station.spec.ts` in Chromium. Typecheck, eslint, prettier and every `check:*`: PASS.
   `pnpm verify` and the stack specs not run, per the minimal-tests rule.
+- **Live:** 2026-11-02 at 716fa04e (with M52) on both brands and then the mother, from the one commit
+  (D-481), after midnight in Dhaka. 166 migrations on each brand, row security still forced on
+  `packing.settings`, every service on the new image with no restarts and no error logged since;
+  the mother reads both brands (`brands test`, 166 of 166). At the deploy both brands had no order
+  in several lots at the hub and no old fully scanned order waiting; Elysiam had one packing open,
+  of one lot, whose ten-digit label still scans. Pre-deploy dumps:
+  `~/erp-brands/backups/pre-m53-*.dump`, mode 0600. They hold customer data: delete them once the
+  release has settled. A rollback cannot read a printed `…00` label, so fix forward or reprint.
+- **Not tested:** no order was packed, handed over or received on the live servers, and nothing at a
+  real table: no real scanner, printer or courier.
 - **Older tests:** `handover.e2e`, and parts of `orders.e2e` and `workflow.e2e`, pack without printing
   a label and fail on D-928's rule, as M51 noted of the others like them. One in `orders.e2e` was
   mine and is fixed. `order-documents` and `pack-station-ui` follow the new code.
