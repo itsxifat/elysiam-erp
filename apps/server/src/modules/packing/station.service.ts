@@ -1040,9 +1040,8 @@ export class PackStationService {
   ): Promise<repo.SessionRow> {
     const session = await repo.sessionById(tx, orgId, sessionId, { forUpdate });
     if (
-      session === undefined ||
       // M51 (D-934): a return's inspection is the return station's, not a packing.
-      session.kind !== 'pack' ||
+      session?.kind !== 'pack' ||
       !(await this.orders.orderVisibleTo(tx, orgId, session.order_id, request))
     ) {
       if (session === undefined) {

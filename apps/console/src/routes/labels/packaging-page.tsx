@@ -24,6 +24,7 @@ import { useLocale, useT } from '../../i18n/locale.js';
 import '../../i18n/pack-station.js';
 import { IpCamerasSettings } from '../orders/pack-cameras.js';
 import { PackStation } from '../orders/pack-station.js';
+import { ReturnStation } from '../orders/return-station.js';
 import { packingSettings, savePackingSettings } from '../orders/pack-station-api.js';
 import { ordersPath, useSchemaSearch } from '../orders/paths.js';
 import { listQueue, type QueuedOrder } from '../orders/workflow-api.js';
@@ -38,12 +39,23 @@ import { TerminalsPanel } from './terminals-panel.js';
  * Settings). M41's hub stages live here now, at the person's hub location.
  */
 
-const TABS = ['topack', 'packing', 'packed', 'handover', 'terminals', 'cameras'] as const;
+// M51 (D-934): the return station, beside packing.
+const TABS = [
+  'topack',
+  'packing',
+  'returns',
+  'packed',
+  'handover',
+  'terminals',
+  'cameras',
+] as const;
 type Tab = (typeof TABS)[number];
 
 const searchSchema = z.object({
   tab: z.enum(TABS).catch('topack'),
   order: z.string().uuid().optional().catch(undefined),
+  /** The order whose returned parcel is open at the return station. */
+  ret: z.string().uuid().optional().catch(undefined),
   location: z.string().uuid().optional().catch(undefined),
 });
 
@@ -71,6 +83,7 @@ function Packaging() {
     setSearch({
       tab: merged.tab,
       ...(merged.order === undefined ? {} : { order: merged.order }),
+      ...(merged.ret === undefined ? {} : { ret: merged.ret }),
       ...(merged.location === undefined ? {} : { location: merged.location }),
     });
   };
@@ -98,7 +111,11 @@ function Packaging() {
             data-testid={`packaging-tab-${value}`}
             className={cn(tabClassName, search.tab === value ? tabActiveClassName : null)}
             onClick={() =>
-              go({ tab: value, order: value === 'packing' ? search.order : undefined })
+              go({
+                tab: value,
+                order: value === 'packing' ? search.order : undefined,
+                ret: value === 'returns' ? search.ret : undefined,
+              })
             }
           >
             {t(`lb.ptab.${value}` as MessageKey)}
@@ -108,6 +125,8 @@ function Packaging() {
       <Body
         tab={search.tab}
         order={search.order}
+        ret={search.ret}
+        onReturn={(ret) => go({ tab: 'returns', ret })}
         locationId={location === '' ? undefined : location}
         onPack={(order) => go({ tab: 'packing', order })}
         onOrder={(order) => go({ tab: 'packing', order })}
@@ -119,12 +138,16 @@ function Packaging() {
 function Body({
   tab,
   order,
+  ret,
   locationId,
   onPack,
   onOrder,
+  onReturn,
 }: {
   readonly tab: Tab;
   readonly order: string | undefined;
+  readonly ret: string | undefined;
+  readonly onReturn: (orderId: string | undefined) => void;
   readonly locationId: string | undefined;
   readonly onPack: (orderId: string) => void;
   readonly onOrder: (orderId: string | undefined) => void;
@@ -134,6 +157,8 @@ function Body({
       return <Stage queue="hub_packing" locationId={locationId} onPack={onPack} />;
     case 'packing':
       return <PackStation order={order} onOrder={onOrder} />;
+    case 'returns':
+      return <ReturnStation order={ret} onOrder={onReturn} />;
     case 'packed':
       return <Stage queue="hub_packed" locationId={locationId} onPack={undefined} />;
     case 'handover':
@@ -251,7 +276,7 @@ function Cameras() {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: ['packing', 'settings'], queryFn: packingSettings });
   const save = useMutation({
-    mutationFn: savePackingSettings,
+    mutationFn: (videoEnabled: boolean) => savePackingSettings(videoEnabled),
     onSuccess: (next) => queryClient.setQueryData(['packing', 'settings'], next),
   });
   return (

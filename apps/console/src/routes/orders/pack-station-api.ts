@@ -9,7 +9,7 @@ import { terminalHeaders } from '../labels/api.js';
 
 export type PackLineState = 'todo' | 'partial' | 'done' | 'over';
 export type PackScanOutcome =
-  'accepted' | 'removed' | 'unknown_code' | 'wrong_item' | 'wrong_variant' | 'over';
+  'accepted' | 'removed' | 'unknown_code' | 'wrong_item' | 'wrong_variant' | 'over' | 'label';
 export type PackingVideoState = 'off' | 'pending' | 'uploaded' | 'missing' | 'deleted';
 
 export interface PersonRef {
@@ -60,17 +60,47 @@ export interface PackVideoPart {
   /** M38c: the desk's camera (uploaded by the browser) or an IP camera (cut on the server). */
   readonly source?: 'browser' | 'camera';
   readonly cameraId?: string | null;
+  /** M51 (D-932): the lot's recording it films, and its lot. */
+  readonly recordingId?: string | null;
+  readonly lot?: number;
 }
 
 export interface PackLots {
   readonly count: number;
   /** The lot being filled, or null once the order is packed. */
   readonly open: number | null;
+  /** M51 (D-930): the lots whose label started them. */
+  readonly started?: readonly number[];
   readonly closed: readonly { readonly lot: number; readonly at: string; readonly by: PersonRef }[];
   readonly pieces: readonly { readonly lot: number; readonly pieces: number }[];
 }
 
+/**
+ * One lot's recording (M51, D-930 to D-933): started by its label, paused after the idle time
+ * with no scan, stopped by the label again. `spans` are the stretches its video holds.
+ */
+export interface LotRecording {
+  readonly id: string;
+  readonly lot: number;
+  readonly state: 'recording' | 'stopped';
+  readonly videoRequired: boolean;
+  readonly source: 'browser' | 'camera';
+  readonly cameraId: string | null;
+  readonly idleMs: number;
+  readonly startedAt: string;
+  readonly startedBy: PersonRef;
+  readonly stoppedAt: string | null;
+  readonly stopReason: 'label' | 'closed' | 'finished' | 'received' | 'timed_out' | null;
+  readonly lastActivityAt: string;
+  readonly spans: readonly { readonly from: string; readonly to: string }[];
+  readonly recordedMs: number;
+}
+
 export interface PackView {
+  /** M51: the brand's pause rule, each lot's recording, and whether the label is next. */
+  readonly idlePauseMs?: number;
+  readonly recordings?: readonly LotRecording[];
+  readonly labelNeeded?: boolean;
   /** M46 (D-807, D-802, D-804): the lots, the terminal and every camera filming it. */
   readonly lots?: PackLots;
   readonly terminal?: { readonly id: string; readonly name: string } | null;
@@ -125,12 +155,20 @@ export interface PackView {
   readonly video: PackingVideoState;
 }
 
+/** What a label scan did (M51, D-930): started, closed the lot, finished, stopped or refused. */
+export interface LabelAnswer {
+  readonly action: 'started' | 'lot_closed' | 'finished' | 'stopped' | 'refused';
+  readonly lot: number | null;
+  readonly message: string | null;
+}
+
 export interface ScanAnswer {
   readonly outcome: PackScanOutcome;
   readonly accepted: boolean;
   readonly skuId: string | null;
   readonly message: string | null;
   readonly repeated: boolean;
+  readonly label?: LabelAnswer | null;
   readonly view: PackView;
 }
 
@@ -211,6 +249,8 @@ export function videoUrl(videoId: string): Promise<{
 
 export interface PackingSettings {
   readonly videoEnabled: boolean;
+  /** M51 (D-931): seconds with no scan before a lot's video pauses. */
+  readonly idlePauseSeconds?: number;
   readonly updatedAt: string | null;
   readonly canEdit: boolean;
 }
@@ -219,8 +259,14 @@ export function packingSettings(): Promise<PackingSettings> {
   return api.get('/v1/packing/settings');
 }
 
-export function savePackingSettings(videoEnabled: boolean): Promise<PackingSettings> {
-  return api.put('/v1/packing/settings', { videoEnabled });
+export function savePackingSettings(
+  videoEnabled: boolean,
+  idlePauseSeconds?: number,
+): Promise<PackingSettings> {
+  return api.put('/v1/packing/settings', {
+    videoEnabled,
+    ...(idlePauseSeconds === undefined ? {} : { idlePauseSeconds }),
+  });
 }
 
 // --- the video's upload (the files module's ticket, PUT and finalize, §22) ------------------
@@ -235,7 +281,13 @@ export interface VideoPartAnswer {
 
 export function registerVideoPart(
   sessionId: string,
-  input: { videoId: string; startedAt: string; mime: 'video/webm' | 'video/mp4' },
+  input: {
+    videoId: string;
+    startedAt: string;
+    mime: 'video/webm' | 'video/mp4';
+    /** M51 (D-932): the lot's recording this part films. */
+    recordingId?: string;
+  },
 ): Promise<VideoPartAnswer> {
   return api.post(`/v1/packing/sessions/${sessionId}/videos`, input);
 }
@@ -350,4 +402,154 @@ export function deletePackingCamera(id: string): Promise<{ id: string; deleted: 
 /** Where a camera's newest live preview frame is served (D-683), a JPEG. */
 export function cameraPreviewUrl(id: string): string {
   return new URL(`/v1/packing/cameras/${id}/preview`, env.VITE_API_URL).toString();
+}
+
+// --- M51: the return station (D-934) ------------------------------------------------------------
+
+export interface ReturnLine {
+  readonly skuId: string;
+  readonly name: string;
+  readonly image: string;
+  readonly sku: string;
+  readonly barcode: string | null;
+  readonly size: string;
+  readonly color: string;
+  /** How many can still come back (what went out less what was delivered or returned). */
+  readonly expected: number;
+  /** How many were scanned back. */
+  readonly back: number;
+  readonly state: PackLineState;
+}
+
+export interface ReturnView {
+  readonly kind: 'return';
+  readonly idlePauseMs: number;
+  readonly recordings: readonly LotRecording[];
+  readonly labelNeeded: boolean;
+  readonly lots: {
+    readonly count: number;
+    /** The bag being opened now, if any. */
+    readonly recording: number | null;
+    readonly done: readonly number[];
+    readonly pieces: readonly { readonly lot: number; readonly pieces: number }[];
+  };
+  readonly cameraIds: readonly string[];
+  readonly you: PersonRef;
+  readonly session: {
+    readonly id: string;
+    readonly orderId: string;
+    readonly orderNo: string;
+    readonly status: 'open' | 'completed';
+    readonly videoRequired: boolean;
+    readonly startedAt: string;
+    readonly startedBy: PersonRef;
+    readonly completedAt: string | null;
+    readonly completedBy: PersonRef | null;
+    readonly cameraId: string | null;
+    readonly cameraLocked: boolean;
+  };
+  readonly order: {
+    readonly id: string;
+    readonly orderNumber: string;
+    readonly status: string;
+    readonly courier: string | null;
+    readonly consignmentId: string | null;
+    readonly trackingCode: string;
+    readonly recipient: { readonly name: string; readonly address: string };
+    readonly notes: string;
+  };
+  readonly lines: readonly ReturnLine[];
+  readonly progress: {
+    readonly unitsExpected: number;
+    readonly unitsBack: number;
+    readonly missing: number;
+  };
+  readonly scans: readonly Omit<PackScan, 'scanId'>[];
+  readonly videos: readonly Pick<
+    PackVideoPart,
+    | 'id'
+    | 'part'
+    | 'state'
+    | 'mime'
+    | 'startedAt'
+    | 'durationMs'
+    | 'sizeBytes'
+    | 'source'
+    | 'cameraId'
+    | 'recordingId'
+    | 'lot'
+  >[];
+  readonly video: PackingVideoState;
+}
+
+export interface ReturnScanAnswer {
+  readonly outcome: PackScanOutcome;
+  readonly accepted: boolean;
+  readonly skuId: string | null;
+  readonly message: string | null;
+  readonly repeated: boolean;
+  readonly label: LabelAnswer | null;
+  readonly view: ReturnView;
+}
+
+/** Open the return station on a parcel by its scanned label or the order's id, or resume it. */
+export function openReturn(
+  input: ({ code: string } | { orderId: string }) & { cameraId?: string | null },
+): Promise<ReturnView> {
+  return request('/v1/packing/returns', {
+    method: 'POST',
+    body: input,
+    headers: terminalHeaders(),
+  });
+}
+
+export function scanReturn(
+  sessionId: string,
+  scanId: string,
+  code: string,
+): Promise<ReturnScanAnswer> {
+  return api.post(`/v1/packing/returns/${sessionId}/scans`, { scanId, code });
+}
+
+export function takeOutReturn(
+  sessionId: string,
+  scanId: string,
+  skuId: string,
+): Promise<ReturnView> {
+  return api.post(`/v1/packing/returns/${sessionId}/removals`, { scanId, skuId });
+}
+
+export function receiveReturnInspection(
+  sessionId: string,
+  input: {
+    readonly damaged: readonly { readonly skuId: string; readonly qty: number }[];
+    readonly returnReason: string;
+    readonly reason: string;
+    readonly inspectionNote?: string;
+    readonly damagedLocationId?: string;
+  },
+): Promise<ReturnView> {
+  return api.post(`/v1/packing/returns/${sessionId}/receive`, input);
+}
+
+export interface ReturnSummary {
+  readonly id: string;
+  readonly orderId: string;
+  readonly orderNo: string;
+  readonly status: 'open' | 'completed';
+  readonly startedAt: string;
+  readonly startedBy: PersonRef;
+  readonly completedAt: string | null;
+  readonly pieces: number;
+  readonly mismatches: number;
+  readonly lots: number;
+  readonly video: PackingVideoState;
+}
+
+export function recentReturns(): Promise<{ items: readonly ReturnSummary[] }> {
+  return api.get('/v1/packing/returns?limit=30');
+}
+
+export function orderReturn(orderId: string): Promise<ReturnView | { session: null }> {
+  return api.get(`/v1/packing/returns/orders/${orderId}`);
 }

@@ -566,7 +566,7 @@ export class CameraProcessService {
       for (const candidate of lots) {
         const done = await withOrg({ orgId }, async (tx) => {
           const recording = await rec.recordingById(tx, orgId, candidate.id, { forUpdate: true });
-          if (recording === undefined || recording.stopped_at !== null) return false;
+          if (recording?.stopped_at !== null) return false;
           const session = await cameras.recordingOf(tx, orgId, recording.session_id);
           if (session === undefined) return false;
           const at = recordingTimedOut({

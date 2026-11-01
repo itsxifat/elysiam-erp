@@ -1,4 +1,4 @@
-import { orderScanCode, readLotCode } from '@elysium/domain/packing';
+import { orderScanCode, readLotCode, recordedMs, recordingSpans } from '@elysium/domain/packing';
 
 /**
  * The packing station's rules that need no browser (M38b, D-610, D-611): which recorder
@@ -76,9 +76,88 @@ export function videoCaption(input: {
   readonly orderNo: string;
   readonly packer: string | null;
   readonly at: Date;
+  /** M51 (D-932): `LOT 2/3` on an order packed in several lots. */
+  readonly lot?: { readonly no: number; readonly of: number } | null;
+  /** M51 (D-934): a return's video says so. */
+  readonly kind?: 'pack' | 'return';
 }): string {
   const when = DHAKA_TIME.format(input.at).replace(',', '');
-  return [input.orderNo, when, input.packer ?? ''].filter((part) => part !== '').join('  ·  ');
+  const lot =
+    input.lot === undefined || input.lot === null || input.lot.of <= 1
+      ? ''
+      : `LOT ${String(input.lot.no)}/${String(input.lot.of)}`;
+  return [input.kind === 'return' ? 'RETURN' : '', input.orderNo, lot, when, input.packer ?? '']
+    .filter((part) => part !== '')
+    .join('  ·  ');
+}
+
+// --- M51: label to label and the pause (D-930, D-931) ------------------------------------------
+
+/** A lot's recording as the stations read it. */
+export interface RecordingFacts {
+  readonly id: string;
+  readonly lot: number;
+  readonly state: 'recording' | 'stopped';
+  readonly videoRequired: boolean;
+  readonly source: 'browser' | 'camera';
+  readonly idleMs: number;
+  readonly startedAt: string;
+  readonly stoppedAt: string | null;
+  readonly lastActivityAt: string;
+  readonly recordedMs: number;
+}
+
+/** The lot's recording running now, if any. */
+export function runningRecording<T extends RecordingFacts>(
+  recordings: readonly T[] | undefined,
+): T | null {
+  return recordings?.find((recording) => recording.state === 'recording') ?? null;
+}
+
+/**
+ * Where a lot's recording stands at `now` (D-931): paused once the idle time ran out since the
+ * last event (one of the lot's scans, or a scan this page just sent, so the video resumes before
+ * the server answers), how long until it pauses, how long its video runs, and in how many
+ * stretches. The domain's own rule, so the station shows what the video will hold.
+ */
+export function recordingClock(input: {
+  readonly recording: RecordingFacts;
+  /** The lot's scans' times. */
+  readonly activityMs: readonly number[];
+  /** The last scan this page sent, not yet in the server's answer. */
+  readonly localActivityAt: number | null;
+  readonly now: number;
+}): {
+  readonly paused: boolean;
+  readonly pauseInMs: number;
+  readonly recordedMs: number;
+  readonly stretches: number;
+} {
+  const { recording, now } = input;
+  const startedMs = Date.parse(recording.startedAt);
+  const stoppedMs = recording.stoppedAt === null ? null : Date.parse(recording.stoppedAt);
+  const local =
+    input.localActivityAt !== null && input.localActivityAt >= startedMs
+      ? [input.localActivityAt]
+      : [];
+  const events = [...input.activityMs, ...local];
+  const last = Math.max(startedMs, Date.parse(recording.lastActivityAt), ...events);
+  const sinceLast = now - last;
+  const paused = stoppedMs === null && sinceLast >= recording.idleMs;
+  const spans = recordingSpans({
+    startedMs,
+    activityMs: events,
+    stoppedMs,
+    nowMs: now,
+    idleMs: recording.idleMs,
+    leadMs: 0,
+  });
+  return {
+    paused,
+    pauseInMs: paused || stoppedMs !== null ? 0 : Math.max(0, recording.idleMs - sinceLast),
+    recordedMs: recordedMs(spans),
+    stretches: spans.length,
+  };
 }
 
 /** `mm:ss` (or `h:mm:ss`) for a recording's running time. */
@@ -232,6 +311,24 @@ export function ipRecordingPhase(view: {
   const parts = view.videos.filter((video) => video.source === 'camera');
   if (parts.length > 0 && parts.every((video) => video.state !== 'waiting')) return 'saved';
   return view.video === 'missing' ? 'missing' : 'cutting';
+}
+
+/**
+ * Where one lot's video stands (M51, D-932): off (the brand records nothing), recording, being
+ * uploaded or cut once stopped, saved once every part of it arrived.
+ */
+export type LotVideoPhase = 'off' | 'recording' | 'processing' | 'saved';
+
+export function lotVideoPhase(
+  recording: RecordingFacts,
+  videos: readonly { readonly recordingId?: string | null; readonly state: string }[],
+): LotVideoPhase {
+  if (!recording.videoRequired) return 'off';
+  if (recording.state === 'recording') return 'recording';
+  const parts = videos.filter((video) => video.recordingId === recording.id);
+  return parts.length > 0 && parts.every((video) => video.state !== 'waiting')
+    ? 'saved'
+    : 'processing';
 }
 
 /** The reasons the recorder gives (D-673), each with its own words; others are a stream error. */

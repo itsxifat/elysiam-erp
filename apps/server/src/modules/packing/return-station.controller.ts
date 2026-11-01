@@ -12,11 +12,13 @@ import {
 import {
   TERMINAL_DEVICE_HEADER,
   packingRemovalSchema,
-  packingReturnOpenSchema,
-  packingReturnReceiveSchema,
   packingScanSchema,
   packingSessionsQuerySchema,
 } from '@elysium/contracts';
+import {
+  packingReturnOpenSchema,
+  packingReturnReceiveSchema,
+} from '@elysium/contracts/packing-returns';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 

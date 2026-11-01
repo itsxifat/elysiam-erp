@@ -16,6 +16,10 @@
     "./customers": {
       "types": "./dist/customers.d.ts",
       "default": "./dist/customers.js"
+    },
+    "./packing-returns": {
+      "types": "./dist/packing-returns.d.ts",
+      "default": "./dist/packing-returns.js"
     }
   },
   "files": [

@@ -2,11 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   type ErrorCode,
   type PackingRemovalInput,
-  type PackingReturnOpenInput,
-  type PackingReturnReceiveInput,
   type PackingScanInput,
   type PackingSessionsQuery,
 } from '@elysium/contracts';
+import type {
+  PackingReturnOpenInput,
+  PackingReturnReceiveInput,
+} from '@elysium/contracts/packing-returns';
 import { withOrg, type Tx } from '@elysium/db';
 import { isReturnReasonCode } from '@elysium/domain';
 import { normaliseScannedCode } from '@elysium/domain/barcode';
@@ -212,7 +214,7 @@ export class ReturnStationService {
             code,
             lot: label.lot,
           });
-          return this.answer('label' as PackScanOutcome, null, answer, {
+          return this.answer('label', null, answer, {
             view: await this.view(tx, context.orgId, session, context.userId),
             repeated: false,
           });

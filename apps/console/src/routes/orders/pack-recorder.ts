@@ -16,6 +16,11 @@ import {
  * no sound). The caption is part of the picture, so it cannot be separated from the video it
  * vouches for.
  *
+ * M51 (D-930, D-931): the camera opens with the order (its picture shows while the station waits
+ * for the label) and each lot's recording is started from it at once, on the label's scan; the
+ * recorder pauses after the idle time with no scan and resumes at the next (a paused recorder
+ * keeps nothing, so the video holds only the stretches with scans in them).
+ *
  * Chunks are handed over every few seconds for the caller to keep (IndexedDB), in order; a
  * part stops itself at fifteen minutes or near the upload ceiling, whichever comes first.
  */
@@ -28,6 +33,8 @@ const RECORDING_DOT = '#e5484d';
 interface MediaRecorderLike {
   start(timeslice?: number): void;
   stop(): void;
+  pause(): void;
+  resume(): void;
   readonly state: string;
   ondataavailable: ((event: { data: Blob }) => void) | null;
   onstop: (() => void) | null;
@@ -73,8 +80,25 @@ export interface RecorderHandle {
   readonly startedAt: number;
   /** Bytes handed over so far. */
   bytes(): number;
-  /** Stop, wait for the last chunk to be kept, and let the camera go. */
+  /** Pause after the idle time (D-931); nothing is kept until it resumes. */
+  pause(): void;
+  resume(): void;
+  paused(): boolean;
+  /** Stop, wait for the last chunk to be kept. The camera stays open for the next lot. */
   stop(): Promise<{ readonly endedAt: number }>;
+}
+
+/** The camera, open and drawn onto its canvas: lots are recorded from it one at a time. */
+export interface CameraHandle {
+  /** Start one lot's recording from the open camera, at once. */
+  record(options: {
+    /** Called in order, one at a time; the recorder's stop waits for the last. */
+    readonly onChunk: (chunk: Blob, seq: number, at: number) => Promise<void>;
+    /** The part reached its limit and stopped itself. */
+    readonly onLimit: () => void;
+  }): RecorderHandle;
+  /** Let the camera go (the order closed, the station left, another camera chosen). */
+  close(): void;
 }
 
 export class RecorderUnavailableError extends Error {
@@ -84,15 +108,13 @@ export class RecorderUnavailableError extends Error {
   }
 }
 
-export async function startRecording(options: {
+export async function openCamera(options: {
   readonly canvas: HTMLCanvasElement;
   readonly deviceId: string | null;
   readonly caption: () => string;
-  /** Called in order, one at a time; the recorder's stop waits for the last. */
-  readonly onChunk: (chunk: Blob, seq: number, at: number) => Promise<void>;
-  /** The part reached its limit and stopped itself. */
-  readonly onLimit: () => void;
-}): Promise<RecorderHandle> {
+  /** Whether a recording runs and is not paused: the red dot is drawn then. */
+  readonly live: () => boolean;
+}): Promise<CameraHandle> {
   const Recorder = recorderClass();
   const mime =
     Recorder === undefined ? null : chooseRecorderMime((value) => Recorder.isTypeSupported(value));
@@ -137,10 +159,12 @@ export async function startRecording(options: {
     context.drawImage(source, 0, 0, canvas.width, canvas.height);
     context.fillStyle = CAPTION_BACKGROUND;
     context.fillRect(0, canvas.height - band, canvas.width, band);
-    context.fillStyle = RECORDING_DOT;
-    context.beginPath();
-    context.arc(band * 0.5, canvas.height - band * 0.5, band * 0.18, 0, Math.PI * 2);
-    context.fill();
+    if (options.live()) {
+      context.fillStyle = RECORDING_DOT;
+      context.beginPath();
+      context.arc(band * 0.5, canvas.height - band * 0.5, band * 0.18, 0, Math.PI * 2);
+      context.fill();
+    }
     context.fillStyle = CAPTION_TEXT;
     context.font = `600 ${String(Math.round(band * 0.5))}px system-ui, sans-serif`;
     context.textBaseline = 'middle';
@@ -153,61 +177,80 @@ export async function startRecording(options: {
   };
   draw();
   const frames = window.setInterval(draw, Math.round(1000 / FRAMES_PER_SECOND));
+  const captured = canvas.captureStream(FRAMES_PER_SECOND);
+  let closed = false;
 
-  const recorder = new Recorder(canvas.captureStream(FRAMES_PER_SECOND), {
-    mimeType: mime,
-    videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
-  });
-  const startedAt = Date.now();
-  let bytes = 0;
-  let seq = 0;
-  let kept: Promise<void> = Promise.resolve();
-  let stopping: Promise<{ endedAt: number }> | null = null;
-
-  const release = () => {
+  const close = () => {
+    if (closed) return;
+    closed = true;
     window.clearInterval(frames);
-    window.clearTimeout(limitTimer);
     for (const track of stream.getTracks()) track.stop();
+    for (const track of captured.getTracks()) track.stop();
     source.srcObject = null;
   };
 
-  const stop = (): Promise<{ endedAt: number }> => {
-    stopping ??= new Promise((resolve) => {
-      recorder.onstop = () => {
-        const endedAt = Date.now();
-        release();
-        // The last chunk arrives before `stop`; wait until it is kept.
-        void kept.then(() => resolve({ endedAt }));
-      };
-      if (recorder.state === 'inactive') {
-        release();
-        void kept.then(() => resolve({ endedAt: Date.now() }));
-      } else {
-        recorder.stop();
-      }
+  const record: CameraHandle['record'] = (handlers) => {
+    const recorder = new Recorder(captured, {
+      mimeType: mime,
+      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
     });
-    return stopping;
+    const startedAt = Date.now();
+    let bytes = 0;
+    let seq = 0;
+    let kept: Promise<void> = Promise.resolve();
+    let stopping: Promise<{ endedAt: number }> | null = null;
+
+    const stop = (): Promise<{ endedAt: number }> => {
+      stopping ??= new Promise((resolve) => {
+        window.clearTimeout(limitTimer);
+        recorder.onstop = () => {
+          const endedAt = Date.now();
+          // The last chunk arrives before `stop`; wait until it is kept.
+          void kept.then(() => resolve({ endedAt }));
+        };
+        if (recorder.state === 'inactive') {
+          void kept.then(() => resolve({ endedAt: Date.now() }));
+        } else {
+          recorder.stop();
+        }
+      });
+      return stopping;
+    };
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size === 0) return;
+      seq += 1;
+      bytes += event.data.size;
+      const chunk = event.data;
+      const number = seq;
+      const at = Date.now();
+      kept = kept.then(() => handlers.onChunk(chunk, number, at)).catch(() => undefined);
+      if (bytes >= RECORDING_MAX_BYTES && stopping === null) {
+        void stop().then(() => handlers.onLimit());
+      }
+    };
+    recorder.onerror = () => {
+      void stop();
+    };
+    const limitTimer = window.setTimeout(() => {
+      if (stopping === null) void stop().then(() => handlers.onLimit());
+    }, RECORDING_LIMIT_MS);
+
+    recorder.start(CHUNK_MS);
+    return {
+      mime,
+      startedAt,
+      bytes: () => bytes,
+      pause: () => {
+        if (recorder.state === 'recording') recorder.pause();
+      },
+      resume: () => {
+        if (recorder.state === 'paused') recorder.resume();
+      },
+      paused: () => recorder.state === 'paused',
+      stop,
+    };
   };
 
-  recorder.ondataavailable = (event) => {
-    if (event.data.size === 0) return;
-    seq += 1;
-    bytes += event.data.size;
-    const chunk = event.data;
-    const number = seq;
-    const at = Date.now();
-    kept = kept.then(() => options.onChunk(chunk, number, at)).catch(() => undefined);
-    if (bytes >= RECORDING_MAX_BYTES && stopping === null) {
-      void stop().then(() => options.onLimit());
-    }
-  };
-  recorder.onerror = () => {
-    void stop();
-  };
-  const limitTimer = window.setTimeout(() => {
-    if (stopping === null) void stop().then(() => options.onLimit());
-  }, RECORDING_LIMIT_MS);
-
-  recorder.start(CHUNK_MS);
-  return { mime, startedAt, bytes: () => bytes, stop };
+  return { record, close };
 }

@@ -1,4 +1,4 @@
-import { Button, Checkbox, DateTime, Dialog, Skeleton, StatusBadge } from '@elysium/ui';
+import { Button, Checkbox, DateTime, Dialog, Input, Skeleton, StatusBadge } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useId, useState } from 'react';
@@ -119,8 +119,12 @@ export function PackSettingsDialog({
   const id = useId();
   const queryClient = useQueryClient();
   const [videoEnabled, setVideoEnabled] = useState(settings.videoEnabled);
+  // M51 (D-931): the pause after so many seconds with no scan, 3 to 60.
+  const [idle, setIdle] = useState(String(settings.idlePauseSeconds ?? 10));
+  const idleSeconds = Number(idle);
+  const idleValid = Number.isInteger(idleSeconds) && idleSeconds >= 3 && idleSeconds <= 60;
   const save = useMutation({
-    mutationFn: () => savePackingSettings(videoEnabled),
+    mutationFn: () => savePackingSettings(videoEnabled, idleSeconds),
     onSuccess: (next) => {
       queryClient.setQueryData(['packing', 'settings'], next);
       onClose();
@@ -140,7 +144,7 @@ export function PackSettingsDialog({
           <Button variant="outline" onClick={onClose}>
             {t('ps.cancel')}
           </Button>
-          <Button disabled={save.isPending} onClick={() => save.mutate()}>
+          <Button disabled={save.isPending || !idleValid} onClick={() => save.mutate()}>
             {save.isPending ? t('ps.saving') : t('ps.save')}
           </Button>
         </>
@@ -156,6 +160,29 @@ export function PackSettingsDialog({
           <label htmlFor={`${id}-video`} className="font-medium">
             {t('ps.settings.video')}
           </label>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor={`${id}-idle`} className="font-medium">
+            {t('ps.settings.idle')}
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              id={`${id}-idle`}
+              type="number"
+              inputMode="numeric"
+              min={3}
+              max={60}
+              value={idle}
+              onChange={(event) => setIdle(event.target.value)}
+              aria-invalid={!idleValid}
+              aria-describedby={`${id}-idle-help`}
+              className="w-24 tabular-nums"
+            />
+            <span className="text-muted-foreground">{t('ps.settings.seconds')}</span>
+          </div>
+          <p id={`${id}-idle-help`} className="text-xs text-muted-foreground">
+            {t('ps.settings.idleHelp')}
+          </p>
         </div>
         {save.error === null ? null : (
           <p role="alert" className="text-destructive-text">

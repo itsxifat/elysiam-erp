@@ -89,33 +89,6 @@ export const packingSessionsQuerySchema = z
   .strict();
 export type PackingSessionsQuery = z.infer<typeof packingSessionsQuerySchema>;
 
-// --- M51: the return station (D-934) -----------------------------------------------------------
-
-/** Open the return station on a parcel that came back: by its scanned label, or the order's id. */
-export const packingReturnOpenSchema = z.union([
-  z.object({ code: packingCodeSchema, cameraId: cameraChoice }).strict(),
-  z.object({ orderId: uuid, cameraId: cameraChoice }).strict(),
-]);
-export type PackingReturnOpenInput = z.infer<typeof packingReturnOpenSchema>;
-
-/**
- * Receive the inspected return into stock (D-934): per SKU how many of the pieces scanned back are
- * damaged, why it came back (the fixed list, D-234) and the note, the shelf the damaged go to.
- */
-export const packingReturnReceiveSchema = z
-  .object({
-    damaged: z
-      .array(z.object({ skuId: uuid, qty: z.number().int().min(1).max(10_000) }).strict())
-      .max(200)
-      .default([]),
-    returnReason: z.string().trim().min(1).max(64),
-    reason: z.string().trim().min(1).max(500),
-    inspectionNote: z.string().trim().max(2_000).optional(),
-    damagedLocationId: uuid.optional(),
-  })
-  .strict();
-export type PackingReturnReceiveInput = z.infer<typeof packingReturnReceiveSchema>;
-
 // --- M38c: the packing table's IP cameras (D-668, D-669) ------------------------------------
 
 /** Control characters and whitespace, which no address, user name or password here carries. */

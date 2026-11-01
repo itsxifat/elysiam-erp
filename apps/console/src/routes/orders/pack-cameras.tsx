@@ -246,6 +246,33 @@ export function IpCameraCard({
   );
 }
 
+/**
+ * Under the station's stage (M51): the IP camera's state, and why it is offline. The recording's
+ * own state is the stage's overlay.
+ */
+export function IpCameraFooter({ camera }: { readonly camera: PackCamera | null }) {
+  const t = useT();
+  const state = camera?.state ?? 'offline';
+  const error = state === 'offline' ? cameraErrorCode(camera?.lastErrorCode ?? null) : null;
+  return (
+    <span
+      className="flex min-w-0 items-center gap-2"
+      data-testid="pack-ip-camera"
+      data-state={state}
+    >
+      {error === null ? null : (
+        <span className="truncate text-xs text-destructive-text" role="status">
+          {t(`ps.ip.error.${error}` as ConsoleT)}
+        </span>
+      )}
+      <StatusBadge tone={CAMERA_STATE_TONE[state]}>
+        <Cctv aria-hidden className="size-3.5" />
+        {t(state === 'ready' ? 'ps.ip.ready' : state === 'off' ? 'ps.ip.off' : 'ps.ip.offline')}
+      </StatusBadge>
+    </span>
+  );
+}
+
 // --- the settings (org admins, D-669) ---------------------------------------------------------
 
 const cameraFormSchema = z.object({

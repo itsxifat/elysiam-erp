@@ -33,6 +33,8 @@ export interface StoredRecording {
    * kept by an older page, which reads as none.
    */
   readonly uploadedFileId?: string | null;
+  /** M51 (D-932): the lot's recording this part films; absent on a part kept before M51. */
+  readonly recordingId?: string | null;
 }
 
 export interface VideoStore {

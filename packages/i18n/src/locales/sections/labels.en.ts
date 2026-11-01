@@ -252,6 +252,8 @@ const en = {
     'Pack each order at a packing terminal, lot by lot, on camera, then hand every lot to the courier.',
   'lb.ptab.topack': 'To pack',
   'lb.ptab.packing': 'Packing',
+  // M51 (D-934): the return station.
+  'lb.ptab.returns': 'Returns',
   'lb.ptab.packed': 'Packed',
   'lb.ptab.handover': 'Handover',
   'lb.ptab.terminals': 'Terminals',

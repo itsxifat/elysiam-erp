@@ -1,0 +1,402 @@
+/*
+ * The packing and return stations' own look (M51, D-930 to D-934), shipped with their lazy chunk
+ * so the console's first download does not carry it. Every colour, radius and duration is a
+ * token from packages/ui.
+ *
+ * The stage is the camera, large, with the recording's state over it; the step rail says what
+ * the packer does next (the label, the pieces, the label again); the lot rail shows each bag.
+ */
+
+/* --- the stage ---------------------------------------------------------------------------- */
+
+.ps-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  border-radius: calc(var(--radius) + 2px);
+  background-color: var(--scan-surface, var(--muted));
+}
+
+.ps-stage-media,
+.ps-stage > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ps-stage-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  text-align: center;
+  color: var(--muted-foreground);
+}
+
+.ps-stage-top,
+.ps-stage-bottom {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.ps-stage-top {
+  top: 0.5rem;
+}
+
+.ps-stage-bottom {
+  bottom: 0.5rem;
+  justify-content: flex-end;
+}
+
+.ps-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.625rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  color: var(--foreground);
+  background-color: var(--popover);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-popover);
+  transition:
+    background-color var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out);
+}
+
+.ps-chip[data-tone='danger'] {
+  color: var(--destructive-foreground);
+  background-color: var(--destructive);
+  border-color: var(--destructive);
+}
+
+.ps-chip[data-tone='warning'] {
+  color: var(--warning-subtle-foreground);
+  background-color: var(--warning-subtle);
+  border-color: var(--warning);
+}
+
+.ps-chip[data-tone='success'] {
+  color: var(--success-subtle-foreground);
+  background-color: var(--success-subtle);
+  border-color: var(--success);
+}
+
+.ps-chip[data-tone='info'] {
+  color: var(--info-subtle-foreground);
+  background-color: var(--info-subtle);
+  border-color: var(--info);
+}
+
+.ps-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background-color: currentColor;
+  animation: ps-pulse 1.2s var(--ease-in-out) infinite;
+}
+
+@keyframes ps-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.ps-ring {
+  width: 1rem;
+  height: 1rem;
+  transform: rotate(-90deg);
+}
+
+.ps-ring-track,
+.ps-ring-fill {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.ps-ring-track {
+  stroke: var(--border);
+}
+
+.ps-ring-fill {
+  stroke: var(--primary);
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--duration-fast) linear;
+}
+
+/* --- the step rail: label, pieces, label again --------------------------------------------- */
+
+.ps-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  counter-reset: ps-step;
+}
+
+.ps-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--card);
+  color: var(--muted-foreground);
+  transition:
+    border-color var(--duration-base) var(--ease-out),
+    background-color var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out);
+}
+
+.ps-step-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-step-text {
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.ps-step-text strong {
+  display: block;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ps-step[data-state='current'] {
+  border-color: var(--primary);
+  background-color: var(--primary-subtle);
+  color: var(--foreground);
+}
+
+.ps-step[data-state='current'] .ps-step-mark {
+  border-color: var(--primary);
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.ps-step[data-state='done'] .ps-step-mark {
+  border-color: var(--success);
+  background-color: var(--success);
+  color: var(--success-foreground);
+}
+
+/* --- the lot rail ---------------------------------------------------------------------------- */
+
+.ps-lots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ps-lot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--control-height-sm);
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--card);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.ps-lot strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ps-lot[data-state='recording'] {
+  border-color: var(--destructive);
+  color: var(--foreground);
+}
+
+.ps-lot[data-state='open'] {
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+
+.ps-lot[data-state='done'] {
+  border-color: var(--success);
+}
+
+.ps-lot-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background-color: var(--border);
+}
+
+.ps-lot[data-state='recording'] .ps-lot-dot {
+  background-color: var(--destructive);
+  animation: ps-pulse 1.2s var(--ease-in-out) infinite;
+}
+
+.ps-lot[data-state='open'] .ps-lot-dot {
+  background-color: var(--primary);
+}
+
+.ps-lot[data-state='done'] .ps-lot-dot {
+  background-color: var(--success);
+}
+
+/* --- the line's progress bar ---------------------------------------------------------------- */
+
+.ps-bar {
+  height: 0.25rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background-color: var(--muted);
+}
+
+.ps-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--primary);
+  transition: width var(--duration-base) var(--ease-out);
+}
+
+.ps-bar[data-state='done'] > span {
+  background-color: var(--success);
+}
+
+.ps-bar[data-state='over'] > span {
+  background-color: var(--destructive);
+}
+
+/* Widths in tenths, so the bar needs no style object. */
+.ps-bar > span[data-w='0'] {
+  width: 0%;
+}
+.ps-bar > span[data-w='1'] {
+  width: 10%;
+}
+.ps-bar > span[data-w='2'] {
+  width: 20%;
+}
+.ps-bar > span[data-w='3'] {
+  width: 30%;
+}
+.ps-bar > span[data-w='4'] {
+  width: 40%;
+}
+.ps-bar > span[data-w='5'] {
+  width: 50%;
+}
+.ps-bar > span[data-w='6'] {
+  width: 60%;
+}
+.ps-bar > span[data-w='7'] {
+  width: 70%;
+}
+.ps-bar > span[data-w='8'] {
+  width: 80%;
+}
+.ps-bar > span[data-w='9'] {
+  width: 90%;
+}
+.ps-bar > span[data-w='10'] {
+  width: 100%;
+}
+
+/* --- the scan field, big, at the table ------------------------------------------------------ */
+
+.ps-answer {
+  animation: ps-enter var(--duration-enter) var(--ease-out);
+}
+
+@keyframes ps-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- the layout ------------------------------------------------------------------------------ */
+
+.ps-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (width >= 64rem) {
+  .ps-grid {
+    grid-template-columns: minmax(0, 1fr) 24rem;
+    align-items: start;
+  }
+
+  .ps-grid > aside {
+    position: sticky;
+    top: calc(var(--topbar-height) + 1rem);
+  }
+}
+
+@media (width < 40rem) {
+  .ps-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-dot,
+  .ps-lot[data-state='recording'] .ps-lot-dot,
+  .ps-answer {
+    animation: none;
+  }
+
+  .ps-chip,
+  .ps-step,
+  .ps-ring-fill,
+  .ps-bar > span {
+    transition: none;
+  }
+}
+
+/* The IP camera's live view fills the stage edge to edge. */
+.ps-stage [data-testid='pack-live-preview'] {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}

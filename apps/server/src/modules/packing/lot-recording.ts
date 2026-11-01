@@ -169,7 +169,7 @@ export async function stopLotIfRunning(
   const recording = await rec.recordingOfLot(tx, input.orgId, input.session.id, input.lot, {
     forUpdate: true,
   });
-  if (recording === undefined || recording.stopped_at !== null) return;
+  if (recording?.stopped_at !== null) return;
   await stopLotRecording(tx, audit, {
     orgId: input.orgId,
     userId: input.userId,

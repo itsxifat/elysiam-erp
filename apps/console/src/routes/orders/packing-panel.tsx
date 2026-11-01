@@ -4,10 +4,17 @@ import { Play } from 'lucide-react';
 import { useId, useState, type SyntheticEvent } from 'react';
 
 import { ApiError } from '../../api.js';
+import { useAbility } from '../../auth/session.js';
 import { useT, type ConsoleT } from '../../i18n/locale.js';
 import '../../i18n/pack-station.js';
 import { VIDEO_TONE, formatElapsed, formatMegabytes, outcomeTone } from './pack-logic.js';
-import { orderPacking, videoUrl, type PackVideoPart, type PackView } from './pack-station-api.js';
+import {
+  orderPacking,
+  orderReturn,
+  videoUrl,
+  type PackVideoPart,
+  type PackView,
+} from './pack-station-api.js';
 
 /**
  * The order page's packing record (M38b, D-610, D-611): who packed it and when, every scan at
@@ -72,13 +79,11 @@ export function PackingPanel({ orderId }: { readonly orderId: string }) {
           </StatusBadge>
         </div>
         <VideoNote view={view} />
-        <ul className="space-y-3">
-          {view.videos.map((part) => (
-            <li key={part.id}>
-              <VideoPart part={part} canPlay={view.canPlay} />
-            </li>
-          ))}
-        </ul>
+        <LotVideoList
+          videos={view.videos}
+          canPlay={view.canPlay}
+          lotCount={view.lots?.count ?? 1}
+        />
       </div>
 
       <div className="space-y-2">
@@ -111,6 +116,118 @@ export function PackingPanel({ orderId }: { readonly orderId: string }) {
             {t('ps.panel.showLog')}
           </Button>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The video parts, lot by lot (M51, D-932): an order packed in several lots keeps one video per
+ * lot, each under its lot's heading.
+ */
+function LotVideoList({
+  videos,
+  canPlay,
+  lotCount,
+}: {
+  readonly videos: readonly PackVideoPart[];
+  readonly canPlay: boolean;
+  readonly lotCount: number;
+}) {
+  const t = useT();
+  const lots = [...new Set(videos.map((part) => part.lot ?? 1))].sort((a, b) => a - b);
+  if (lotCount <= 1 || lots.length === 0) {
+    return (
+      <ul className="space-y-3">
+        {videos.map((part) => (
+          <li key={part.id}>
+            <VideoPart part={part} canPlay={canPlay} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return (
+    <div className="space-y-3" data-testid="packing-panel-lots">
+      {lots.map((lot) => (
+        <div key={lot} className="space-y-2 rounded-md border border-border p-3">
+          <h4 className="text-xs font-semibold">{`${t('ps.stage.lot')} ${String(lot)}`}</h4>
+          <ul className="space-y-3">
+            {videos
+              .filter((part) => (part.lot ?? 1) === lot)
+              .map((part) => (
+                <li key={part.id}>
+                  <VideoPart part={part} canPlay={canPlay} />
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The order page's return record (M51, D-934): the returned parcel opened at the return station,
+ * who received it and when, its videos lot by lot and every scan. Shown only for an order whose
+ * return went through the station.
+ */
+export function ReturnPanel({ orderId }: { readonly orderId: string }) {
+  const t = useT();
+  const id = useId();
+  const ability = useAbility();
+  const query = useQuery({
+    queryKey: ['packing', 'order-return', orderId],
+    queryFn: () => orderReturn(orderId),
+  });
+  const data = query.data;
+  if (data === undefined || !('kind' in data)) return null;
+  const view = data;
+  const person = view.session.completedBy ?? view.session.startedBy;
+  return (
+    <section
+      aria-labelledby={id}
+      data-testid="return-panel"
+      className="space-y-4 rounded-lg border border-border bg-card p-5 text-sm"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h2 id={id} className="text-base font-semibold tracking-tight">
+          {t('rs.panel.title')}
+        </h2>
+        <StatusBadge tone={view.session.status === 'completed' ? 'success' : 'warning'}>
+          {t(view.session.status === 'completed' ? 'rs.session.completed' : 'rs.session.open')}
+        </StatusBadge>
+      </div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        <dt className="text-muted-foreground">{t('rs.panel.by')}</dt>
+        <dd>{person.name ?? '—'}</dd>
+        <dt className="text-muted-foreground">{t('ps.panel.started')}</dt>
+        <dd>
+          <DateTime value={view.session.startedAt} />
+        </dd>
+        <dt className="text-muted-foreground">{t('rs.panel.received')}</dt>
+        <dd>
+          {view.session.completedAt === null ? (
+            t('rs.session.open')
+          ) : (
+            <DateTime value={view.session.completedAt} />
+          )}
+        </dd>
+        <dt className="text-muted-foreground">{t('rs.panel.pieces')}</dt>
+        <dd className="tabular-nums">{String(view.progress.unitsBack)}</dd>
+      </dl>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-medium text-muted-foreground">{t('rs.panel.video')}</h3>
+          <StatusBadge tone={VIDEO_TONE[view.video]}>
+            {t(`ps.video.state.${view.video}`)}
+          </StatusBadge>
+        </div>
+        <LotVideoList
+          videos={view.videos as readonly PackVideoPart[]}
+          canPlay={ability.can('read', 'PackingVideo')}
+          lotCount={view.lots.count}
+        />
       </div>
     </section>
   );

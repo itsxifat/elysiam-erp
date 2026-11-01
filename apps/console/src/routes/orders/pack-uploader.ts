@@ -18,7 +18,12 @@ import type { StoredRecording, VideoStore } from './pack-video-store.js';
 export interface UploadApi {
   register(
     sessionId: string,
-    input: { videoId: string; startedAt: string; mime: 'video/webm' | 'video/mp4' },
+    input: {
+      videoId: string;
+      startedAt: string;
+      mime: 'video/webm' | 'video/mp4';
+      recordingId?: string;
+    },
   ): Promise<VideoPartAnswer>;
   ticket(input: {
     contentType: string;
@@ -64,6 +69,9 @@ export async function uploadRecording(
     videoId: recording.videoId,
     startedAt: new Date(recording.startedAt).toISOString(),
     mime,
+    ...(recording.recordingId === undefined || recording.recordingId === null
+      ? {}
+      : { recordingId: recording.recordingId }),
   });
   if (part.state !== 'waiting') {
     // A previous attempt got this far and the page closed before the copy here was dropped.
