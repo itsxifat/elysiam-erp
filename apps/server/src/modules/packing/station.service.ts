@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   MATRIX,
+  type ErrorCode,
   type MembershipRole,
   type PackingOpenInput,
   type PackingRemovalInput,
@@ -10,11 +11,12 @@ import {
 import { withOrg, type Tx } from '@elysium/db';
 import { normaliseScannedCode } from '@elysium/domain/barcode';
 import {
-  cameraRecordingFrom,
+  PACKING_IDLE_PAUSE_DEFAULT_MS,
   cameraRecordingTo,
   isPackScanRefusal,
   judgeLotClose,
   judgeLotFinish,
+  judgePackLabelScan,
   judgePackRemoval,
   judgePackScan,
   openLot,
@@ -23,9 +25,12 @@ import {
   packedCounts,
   packingVideoState,
   piecesByLot,
+  readOrderLabel,
+  type LabelVerdict,
   type PackScanOutcome,
 } from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
@@ -37,8 +42,15 @@ import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi, type PackingFacts } from '../orders/orders.api.js';
 import * as cameras from './camera.repository.js';
 import * as labels from './labels.repository.js';
+import {
+  idlePauseMsOf,
+  recordingViews,
+  startLotRecording,
+  stopLotIfRunning,
+} from './lot-recording.js';
 import { assertLabelsPrinted } from './lots.service.js';
 import { PACKING_QUEUES, type CameraCutPayload } from './packing.queues.js';
+import * as rec from './recording.repository.js';
 import { ordersForScannedCode, ScannerService } from './scanner.service.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as repo from './station.repository.js';
@@ -70,6 +82,34 @@ const REFUSAL_WORDS: Readonly<Record<string, string>> = {
   wrong_variant: 'Wrong size or colour: this order has another variant of this product.',
   over: 'One too many: this order already has every piece of this item.',
 };
+
+/** What a label scan did (M51, D-930): the answer the station shows and sounds. */
+export interface LabelAnswer {
+  readonly action: 'started' | 'lot_closed' | 'finished' | 'refused';
+  readonly lot: number | null;
+  readonly message: string | null;
+}
+
+/** Why a label was refused, in the words a packer acts on. */
+export function labelRefusalWords(
+  verdict: Extract<LabelVerdict, { kind: 'refused' }>,
+  lotCount: number,
+): string {
+  const lot = verdict.lot === null ? '' : String(verdict.lot);
+  const expected = verdict.expected === null ? '' : String(verdict.expected);
+  switch (verdict.reason) {
+    case 'no_such_lot':
+      return `This order has ${String(lotCount)} lot${lotCount === 1 ? '' : 's'}; lot ${lot} is not one of them.`;
+    case 'lot_done':
+      return verdict.expected === null
+        ? `Lot ${lot} is done.`
+        : `Lot ${lot} is done. Scan lot ${expected}’s label.`;
+    case 'other_lot':
+      return `That is lot ${lot}’s label. Lot ${expected} is open: scan its label first.`;
+    case 'all_done':
+      return 'Every lot of this order is done.';
+  }
+}
 
 /**
  * The packing station (M38b, D-610): one order at a time, every piece scanned against it.
@@ -154,6 +194,11 @@ export class PackStationService {
         } else if (input.cameraId !== undefined) {
           session = await this.chooseCamera(tx, context, request, session, input.cameraId);
         }
+        // M51 (D-930): the scan that opened the order is its label: it starts the open lot's
+        // recording (never stops one: a reload's scan only resumes the box).
+        if ('code' in input && session.status === 'open') {
+          await this.startFromOpeningScan(tx, context, request, session, input.code);
+        }
         return this.view(tx, context.orgId, session, context.userId);
       }),
     );
@@ -170,7 +215,10 @@ export class PackStationService {
     );
   }
 
-  /** One piece scanned: taken, or refused and recorded. */
+  /**
+   * One scan at the table (M51, D-930): the parcel's own label starts or stops the open lot; any
+   * other code is a piece, taken or refused and recorded, and only once its lot was started.
+   */
   async scan(
     context: ActiveContext,
     request: AuditableRequest,
@@ -192,10 +240,30 @@ export class PackStationService {
         this.assertPackable(facts);
 
         const code = normaliseScannedCode(input.code);
+        const label = readOrderLabel(code, labelFactsOf(facts));
+        if (label !== null) {
+          return this.labelScan(tx, context, request, session, facts, {
+            scanId: input.scanId,
+            code,
+            lot: label.lot,
+          });
+        }
+
+        // M46 (D-807): the piece goes into the open lot; M38b's checks still judge the order.
+        const lot = await this.openLotOf(tx, context.orgId, session);
+        const earlier = await repo.scansOf(tx, context.orgId, sessionId);
+        if (!(await this.lotStarted(tx, context.orgId, session, lot, earlier))) {
+          const lotCount = await labels.lotCountOf(tx, context.orgId, session.order_id);
+          throw new PackingError(
+            'PACKING_LABEL_FIRST',
+            lotCount > 1
+              ? `Scan lot ${String(lot)}’s label first: it starts the lot’s recording.`
+              : 'Scan the parcel label first: it starts the recording.',
+          );
+        }
         const found =
           code === '' ? undefined : await this.catalog.lookupCode(tx, context.orgId, code);
         const needs = await this.needsOf(tx, context.orgId, facts);
-        const earlier = await repo.scansOf(tx, context.orgId, sessionId);
         const packed = packedCounts(
           earlier.map((row) => ({
             skuId: row.sku_id,
@@ -207,9 +275,7 @@ export class PackStationService {
           packed,
           scanned: found === undefined ? null : { skuId: found.skuId, productId: found.productId },
         });
-        // M46 (D-807): the piece goes into the open lot; M38b's checks still judge the order.
-        const lot = await this.openLotOf(tx, context.orgId, session);
-        const written = await repo.insertScan(tx, {
+        await repo.insertScan(tx, {
           orgId: context.orgId,
           sessionId,
           scanId: input.scanId,
@@ -219,30 +285,6 @@ export class PackStationService {
           scannedBy: context.userId,
           lotNo: lot,
         });
-        // The owner's catch (D-671): only a piece the order needs starts the camera, two
-        // seconds before the scan, by the scan's own clock, once. Under the session's lock.
-        const camera =
-          session.camera_id === null
-            ? undefined
-            : await cameras.cameraById(tx, context.orgId, session.camera_id);
-        const recordingFrom = session.video_required
-          ? cameraRecordingFrom({
-              cameraId: session.camera_id,
-              cameraEnabled: camera?.enabled === true,
-              recordingFrom: at(session.recording_from),
-              earlierAccepted: earlier.some((row) => row.outcome === 'accepted'),
-              outcome,
-              scannedAt: new Date(written.scanned_at),
-            })
-          : null;
-        const started =
-          recordingFrom !== null &&
-          (await cameras.startRecording(tx, {
-            orgId: context.orgId,
-            sessionId,
-            from: recordingFrom,
-            by: context.userId,
-          }));
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
@@ -250,25 +292,167 @@ export class PackStationService {
           action: outcome === 'accepted' ? 'packing.scanned' : 'packing.scan_refused',
           entityType: 'packing_session',
           entityId: sessionId,
-          after: {
-            orderId: session.order_id,
-            skuId: found?.skuId ?? null,
-            outcome,
-            ...(started
-              ? { cameraId: session.camera_id, recordingFrom: recordingFrom.toISOString() }
-              : {}),
-          },
+          after: { orderId: session.order_id, skuId: found?.skuId ?? null, outcome, lot },
           request,
         });
-        const current = started
-          ? ((await repo.sessionById(tx, context.orgId, sessionId)) ?? session)
-          : session;
         return this.scanAnswer(outcome, found?.skuId ?? null, {
-          view: await this.view(tx, context.orgId, current, context.userId),
+          view: await this.view(tx, context.orgId, session, context.userId),
           repeated: false,
         });
       }),
     );
+  }
+
+  /**
+   * The parcel's label scanned at the table (D-930): it starts the open lot's recording, or
+   * stops it and closes the lot (the last lot's finishes the order). A refusal is recorded too:
+   * it is an event at the table and resumes a paused video (D-931).
+   */
+  private async labelScan(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    session: repo.SessionRow,
+    facts: PackingFacts,
+    scan: { readonly scanId: string; readonly code: string; readonly lot: number | null },
+  ) {
+    const orgId = context.orgId;
+    const lotCount = await labels.lotCountOf(tx, orgId, session.order_id);
+    const closures = await labels.closuresOf(tx, orgId, session.id);
+    const scans = await repo.scansOf(tx, orgId, session.id);
+    const open = openLot(lotCount, closures.length);
+    const openStarted = open !== null && (await this.lotStarted(tx, orgId, session, open, scans));
+    const verdict = judgePackLabelScan({
+      lotCount,
+      closedLots: closures.length,
+      scannedLot: scan.lot,
+      openLotStarted: openStarted,
+    });
+    const written = await repo.insertScan(tx, {
+      orgId,
+      sessionId: session.id,
+      scanId: scan.scanId,
+      code: scan.code.slice(0, 120),
+      skuId: null,
+      outcome: 'label',
+      scannedBy: context.userId,
+      lotNo: verdict.kind === 'refused' ? (open ?? lotCount) : verdict.lot,
+    });
+    let answer: LabelAnswer;
+    if (verdict.kind === 'start') {
+      await startLotRecording(tx, this.audit, {
+        orgId,
+        userId: context.userId,
+        request,
+        session,
+        lot: verdict.lot,
+        labelScan: written,
+      });
+      answer = { action: 'started', lot: verdict.lot, message: null };
+    } else if (verdict.kind === 'stop') {
+      const last = verdict.lot >= lotCount;
+      const stop = { reason: 'label' as const, scanId: written.id };
+      const done = last
+        ? await this.finishIn(tx, context, request, session, facts, stop)
+        : await this.closeLotIn(tx, context, request, session, facts, stop);
+      answer = done.ok
+        ? { action: last ? 'finished' : 'lot_closed', lot: verdict.lot, message: null }
+        : { action: 'refused', lot: verdict.lot, message: done.message };
+    } else {
+      answer = {
+        action: 'refused',
+        lot: verdict.lot,
+        message: labelRefusalWords(verdict, lotCount),
+      };
+    }
+    await this.audit.record(tx, {
+      orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: 'packing.label_scanned',
+      entityType: 'packing_session',
+      entityId: session.id,
+      after: { orderId: session.order_id, lot: answer.lot, action: answer.action },
+      request,
+    });
+    const current = (await repo.sessionById(tx, orgId, session.id)) ?? session;
+    return {
+      outcome: 'label' as const,
+      accepted: false,
+      skuId: null,
+      message: answer.message,
+      repeated: false,
+      label: answer,
+      view: await this.view(tx, orgId, current, context.userId),
+    };
+  }
+
+  /**
+   * The scan that opened the order, when it is the order's label (D-930): it starts the open
+   * lot's recording, recorded as the lot's label scan. Nothing when the lot already started, or
+   * the code names another lot.
+   */
+  private async startFromOpeningScan(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    opened: repo.SessionRow,
+    typed: string,
+  ): Promise<void> {
+    const orgId = context.orgId;
+    const session = await repo.sessionById(tx, orgId, opened.id, { forUpdate: true });
+    if (session?.status !== 'open') return;
+    const [facts] = await this.orders.packingFacts(tx, orgId, [session.order_id]);
+    if (facts?.status !== 'confirmed') return;
+    const code = normaliseScannedCode(typed);
+    const label = readOrderLabel(code, labelFactsOf(facts));
+    if (label === null) return;
+    const lotCount = await labels.lotCountOf(tx, orgId, session.order_id);
+    const closed = (await labels.closuresOf(tx, orgId, session.id)).length;
+    const open = openLot(lotCount, closed);
+    const scans = await repo.scansOf(tx, orgId, session.id);
+    if (open === null || (await this.lotStarted(tx, orgId, session, open, scans))) return;
+    const verdict = judgePackLabelScan({
+      lotCount,
+      closedLots: closed,
+      scannedLot: label.lot,
+      openLotStarted: false,
+    });
+    if (verdict.kind !== 'start') return;
+    const written = await repo.insertScan(tx, {
+      orgId,
+      sessionId: session.id,
+      scanId: randomUUID(),
+      code: code.slice(0, 120),
+      skuId: null,
+      outcome: 'label',
+      scannedBy: context.userId,
+      lotNo: verdict.lot,
+    });
+    await startLotRecording(tx, this.audit, {
+      orgId,
+      userId: context.userId,
+      request,
+      session,
+      lot: verdict.lot,
+      labelScan: written,
+    });
+  }
+
+  /**
+   * Whether a lot was started: its label scanned (its recording exists). Before M51 (D-936) a
+   * lot that already holds a piece, or a session filmed under M38c's window, counts as started.
+   */
+  private async lotStarted(
+    tx: Tx,
+    orgId: string,
+    session: repo.SessionRow,
+    lot: number,
+    scans: readonly repo.ScanRow[],
+  ): Promise<boolean> {
+    if ((await rec.recordingOfLot(tx, orgId, session.id, lot)) !== undefined) return true;
+    if (session.recording_from !== null) return true;
+    return scans.some((row) => row.lot_no === lot && row.outcome === 'accepted');
   }
 
   /** Take one piece of a SKU back out of the box. */
@@ -345,126 +529,156 @@ export class PackStationService {
         }
         const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertPackable(facts);
-        const needs = await this.needsOf(tx, context.orgId, facts);
-        const progress = packProgress(
-          needs,
-          packedCounts(
-            (await repo.scansOf(tx, context.orgId, sessionId)).map((row) => ({
-              skuId: row.sku_id,
-              outcome: row.outcome as PackScanOutcome,
-            })),
-          ),
-        );
-        if (!progress.complete) {
-          throw new PackingError(
-            'PACKING_INCOMPLETE',
-            progress.unitsPacked < progress.unitsRequired
-              ? `${String(progress.unitsRequired - progress.unitsPacked)} of ${String(progress.unitsRequired)} pieces are still to scan.`
-              : 'The box holds a piece this order does not need. Take it out first.',
-          );
-        }
-        // M46 (D-807): an order in several lots is packed only with every lot closed; Finish
-        // closes the last one.
-        const lotCount = await labels.lotCountOf(tx, context.orgId, session.order_id);
-        const closures = await labels.closuresOf(tx, context.orgId, sessionId);
-        if (lotCount > 1 && closures.length < lotCount) {
-          const lot = closures.length + 1;
-          const inLot =
-            piecesByLot(
-              (await repo.scansOf(tx, context.orgId, sessionId)).map((row) => ({
-                lot: row.lot_no,
-                outcome: row.outcome,
-              })),
-            ).get(lot) ?? 0;
-          const verdict = judgeLotFinish({
-            lotCount,
-            closedLots: closures.length,
-            piecesInLot: inLot,
-          });
-          if (verdict === 'lots_open') {
-            throw new PackingError(
-              'PACKING_INCOMPLETE',
-              `This order goes in ${String(lotCount)} lots: close lot ${String(lot)} and fill the rest first.`,
-            );
-          }
-          if (verdict === 'empty') {
-            throw new PackingError(
-              'PACKING_INCOMPLETE',
-              `Lot ${String(lot)} of ${String(lotCount)} is empty: every lot holds at least one piece.`,
-            );
-          }
-          await labels.insertClosure(tx, {
-            orgId: context.orgId,
-            sessionId,
-            lotNo: lot,
-            by: context.userId,
-          });
-        }
-        // M38c (D-671, D-672): the camera's recording ends with the finish (at most fifteen
-        // minutes after it began), set before the session completes (a completed session never
-        // changes), and its cut is enqueued in this same transaction (invariant 6).
-        const recordingTo = cameraRecordingTo({
-          recordingFrom: at(session.recording_from),
-          recordingTo: at(session.recording_to),
-          endedAt: await cameras.transactionNow(tx),
+        const done = await this.finishIn(tx, context, request, session, facts, {
+          reason: 'finished',
+          scanId: null,
         });
-        const cutQueued =
-          recordingTo !== null &&
-          (await cameras.endRecording(tx, {
-            orgId: context.orgId,
-            sessionId,
-            to: recordingTo,
-          }));
-        if (cutQueued) {
-          const payload: CameraCutPayload = { sessionId };
-          await enqueue(tx, PACKING_QUEUES.cameraCut.name, payload, {
-            orgId: context.orgId,
-            ref: sessionId,
-          });
-          // M46 (D-804): the terminal's other cameras, each cut from the same window.
-          for (const cameraId of await cameras.extraCamerasOf(tx, context.orgId, sessionId)) {
-            const extra: CameraCutPayload = { sessionId, cameraId };
-            await enqueue(tx, PACKING_QUEUES.cameraCut.name, extra, {
-              orgId: context.orgId,
-              ref: sessionId,
-            });
-          }
-        }
-        // §9's `pack`, through the machine: the order's own lock, effects and history.
-        const moved = await this.orders.transition(
-          tx,
-          { orgId: context.orgId, userId: context.userId },
-          session.order_id,
-          'pack',
-        );
-        if (!(await repo.completeSession(tx, context.orgId, sessionId, context.userId))) {
-          throw new PackingError('CONFLICT', 'This packing session changed; open it again.');
-        }
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'update',
-          action: 'packing.session_completed',
-          entityType: 'packing_session',
-          entityId: sessionId,
-          before: { status: 'open', orderStatus: moved.from },
-          after: {
-            status: 'completed',
-            orderStatus: moved.to,
-            units: progress.unitsPacked,
-            ...(cutQueued
-              ? { cameraId: session.camera_id, recordingTo: recordingTo.toISOString() }
-              : {}),
-          },
-          request,
-        });
-        const done = await repo.sessionById(tx, context.orgId, sessionId);
+        if (!done.ok) throw new PackingError(done.code, done.message);
+        const finished = await repo.sessionById(tx, context.orgId, sessionId);
         return {
-          ...(await this.view(tx, context.orgId, done ?? session, context.userId)),
+          ...(await this.view(tx, context.orgId, finished ?? session, context.userId)),
           alreadyCompleted: false,
         };
       }),
     );
+  }
+
+  /**
+   * The finish, inside the caller's transaction (the Finish button, or the last lot's label
+   * scanned again, D-930): a refusal is returned, not thrown, so a label scan that could not
+   * finish stays on the record.
+   */
+  private async finishIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    session: repo.SessionRow,
+    facts: PackingFacts,
+    stop: { readonly reason: rec.RecordingStopReason; readonly scanId: string | null },
+  ): Promise<Refusable> {
+    const sessionId = session.id;
+    const needs = await this.needsOf(tx, context.orgId, facts);
+    const scans = await repo.scansOf(tx, context.orgId, sessionId);
+    const progress = packProgress(
+      needs,
+      packedCounts(
+        scans.map((row) => ({ skuId: row.sku_id, outcome: row.outcome as PackScanOutcome })),
+      ),
+    );
+    if (!progress.complete) {
+      return {
+        ok: false,
+        code: 'PACKING_INCOMPLETE',
+        message:
+          progress.unitsPacked < progress.unitsRequired
+            ? `${String(progress.unitsRequired - progress.unitsPacked)} of ${String(progress.unitsRequired)} pieces are still to scan.`
+            : 'The box holds a piece this order does not need. Take it out first.',
+      };
+    }
+    // M46 (D-807): an order in several lots is packed only with every lot closed; Finish
+    // closes the last one.
+    const lotCount = await labels.lotCountOf(tx, context.orgId, session.order_id);
+    const closures = await labels.closuresOf(tx, context.orgId, sessionId);
+    const lastLot = Math.min(closures.length + 1, lotCount);
+    if (lotCount > 1 && closures.length < lotCount) {
+      const lot = closures.length + 1;
+      const inLot =
+        piecesByLot(scans.map((row) => ({ lot: row.lot_no, outcome: row.outcome }))).get(lot) ?? 0;
+      const verdict = judgeLotFinish({
+        lotCount,
+        closedLots: closures.length,
+        piecesInLot: inLot,
+      });
+      if (verdict === 'lots_open') {
+        return {
+          ok: false,
+          code: 'PACKING_INCOMPLETE',
+          message: `This order goes in ${String(lotCount)} lots: close lot ${String(lot)} and fill the rest first.`,
+        };
+      }
+      if (verdict === 'empty') {
+        return {
+          ok: false,
+          code: 'PACKING_INCOMPLETE',
+          message: `Lot ${String(lot)} of ${String(lotCount)} is empty: every lot holds at least one piece.`,
+        };
+      }
+      await labels.insertClosure(tx, {
+        orgId: context.orgId,
+        sessionId,
+        lotNo: lot,
+        by: context.userId,
+      });
+    }
+    // M51 (D-930): the last lot's recording stops with the finish, its cut enqueued here.
+    await stopLotIfRunning(tx, this.audit, {
+      orgId: context.orgId,
+      userId: context.userId,
+      request,
+      session,
+      lot: lastLot,
+      reason: stop.reason,
+      scanId: stop.scanId,
+    });
+    // M38c (D-671, D-672): a session filmed under the old window (opened before M51, D-936)
+    // ends it with the finish, at most fifteen minutes after it began, and enqueues its cut in
+    // this same transaction (invariant 6).
+    const recordingTo = cameraRecordingTo({
+      recordingFrom: at(session.recording_from),
+      recordingTo: at(session.recording_to),
+      endedAt: await cameras.transactionNow(tx),
+    });
+    const cutQueued =
+      recordingTo !== null &&
+      (await cameras.endRecording(tx, {
+        orgId: context.orgId,
+        sessionId,
+        to: recordingTo,
+      }));
+    if (cutQueued) {
+      const payload: CameraCutPayload = { sessionId };
+      await enqueue(tx, PACKING_QUEUES.cameraCut.name, payload, {
+        orgId: context.orgId,
+        ref: sessionId,
+      });
+      // M46 (D-804): the terminal's other cameras, each cut from the same window.
+      for (const cameraId of await cameras.extraCamerasOf(tx, context.orgId, sessionId)) {
+        const extra: CameraCutPayload = { sessionId, cameraId };
+        await enqueue(tx, PACKING_QUEUES.cameraCut.name, extra, {
+          orgId: context.orgId,
+          ref: sessionId,
+        });
+      }
+    }
+    // §9's `pack`, through the machine: the order's own lock, effects and history.
+    const moved = await this.orders.transition(
+      tx,
+      { orgId: context.orgId, userId: context.userId },
+      session.order_id,
+      'pack',
+    );
+    if (!(await repo.completeSession(tx, context.orgId, sessionId, context.userId))) {
+      throw new PackingError('CONFLICT', 'This packing session changed; open it again.');
+    }
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: 'packing.session_completed',
+      entityType: 'packing_session',
+      entityId: sessionId,
+      before: { status: 'open', orderStatus: moved.from },
+      after: {
+        status: 'completed',
+        orderStatus: moved.to,
+        units: progress.unitsPacked,
+        ...(cutQueued
+          ? { cameraId: session.camera_id, recordingTo: recordingTo.toISOString() }
+          : {}),
+      },
+      request,
+    });
+    return { ok: true };
   }
 
   /**
@@ -479,54 +693,80 @@ export class PackStationService {
         this.assertOpen(session);
         const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertPackable(facts);
-        const lotCount = await labels.lotCountOf(tx, context.orgId, session.order_id);
-        const closures = await labels.closuresOf(tx, context.orgId, sessionId);
-        const scans = await repo.scansOf(tx, context.orgId, sessionId);
-        const needs = await this.needsOf(tx, context.orgId, facts);
-        const progress = packProgress(
-          needs,
-          packedCounts(
-            scans.map((row) => ({ skuId: row.sku_id, outcome: row.outcome as PackScanOutcome })),
-          ),
-        );
-        const lot = closures.length + 1;
-        const verdict = judgeLotClose({
-          lotCount,
-          closedLots: closures.length,
-          piecesInLot:
-            piecesByLot(scans.map((row) => ({ lot: row.lot_no, outcome: row.outcome }))).get(lot) ??
-            0,
-          unitsRequired: progress.unitsRequired,
-          unitsPacked: progress.unitsPacked,
+        const done = await this.closeLotIn(tx, context, request, session, facts, {
+          reason: 'closed',
+          scanId: null,
         });
-        if (verdict !== 'ok') {
-          const refusals: Readonly<Record<typeof verdict, string>> = {
-            all_closed: 'Every lot of this order is closed.',
-            last_lot: `Lot ${String(lot)} is the last: put the remaining pieces in and press Finish packing.`,
-            empty: `Lot ${String(lot)} is empty: put at least one piece in it first.`,
-            too_few_left: `Too few pieces are left for the ${String(lotCount - lot)} lots after this one. Put fewer in lot ${String(lot)}, or make fewer lots.`,
-          };
-          throw new PackingError('LOT_CLOSE_REFUSED', refusals[verdict]);
-        }
-        await labels.insertClosure(tx, {
-          orgId: context.orgId,
-          sessionId,
-          lotNo: lot,
-          by: context.userId,
-        });
-        await this.audit.record(tx, {
-          orgId: context.orgId,
-          actorUserId: context.userId,
-          operation: 'update',
-          action: 'packing.lot_closed',
-          entityType: 'packing_session',
-          entityId: sessionId,
-          after: { orderId: session.order_id, lot, lotCount },
-          request,
-        });
+        if (!done.ok) throw new PackingError(done.code, done.message);
         return this.view(tx, context.orgId, session, context.userId);
       }),
     );
+  }
+
+  /** Closing the open lot inside the caller's transaction; its recording stops with it (D-930). */
+  private async closeLotIn(
+    tx: Tx,
+    context: ActiveContext,
+    request: AuditableRequest,
+    session: repo.SessionRow,
+    facts: PackingFacts,
+    stop: { readonly reason: rec.RecordingStopReason; readonly scanId: string | null },
+  ): Promise<Refusable> {
+    const sessionId = session.id;
+    const lotCount = await labels.lotCountOf(tx, context.orgId, session.order_id);
+    const closures = await labels.closuresOf(tx, context.orgId, sessionId);
+    const scans = await repo.scansOf(tx, context.orgId, sessionId);
+    const needs = await this.needsOf(tx, context.orgId, facts);
+    const progress = packProgress(
+      needs,
+      packedCounts(
+        scans.map((row) => ({ skuId: row.sku_id, outcome: row.outcome as PackScanOutcome })),
+      ),
+    );
+    const lot = closures.length + 1;
+    const verdict = judgeLotClose({
+      lotCount,
+      closedLots: closures.length,
+      piecesInLot:
+        piecesByLot(scans.map((row) => ({ lot: row.lot_no, outcome: row.outcome }))).get(lot) ?? 0,
+      unitsRequired: progress.unitsRequired,
+      unitsPacked: progress.unitsPacked,
+    });
+    if (verdict !== 'ok') {
+      const refusals: Readonly<Record<typeof verdict, string>> = {
+        all_closed: 'Every lot of this order is closed.',
+        last_lot: `Lot ${String(lot)} is the last: put the remaining pieces in and press Finish packing.`,
+        empty: `Lot ${String(lot)} is empty: put at least one piece in it first.`,
+        too_few_left: `Too few pieces are left for the ${String(lotCount - lot)} lots after this one. Put fewer in lot ${String(lot)}, or make fewer lots.`,
+      };
+      return { ok: false, code: 'LOT_CLOSE_REFUSED', message: refusals[verdict] };
+    }
+    await labels.insertClosure(tx, {
+      orgId: context.orgId,
+      sessionId,
+      lotNo: lot,
+      by: context.userId,
+    });
+    await stopLotIfRunning(tx, this.audit, {
+      orgId: context.orgId,
+      userId: context.userId,
+      request,
+      session,
+      lot,
+      reason: stop.reason,
+      scanId: stop.scanId,
+    });
+    await this.audit.record(tx, {
+      orgId: context.orgId,
+      actorUserId: context.userId,
+      operation: 'update',
+      action: 'packing.lot_closed',
+      entityType: 'packing_session',
+      entityId: sessionId,
+      after: { orderId: session.order_id, lot, lotCount },
+      request,
+    });
+    return { ok: true };
   }
 
   /**
@@ -619,6 +859,8 @@ export class PackStationService {
       const row = await repo.settingsOf(tx, context.orgId);
       return {
         videoEnabled: row?.video_enabled ?? true,
+        // M51 (D-931): the pause after so many seconds with no scan.
+        idlePauseSeconds: Math.round((row?.idle_pause_ms ?? PACKING_IDLE_PAUSE_DEFAULT_MS) / 1000),
         updatedAt: row === undefined ? null : iso(row.updated_at),
         canEdit,
       };
@@ -628,13 +870,18 @@ export class PackStationService {
   async saveSettings(
     context: ActiveContext,
     request: AuditableRequest,
-    input: { readonly videoEnabled: boolean },
+    input: { readonly videoEnabled: boolean; readonly idlePauseSeconds?: number | undefined },
   ) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const before = await repo.settingsOf(tx, context.orgId);
+      const idlePauseMs =
+        input.idlePauseSeconds === undefined
+          ? (before?.idle_pause_ms ?? PACKING_IDLE_PAUSE_DEFAULT_MS)
+          : input.idlePauseSeconds * 1000;
       const row = await repo.saveSettings(tx, {
         orgId: context.orgId,
         videoEnabled: input.videoEnabled,
+        idlePauseMs,
         userId: context.userId,
       });
       await this.audit.record(tx, {
@@ -644,11 +891,19 @@ export class PackStationService {
         action: 'packing.settings_saved',
         entityType: 'packing_settings',
         entityId: context.orgId,
-        before: { videoEnabled: before?.video_enabled ?? true },
-        after: { videoEnabled: row.video_enabled },
+        before: {
+          videoEnabled: before?.video_enabled ?? true,
+          idlePauseMs: before?.idle_pause_ms ?? PACKING_IDLE_PAUSE_DEFAULT_MS,
+        },
+        after: { videoEnabled: row.video_enabled, idlePauseMs: row.idle_pause_ms },
         request,
       });
-      return { videoEnabled: row.video_enabled, updatedAt: iso(row.updated_at), canEdit: true };
+      return {
+        videoEnabled: row.video_enabled,
+        idlePauseSeconds: Math.round(row.idle_pause_ms / 1000),
+        updatedAt: iso(row.updated_at),
+        canEdit: true,
+      };
     });
   }
 
@@ -658,15 +913,21 @@ export class PackStationService {
    * A session opened at a packing terminal is filmed by the terminal's cameras (D-804): the
    * first by name is its camera (M38c's window and choice rules), the others are kept beside it
    * and cut from the same window. Only before a piece is in the box, as M38c's own choice.
+   * M51: the return station's sessions are filmed the same way.
    */
-  private async terminalCameras(
+  async terminalCameras(
     tx: Tx,
     context: ActiveContext,
     request: AuditableRequest,
     session: repo.SessionRow,
     here: AtTerminal,
   ): Promise<repo.SessionRow> {
-    if (session.status !== 'open' || !session.video_required || session.recording_from !== null) {
+    if (
+      session.status !== 'open' ||
+      !session.video_required ||
+      session.recording_from !== null ||
+      (await rec.recordingsOf(tx, context.orgId, session.id)).length > 0
+    ) {
       return session;
     }
     const filming = await labels.recordingCamerasOf(tx, context.orgId, here.terminal.id);
@@ -697,9 +958,9 @@ export class PackStationService {
    * The recording source this packing desk chose (D-670): one of the brand's enabled IP
    * cameras, or none (the desk's own camera, recorded by the browser). Changed only while the
    * session is open, records, and has not started recording; after that the camera that began
-   * filming the box keeps it, whatever a desk asks.
+   * filming the box keeps it, whatever a desk asks. M51: fixed from the first lot's label (D-932).
    */
-  private async chooseCamera(
+  async chooseCamera(
     tx: Tx,
     context: ActiveContext,
     request: AuditableRequest,
@@ -727,7 +988,8 @@ export class PackStationService {
       !locked.video_required ||
       locked.recording_from !== null ||
       locked.camera_id === cameraId ||
-      (await cameras.hasAcceptedScan(tx, context.orgId, session.id))
+      (await cameras.hasAcceptedScan(tx, context.orgId, session.id)) ||
+      (await rec.recordingsOf(tx, context.orgId, session.id)).length > 0
     ) {
       return locked;
     }
@@ -779,6 +1041,8 @@ export class PackStationService {
     const session = await repo.sessionById(tx, orgId, sessionId, { forUpdate });
     if (
       session === undefined ||
+      // M51 (D-934): a return's inspection is the return station's, not a packing.
+      session.kind !== 'pack' ||
       !(await this.orders.orderVisibleTo(tx, orgId, session.order_id, request))
     ) {
       if (session === undefined) {
@@ -860,6 +1124,7 @@ export class PackStationService {
       skuId,
       message: refused ? (REFUSAL_WORDS[outcome] ?? null) : null,
       repeated: rest.repeated,
+      label: null as LabelAnswer | null,
       view: rest.view,
     };
   }
@@ -899,20 +1164,31 @@ export class PackStationService {
     const itemOf = new Map(list.items.map((item) => [item.skuId, item]));
     const completedAt = at(session.completed_at);
     // M46 (D-807, D-804): the lots, the terminal and every camera filming it.
-    const [lotCount, closures, extraCameras, terminal] = await Promise.all([
+    const [lotCount, closures, extraCameras, terminal, recordings, idleMs] = await Promise.all([
       labels.lotCountOf(tx, orgId, session.order_id),
       labels.closuresOf(tx, orgId, session.id),
       cameras.extraCamerasOf(tx, orgId, session.id),
       session.terminal_id === null
         ? Promise.resolve(undefined)
         : labels.terminalById(tx, orgId, session.terminal_id),
+      rec.recordingsOf(tx, orgId, session.id),
+      idlePauseMsOf(tx, orgId),
     ]);
     const lotPieces = piecesByLot(scans.map((row) => ({ lot: row.lot_no, outcome: row.outcome })));
     const open = session.status === 'open' ? openLot(lotCount, closures.length) : null;
+    // M51 (D-930, D-936): the lots whose label started them (or that held a piece before M51).
+    const started = new Set(recordings.map((row) => row.lot_no));
+    for (const row of scans) if (row.outcome === 'accepted') started.add(row.lot_no);
+    if (session.recording_from !== null && open !== null) started.add(open);
     return {
+      // M51 (D-930 to D-933): each lot's recording, the pause rule and the step the packer is on.
+      idlePauseMs: idleMs,
+      recordings: recordingViews(recordings, scans, names, new Date()),
+      labelNeeded: open !== null && !started.has(open),
       lots: {
         count: lotCount,
         open,
+        started: [...started].sort((a, b) => a - b),
         closed: closures.map((closure) => ({
           lot: closure.lot_no,
           at: iso(closure.closed_at),
@@ -1024,6 +1300,8 @@ export class PackStationService {
         recordedBy: { id: video.recorded_by, name: names.get(video.recorded_by) ?? null },
         source: video.source,
         cameraId: video.camera_id,
+        recordingId: video.recording_id,
+        lot: video.lot_no,
       })),
       video: packingVideoState({
         videoRequired: session.video_required,
@@ -1037,6 +1315,20 @@ export class PackStationService {
       }),
     };
   }
+}
+
+/** A step that may be refused in words, returned rather than thrown (D-930's label scans). */
+type Refusable =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: ErrorCode; readonly message: string };
+
+/** The codes printed on an order's slip and labels, for `readOrderLabel` (D-930). */
+export function labelFactsOf(facts: PackingFacts) {
+  return {
+    orderNumber: facts.orderNo,
+    trackingCode: facts.parcel?.trackingCode ?? null,
+    consignmentId: facts.parcel?.consignmentNo ?? null,
+  };
 }
 
 /** A role other than reseller whose own grants read orders (D-665). */

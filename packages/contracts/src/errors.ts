@@ -609,6 +609,10 @@ export const ERROR_CODES = [
   'PACKING_INCOMPLETE',
   /** That SKU has no piece in the box to take out. */
   'PACKING_NOTHING_TO_REMOVE',
+  /** M51 (D-930): a piece was scanned before the parcel's label started its lot's recording. */
+  'PACKING_LABEL_FIRST',
+  /** M51 (D-934): the order is not on its way back (nor partly delivered), so it is not received as a return now. */
+  'PACKING_NOT_RETURNABLE',
   /** The file is not this person's stored, private packing video, or is already another part's. */
   'PACKING_VIDEO_INVALID',
   /** The packing video was deleted (kept until seven days after delivery), or never arrived. */

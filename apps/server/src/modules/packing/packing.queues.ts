@@ -73,6 +73,11 @@ export interface CameraCutPayload {
   readonly sessionId: string;
   /** M46 (D-804): one of the session's other cameras; absent cuts its first camera. */
   readonly cameraId?: string;
+  /**
+   * M51 (D-932): the lot's recording to cut, along its stretches (D-931); absent cuts the
+   * session's M38c window.
+   */
+  readonly recordingId?: string;
 }
 
 /** M46: one print job to send. */

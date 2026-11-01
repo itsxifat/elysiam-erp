@@ -24,10 +24,15 @@ export interface SessionRow extends Record<string, unknown> {
   readonly recording_by: string | null;
   /** M46 (D-802): the packing terminal it was opened at. */
   readonly terminal_id: string | null;
+  /** M51 (D-934): the packing station's (`pack`) or the return station's (`return`). */
+  readonly kind: SessionKind;
 }
 
+export type SessionKind = 'pack' | 'return';
+
 const SESSION_COLUMNS = sql`id, order_id, order_no, status, video_required, started_by, started_at,
-  completed_by, completed_at, camera_id, recording_from, recording_to, recording_by, terminal_id`;
+  completed_by, completed_at, camera_id, recording_from, recording_to, recording_by, terminal_id,
+  kind`;
 
 export async function sessionById(
   tx: Tx,
@@ -46,9 +51,11 @@ export async function sessionByOrder(
   tx: Tx,
   orgId: string,
   orderId: string,
+  kind: SessionKind = 'pack',
 ): Promise<SessionRow | undefined> {
   const rows = await tx.execute<SessionRow>(sql`
-    select ${SESSION_COLUMNS} from packing.sessions where org_id = ${orgId} and order_id = ${orderId}
+    select ${SESSION_COLUMNS} from packing.sessions
+    where org_id = ${orgId} and order_id = ${orderId} and kind = ${kind}
   `);
   return rows[0];
 }
@@ -63,18 +70,21 @@ export async function openSession(
     readonly videoRequired: boolean;
     readonly startedBy: string;
     readonly terminalId?: string | null;
+    readonly kind?: SessionKind;
   },
 ): Promise<{ readonly row: SessionRow; readonly created: boolean }> {
+  const kind = input.kind ?? 'pack';
   const inserted = await tx.execute<SessionRow>(sql`
-    insert into packing.sessions (org_id, order_id, order_no, video_required, started_by, terminal_id)
+    insert into packing.sessions
+      (org_id, order_id, order_no, video_required, started_by, terminal_id, kind)
     values (${input.orgId}, ${input.orderId}, ${input.orderNo}, ${input.videoRequired},
-            ${input.startedBy}, ${input.terminalId ?? null}::uuid)
-    on conflict (org_id, order_id) do nothing
+            ${input.startedBy}, ${input.terminalId ?? null}::uuid, ${kind})
+    on conflict (org_id, order_id, kind) do nothing
     returning ${SESSION_COLUMNS}
   `);
   const row = inserted[0];
   if (row !== undefined) return { row, created: true };
-  const existing = await sessionByOrder(tx, input.orgId, input.orderId);
+  const existing = await sessionByOrder(tx, input.orgId, input.orderId, kind);
   if (existing === undefined) throw new Error('a packing session was neither written nor found');
   return { row: existing, created: false };
 }
@@ -190,11 +200,14 @@ export interface VideoRow extends Record<string, unknown> {
   /** M38c (D-674): `browser` or `camera`, and which camera. */
   readonly source: 'browser' | 'camera';
   readonly camera_id: string | null;
+  /** M51 (D-932): the lot's recording it films, and its lot. */
+  readonly recording_id: string | null;
+  readonly lot_no: number;
 }
 
 const VIDEO_COLUMNS = sql`id, session_id, part, recorded_by, started_at, mime, file_id, duration_ms,
   size_bytes::text as size_bytes, uploaded_at, deleted_at, deleted_reason, deleted_file_id, source,
-  camera_id`;
+  camera_id, recording_id, lot_no`;
 
 export async function videosOf(
   tx: Tx,
@@ -233,15 +246,20 @@ export async function insertVideo(
     readonly recordedBy: string;
     readonly startedAt: Date;
     readonly mime: string;
+    /** M51 (D-932): the lot's recording, or null for a part filmed before M51. */
+    readonly recordingId?: string | null;
+    readonly lotNo?: number;
   },
 ): Promise<VideoRow> {
   const rows = await tx.execute<VideoRow>(sql`
-    insert into packing.videos (id, org_id, session_id, part, recorded_by, started_at, mime)
+    insert into packing.videos
+      (id, org_id, session_id, part, recorded_by, started_at, mime, recording_id, lot_no)
     values (
       ${input.id}, ${input.orgId}, ${input.sessionId},
       (select coalesce(max(part), 0) + 1 from packing.videos
         where org_id = ${input.orgId} and session_id = ${input.sessionId}),
-      ${input.recordedBy}, ${input.startedAt.toISOString()}::timestamptz, ${input.mime}
+      ${input.recordedBy}, ${input.startedAt.toISOString()}::timestamptz, ${input.mime},
+      ${input.recordingId ?? null}::uuid, ${input.lotNo ?? 1}
     )
     returning ${VIDEO_COLUMNS}
   `);
@@ -290,15 +308,25 @@ export async function attachedVideos(
   tx: Tx,
   orgId: string,
 ): Promise<
-  { readonly id: string; readonly file_id: string; readonly order_id: string; session_id: string }[]
+  {
+    readonly id: string;
+    readonly file_id: string;
+    readonly order_id: string;
+    readonly session_id: string;
+    /** M51 (D-935): a return's video is kept from its receipt. */
+    readonly kind: SessionKind;
+    readonly completed_at: Date | string | null;
+  }[]
 > {
   const rows = await tx.execute<{
     id: string;
     file_id: string;
     order_id: string;
     session_id: string;
+    kind: SessionKind;
+    completed_at: Date | string | null;
   }>(sql`
-    select v.id, v.file_id, s.order_id, v.session_id
+    select v.id, v.file_id, s.order_id, v.session_id, s.kind, s.completed_at
     from packing.videos v
     join packing.sessions s on s.org_id = v.org_id and s.id = v.session_id
     where v.org_id = ${orgId} and v.file_id is not null
@@ -347,12 +375,13 @@ export async function recentSessions(
     readonly limit: number;
     readonly status: 'open' | 'completed' | undefined;
     readonly orderInScope: SQL;
+    readonly kind?: SessionKind;
   },
 ): Promise<SessionSummaryRow[]> {
   const rows = await tx.execute<SessionSummaryRow>(sql`
     select s.id, s.order_id, s.order_no, s.status, s.video_required, s.started_by, s.started_at,
            s.completed_by, s.completed_at, s.camera_id, s.recording_from, s.recording_to,
-           s.recording_by, s.terminal_id,
+           s.recording_by, s.terminal_id, s.kind,
            count(c.id)::int as scans,
            count(c.id) filter (where c.outcome = 'accepted')::int as accepted,
            count(c.id) filter (where c.outcome = 'removed')::int as removed,
@@ -361,7 +390,7 @@ export async function recentSessions(
            )::int as mismatches
     from packing.sessions s
     left join packing.scans c on c.org_id = s.org_id and c.session_id = s.id
-    where s.org_id = ${orgId}
+    where s.org_id = ${orgId} and s.kind = ${options.kind ?? 'pack'}
       and ${options.orderInScope}
       ${options.status === undefined ? sql`` : sql`and s.status = ${options.status}`}
     group by s.id
@@ -373,28 +402,36 @@ export async function recentSessions(
 
 export interface SettingsRow extends Record<string, unknown> {
   readonly video_enabled: boolean;
+  /** M51 (D-931): how long with no scan before a lot's video pauses. */
+  readonly idle_pause_ms: number;
   readonly updated_by: string;
   readonly updated_at: Date | string;
 }
 
 export async function settingsOf(tx: Tx, orgId: string): Promise<SettingsRow | undefined> {
   const rows = await tx.execute<SettingsRow>(sql`
-    select video_enabled, updated_by, updated_at from packing.settings where org_id = ${orgId}
+    select video_enabled, idle_pause_ms, updated_by, updated_at from packing.settings
+    where org_id = ${orgId}
   `);
   return rows[0];
 }
 
 export async function saveSettings(
   tx: Tx,
-  input: { readonly orgId: string; readonly videoEnabled: boolean; readonly userId: string },
+  input: {
+    readonly orgId: string;
+    readonly videoEnabled: boolean;
+    readonly idlePauseMs: number;
+    readonly userId: string;
+  },
 ): Promise<SettingsRow> {
   const rows = await tx.execute<SettingsRow>(sql`
-    insert into packing.settings (org_id, video_enabled, updated_by)
-    values (${input.orgId}, ${input.videoEnabled}, ${input.userId})
+    insert into packing.settings (org_id, video_enabled, idle_pause_ms, updated_by)
+    values (${input.orgId}, ${input.videoEnabled}, ${input.idlePauseMs}, ${input.userId})
     on conflict (org_id) do update
-       set video_enabled = excluded.video_enabled, updated_by = excluded.updated_by,
-           updated_at = now()
-    returning video_enabled, updated_by, updated_at
+       set video_enabled = excluded.video_enabled, idle_pause_ms = excluded.idle_pause_ms,
+           updated_by = excluded.updated_by, updated_at = now()
+    returning video_enabled, idle_pause_ms, updated_by, updated_at
   `);
   const row = rows[0];
   if (row === undefined) throw new Error('the packing settings were not saved');

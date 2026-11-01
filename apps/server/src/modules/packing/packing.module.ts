@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
+import { CourierModule } from '../courier/courier.module.js';
 import { FilesModule } from '../files/files.module.js';
 import { IamDirectoryModule } from '../iam/iam.api.js';
 import { OrdersModule } from '../orders/orders.module.js';
@@ -26,6 +27,8 @@ import {
   ScannerDeviceGuard,
 } from './scanner.controller.js';
 import { ScannerService } from './scanner.service.js';
+import { ReturnStationController } from './return-station.controller.js';
+import { ReturnStationService } from './return-station.service.js';
 import { PackStationController } from './station.controller.js';
 import { PackStationService } from './station.service.js';
 import { PackingVideoService } from './video.service.js';
@@ -51,12 +54,16 @@ import { TerminalsService } from './terminals.service.js';
     FilesModule,
     IamDirectoryModule,
     TeamModule,
+    // M51 (D-934): the return station books a received return through the courier's API.
+    CourierModule,
   ],
   controllers: [
     ScannerController,
     ScannerAppController,
     PackingController,
     PackStationController,
+    // M51: Packaging → Returns (D-934).
+    ReturnStationController,
     // M46: Labels and Packaging (D-800 to D-826).
     TerminalsController,
     LabelsController,
@@ -69,6 +76,7 @@ import { TerminalsService } from './terminals.service.js';
     ScannerDeviceGuard,
     OrderLabelsService,
     PackStationService,
+    ReturnStationService,
     PackingVideoService,
     // M38c: the packing tables' IP cameras (D-668).
     CameraSettingsService,

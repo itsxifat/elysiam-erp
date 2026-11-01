@@ -1,7 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { PackingVideoFileInput, PackingVideoStartInput } from '@elysium/contracts';
 import { withGlobal, withOrg, type Tx } from '@elysium/db';
-import { isPackingVideoExpired, packingVideoExpiry } from '@elysium/domain/packing';
+import { businessDate } from '@elysium/domain';
+import {
+  isPackingVideoExpired,
+  packingVideoExpiry,
+  returnVideoExpiry,
+  type PackingVideoOrderFacts,
+  type PackingVideoRetentionReason,
+} from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -10,6 +17,7 @@ import { scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import { FILES_API, type FilesApi } from '../files/files.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
+import * as rec from './recording.repository.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as repo from './station.repository.js';
 
@@ -113,6 +121,20 @@ export class PackingVideoService {
             'Only someone who packed this order, or an org admin, adds a recording to it now.',
           );
         }
+        // M51 (D-932): the lot's recording this part films, which this computer's camera records.
+        const recording =
+          input.recordingId === undefined
+            ? undefined
+            : await rec.recordingById(tx, context.orgId, input.recordingId);
+        if (
+          input.recordingId !== undefined &&
+          (recording?.session_id !== sessionId || recording.camera_id !== null)
+        ) {
+          throw new PackingError(
+            'PACKING_VIDEO_INVALID',
+            'That recording is not one this computer films for this order.',
+          );
+        }
         const row = await repo.insertVideo(tx, {
           orgId: context.orgId,
           id: input.videoId,
@@ -120,6 +142,8 @@ export class PackingVideoService {
           recordedBy: context.userId,
           startedAt,
           mime: input.mime,
+          recordingId: recording?.id ?? null,
+          lotNo: recording?.lot_no ?? 1,
         });
         await this.audit.record(tx, {
           orgId: context.orgId,
@@ -322,7 +346,7 @@ export class PackingVideoService {
       const factOf = new Map(facts.map((fact) => [fact.orderId, fact]));
       return attached.filter((row) => {
         const fact = factOf.get(row.order_id);
-        return fact !== undefined && isPackingVideoExpired(fact, now);
+        return fact !== undefined && videoExpiry(row, fact, now) !== null;
       });
     });
 
@@ -334,10 +358,8 @@ export class PackingVideoService {
           const video = await repo.videoById(tx, orgId, candidate.id, { forUpdate: true });
           if (video?.file_id !== candidate.file_id) return false;
           const [fact] = await this.orders.retentionFacts(tx, orgId, [candidate.order_id]);
-          const expiry = fact === undefined ? null : packingVideoExpiry(fact);
-          if (fact === undefined || expiry === null || !isPackingVideoExpired(fact, now)) {
-            return false;
-          }
+          const expiry = fact === undefined ? null : videoExpiry(candidate, fact, now);
+          if (fact === undefined || expiry === null) return false;
           await repo.markVideoDeleted(tx, { orgId, id: candidate.id, reason: expiry.reason });
           if (!(await this.files.forget(tx, orgId, candidate.file_id, 'packing-video'))) {
             throw new Error('a packing video’s file row was not there to delete');
@@ -480,4 +502,27 @@ export class PackingVideoService {
       uploadedAt: row.uploaded_at === null ? null : new Date(row.uploaded_at).toISOString(),
     };
   }
+}
+
+/**
+ * When a part may go now, or null while it is kept: a packing's video seven days after its
+ * order's journey ended (D-612), a return's thirty days after it was received (M51, D-935). A
+ * return's is deleted under the order's state (`returned`), the reason its record allows.
+ */
+function videoExpiry(
+  row: { readonly kind: repo.SessionKind; readonly completed_at: Date | string | null },
+  fact: PackingVideoOrderFacts,
+  now: Date,
+): {
+  readonly reason: PackingVideoRetentionReason;
+  keepThrough: string;
+  deleteFrom: string;
+} | null {
+  if (row.kind === 'return') {
+    const kept = returnVideoExpiry(row.completed_at === null ? null : new Date(row.completed_at));
+    if (kept === null || businessDate(now) < kept.deleteFrom) return null;
+    return { reason: 'returned', keepThrough: kept.keepThrough, deleteFrom: kept.deleteFrom };
+  }
+  const expiry = packingVideoExpiry(fact);
+  return expiry !== null && isPackingVideoExpired(fact, now) ? expiry : null;
 }

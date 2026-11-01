@@ -7,12 +7,15 @@ import { withGlobal, withOrg } from '@elysium/db';
 import {
   PACKING_CAMERA_HORIZON_MS,
   PACKING_CAMERA_MAX_MS,
+  PACKING_RESUME_LEAD_MS,
   cameraBufferKeepFromMs,
   cameraParts,
   cameraRecordingTimedOut,
   cutDecision,
   cutSpan,
   previewShouldRun,
+  recordingSpans,
+  recordingTimedOut,
   segmentsForWindow,
   segmentsOverByteCap,
   segmentsToForget,
@@ -28,7 +31,9 @@ import { enqueue } from '../../../platform/jobs/enqueue.js';
 import { FILES_API, type FilesApi } from '../../files/files.api.js';
 import { cameraPasswordBinding } from '../camera-settings.service.js';
 import * as cameras from '../camera.repository.js';
+import { stopLotRecording } from '../lot-recording.js';
 import { PACKING_QUEUES, type CameraCutPayload } from '../packing.queues.js';
+import * as rec from '../recording.repository.js';
 import {
   CameraRecorder,
   type FfmpegCommand,
@@ -427,9 +432,15 @@ export class CameraProcessService {
     let removed = 0;
     for (const [key, buffer] of this.buffers) {
       const [orgId = '', cameraId = ''] = key.split('/');
-      const pending = (
-        await withOrg({ orgId }, (tx) => cameras.pendingWindowStarts(tx, orgId, cameraId, since))
-      ).map((from) => from.getTime());
+      // M51 (D-932): each lot's recording too, from two seconds before its start (D-931's lead).
+      const pending = await withOrg({ orgId }, async (tx) => [
+        ...(await cameras.pendingWindowStarts(tx, orgId, cameraId, since)).map((from) =>
+          from.getTime(),
+        ),
+        ...(await rec.pendingRecordingStarts(tx, orgId, cameraId, since)).map(
+          (from) => from.getTime() - PACKING_RESUME_LEAD_MS,
+        ),
+      ]);
       const keepFrom = cameraBufferKeepFromMs({ nowMs, pendingFromMs: pending });
       removed += await buffer.forget(segmentsToForget(await buffer.segments(), keepFrom));
       // And under the byte cap (W6): the oldest go first, never what a waiting window needs.
@@ -548,6 +559,32 @@ export class CameraProcessService {
         });
         if (done) closed += 1;
       }
+      // M51 (D-933): a lot's recording an IP camera films stops at its fifteen minutes too.
+      const lots = await withOrg({ orgId }, (tx) =>
+        rec.timedOutCameraRecordings(tx, orgId, new Date(now.getTime() - PACKING_CAMERA_MAX_MS)),
+      );
+      for (const candidate of lots) {
+        const done = await withOrg({ orgId }, async (tx) => {
+          const recording = await rec.recordingById(tx, orgId, candidate.id, { forUpdate: true });
+          if (recording === undefined || recording.stopped_at !== null) return false;
+          const session = await cameras.recordingOf(tx, orgId, recording.session_id);
+          if (session === undefined) return false;
+          const at = recordingTimedOut({
+            startedMs: new Date(recording.started_at).getTime(),
+            nowMs: now.getTime(),
+          });
+          if (at === null) return false;
+          return stopLotRecording(tx, this.audit, {
+            orgId,
+            userId: null,
+            session,
+            recording,
+            reason: 'timed_out',
+            at: new Date(at),
+          });
+        });
+        if (done) closed += 1;
+      }
     }
     return closed;
   }
@@ -560,8 +597,19 @@ export class CameraProcessService {
    * deterministic id. Waits up to a few seconds for the footage to reach the window's end,
    * then cuts what there is; with no footage at all, it says so in the audit and stops (the
    * order's video then reads "missing").
+   *
+   * M51 (D-931, D-932): with a `recordingId` it cuts one lot's recording along its stretches
+   * (the video pauses between them), joined into one video filed under that lot.
    */
-  async cut(orgId: string, sessionId: string, extraCameraId?: string): Promise<CutOutcome> {
+  async cut(
+    orgId: string,
+    sessionId: string,
+    extraCameraId?: string,
+    recordingId?: string,
+  ): Promise<CutOutcome> {
+    if (recordingId !== undefined) {
+      return this.cutRecording(orgId, sessionId, recordingId, extraCameraId);
+    }
     const found = await withOrg({ orgId }, async (tx) => {
       const session = await cameras.recordingOf(tx, orgId, sessionId);
       // M46 (D-804): one of the terminal's other cameras, or the session's first.
@@ -585,25 +633,134 @@ export class CameraProcessService {
       return 'nothing_to_cut';
     }
     if (found.parts.length > 0) return 'already';
-    const cameraId = found.cameraId;
-    // The first camera's parts keep M38c's ids; another camera's are keyed by it too.
-    const partKey = extraCameraId === undefined ? sessionId : `${sessionId}:${cameraId}`;
-    const recordedBy = session.recording_by;
     const window = {
       fromMs: new Date(session.recording_from).getTime(),
       toMs: new Date(session.recording_to).getTime(),
     };
-    const span = cutSpan(window);
+    return this.cutSpans({
+      orgId,
+      sessionId,
+      orderId: session.order_id,
+      orderNo: session.order_no,
+      cameraId: found.cameraId,
+      // The first camera's parts keep M38c's ids; another camera's are keyed by it too.
+      partKey: extraCameraId === undefined ? sessionId : `${sessionId}:${found.cameraId}`,
+      recordedBy: session.recording_by,
+      window,
+      spans: [cutSpan(window)],
+      recording: null,
+    });
+  }
+
+  /** One lot's recording, cut along its stretches (M51, D-931, D-932). */
+  private async cutRecording(
+    orgId: string,
+    sessionId: string,
+    recordingId: string,
+    extraCameraId: string | undefined,
+  ): Promise<CutOutcome> {
+    const found = await withOrg({ orgId }, async (tx) => {
+      const session = await cameras.recordingOf(tx, orgId, sessionId);
+      const recording = await rec.recordingById(tx, orgId, recordingId);
+      if (session === undefined || recording?.session_id !== sessionId) return null;
+      const extras =
+        extraCameraId === undefined ? [] : await cameras.extraCamerasOf(tx, orgId, sessionId);
+      const cameraId =
+        extraCameraId === undefined
+          ? recording.camera_id
+          : extras.includes(extraCameraId)
+            ? extraCameraId
+            : null;
+      return {
+        session,
+        recording,
+        cameraId,
+        activity: await rec.activityOf(tx, orgId, sessionId, recording.lot_no),
+        parts:
+          cameraId === null
+            ? []
+            : await rec.cameraPartsOfRecording(tx, orgId, recordingId, cameraId),
+      };
+    });
+    if (found === null) return 'nothing_to_cut';
+    const { session, recording, cameraId } = found;
+    if (
+      cameraId === null ||
+      recording.camera_id === null ||
+      !recording.video_required ||
+      recording.stopped_at === null
+    ) {
+      return 'nothing_to_cut';
+    }
+    if (found.parts.length > 0) return 'already';
+    const startedMs = new Date(recording.started_at).getTime();
+    const stoppedMs = new Date(recording.stopped_at).getTime();
+    const stretches = recordingSpans({
+      startedMs,
+      activityMs: found.activity.map((at) => at.getTime()),
+      stoppedMs,
+      nowMs: stoppedMs,
+      idleMs: recording.idle_ms,
+      leadMs: PACKING_RESUME_LEAD_MS,
+    });
+    return this.cutSpans({
+      orgId,
+      sessionId,
+      orderId: session.order_id,
+      orderNo: session.order_no,
+      cameraId,
+      partKey: extraCameraId === undefined ? recordingId : `${recordingId}:${cameraId}`,
+      recordedBy: recording.started_by,
+      window: { fromMs: startedMs, toMs: stoppedMs },
+      spans: stretches.map((span) => cutSpan(span)),
+      recording: { id: recording.id, lot: recording.lot_no },
+    });
+  }
+
+  /**
+   * Wait for the footage, join the segments the stretches overlap (in order, without
+   * re-encoding) and file them as parts: the work both cuts share. No transaction is open across
+   * ffmpeg or storage (invariant 6).
+   */
+  private async cutSpans(input: {
+    readonly orgId: string;
+    readonly sessionId: string;
+    readonly orderId: string;
+    readonly orderNo: string;
+    readonly cameraId: string;
+    readonly partKey: string;
+    readonly recordedBy: string;
+    readonly window: { readonly fromMs: number; readonly toMs: number };
+    readonly spans: readonly { readonly fromMs: number; readonly toMs: number }[];
+    readonly recording: { readonly id: string; readonly lot: number } | null;
+  }): Promise<CutOutcome> {
+    const { orgId, sessionId, cameraId, partKey, recordedBy, window, spans } = input;
+    const overall = {
+      fromMs: spans[0]?.fromMs ?? window.fromMs,
+      toMs: spans.at(-1)?.toMs ?? window.toMs,
+    };
     const buffer = this.bufferFor(orgId, cameraId);
     const recorder = this.running.get(cameraId)?.recorder;
+    const along = (segments: readonly CameraSegment[]) => {
+      const seen = new Set<string>();
+      const picked: CameraSegment[] = [];
+      for (const span of spans) {
+        for (const segment of segmentsForWindow(segments, span)) {
+          if (seen.has(segment.name)) continue;
+          seen.add(segment.name);
+          picked.push(segment);
+        }
+      }
+      return picked.sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+    };
 
     const since = this.now();
     let chosen: CameraSegment[];
     for (;;) {
       if (recorder === undefined) await buffer.settle(null);
       else await recorder.settleNow();
-      chosen = segmentsForWindow(await buffer.segments(), span);
-      const decision = cutDecision({ chosen, span, nowMs: this.now(), sinceMs: since });
+      chosen = along(await buffer.segments());
+      const decision = cutDecision({ chosen, span: overall, nowMs: this.now(), sinceMs: since });
       if (decision === 'cut') break;
       if (decision === 'none') {
         await withOrg({ orgId }, (tx) =>
@@ -615,8 +772,9 @@ export class CameraProcessService {
             entityType: 'packing_session',
             entityId: sessionId,
             after: {
-              orderId: session.order_id,
+              orderId: input.orderId,
               cameraId,
+              recordingId: input.recording?.id ?? null,
               recordingFrom: new Date(window.fromMs).toISOString(),
               recordingTo: new Date(window.toMs).toISOString(),
             },
@@ -627,12 +785,18 @@ export class CameraProcessService {
       }
       await sleep(this.config.cutPollMs ?? 1_000);
     }
-    const coverage = windowCoverage(chosen, span);
+    const coverage = windowCoverage(chosen, overall);
+    // The footage missing inside the stretches (a paused stretch is not missing, D-931).
+    const gapMs = spans.reduce(
+      (sum, span) => sum + windowCoverage(segmentsForWindow(chosen, span), span).gapMs,
+      0,
+    );
 
     // Join and store each part, no transaction open (invariant 6).
     const stored: StoredPart[] = [];
     const workDir = path.join(this.config.bufferRoot, '.cuts');
     const partMax = this.config.partMaxBytes ?? CAMERA_PART_MAX_BYTES;
+    const lotSuffix = input.recording === null ? '' : `-lot${String(input.recording.lot)}`;
     try {
       for (const [index, part] of cameraParts(chosen, partMax).entries()) {
         const first = part[0];
@@ -676,7 +840,7 @@ export class CameraProcessService {
             ownerUserId: recordedBy,
             purpose: 'packing-video',
             mime: 'video/mp4',
-            originalName: `${session.order_no}-camera-${String(index + 1)}.mp4`,
+            originalName: `${input.orderNo}${lotSuffix}-camera-${String(index + 1)}.mp4`,
             bytes,
           });
           stored.push({
@@ -700,7 +864,11 @@ export class CameraProcessService {
     // File the parts in one short transaction, under the session's lock.
     const outcome = await withOrg({ orgId, userId: recordedBy }, async (tx) => {
       await cameras.recordingOf(tx, orgId, sessionId, { forUpdate: true });
-      if ((await cameras.cameraPartsOf(tx, orgId, sessionId, cameraId)).length > 0) {
+      const already =
+        input.recording === null
+          ? await cameras.cameraPartsOf(tx, orgId, sessionId, cameraId)
+          : await rec.cameraPartsOfRecording(tx, orgId, input.recording.id, cameraId);
+      if (already.length > 0) {
         // Another cut filed it first: these copies go, their bytes after the commit.
         for (const part of stored) {
           if (part.fileId !== null) {
@@ -719,6 +887,8 @@ export class CameraProcessService {
             cameraId,
             recordedBy,
             startedAt: part.startedAt,
+            recordingId: input.recording?.id ?? null,
+            lotNo: input.recording?.lot ?? 1,
             file:
               part.fileId === null
                 ? null
@@ -738,9 +908,12 @@ export class CameraProcessService {
         entityType: 'packing_session',
         entityId: sessionId,
         after: {
-          orderId: session.order_id,
+          orderId: input.orderId,
           cameraId,
           recordedBy,
+          recordingId: input.recording?.id ?? null,
+          lot: input.recording?.lot ?? null,
+          stretches: spans.length,
           recordingFrom: new Date(window.fromMs).toISOString(),
           recordingTo: new Date(window.toMs).toISOString(),
           parts: filed.map((row, index) => ({
@@ -753,14 +926,14 @@ export class CameraProcessService {
           })),
           startCovered: coverage.startCovered,
           endCovered: coverage.endCovered,
-          gapMs: coverage.gapMs,
+          gapMs,
         },
       });
       return 'cut' as const;
     });
     if (outcome === 'cut') {
       this.config.log.info(
-        { cameraId, sessionId, parts: stored.length, gapMs: coverage.gapMs },
+        { cameraId, sessionId, parts: stored.length, stretches: spans.length, gapMs },
         'camera video cut',
       );
     }

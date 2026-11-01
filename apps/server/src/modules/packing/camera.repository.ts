@@ -74,6 +74,15 @@ export async function cameraRecordingOpen(
                          where c.org_id = s.org_id and c.session_id = s.id
                            and c.camera_id = ${cameraId}))
         and s.recording_from is not null and s.recording_to is null
+    ) or exists (
+      -- M51 (D-932): a lot's recording this camera films, still running.
+      select 1 from packing.recordings r
+      where r.org_id = ${orgId} and r.stopped_at is null
+        and (r.camera_id = ${cameraId}
+             or (r.camera_id is not null and exists (
+                   select 1 from packing.session_cameras c
+                    where c.org_id = r.org_id and c.session_id = r.session_id
+                      and c.camera_id = ${cameraId})))
     ) as found
   `);
   return row?.found === true;
@@ -95,6 +104,10 @@ export async function releaseCameraFromIdleSessions(
        and not exists (
          select 1 from packing.scans c
           where c.org_id = s.org_id and c.session_id = s.id and c.outcome = 'accepted'
+       )
+       -- M51: nor a lot's recording started.
+       and not exists (
+         select 1 from packing.recordings r where r.org_id = s.org_id and r.session_id = s.id
        )
     returning s.id
   `);
@@ -508,6 +521,9 @@ export async function insertCameraPart(
     readonly cameraId: string;
     readonly recordedBy: string;
     readonly startedAt: Date;
+    /** M51 (D-932): the lot's recording it was cut from, and its lot; null for an M38c window. */
+    readonly recordingId?: string | null;
+    readonly lotNo?: number;
     /** The part's video, or null for a part that could not be filed (it reads as missing). */
     readonly file: {
       readonly fileId: string;
@@ -518,13 +534,14 @@ export async function insertCameraPart(
 ): Promise<{ readonly id: string; readonly part: number }> {
   const inserted = await tx.execute<{ id: string; part: number }>(sql`
     insert into packing.videos
-      (id, org_id, session_id, part, recorded_by, started_at, mime, source, camera_id)
+      (id, org_id, session_id, part, recorded_by, started_at, mime, source, camera_id,
+       recording_id, lot_no)
     values (
       ${input.id}, ${input.orgId}, ${input.sessionId},
       (select coalesce(max(part), 0) + 1 from packing.videos
         where org_id = ${input.orgId} and session_id = ${input.sessionId}),
       ${input.recordedBy}, ${input.startedAt.toISOString()}::timestamptz, 'video/mp4', 'camera',
-      ${input.cameraId}
+      ${input.cameraId}, ${input.recordingId ?? null}::uuid, ${input.lotNo ?? 1}
     )
     returning id, part
   `);

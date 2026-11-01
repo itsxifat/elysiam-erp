@@ -475,6 +475,12 @@ export const NO_DELETE_TABLES: readonly string[] = [
    */
   'packing.cameras',
   /*
+   * M51. A lot's recording is started by its label and stopped once (the M51 policies
+   * migration's triggers); its videos name it, and a deleted one would leave a lot's video
+   * with no record of when it ran (D-932).
+   */
+  'packing.recordings',
+  /*
    * M41. An offer is answered once (the M41 policies migration's trigger) and kept, because who
    * declined an order is what keeps it from going round the same person twice; the brand's
    * workflow settings, a person's presence and their desk profile are rows that change and are

@@ -198,6 +198,28 @@ export const PACKING_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Call>
     url: `/v1/packing/orders/${randomUUID()}/lots`,
     body: { count: 2 },
   }),
+  // M51: the return station, asked about orders and returns that do not exist (D-934).
+  'POST /v1/packing/returns': () => ({
+    url: '/v1/packing/returns',
+    body: { orderId: randomUUID() },
+  }),
+  'GET /v1/packing/returns': () => ({ url: '/v1/packing/returns' }),
+  'GET /v1/packing/returns/orders/:orderId': () => ({
+    url: `/v1/packing/returns/orders/${randomUUID()}`,
+  }),
+  'GET /v1/packing/returns/:id': () => ({ url: `/v1/packing/returns/${randomUUID()}` }),
+  'POST /v1/packing/returns/:id/scans': () => ({
+    url: `/v1/packing/returns/${randomUUID()}/scans`,
+    body: { scanId: randomUUID(), code: '2000000000015' },
+  }),
+  'POST /v1/packing/returns/:id/removals': () => ({
+    url: `/v1/packing/returns/${randomUUID()}/removals`,
+    body: { scanId: randomUUID(), skuId: randomUUID() },
+  }),
+  'POST /v1/packing/returns/:id/receive': () => ({
+    url: `/v1/packing/returns/${randomUUID()}/receive`,
+    body: { returnReason: 'customer_refused', reason: 'Matrix' },
+  }),
   'POST /v1/packing/sessions/:id/lots/close': () => ({
     url: `/v1/packing/sessions/${randomUUID()}/lots/close`,
   }),

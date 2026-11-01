@@ -104,6 +104,28 @@ export {
   scannedOrderParts,
 } from './scan-code.js';
 
+// M51: label to label, the pause after the idle time, one video per lot, returns (D-930 to D-936).
+export {
+  PACKING_IDLE_PAUSE_DEFAULT_MS,
+  PACKING_IDLE_PAUSE_MAX_MS,
+  PACKING_IDLE_PAUSE_MIN_MS,
+  PACKING_RESUME_LEAD_MS,
+  PACKING_RETURN_VIDEO_KEEP_DAYS,
+  judgePackLabelScan,
+  judgeReturnLabelScan,
+  pauseInMs,
+  readOrderLabel,
+  recordedMs,
+  recordingPaused,
+  recordingSpans,
+  recordingStopAt,
+  recordingTimedOut,
+  returnVideoExpiry,
+  type LabelRefusal,
+  type LabelVerdict,
+  type RecordingSpan,
+} from './recording.js';
+
 export {
   PRINTER_STATUS_FRESH_MS,
   PRINT_JOB_STATES,

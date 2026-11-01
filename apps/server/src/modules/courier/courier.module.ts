@@ -21,6 +21,7 @@ import { PathaoCourierAdapter } from './adapters/pathao.adapter.js';
 import { RedxCourierAdapter } from './adapters/redx.adapter.js';
 import { SteadfastCourierAdapter } from './adapters/steadfast.adapter.js';
 import { BookingService } from './booking.service.js';
+import { COURIER_API, CourierApiService } from './courier.api.js';
 import { CourierController } from './courier.controller.js';
 import { DeliveryRecordService } from './delivery-record.service.js';
 import { CourierLabelsService } from './labels.service.js';
@@ -102,6 +103,8 @@ import { CourierReferencesBinding } from './references.binding.js';
   ],
   controllers: [CourierController, TrackingController],
   providers: [
+    // M51 (D-934): the return station books a received return through this.
+    { provide: COURIER_API, useClass: CourierApiService },
     // M39a: what a received return holds about a SKU or a location (D-621, D-629).
     CourierReferencesBinding,
     {
@@ -165,6 +168,7 @@ import { CourierReferencesBinding } from './references.binding.js';
     TrackingService,
   ],
   exports: [
+    COURIER_API,
     BookingService,
     CourierSyncService,
     SettlementsService,

@@ -87,12 +87,20 @@ export const packingSettings = packing.table(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     /** Whether the station records the packing on camera (D-611). */
     videoEnabled: boolean('video_enabled').notNull().default(true),
+    /**
+     * M51 (D-931): how long with no scan before a lot's video pauses; the next scan resumes it.
+     * Ten seconds by default (the owner's number).
+     */
+    idlePauseMs: integer('idle_pause_ms').notNull().default(10_000),
     updatedBy: text('updated_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
     ...timestamps,
   },
-  (table) => [index('packing_settings_org_idx').on(table.orgId)],
+  (table) => [
+    index('packing_settings_org_idx').on(table.orgId),
+    check('packing_settings_idle_pause', sql`${table.idlePauseMs} between 3000 and 60000`),
+  ],
 );
 
 /**
@@ -354,6 +362,12 @@ export const packingSessions = packing.table(
     recordingBy: text('recording_by').references(() => users.id, { onDelete: 'restrict' }),
     /** M46 (D-802): the packing terminal it was opened at, or null (no bound computer). */
     terminalId: uuid('terminal_id'),
+    /**
+     * M51 (D-934): `pack` (the packing station, a confirmed order to `packed`) or `return` (the
+     * return station, a parcel on its way back inspected and received: completed with the
+     * order `returned`). One of each per order.
+     */
+    kind: text('kind').notNull().default('pack'),
     ...timestamps,
   },
   (table) => [
@@ -364,7 +378,9 @@ export const packingSessions = packing.table(
       foreignColumns: [packingTerminals.orgId, packingTerminals.id],
     }).onDelete('restrict'),
     index('packing_sessions_terminal_idx').on(table.orgId, table.terminalId, table.completedAt),
-    unique('packing_sessions_org_order_key').on(table.orgId, table.orderId),
+    unique('packing_sessions_org_order_kind_key').on(table.orgId, table.orderId, table.kind),
+    check('packing_sessions_kind', sql`${table.kind} in ('pack', 'return')`),
+    index('packing_sessions_kind_started_idx').on(table.orgId, table.kind, table.startedAt),
     index('packing_sessions_org_idx').on(table.orgId),
     index('packing_sessions_org_started_idx').on(table.orgId, table.startedAt),
     foreignKey({
@@ -451,15 +467,86 @@ export const packingScans = packing.table(
       columns: [table.orgId, table.skuId],
       foreignColumns: [skus.orgId, skus.id],
     }).onDelete('restrict'),
+    // M51 (D-930): `label` is the parcel's label scanned at the table, starting or stopping a
+    // lot's recording (or refused); it names no SKU.
     check(
       'packing_scans_outcome',
-      sql`${table.outcome} in ('accepted', 'removed', 'unknown_code', 'wrong_item', 'wrong_variant', 'over')`,
+      sql`${table.outcome} in ('accepted', 'removed', 'unknown_code', 'wrong_item', 'wrong_variant', 'over', 'label')`,
     ),
     check(
       'packing_scans_sku_named',
-      sql`(${table.skuId} is null) = (${table.outcome} = 'unknown_code')`,
+      sql`(${table.skuId} is null) = (${table.outcome} in ('unknown_code', 'label'))`,
     ),
     check('packing_scans_code_length', sql`length(${table.code}) <= 120`),
+  ],
+);
+
+/**
+ * One lot's recording (M51, D-930 to D-933): from the parcel label's scan that started it to the
+ * scan that stopped it (or Close lot, Finish, the return's receipt, fifteen minutes). Its video
+ * pauses after `idle_ms` with no scan and resumes at the next; the stretches are read from the
+ * session's scans of the lot. `camera_id` is the IP camera filming it (with the session's other
+ * cameras, D-804), or null for the desk's own camera recorded by the browser. Set once each.
+ */
+export const packingRecordings = packing.table(
+  'recordings',
+  {
+    id: primaryId,
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'restrict' }),
+    sessionId: uuid('session_id').notNull(),
+    lotNo: integer('lot_no').notNull(),
+    /** Whether a video is expected: the brand records (D-615) and, for a camera, it is on. */
+    videoRequired: boolean('video_required').notNull(),
+    cameraId: uuid('camera_id'),
+    /** The pause rule in force when it started (D-931). */
+    idleMs: integer('idle_ms').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
+    startedBy: text('started_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true, mode: 'date' }),
+    stoppedBy: text('stopped_by').references(() => users.id, { onDelete: 'restrict' }),
+    /** `label` (scanned again), `closed`, `finished`, `received` or `timed_out`. */
+    stopReason: text('stop_reason'),
+    ...timestamps,
+  },
+  (table) => [
+    unique('packing_recordings_org_id_id_key').on(table.orgId, table.id),
+    unique('packing_recordings_session_lot_key').on(table.orgId, table.sessionId, table.lotNo),
+    index('packing_recordings_org_idx').on(table.orgId),
+    index('packing_recordings_camera_idx').on(table.orgId, table.cameraId, table.startedAt),
+    index('packing_recordings_open_idx')
+      .on(table.orgId, table.startedAt)
+      .where(sql`${table.stoppedAt} is null`),
+    foreignKey({
+      name: 'packing_recordings_org_id_session_id_fk',
+      columns: [table.orgId, table.sessionId],
+      foreignColumns: [packingSessions.orgId, packingSessions.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'packing_recordings_org_id_camera_id_fk',
+      columns: [table.orgId, table.cameraId],
+      foreignColumns: [packingCameras.orgId, packingCameras.id],
+    }).onDelete('restrict'),
+    check('packing_recordings_lot_no', sql`${table.lotNo} between 1 and 20`),
+    check('packing_recordings_idle', sql`${table.idleMs} between 3000 and 60000`),
+    check(
+      'packing_recordings_stop',
+      sql`(${table.stoppedAt} is null and ${table.stoppedBy} is null and ${table.stopReason} is null)
+       or (${table.stoppedAt} is not null and ${table.stopReason} is not null
+           and ${table.stoppedAt} >= ${table.startedAt}
+           and ${table.stoppedAt} <= ${table.startedAt} + interval '15 minutes')`,
+    ),
+    check(
+      'packing_recordings_stop_reason',
+      sql`${table.stopReason} is null or ${table.stopReason} in ('label', 'closed', 'finished', 'received', 'timed_out')`,
+    ),
+    check(
+      'packing_recordings_stopped_by',
+      sql`${table.stopReason} is null or (${table.stopReason} = 'timed_out') = (${table.stoppedBy} is null)`,
+    ),
   ],
 );
 
@@ -500,10 +587,23 @@ export const packingVideos = packing.table(
      */
     source: text('source').notNull().default('browser'),
     cameraId: uuid('camera_id'),
+    /**
+     * M51 (D-932): the lot's recording this part belongs to (null: filmed before M51, the
+     * whole session's), and its lot, so each lot's video is kept apart under the one order.
+     */
+    recordingId: uuid('recording_id'),
+    lotNo: integer('lot_no').notNull().default(1),
     ...timestamps,
   },
   (table) => [
     unique('packing_videos_org_id_id_key').on(table.orgId, table.id),
+    foreignKey({
+      name: 'packing_videos_org_id_recording_id_fk',
+      columns: [table.orgId, table.recordingId],
+      foreignColumns: [packingRecordings.orgId, packingRecordings.id],
+    }).onDelete('restrict'),
+    index('packing_videos_recording_idx').on(table.orgId, table.recordingId),
+    check('packing_videos_lot_no', sql`${table.lotNo} between 1 and 20`),
     unique('packing_videos_session_part_key').on(table.orgId, table.sessionId, table.part),
     uniqueIndex('packing_videos_file_idx').on(table.orgId, table.fileId),
     index('packing_videos_org_idx').on(table.orgId),
