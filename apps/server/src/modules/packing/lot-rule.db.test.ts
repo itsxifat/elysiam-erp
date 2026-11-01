@@ -15,6 +15,7 @@ import { ORG_A, startHttpHarness, type HttpHarness } from '../../testing/http-ha
 import { INVENTORY_API, type InventoryApi } from '../inventory/inventory.api.js';
 import { seedProductWithSkus, warehouseId } from '../inventory/inventory.testing.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
+import { DeskService } from '../orders/desk.service.js';
 import { OrdersService } from '../orders/orders.service.js';
 import { applyOrderMigrations, seedCustomer, seedOrder } from '../orders/orders.testing.js';
 import { LotsService } from './lots.service.js';
@@ -26,11 +27,15 @@ import { PackStationService } from './station.service.js';
  *
  * 1. No limit asks nobody. Above the brand's limit a person's Confirm is refused until it says how
  *    many, the answer is saved with the confirm, and an answer that could not be packed is refused.
- * 2. A system's confirm (a website payment, the marketplace) is never asked: nobody is there.
+ * 2. Only the Confirm route asks: the orders module's own transition, and so a replacement, does
+ *    not; bulk confirm reports the refusal against that order and confirms the others.
  * 3. A packer who revises the count sends the order back to Ready for label, listed first and
  *    marked; the old label starts and closes nothing; Finish is refused; once the new labels are
  *    printed the same table carries on and the order is packed lot by lot.
- * 4. Changing back to the printed count makes the old labels good again.
+ * 4. Changing back to the printed count makes the old labels good again, unless other labels
+ *    printed since, when the old were thrown away and the order is listed again.
+ * 5. A count is fixed once packed, never more than the pieces left can fill; pages queued for the
+ *    old count are cancelled; the new count's labels print through the real route, with no reason.
  */
 
 const PERSON = `usr_m52_${randomUUID().slice(0, 8)}`;
@@ -159,6 +164,30 @@ async function storedLots(orderId: string): Promise<number | null> {
           sql`select lot_count from packing.order_lots where org_id = ${ORG_A} and order_id = ${orderId}`,
         )
       )[0]?.lot_count ?? null,
+    { orgId: ORG_A },
+  );
+}
+
+async function setStoredLots(orderId: string, count: number): Promise<void> {
+  await withSystem(
+    (tx) =>
+      tx.execute(sql`
+        insert into packing.order_lots (org_id, order_id, lot_count, set_by)
+        values (${ORG_A}, ${orderId}, ${count}, ${PERSON})
+      `),
+    { orgId: ORG_A },
+  );
+}
+
+async function jobsOf(orderId: string, state: string) {
+  return withSystem(
+    async (tx) => [
+      ...(await tx.execute<{ lot_no: number; lot_count: number; source: string }>(sql`
+        select lot_no, lot_count, source from packing.print_jobs
+        where org_id = ${ORG_A} and order_id = ${orderId} and state = ${state}
+        order by lot_no, created_at
+      `)),
+    ],
     { orgId: ORG_A },
   );
 }
@@ -293,16 +322,59 @@ describe('the question at Confirm (D-941)', () => {
     expect(await storedLots(placed.id)).toBeNull();
   });
 
-  it('never asks a confirm with nobody there to answer', async () => {
+  it('asks only on the Confirm route, not in the orders module’s own transition', async () => {
     await setLimit(1);
     const placed = await takeOrder(4);
-    // The path a website payment and the marketplace take: the machine, with no person's answer.
     const actor = { orgId: ORG_A, userId: PERSON };
     await withOrg(actor, (tx) =>
       harness.app.get<OrdersApi>(ORDERS_API).transition(tx, actor, placed.id, 'confirm'),
     );
     expect(await orderStatus(placed.id)).toBe('confirmed');
     expect(await storedLots(placed.id)).toBeNull();
+  });
+
+  it('reports the refusal against that order in a bulk confirm, and confirms the others', async () => {
+    await setLimit(5);
+    const big = await takeOrder(6);
+    const small = await takeOrder(2);
+    const bulk = await harness.app
+      .get(DeskService)
+      .bulkConfirm(context(), request(), [big.id, small.id]);
+    expect(bulk.confirmed).toBe(1);
+    const refused = bulk.results.find((result) => result.id === big.id);
+    expect(refused).toMatchObject({ ok: false, code: 'ORDER_LOTS_REQUIRED' });
+    expect(JSON.stringify(refused)).toContain(big.orderNo);
+    expect(await orderStatus(big.id)).toBe('pending');
+    expect(await orderStatus(small.id)).toBe('confirmed');
+  });
+
+  it('asks and answers over HTTP, with the answer audited', async () => {
+    await setLimit(5);
+    const admin = await harness.asRole('org_admin', ORG_A);
+    const placed = await takeOrder(6);
+    const path = `/v1/orders/${placed.id}/confirm`;
+
+    const asked = await admin.client.request('POST', path);
+    expect(asked.statusCode).toBe(409);
+    expect(asked.body).toContain('ORDER_LOTS_REQUIRED');
+    expect((await admin.client.request('POST', path, { body: { lots: 7 } })).statusCode).toBe(400);
+    expect((await admin.client.request('POST', path, { body: { lots: 0 } })).statusCode).toBe(400);
+
+    const answered = await admin.client.request('POST', path, { body: { lots: 2 } });
+    expect(answered.statusCode, answered.body).toBeLessThan(300);
+    expect(await storedLots(placed.id)).toBe(2);
+
+    const audited = await withSystem(
+      (tx) =>
+        tx.execute<{ actor_user_id: string; after: { lotCount: number } }>(sql`
+          select actor_user_id, after from audit.audit_log
+          where org_id = ${ORG_A} and action = 'packing.lot_count_set' and entity_id = ${placed.id}
+        `),
+      { orgId: ORG_A },
+    );
+    expect(audited).toHaveLength(1);
+    expect(audited[0]?.actor_user_id).toBe(admin.userId);
+    expect(audited[0]?.after.lotCount).toBe(2);
   });
 
   it('keeps the limit when only the video setting is saved, and clears it when told to', async () => {
@@ -378,6 +450,13 @@ describe('the packer revises the count (D-942, D-943)', () => {
     expect(after.items.some((item) => item.orderId === placed.id)).toBe(false);
     expect((await station.get(context(), request(), sessionId)).labelsAwaited).toEqual([]);
 
+    // The old sticker names no bag now: only the new labels work (D-945).
+    await pastReread();
+    const sticker = await scan(sessionId, placed.orderNo);
+    expect(sticker.label?.action).toBe('refused');
+    expect(sticker.label?.message).toContain('scan lot 1’s own label');
+    expect(sticker.view.lots?.closed).toEqual([]);
+
     const closed = await scan(sessionId, lotCode(placed.orderNo, 1));
     expect(closed.label?.action).toBe('lot_closed');
     await pastReread();
@@ -399,6 +478,93 @@ describe('the packer revises the count (D-942, D-943)', () => {
     await lots.setLotCount(context(), request(), placed.id, { count: 1 });
     const back = await printing.ready(context(), request(), { limit: 100 });
     expect(back.items.some((item) => item.orderId === placed.id)).toBe(false);
+  });
+
+  it('does not bring back labels thrown away once others printed (D-945)', async () => {
+    const placed = await seedPieces('confirmed', 2);
+    await readyForLabel(placed, '2021-01-01T00:00:00Z');
+    await printLabels(placed, 1);
+    await lots.setLotCount(context(), request(), placed.id, { count: 2 });
+    await printLabels(placed, 2);
+    const printed = await printing.ready(context(), request(), { limit: 100 });
+    expect(printed.items.some((item) => item.orderId === placed.id)).toBe(false);
+
+    await lots.setLotCount(context(), request(), placed.id, { count: 1 });
+    const again = await printing.ready(context(), request(), { limit: 100 });
+    const row = again.items.find((item) => item.orderId === placed.id);
+    expect(row?.revised?.fromLots).toBe(2);
+    expect(row?.labelsPrinted).toBe(0);
+    expect(await refusal(station.open(context(), request(), { code: placed.orderNo }))).toContain(
+      'ORDER_LABEL_NOT_PRINTED',
+    );
+
+    // Its new label is a page at the count of today, not a reprint, and it stands.
+    await printLabels(placed, 1);
+    const done = await printing.ready(context(), request(), { limit: 100 });
+    expect(done.items.some((item) => item.orderId === placed.id)).toBe(false);
+  });
+
+  it('fixes the count once packed, up or down (D-944)', async () => {
+    const placed = await seedPieces('packed', 3);
+    for (const count of [1, 2, 3]) {
+      expect(await refusal(lots.setLotCount(context(), request(), placed.id, { count }))).toContain(
+        'LOTS_LOCKED',
+      );
+    }
+    expect(await storedLots(placed.id)).toBeNull();
+  });
+
+  it('counts only the pieces left once a bag is sealed', async () => {
+    const placed = await seedPieces('confirmed', 4);
+    await setStoredLots(placed.id, 2);
+    await printLabels(placed, 2);
+    const opened = await station.open(context(), request(), {
+      code: lotCode(placed.orderNo, 1),
+    });
+    const sessionId = opened.session.id;
+    for (let piece = 0; piece < 3; piece += 1) await scan(sessionId, shirt.barcode);
+    await pastReread();
+    expect((await scan(sessionId, lotCode(placed.orderNo, 1))).label?.action).toBe('lot_closed');
+
+    // One piece is left, so lot 2 is all there can be.
+    expect(
+      await refusal(lots.setLotCount(context(), request(), placed.id, { count: 3 })),
+    ).toContain('LOT_COUNT_INVALID');
+    expect(await storedLots(placed.id)).toBe(2);
+  });
+
+  it('cancels pages still queued for the old count, and prints the new ones with no reason', async () => {
+    const placed = await seedPieces('confirmed', 2);
+    await readyForLabel(placed, '2021-01-01T00:00:00Z');
+    await printLabels(placed, 1);
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into packing.print_jobs
+            (org_id, order_id, order_no, document, lot_no, lot_count, printer_id, terminal_id,
+             source, reason, requested_by, consignment_no, state)
+          values (${ORG_A}, ${placed.id}, ${placed.orderNo}, 'label', 1, 1, ${printerId},
+                  ${terminalId}, 'reprint', 'Torn', ${PERSON}, ${`CN-${placed.orderNo}`}, 'queued')
+        `),
+      { orgId: ORG_A },
+    );
+    await lots.setLotCount(context(), request(), placed.id, { count: 2 });
+    expect(await jobsOf(placed.id, 'queued')).toEqual([]);
+    expect(await jobsOf(placed.id, 'cancelled')).toEqual([
+      { lot_no: 1, lot_count: 1, source: 'reprint' },
+    ]);
+
+    // Through the real route: a page at the new count is new, so no reason is asked (D-818).
+    await printing.print(
+      context(),
+      request(),
+      { orderIds: [placed.id], documents: ['label'], printerId },
+      null,
+    );
+    expect(await jobsOf(placed.id, 'queued')).toEqual([
+      { lot_no: 1, lot_count: 2, source: 'manual' },
+      { lot_no: 2, lot_count: 2, source: 'manual' },
+    ]);
   });
 
   it('marks nothing on an order whose answer at Confirm is simply still to print', async () => {

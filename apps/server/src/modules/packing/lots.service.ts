@@ -10,6 +10,7 @@ import {
   judgeHandoverScan,
   judgeLotCount,
   lotCountLimit,
+  piecesByLot,
 } from '@elysium/domain/packing';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -349,9 +350,10 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
   // --- the lot count (D-805) ---------------------------------------------------------------
 
   /**
-   * How many bags the order goes in: the label printer's or the packer's call, until handover.
-   * A change sends it back to Ready for label (M52, D-942): the labels printed at the old count
-   * stop counting, so it is listed first, marked, until every lot's new label is printed.
+   * How many bags the order goes in: the label printer's or the packer's call, until it is packed
+   * (D-944). A change sends it back to Ready for label (M52, D-942): the labels printed at the old
+   * count stop counting, so it is listed first, marked, until every lot's new label is printed;
+   * pages still queued for the old count are cancelled (D-945).
    */
   async setLotCount(
     context: ActiveContext,
@@ -374,39 +376,40 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
         if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
         const before = await labels.lotCountOf(tx, context.orgId, orderId);
-        // The bags closed: while packing, the open session's; once packed, the finished one's
-        // (W4: a packed order never goes in fewer lots than it was packed in).
-        const closedLots =
+        // The bags closed at the table and what is sealed in them: only the rest can fill more.
+        const closures =
+          session === undefined ? [] : await labels.closuresOf(tx, context.orgId, session.id);
+        const inLots =
           session === undefined
-            ? 0
-            : (await labels.closuresOf(tx, context.orgId, session.id)).length;
-        const handedLots = (await labels.handoverScansOf(tx, context.orgId, [orderId])).length;
+            ? new Map<number, number>()
+            : piecesByLot(
+                (await station.scansOf(tx, context.orgId, session.id)).map((row) => ({
+                  lot: row.lot_no,
+                  outcome: row.outcome,
+                })),
+              );
+        const closed = {
+          lots: closures.length,
+          pieces: closures.reduce((sum, row) => sum + (inLots.get(row.lot_no) ?? 0), 0),
+        };
         const pieces = facts.lines.reduce((sum, line) => sum + line.qty, 0);
         const verdict = judgeLotCount({
           count: input.count,
           orderStatus: facts.status,
-          closedLots,
-          handedLots,
+          closedLots: closed.lots,
           pieces,
+          piecesInClosedLots: closed.pieces,
         });
         if (verdict === 'not_open') {
           throw new PackingError(
             'LOTS_LOCKED',
-            `Order ${facts.orderNo} has left the hub: its lots are fixed.`,
-          );
-        }
-        if (verdict === 'handover_started') {
-          throw new PackingError(
-            'LOTS_LOCKED',
-            `Order ${facts.orderNo}'s lots are being handed to the courier: the count is fixed.`,
+            `Order ${facts.orderNo} is ${facts.status}: its lots change only while it is confirmed, before it is packed.`,
           );
         }
         if (verdict === 'below_closed') {
           throw new PackingError(
             'LOTS_LOCKED',
-            facts.status === 'packed'
-              ? `Order ${facts.orderNo} was packed in ${String(closedLots)} lots: it cannot go in fewer.`
-              : `${String(closedLots)} lots of order ${facts.orderNo} are already closed at the packing station: keep at least one more open.`,
+            `${String(closed.lots)} lots of order ${facts.orderNo} are already closed at the packing station: keep at least one more open.`,
           );
         }
         if (verdict === 'out_of_range') {
@@ -415,7 +418,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         if (verdict === 'more_than_pieces') {
           throw new PackingError(
             'LOT_COUNT_INVALID',
-            `Order ${facts.orderNo} has ${String(pieces)} ${pieces === 1 ? 'piece' : 'pieces'}, and every lot holds at least one: it goes in 1 to ${String(lotCountLimit(pieces))} lots.`,
+            `Every lot holds at least one piece, and order ${facts.orderNo} has only enough for ${String(lotCountLimit(pieces, closed))} ${lotCountLimit(pieces, closed) === 1 ? 'lot' : 'lots'}.`,
           );
         }
         if (input.count !== before) {
@@ -425,6 +428,11 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
             count: input.count,
             by: context.userId,
           });
+          const cancelledPrints = await labels.cancelQueuedAtOtherCounts(tx, {
+            orgId: context.orgId,
+            orderId,
+            count: input.count,
+          });
           await this.audit.record(tx, {
             orgId: context.orgId,
             actorUserId: context.userId,
@@ -433,7 +441,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
             entityType: 'order',
             entityId: orderId,
             before: { lotCount: before },
-            after: { lotCount: input.count },
+            after: { lotCount: input.count, cancelledPrints },
             request,
           });
         }

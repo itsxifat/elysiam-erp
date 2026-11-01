@@ -157,11 +157,11 @@ export function isLabelReread(input: {
   readonly last: { readonly code: string; readonly atMs: number } | null;
   readonly nowMs: number;
 }): boolean {
-  if (input.last === null || input.last.code !== input.code) return false;
+  if (input.last?.code !== input.code) return false;
   return input.nowMs - input.last.atMs < PACKING_LABEL_REREAD_MS;
 }
 
-export type LabelRefusal = 'no_such_lot' | 'lot_done' | 'other_lot' | 'all_done';
+export type LabelRefusal = 'no_such_lot' | 'lot_done' | 'other_lot' | 'all_done' | 'whole_order';
 
 export type LabelVerdict =
   | { readonly kind: 'start'; readonly lot: number }
@@ -176,9 +176,11 @@ export type LabelVerdict =
     };
 
 /**
- * A label scanned at the packing station (D-930). Lots are packed in order (D-807): a code of
- * the whole order means the lot being packed; that lot's own label starts it, or stops it once
- * started. A closed lot's label, a later lot's or a lot the order does not have is refused.
+ * A label scanned at the packing station (D-930). Lots are packed in order (D-807): the open
+ * lot's own label starts it, or stops it once started. A closed lot's label, a later lot's or a lot
+ * the order does not have is refused. A code of the whole order means the one lot of an order in
+ * one lot; with several it names no bag (as at the handover, D-808), and it is what an old label
+ * carries after the count was revised (M52, D-945), so it is refused too.
  */
 export function judgePackLabelScan(input: {
   readonly lotCount: number;
@@ -194,6 +196,9 @@ export function judgePackLabelScan(input: {
   }
   if (open === null) {
     return { kind: 'refused', reason: 'all_done', lot: named, expected: null };
+  }
+  if (named === null && input.lotCount > 1) {
+    return { kind: 'refused', reason: 'whole_order', lot: null, expected: open };
   }
   const lot = named ?? open;
   if (lot < open) return { kind: 'refused', reason: 'lot_done', lot, expected: open };

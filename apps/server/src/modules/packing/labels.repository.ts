@@ -898,6 +898,20 @@ export async function jobsOfOrders(
  * or being sent: what a new print must count, so pressing Print twice, or printing while the
  * automatic label waits, is a reprint and needs its reason (ledger audit W3).
  */
+/**
+ * M52 (D-945): a page still stands while no page of its document was printed at another lot count
+ * after it. Going back to an old count before anything printed at the new one keeps its pages; once
+ * the new ones printed, the old were thrown away as the screens said, so they do not come back.
+ * For a query whose print job is `j`.
+ */
+const PAGE_STANDS = sql`not exists (
+  select 1 from packing.print_jobs newer
+   where newer.org_id = j.org_id and newer.order_id = j.order_id and newer.document = j.document
+     and newer.state = 'printed' and newer.lot_count <> j.lot_count
+     and (newer.document <> 'label' or newer.consignment_no is not null)
+     and newer.created_at > j.created_at
+)`;
+
 export async function printedCounts(
   tx: Tx,
   orgId: string,
@@ -921,6 +935,7 @@ export async function printedCounts(
       and ${options.pending === true ? sql`j.state in ('queued', 'sending', 'printed')` : sql`j.state = 'printed'`}
       and j.lot_count = coalesce(ol.lot_count, 1)
       and (j.document <> 'label' or j.consignment_no is not null)
+      and ${PAGE_STANDS}
     group by j.order_id, j.document, j.lot_no
   `);
   return new Map(
@@ -1091,7 +1106,7 @@ export async function labelOrdersReady(
            (select count(distinct j.lot_no)::int from packing.print_jobs j
              where j.org_id = lo.org_id and j.order_id = lo.order_id and j.document = 'label'
                and j.state = 'printed' and j.consignment_no is not null
-               and j.lot_count = coalesce(ol.lot_count, 1)) as labels_printed,
+               and j.lot_count = coalesce(ol.lot_count, 1) and ${PAGE_STANDS}) as labels_printed,
            old.lot_count as old_lot_count, ol.set_by as lots_set_by, ol.updated_at as lots_set_at
     from packing.label_orders lo
     left join packing.order_lots ol on ol.org_id = lo.org_id and ol.order_id = lo.order_id
@@ -1114,7 +1129,7 @@ export async function labelOrdersReady(
       and (select count(distinct j.lot_no) from packing.print_jobs j
             where j.org_id = lo.org_id and j.order_id = lo.order_id and j.document = 'label'
               and j.state = 'printed' and j.consignment_no is not null
-              and j.lot_count = coalesce(ol.lot_count, 1))
+              and j.lot_count = coalesce(ol.lot_count, 1) and ${PAGE_STANDS})
           < coalesce(ol.lot_count, 1)
     order by (old.lot_count is null), lo.booked_at, lo.order_id
     limit ${options.limit}
@@ -1185,6 +1200,23 @@ export async function setLotCount(
     on conflict (org_id, order_id) do update
        set lot_count = excluded.lot_count, set_by = excluded.set_by, updated_at = now()
   `);
+}
+
+/**
+ * M52 (D-945): pages still waiting to print for another lot count, cancelled as the count changes,
+ * so no sticker with the old count reaches the table after it. A page being sent has gone.
+ */
+export async function cancelQueuedAtOtherCounts(
+  tx: Tx,
+  input: { readonly orgId: string; readonly orderId: string; readonly count: number },
+): Promise<number> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    update packing.print_jobs set state = 'cancelled', cancelled_at = now(), updated_at = now()
+     where org_id = ${input.orgId} and order_id = ${input.orderId}
+       and state = 'queued' and lot_count <> ${input.count}
+    returning id
+  `);
+  return rows.length;
 }
 
 export interface ClosureRow extends Record<string, unknown> {

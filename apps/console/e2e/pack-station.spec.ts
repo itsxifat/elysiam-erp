@@ -288,6 +288,15 @@ function makeModel(kind: 'pack' | 'return', startingLots: number) {
           label: { action: 'refused', lot: open, message },
         });
       }
+      if (lot === null && lotCount > 1) {
+        const message = `This order goes in ${String(lotCount)} lots: scan lot ${String(open)}’s own label.`;
+        log('label', code, open);
+        return answer({
+          outcome: 'label',
+          message,
+          label: { action: 'refused', lot: null, message },
+        });
+      }
       if (lot !== null && lot !== open) {
         const message = `That is lot ${String(lot)}’s label. Lot ${String(open)} is open: scan its label first.`;
         log('label', code, open);
@@ -536,9 +545,15 @@ async function scanCode(page: Page, code: string): Promise<void> {
 
 async function shoot(page: Page, name: string, folder = SHOTS): Promise<void> {
   mkdirSync(folder, { recursive: true });
-  // A dialog fades in: wait, so the picture shows the screen and not the fade.
+  // A dialog fades in: wait, so the picture shows the screen and not the fade. Only what ends: the
+  // recording dot pulses for ever.
   await page.evaluate(() =>
-    Promise.all(document.getAnimations().map((running) => running.finished.catch(() => undefined))),
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((running) => running.effect?.getComputedTiming().iterations !== Infinity)
+        .map((running) => running.finished.catch(() => undefined)),
+    ),
   );
   await page.evaluate(() => {
     window.scrollTo(0, 0);
@@ -702,6 +717,10 @@ test.describe('who says how many lots (M52, D-941, D-942)', () => {
     await expect(page.getByTestId('pack-labels-awaited')).toHaveCount(0);
     await expect(page.getByTestId('close-lot')).toBeEnabled();
     await shoot(page, 'c-packer-labels-arrived', LOT_SHOTS);
+
+    // The old sticker still names no bag, so only the new labels work from here.
+    await scanCode(page, ORDER_NO);
+    await expect(answer).toContainText('scan lot 1’s own label');
 
     // The same table carries on with the new labels and finishes.
     await scanCode(page, `${ORDER_NO}-L1`);

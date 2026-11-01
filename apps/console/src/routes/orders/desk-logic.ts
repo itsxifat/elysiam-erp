@@ -6,6 +6,18 @@ import type { Area } from './api.js';
  * desk that can be wrong without anything looking wrong.
  */
 
+/**
+ * What a bulk press could not do, order by order, so it never hides why (M52, D-941: an order above
+ * the brand's limit is refused to be opened and answered). At most five, then how many more.
+ */
+export function bulkRefusals(
+  results: readonly ({ readonly ok: true } | { readonly ok: false; readonly message: string })[],
+): string {
+  const words = results.flatMap((result) => (result.ok ? [] : [result.message]));
+  const shown = words.slice(0, 5).join(' ');
+  return words.length > 5 ? `${shown} (+${String(words.length - 5)})` : shown;
+}
+
 const BANGLA_DIGITS = '০১২৩৪৫৬৭৮৯';
 
 /** `০১৭১১` → `01711`. Everything else is left alone. */

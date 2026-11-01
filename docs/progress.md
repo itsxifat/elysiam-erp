@@ -4092,3 +4092,42 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   not affected); a piece's condition chosen at the scan; a stale screen's `ipRecordingPhase` and
   `IpCameraCard` remain only for sessions filmed before M51.
 - **New dependencies:** none.
+
+## 2026-11-01 · M52 · who says how many lots, and a revised count goes back to Labels
+
+- **What:** every order starts as one lot; above the brand's limit (Packaging → Packing → Settings;
+  empty asks nobody, and it is empty until a supervisor sets it) the person confirming is asked how
+  many, on the order page and the order desk. A packer's revised count sends the order to the top
+  of Ready for label, marked with the old and new count, who and when; every lot's label prints
+  again; the table waits and hears by itself when they are out. Plan: `docs/plans/M52.md`.
+  Decisions: D-941 to D-945.
+- **Found tracing it:** a revised count already sent the order back, but nobody was told, and the
+  old label kept closing and starting lots until the very last scan refused it, with every bag
+  filled. More lots than pieces could be set, and could never be packed.
+- **Migration:** 0167 (`packing.settings.lot_ask_above_pieces`, a nullable column and its check).
+- **Ledger audit:** 0 critical, 7 warnings, 6 notes, each checked against the code. Fixed: a packed
+  order's count could change with no new labels, so it is now fixed once packed (W1, D-944);
+  going back to an old count revived stickers already thrown away (W2); an old whole-order code
+  still passed the table after the new labels printed (W3, narrowing D-930); bulk confirm and bulk
+  pack hid why an order was refused and cleared the selection (W6); the limit ignored pieces sealed
+  in closed bags (N1); pages queued for the old count survived (N3); a poll could hide a piece just
+  scanned (N4). Corrected: my own claim that systems confirm orders; nothing does but Replace (W5).
+  Recorded, not fixed: W4 and W5 (follow-ups), N2, N5 (D-942). Not tested: a revision racing a scan
+  (the lock order was checked by reading). The fixes were not re-audited.
+- **Verification:** `lot-rule.db.test.ts` (real Postgres, with `label-recording`, `camera-lot-cut`,
+  `return-station` and the domain, console and order-actions tests: 157 passed, 13 files);
+  `e2e/pack-station.spec.ts` 8 in Chromium, 3 of them new (the packer's revision with a real
+  recorder, Ready for label, the settings). Typecheck, eslint, prettier, `check:i18n`,
+  `check:migrations`, `check:schema`, `check:routes`, `check:api-client`, `check:white-label`,
+  `check:bundle` (249.7 of 250 KB): PASS. Pictures in `docs/review/M52/`.
+- **Also:** a lint error M51 left on main in `isLabelReread` (it would have failed `pnpm verify`).
+- **Older tests changed:** `label-recording` and `camera-lot-cut` scanned labels they never printed,
+  and one used a whole-order code on two lots; `labels.e2e` expected a packed order to grow, edited
+  but not run (it is one of the stale ones, per M51).
+- **Not tested:** the order desk's question in a browser (the order page's is, and it is the same
+  dialog); no real scanner, printer or table. `pnpm verify` and the stack specs were not run, per
+  the minimal-tests rule. **Not deployed.**
+- **Follow-ups:** a replacement starts as one lot (carry the old count over); an edit after lots
+  were closed can strand the table (predates M52); an old "Lot 1 of 2" scans the same as a new
+  "Lot 1 of 3" once printed, as a lot's code does not carry the count.
+- **New dependencies:** none.

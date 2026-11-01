@@ -344,14 +344,14 @@ function Station({
     refetchInterval: 5_000,
     gcTime: 0,
   });
-  const watchedView = watched.data;
+  const heard = watched.data?.labelsAwaited;
   useEffect(() => {
-    if (watchedView === undefined) return;
-    // A finish that landed meanwhile stands: an answer asked for before it must not undo it.
+    if (heard === undefined) return;
+    // Only this: a scan answered meanwhile is newer than the rest of what this asked for.
     queryClient.setQueryData<PackView>(['packing', 'order', orderId], (current) =>
-      current?.session.status === 'open' ? watchedView : current,
+      current === undefined ? current : { ...current, labelsAwaited: heard },
     );
-  }, [watchedView, queryClient, orderId]);
+  }, [heard, queryClient, orderId]);
   const wasWaiting = useRef(false);
   useEffect(() => {
     if (wasWaiting.current && !waiting && stillOpen) {

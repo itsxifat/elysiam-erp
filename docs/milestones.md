@@ -1467,3 +1467,26 @@ The owner's request of 2026-11-01 (plan: `docs/plans/M51.md`; D-930 to D-936).
 8. An order received from another page ends its inspection; both routes at once book it once, with no deadlock.
 9. In a real browser with a fake camera, the recorder is recording from the label, paused after the idle time, recording again at the next scan, stopped by the label again, and each lot uploads its own video.
 10. Typecheck, lint, i18n, migrations, schema drift, the route matrix, the API client, the white-label check and the first-download budget pass.
+
+## M52: Who says how many lots, and a revised count goes back to Labels
+
+The owner's request of 2026-11-01 (plan: `docs/plans/M52.md`; D-941 to D-945).
+
+- **The first answer:** every order starts as one lot; an order with more pieces than the brand's limit is asked how many lots when a person confirms it (D-941).
+- **The last word:** the packer's revised count sends the order to the top of Ready for label, marked; every lot's label prints again; the table waits and is told when they are out (D-942).
+- **A count that can be packed:** never more lots than the pieces can fill, whoever sets it (D-943), and fixed once the order is packed (D-944).
+- **Only the new labels work:** after a revision the old sticker starts and closes nothing, then or after the new ones print, and does not come back (D-945).
+
+**Acceptance checks**
+
+1. No limit asks nobody and the order stays one lot; at the limit exactly nobody is asked; above it a person's Confirm is refused `ORDER_LOTS_REQUIRED` until it says how many, and the answer is saved.
+2. An answer of more lots than pieces is refused; a confirm refused for stock takes its answer back with it.
+3. Only the Confirm route asks, not the orders module's own transition; bulk confirm reports the refusal against that order alone and confirms the others; asked and answered over HTTP, with the answer audited.
+4. The limit is kept when only the video setting is saved, and cleared when told to.
+5. A packer's revision lists the order first in Ready for label with the old count, who and when; an order that simply waited longer is not marked.
+6. While the new labels are out, the old label starts and closes nothing and says what to wait for, Close lot is refused and a piece still goes in; once printed the order leaves the list and the same table packs it lot by lot to `packed`.
+7. Changing the count back before anything printed makes the old labels good again; after others printed the order is listed again and packing waits for its new label.
+8. In a real browser: the Lots dialog says what a change does, the station shows it is waiting with Finish and Close lot disabled, the old label is refused while the recorder runs on, and the station hears the labels by itself.
+9. On the order page: a confirm the server takes asks nothing; above the limit it asks and confirms again with the answer; more lots than pieces cannot be sent; any other refusal stays a refusal.
+10. A code of the whole order is refused on an order in several lots, and a one-lot order keeps it; a packed order's count is refused up and down; a count past what the pieces left can fill is refused; pages queued for the old count are cancelled and the new ones print through the real route with no reason asked.
+11. Typecheck, lint, i18n, migrations, schema drift, the route matrix, the API client, the white-label check and the first-download budget pass.

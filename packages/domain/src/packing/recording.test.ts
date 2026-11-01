@@ -187,6 +187,18 @@ describe('judgePackLabelScan', () => {
     ).toMatchObject({ kind: 'refused', reason: 'all_done' });
   });
 
+  it('takes a code of the whole order only when the order is in one lot (D-945)', () => {
+    expect(
+      judgePackLabelScan({ lotCount: 2, closedLots: 0, scannedLot: null, openLotStarted: false }),
+    ).toEqual({ kind: 'refused', reason: 'whole_order', lot: null, expected: 1 });
+    expect(
+      judgePackLabelScan({ lotCount: 3, closedLots: 1, scannedLot: null, openLotStarted: true }),
+    ).toEqual({ kind: 'refused', reason: 'whole_order', lot: null, expected: 2 });
+    expect(
+      judgePackLabelScan({ lotCount: 1, closedLots: 0, scannedLot: null, openLotStarted: true }),
+    ).toEqual({ kind: 'stop', lot: 1 });
+  });
+
   it('only ever starts or stops the open lot', () => {
     fc.assert(
       fc.property(

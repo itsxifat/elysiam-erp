@@ -1463,9 +1463,10 @@ describe('after the ledger audit (W1 to W4, N7)', () => {
     const fewer = await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: 1 });
     expect(fewer.status, fewer.text).toBe(409);
     expect(fewer.body.code).toBe('LOTS_LOCKED');
-    // Splitting a packed order into one bag more is still allowed (it then needs four scans).
+    // Nor more: nothing checks the labels again after Pack, so the count is fixed (D-944).
     const more = await call(packer, 'PUT', `/v1/packing/orders/${order.id}/lots`, { count: 4 });
-    expect(more.status, more.text).toBe(200);
+    expect(more.status, more.text).toBe(409);
+    expect(more.body.code).toBe('LOTS_LOCKED');
   });
 
   it('W2: a print station finishes only a browser job it claimed itself', async () => {

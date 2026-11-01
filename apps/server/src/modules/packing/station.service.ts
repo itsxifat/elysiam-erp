@@ -110,6 +110,8 @@ export function labelRefusalWords(
       return `That is lot ${lot}’s label. Lot ${expected} is open: scan its label first.`;
     case 'all_done':
       return 'Every lot of this order is done.';
+    case 'whole_order':
+      return `This order goes in ${String(lotCount)} lots: scan lot ${expected}’s own label.`;
   }
 }
 
@@ -336,15 +338,15 @@ export class PackStationService {
       openLotStarted: openStarted,
     });
     // M52 (D-942): the count was revised and its labels are on their way, so this label is an old
-    // one: no lot starts or closes on it. A label refused anyway keeps its own, better reason.
-    const awaited =
-      reread || verdict.kind === 'refused'
-        ? null
-        : await awaitedLabelsWords(tx, {
-            orgId,
-            orderId: session.order_id,
-            orderNo: facts.orderNo,
-          });
+    // one: no lot starts or closes on it. This answer comes first: until they print, no other
+    // refusal can be acted on, as the label it would ask for does not exist yet.
+    const awaited = reread
+      ? null
+      : await awaitedLabelsWords(tx, {
+          orgId,
+          orderId: session.order_id,
+          orderNo: facts.orderNo,
+        });
     const written = await repo.insertScan(tx, {
       orgId,
       sessionId: session.id,

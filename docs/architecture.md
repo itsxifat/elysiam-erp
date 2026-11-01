@@ -1983,6 +1983,15 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   order through the state machine only once every lot is scanned, and a person's Ship of a
   multi-lot order is refused through the orders module's `HandoverGuardRegistry`. One
   consignment per order; no courier is sent a lot count (none documents one, D-809).
+- **Who says how many lots** (M52, D-941 to D-945): every order starts as one lot. Above the brand's
+  limit (`packing.settings.lot_ask_above_pieces`; null asks nobody) a person's Confirm says how many,
+  saved in the confirm's transaction through `HandoverGuard.settleLots`; only that route asks. The
+  packer's revision sends the order to the top of Ready for label, derived from `print_jobs` (its
+  last label printed at another count), and every lot's label prints again; the station's
+  `labelsAwaited` holds label scans and Close lot until they are printed. A page stands only while
+  no page was printed at another count after it, and a code of the whole order is refused on an
+  order in several lots, so an old sticker does not come back. A count is never more than the
+  pieces can fill and is fixed once the order is packed.
 - **Booking, printing and the handover, as run** (D-900 to D-905): Settings → Order workflow
   chooses when the courier is booked (`orders.courier_booking`: on confirm, the default since
   D-927, or by hand; on pack retired, D-928), and booking is what puts an order in Ready for label. A browser printer prints from every page of a

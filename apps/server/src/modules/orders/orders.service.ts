@@ -1827,9 +1827,9 @@ export class OrdersService {
   /**
    * Confirm: lock the order in scope, then let the domain machine run and reserve the stock.
    *
-   * M52 (D-941): this is a person confirming, so an order above the brand's limit is asked how
-   * many lots it goes in. A system's confirm (a website payment, the marketplace, a replacement)
-   * goes straight to the machine: nobody is there to answer, and it starts as one lot.
+   * M52 (D-941): an order above the brand's limit is asked how many lots it goes in. Only here:
+   * a replacement is confirmed in the same step as the person's Replace, is not asked, and starts
+   * as one lot for the label desk or the packer to change.
    */
   async confirm(context: ActiveContext, request: AuditableRequest, id: string, lots?: number) {
     return mapOrderErrors(async () =>

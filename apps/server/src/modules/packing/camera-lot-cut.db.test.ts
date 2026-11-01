@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { withGlobal, withSystem } from '@elysium/db';
-import { PACKING_CAMERA_MAX_MS } from '@elysium/domain/packing';
+import { PACKING_CAMERA_MAX_MS, lotScanCode } from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
 import pino from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -508,7 +508,8 @@ describe('through the station’s own scans', () => {
       tx.execute(sql`update catalog.skus set barcode = ${barcode} where id = ${sku.id}`),
     );
 
-    const started = await scan(order.orderNo);
+    // Lot 1's own label, in its digits: a code of the whole order names no bag of two (D-945).
+    const started = await scan(lotScanCode(order.orderNo, 1) ?? '');
     expect(started.label).toMatchObject({ action: 'started', lot: 1 });
     const recording = started.view.recordings[0];
     expect(recording).toMatchObject({ source: 'camera', cameraId: first, state: 'recording' });

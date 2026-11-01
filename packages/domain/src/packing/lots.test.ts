@@ -63,61 +63,44 @@ describe('lot codes (D-806)', () => {
 });
 
 describe('the lot count (D-805)', () => {
-  it('changes at the hub until the handover starts, never below the closed lots while packing', () => {
+  it('changes only while confirmed, never below the closed lots nor past what the pieces fill', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: -2, max: 25 }),
         fc.constantFrom('pending', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled'),
         fc.integer({ min: 0, max: 20 }),
-        fc.integer({ min: 0, max: 3 }),
         fc.integer({ min: 1, max: 40 }),
-        (count, orderStatus, closedLots, handedLots, pieces) => {
-          const verdict = judgeLotCount({ count, orderStatus, closedLots, handedLots, pieces });
+        fc.integer({ min: 0, max: 40 }),
+        (count, orderStatus, closedLots, pieces, sealed) => {
+          const piecesInClosedLots = Math.min(sealed, pieces);
+          const verdict = judgeLotCount({
+            count,
+            orderStatus,
+            closedLots,
+            pieces,
+            piecesInClosedLots,
+          });
           if (verdict !== 'ok') return;
           expect(count).toBeGreaterThanOrEqual(1);
           expect(count).toBeLessThanOrEqual(LOT_COUNT_MAX);
-          // Every lot holds a piece, so a count above the pieces could never be packed (D-943).
-          expect(count).toBeLessThanOrEqual(pieces);
-          expect(['confirmed', 'packed']).toContain(orderStatus);
-          expect(handedLots).toBe(0);
-          // Packing leaves a lot open; packed never drops below the bags packed (W4, N1).
-          if (orderStatus === 'confirmed' && closedLots > 0) {
-            expect(count).toBeGreaterThan(closedLots);
-          }
-          if (orderStatus === 'packed') expect(count).toBeGreaterThanOrEqual(closedLots);
+          // Fixed once packed (D-944).
+          expect(orderStatus).toBe('confirmed');
+          // Packing leaves a lot open.
+          if (closedLots > 0) expect(count).toBeGreaterThan(closedLots);
+          // Every lot still to fill gets a piece of its own (D-943).
+          expect(count - closedLots).toBeLessThanOrEqual(Math.max(pieces - piecesInClosedLots, 1));
         },
       ),
     );
-    expect(
-      judgeLotCount({ count: 3, orderStatus: 'shipped', closedLots: 0, handedLots: 0, pieces: 9 }),
-    ).toBe('not_open');
-    expect(
-      judgeLotCount({ count: 3, orderStatus: 'packed', closedLots: 0, handedLots: 1, pieces: 9 }),
-    ).toBe('handover_started');
-    expect(
-      judgeLotCount({
-        count: 1,
-        orderStatus: 'confirmed',
-        closedLots: 2,
-        handedLots: 0,
-        pieces: 9,
-      }),
-    ).toBe('below_closed');
-    expect(
-      judgeLotCount({
-        count: 2,
-        orderStatus: 'confirmed',
-        closedLots: 2,
-        handedLots: 0,
-        pieces: 9,
-      }),
-    ).toBe('below_closed');
-    expect(
-      judgeLotCount({ count: 1, orderStatus: 'packed', closedLots: 3, handedLots: 0, pieces: 9 }),
-    ).toBe('below_closed');
-    expect(
-      judgeLotCount({ count: 4, orderStatus: 'packed', closedLots: 3, handedLots: 0, pieces: 9 }),
-    ).toBe('ok');
+    const judged = { closedLots: 0, pieces: 9, piecesInClosedLots: 0 };
+    expect(judgeLotCount({ ...judged, count: 3, orderStatus: 'shipped' })).toBe('not_open');
+    expect(judgeLotCount({ ...judged, count: 3, orderStatus: 'packed' })).toBe('not_open');
+    expect(judgeLotCount({ ...judged, count: 1, orderStatus: 'packed' })).toBe('not_open');
+    expect(judgeLotCount({ ...judged, count: 3, orderStatus: 'confirmed' })).toBe('ok');
+    const packing = { ...judged, orderStatus: 'confirmed', closedLots: 2, piecesInClosedLots: 2 };
+    expect(judgeLotCount({ ...packing, count: 1 })).toBe('below_closed');
+    expect(judgeLotCount({ ...packing, count: 2 })).toBe('below_closed');
+    expect(judgeLotCount({ ...packing, count: 3 })).toBe('ok');
   });
 });
 
@@ -157,9 +140,17 @@ describe('who says how many lots (M52, D-941, D-943)', () => {
     expect(lotCountLimit(3)).toBe(3);
     expect(lotCountLimit(0)).toBe(1);
     expect(lotCountLimit(90)).toBe(LOT_COUNT_MAX);
-    const count = { orderStatus: 'confirmed', closedLots: 0, handedLots: 0 };
+    const count = { orderStatus: 'confirmed', closedLots: 0, piecesInClosedLots: 0 };
     expect(judgeLotCount({ ...count, count: 3, pieces: 3 })).toBe('ok');
     expect(judgeLotCount({ ...count, count: 4, pieces: 3 })).toBe('more_than_pieces');
+  });
+
+  it('counts only the pieces left once a bag is sealed', () => {
+    // Four pieces with three sealed in lot 1: one piece is left, so one lot more at most.
+    expect(lotCountLimit(4, { lots: 1, pieces: 3 })).toBe(2);
+    const sealed = { orderStatus: 'confirmed', closedLots: 1, pieces: 4, piecesInClosedLots: 3 };
+    expect(judgeLotCount({ ...sealed, count: 2 })).toBe('ok');
+    expect(judgeLotCount({ ...sealed, count: 3 })).toBe('more_than_pieces');
   });
 });
 

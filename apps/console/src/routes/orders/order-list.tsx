@@ -46,6 +46,7 @@ import {
   type OrderRow,
   type OrderStatus,
 } from './api.js';
+import { bulkRefusals } from './desk-logic.js';
 import { LabelSheetDialog } from './label-sheet.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { LiveIndicator, OrdersNav, OrderStatusBadge, useOrderEvents } from './parts.js';
@@ -165,9 +166,12 @@ function OrderList() {
       const failed = result.results.length - result.confirmed;
       setBulkMessage(
         `${String(result.confirmed)} ${t('orders.bulk.confirmedCount')}` +
-          (failed > 0 ? ` · ${String(failed)} ${t('orders.bulk.failedCount')}` : ''),
+          (failed > 0
+            ? ` · ${String(failed)} ${t('orders.bulk.failedCount')}: ${bulkRefusals(result.results)}`
+            : ''),
       );
-      setSelected(new Set());
+      // The refused stay ticked: they are what is left to deal with.
+      setSelected(new Set(result.results.filter((one) => !one.ok).map((one) => one.id)));
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
     onError: (error) => setBulkMessage(error instanceof Error ? error.message : String(error)),
@@ -180,9 +184,11 @@ function OrderList() {
       const failed = result.results.length - result.moved;
       setBulkMessage(
         `${String(result.moved)} ${t('orders.bulk.movedCount')}` +
-          (failed > 0 ? ` · ${String(failed)} ${t('orders.bulk.notMoved')}` : ''),
+          (failed > 0
+            ? ` · ${String(failed)} ${t('orders.bulk.notMoved')}: ${bulkRefusals(result.results)}`
+            : ''),
       );
-      setSelected(new Set());
+      setSelected(new Set(result.results.filter((one) => !one.ok).map((one) => one.id)));
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
     onError: (error) => setBulkMessage(error instanceof Error ? error.message : String(error)),

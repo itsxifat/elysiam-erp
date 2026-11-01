@@ -6,9 +6,9 @@
  *
  * The rules, pure, for the server to judge by and the console to show with:
  *
- * - **The count** is 1 to 20 and never more than the order's pieces, set while the order is
- *   confirmed or packed, and fixed from the first lot scanned at the courier's handover. While it
- *   is being packed it never drops below the lots already closed.
+ * - **The count** is 1 to 20 and never more than the order's pieces can fill, set while the order
+ *   is confirmed and fixed once it is packed (D-944). While it is being packed it never drops below
+ *   the lots already closed.
  * - **Packing** fills lot 1, then lot 2, …: each scan goes into the open lot. A lot closes
  *   with at least one piece in it and only if enough pieces are left for the lots after it to
  *   have one each. The last lot closes with Finish, which M38b's rule still decides (every piece
@@ -20,8 +20,8 @@
 /** The most bags one order goes in. */
 export const LOT_COUNT_MAX = 20;
 
-/** The orders a lot count may be set on: still at the hub. */
-const LOT_OPEN_STATUSES: readonly string[] = ['confirmed', 'packed'];
+/** The orders a lot count may be set on: confirmed, not yet packed (M52, D-944). */
+const LOT_OPEN_STATUSES: readonly string[] = ['confirmed'];
 
 /**
  * A lot's barcode value (D-806): the order number and the lot, `ELY-2610-00042-L2`. An order
@@ -49,15 +49,18 @@ export function parseLotCode(
   return { orderCode, lot };
 }
 
-export type LotCountRefusal =
-  'out_of_range' | 'not_open' | 'handover_started' | 'below_closed' | 'more_than_pieces';
+export type LotCountRefusal = 'out_of_range' | 'not_open' | 'below_closed' | 'more_than_pieces';
 
 /**
  * The most lots an order of so many pieces can go in: every lot holds a piece (D-807), so a count
- * above this could never be packed.
+ * above this could never be packed. A closed bag keeps what is in it, so only the pieces left can
+ * fill the lots after it (M52, D-943).
  */
-export function lotCountLimit(pieces: number): number {
-  return Math.max(1, Math.min(LOT_COUNT_MAX, pieces));
+export function lotCountLimit(
+  pieces: number,
+  closed: { readonly lots: number; readonly pieces: number } = { lots: 0, pieces: 0 },
+): number {
+  return Math.max(1, Math.min(LOT_COUNT_MAX, closed.lots + pieces - closed.pieces));
 }
 
 export type ConfirmLotsVerdict = 'one_lot' | 'ask' | 'answered' | 'out_of_range';
@@ -85,32 +88,28 @@ export function judgeConfirmLots(input: {
 
 /**
  * Whether an order's lot count may become `count` now. While it is being packed the count must
- * leave a lot open after the closed ones (a scan always has a bag to go in); once it is packed
- * the count may grow (a bag split at the dispatch table) but never fall below the bags packed,
- * or the handover would let an order go with bags left at the hub (M46 ledger audit, W4). It is
- * never more than the order's pieces, whoever says so (M52, D-943).
+ * leave a lot open after the closed ones (a scan always has a bag to go in). Once it is packed it
+ * is fixed: nothing checks the labels again after Pack, so a later change would send an order with
+ * labels for the wrong count, or with bags left at the hub (M52, D-944). It is never more than the
+ * order's pieces can fill, whoever says so (M52, D-943).
  */
 export function judgeLotCount(input: {
   readonly count: number;
   readonly orderStatus: string;
-  /** Lots closed at the packing station: of the open session, or of the finished one. */
+  /** Lots closed at the packing station. */
   readonly closedLots: number;
-  /** Lots already scanned at the courier's handover. */
-  readonly handedLots: number;
   /** The order's pieces. */
   readonly pieces: number;
+  /** The pieces sealed in those closed lots. */
+  readonly piecesInClosedLots: number;
 }): LotCountRefusal | 'ok' {
   if (!Number.isInteger(input.count) || input.count < 1 || input.count > LOT_COUNT_MAX) {
     return 'out_of_range';
   }
   if (!LOT_OPEN_STATUSES.includes(input.orderStatus)) return 'not_open';
-  if (input.handedLots > 0) return 'handover_started';
-  const below =
-    input.orderStatus === 'packed'
-      ? input.count < input.closedLots
-      : input.closedLots > 0 && input.count <= input.closedLots;
-  if (below) return 'below_closed';
-  if (input.count > lotCountLimit(input.pieces)) return 'more_than_pieces';
+  if (input.closedLots > 0 && input.count <= input.closedLots) return 'below_closed';
+  const closed = { lots: input.closedLots, pieces: input.piecesInClosedLots };
+  if (input.count > lotCountLimit(input.pieces, closed)) return 'more_than_pieces';
   return 'ok';
 }
 
