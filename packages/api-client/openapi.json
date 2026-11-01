@@ -1496,6 +1496,8 @@
               "PRINT_REASON_REQUIRED",
               "PRINT_JOB_STATE",
               "LOTS_LOCKED",
+              "ORDER_LOTS_REQUIRED",
+              "LOT_COUNT_INVALID",
               "LOT_CLOSE_REFUSED",
               "ORDER_LOTS_NOT_HANDED",
               "ORDER_ALREADY_HANDED",

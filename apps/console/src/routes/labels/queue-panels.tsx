@@ -10,6 +10,7 @@ import {
   Money,
   Select,
   Skeleton,
+  StatusBadge,
   buttonVariants,
 } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -88,7 +89,8 @@ export function ReadyPanel() {
   const ready = useQuery({
     queryKey: ['labels', 'ready', chosen],
     queryFn: () => readyForLabel(chosen === '' ? undefined : chosen),
-    refetchInterval: 30_000,
+    // A revised order's packer waits at the table for its labels (M52, D-942).
+    refetchInterval: 15_000,
   });
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
@@ -102,12 +104,18 @@ export function ReadyPanel() {
   const all = items.slice(0, PRINT_BATCH).map((item) => item.orderId);
   const ids = items.filter((item) => selected.has(item.orderId)).map((item) => item.orderId);
   const every = items.length > 0 && ids.length === items.length;
+  const revised = items.filter((item) => item.revised != null).length;
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground" data-testid="ready-lead">
         {t('lb.ready.lead')}
       </p>
+      {revised === 0 ? null : (
+        <p role="status" className="text-sm font-medium" data-testid="ready-revised">
+          {`${t('lb.ready.revisedCount')}: ${String(revised)}. ${t('lb.ready.revisedLead')}`}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <LocationSelect value={chosen} onChange={setLocation} />
         <label className="flex items-center gap-2 text-sm">
@@ -196,6 +204,19 @@ export function ReadyPanel() {
                     >
                       {item.orderNo}
                     </Link>
+                    {item.revised == null ? null : (
+                      <p
+                        className="flex flex-wrap items-center gap-2 py-1 text-xs text-muted-foreground"
+                        data-testid="ready-revised-row"
+                      >
+                        <StatusBadge tone="warning">{t('lb.ready.newLabels')}</StatusBadge>
+                        <span className="tabular-nums">
+                          {`${String(item.revised.fromLots)} → ${String(item.lotCount)} ${t('lb.lots')}`}
+                          {item.revised.by === null ? '' : ` · ${item.revised.by}`}
+                        </span>
+                        {item.revised.at === null ? null : <DateTime value={item.revised.at} />}
+                      </p>
+                    )}
                   </td>
                   <td className="px-3">{item.customer}</td>
                   <td className="px-3 font-mono text-xs">

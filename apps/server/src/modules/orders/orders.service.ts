@@ -1826,11 +1826,26 @@ export class OrdersService {
 
   /**
    * Confirm: lock the order in scope, then let the domain machine run and reserve the stock.
+   *
+   * M52 (D-941): this is a person confirming, so an order above the brand's limit is asked how
+   * many lots it goes in. A system's confirm (a website payment, the marketplace, a replacement)
+   * goes straight to the machine: nobody is there to answer, and it starts as one lot.
    */
-  async confirm(context: ActiveContext, request: AuditableRequest, id: string) {
+  async confirm(context: ActiveContext, request: AuditableRequest, id: string, lots?: number) {
     return mapOrderErrors(async () =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
         const order = await this.lockForAct(tx, context, request, id, 'confirm');
+        // Only an order this confirm can move: any other is refused by the machine, unasked.
+        if (order.status === 'pending') {
+          await this.handover.settleLots(tx, {
+            orgId: context.orgId,
+            orderId: order.id,
+            orderNo: order.order_no,
+            userId: context.userId,
+            lots,
+            request,
+          });
+        }
         const moved = await this.transitions.move(tx, context, request, order, 'confirm', {});
         return toOrderView(moved.order);
       }),

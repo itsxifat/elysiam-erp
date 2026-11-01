@@ -333,11 +333,12 @@ export class OrdersController {
   @RequireAbility('update', 'Order')
   @Post(':id/confirm')
   async confirm(@Req() request: FastifyRequest, @Param('id') id: string, @Body() body: unknown) {
-    parse(confirmOrderSchema, body ?? {});
+    const input = parse(confirmOrderSchema, body ?? {});
     return this.orders.confirm(
       requireContext(request),
       auditable(request),
       parse(orderIdSchema, id),
+      input.lots,
     );
   }
 

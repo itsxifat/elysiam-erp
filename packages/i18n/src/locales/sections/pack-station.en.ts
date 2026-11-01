@@ -71,6 +71,15 @@ const en = {
   'ps.settings.seconds': 'seconds with no scan',
   'ps.settings.idleHelp':
     'From 3 to 60. The next scan resumes it, so the video holds only the moments with scans in them.',
+  'ps.settings.lotAsk': 'Ask how many lots when an order has more than',
+  'ps.settings.lotAskUnit': 'pieces',
+  'ps.settings.lotAskHelp':
+    'The person confirming the order is asked. Leave it empty to ask nobody: every order then starts as one lot. The packer can still change it at the table.',
+  'ps.labels.waiting': 'Waiting for the new labels of lots',
+  'ps.labels.waitingOne': 'Waiting for the new label.',
+  'ps.labels.waitingHelp':
+    'The lots changed, so this order went back to Labels. The old labels no longer count: put the new ones on the bags and scan those.',
+  'ps.labels.arrived': 'The new labels are printed. Put them on the bags and scan the next label.',
   'ps.scan.sending': 'Checking…',
   'ps.scan.offline': 'That scan did not reach the server. Scan the piece again.',
   'ps.outcome.accepted': 'Added',

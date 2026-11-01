@@ -117,6 +117,32 @@ const button = (testId: string) =>
   host.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`);
 
 describe('Ready for label', () => {
+  it('marks an order whose lots changed, with who changed them, and only that order', async () => {
+    ready = [
+      {
+        ...order('1'),
+        lotCount: 2,
+        revised: { fromLots: 1, by: 'A packer', at: '2026-11-01T08:00:00.000Z' },
+      },
+      { ...order('2'), revised: null },
+    ];
+    await render();
+    expect(host.querySelector('[data-testid="ready-revised"]')?.textContent).toContain(
+      'Lots changed: 1',
+    );
+    const marked = host.querySelectorAll('[data-testid="ready-revised-row"]');
+    expect(marked).toHaveLength(1);
+    expect(marked[0]?.textContent).toContain('New labels');
+    expect(marked[0]?.textContent).toContain('1 → 2 lots');
+    expect(marked[0]?.textContent).toContain('A packer');
+  });
+
+  it('says nothing about changed lots when none did', async () => {
+    await render();
+    expect(host.querySelector('[data-testid="ready-revised"]')).toBeNull();
+    expect(host.querySelector('[data-testid="ready-revised-row"]')).toBeNull();
+  });
+
   it('prints the label of every order listed with one press, and no slip', async () => {
     await render();
     const all = button('print-all-labels');

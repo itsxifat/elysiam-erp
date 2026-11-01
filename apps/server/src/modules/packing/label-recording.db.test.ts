@@ -251,6 +251,7 @@ describe('the packing station, label to label (D-930)', () => {
 
   it('refuses the label while pieces are still to scan, and keeps recording', async () => {
     const placed = await order('confirmed', [{ sku: shirt, qty: 2 }]);
+    await labelsPrinted(placed);
     const sessionId = await packSession(placed.id, placed.orderNo);
     await scan(sessionId, placed.orderNo);
     await scan(sessionId, shirt.barcode);
@@ -311,6 +312,7 @@ describe('the packing station, label to label (D-930)', () => {
 
   it('starts the recording from the scan that opens the order', async () => {
     const placed = await order('confirmed', [{ sku: cap, qty: 1 }]);
+    await labelsPrinted(placed);
     const sessionId = await packSession(placed.id, placed.orderNo);
     const opened = await station.open(context(), request(), { code: placed.orderNo });
     expect(opened.session.id).toBe(sessionId);
@@ -325,6 +327,7 @@ describe('the packing station, label to label (D-930)', () => {
 describe('the database holds the recording (0166)', () => {
   it('refuses a recording with no label scan, a second stop and another lot’s video', async () => {
     const placed = await order('confirmed', [{ sku: shirt, qty: 1 }]);
+    await labelsPrinted(placed);
     const sessionId = await packSession(placed.id, placed.orderNo);
     expect(
       await refusal(

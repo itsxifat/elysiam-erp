@@ -19,6 +19,7 @@ import {
   type OrderDetail,
   type OrderTrigger,
 } from './api.js';
+import { ConfirmLotsDialog } from './confirm-lots-dialog.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
 import { offeredActions } from './order-actions-logic.js';
 import { useOwnerGuard } from './owner-guard.js';
@@ -89,6 +90,8 @@ export function OrderActions({
   const queryClient = useQueryClient();
   const [open, setOpen] = useState<{ trigger: OrderTrigger; ack: boolean } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // M52 (D-941): the server asked how many lots; the confirm goes again with the answer.
+  const [askLots, setAskLots] = useState<{ ack: boolean } | null>(null);
   const { guard } = useOwnerGuard();
 
   const immediate = useMutation({
@@ -102,7 +105,12 @@ export function OrderActions({
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
       await queryClient.invalidateQueries({ queryKey: ['courier'] });
     },
-    onError: async (error) => {
+    onError: async (error, { ack }) => {
+      if (error instanceof ApiError && error.code === 'ORDER_LOTS_REQUIRED') {
+        setFailure(null);
+        setAskLots({ ack });
+        return;
+      }
       setFailure(error instanceof Error ? error.message : String(error));
       // Somebody may have taken the order meanwhile: show who.
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -145,6 +153,20 @@ export function OrderActions({
         <p role="alert" className="basis-full text-sm text-destructive">
           {t('orders.detail.actionFailed')} {failure}
         </p>
+      )}
+      {askLots === null ? null : (
+        <ConfirmLotsDialog
+          orderId={order.id}
+          orderNo={order.orderNo}
+          pieces={order.lines.reduce((sum, line) => sum + line.qty, 0)}
+          ack={askLots.ack}
+          onClose={() => setAskLots(null)}
+          onConfirmed={() => {
+            setAskLots(null);
+            void queryClient.invalidateQueries({ queryKey: ['orders'] });
+            void queryClient.invalidateQueries({ queryKey: ['courier'] });
+          }}
+        />
       )}
       {open?.trigger === 'receive_return' && parcel !== null ? (
         <ReceiveDialog

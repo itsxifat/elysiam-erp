@@ -5,11 +5,13 @@ import {
   LOT_COUNT_MAX,
   handoverComplete,
   handoverMissing,
+  judgeConfirmLots,
   judgeHandoverScan,
   judgeLotClose,
   judgeLotCount,
   judgeLotFinish,
   lotCode,
+  lotCountLimit,
   openLot,
   parseLotCode,
   piecesByLot,
@@ -68,11 +70,14 @@ describe('the lot count (D-805)', () => {
         fc.constantFrom('pending', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled'),
         fc.integer({ min: 0, max: 20 }),
         fc.integer({ min: 0, max: 3 }),
-        (count, orderStatus, closedLots, handedLots) => {
-          const verdict = judgeLotCount({ count, orderStatus, closedLots, handedLots });
+        fc.integer({ min: 1, max: 40 }),
+        (count, orderStatus, closedLots, handedLots, pieces) => {
+          const verdict = judgeLotCount({ count, orderStatus, closedLots, handedLots, pieces });
           if (verdict !== 'ok') return;
           expect(count).toBeGreaterThanOrEqual(1);
           expect(count).toBeLessThanOrEqual(LOT_COUNT_MAX);
+          // Every lot holds a piece, so a count above the pieces could never be packed (D-943).
+          expect(count).toBeLessThanOrEqual(pieces);
           expect(['confirmed', 'packed']).toContain(orderStatus);
           expect(handedLots).toBe(0);
           // Packing leaves a lot open; packed never drops below the bags packed (W4, N1).
@@ -83,24 +88,78 @@ describe('the lot count (D-805)', () => {
         },
       ),
     );
-    expect(judgeLotCount({ count: 3, orderStatus: 'shipped', closedLots: 0, handedLots: 0 })).toBe(
-      'not_open',
-    );
-    expect(judgeLotCount({ count: 3, orderStatus: 'packed', closedLots: 0, handedLots: 1 })).toBe(
-      'handover_started',
-    );
     expect(
-      judgeLotCount({ count: 1, orderStatus: 'confirmed', closedLots: 2, handedLots: 0 }),
+      judgeLotCount({ count: 3, orderStatus: 'shipped', closedLots: 0, handedLots: 0, pieces: 9 }),
+    ).toBe('not_open');
+    expect(
+      judgeLotCount({ count: 3, orderStatus: 'packed', closedLots: 0, handedLots: 1, pieces: 9 }),
+    ).toBe('handover_started');
+    expect(
+      judgeLotCount({
+        count: 1,
+        orderStatus: 'confirmed',
+        closedLots: 2,
+        handedLots: 0,
+        pieces: 9,
+      }),
     ).toBe('below_closed');
     expect(
-      judgeLotCount({ count: 2, orderStatus: 'confirmed', closedLots: 2, handedLots: 0 }),
+      judgeLotCount({
+        count: 2,
+        orderStatus: 'confirmed',
+        closedLots: 2,
+        handedLots: 0,
+        pieces: 9,
+      }),
     ).toBe('below_closed');
-    expect(judgeLotCount({ count: 1, orderStatus: 'packed', closedLots: 3, handedLots: 0 })).toBe(
-      'below_closed',
+    expect(
+      judgeLotCount({ count: 1, orderStatus: 'packed', closedLots: 3, handedLots: 0, pieces: 9 }),
+    ).toBe('below_closed');
+    expect(
+      judgeLotCount({ count: 4, orderStatus: 'packed', closedLots: 3, handedLots: 0, pieces: 9 }),
+    ).toBe('ok');
+  });
+});
+
+describe('who says how many lots (M52, D-941, D-943)', () => {
+  it('asks only above the limit, and never with no limit', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 600 }),
+        fc.option(fc.integer({ min: 1, max: 500 }), { nil: null }),
+        (pieces, askAbovePieces) => {
+          const verdict = judgeConfirmLots({ pieces, askAbovePieces, lots: undefined });
+          const above = askAbovePieces !== null && pieces > askAbovePieces;
+          expect(verdict).toBe(above ? 'ask' : 'one_lot');
+        },
+      ),
     );
-    expect(judgeLotCount({ count: 4, orderStatus: 'packed', closedLots: 3, handedLots: 0 })).toBe(
-      'ok',
+    expect(judgeConfirmLots({ pieces: 5, askAbovePieces: 5, lots: undefined })).toBe('one_lot');
+    expect(judgeConfirmLots({ pieces: 6, askAbovePieces: 5, lots: undefined })).toBe('ask');
+  });
+
+  it('takes an answer only if it could be packed, at any size', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 60 }),
+        fc.integer({ min: -2, max: 30 }),
+        fc.option(fc.integer({ min: 1, max: 500 }), { nil: null }),
+        (pieces, lots, askAbovePieces) => {
+          const verdict = judgeConfirmLots({ pieces, askAbovePieces, lots });
+          const fits = lots >= 1 && lots <= Math.min(pieces, LOT_COUNT_MAX);
+          expect(verdict).toBe(fits ? 'answered' : 'out_of_range');
+        },
+      ),
     );
+  });
+
+  it('never lets a count outgrow the pieces, whoever sets it', () => {
+    expect(lotCountLimit(3)).toBe(3);
+    expect(lotCountLimit(0)).toBe(1);
+    expect(lotCountLimit(90)).toBe(LOT_COUNT_MAX);
+    const count = { orderStatus: 'confirmed', closedLots: 0, handedLots: 0 };
+    expect(judgeLotCount({ ...count, count: 3, pieces: 3 })).toBe('ok');
+    expect(judgeLotCount({ ...count, count: 4, pieces: 3 })).toBe('more_than_pieces');
   });
 });
 

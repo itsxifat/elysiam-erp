@@ -63,11 +63,17 @@ const en = {
   'lb.ready.printAll': 'Print all labels',
   'lb.ready.printSelected': 'Print selected',
   'lb.ready.queued': 'labels queued',
+  'lb.ready.revisedCount': 'Lots changed',
+  'lb.ready.revisedLead':
+    'These orders are listed first and need every label printed again. Throw their old labels away.',
+  'lb.ready.newLabels': 'New labels',
 
   'lb.lots.title': 'Lots',
   'lb.lots.set': 'Set lots',
   'lb.lots.for': 'Lots for',
   'lb.lots.hint': 'How many bags this order goes in. Each lot gets its own label and slip.',
+  'lb.lots.reviseHint':
+    'A change sends this order back to Labels. Every lot needs a new label, because the old ones show the old number of lots, and packing waits for them.',
   'lb.lots.closeLot': 'Close lot',
   'lb.lots.filling': 'Filling',
   'lb.lots.closed': 'Closed',

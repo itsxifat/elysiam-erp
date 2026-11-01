@@ -271,6 +271,12 @@ export interface ReadyOrder {
   readonly bookedAt: string | null;
   readonly lotCount: number;
   readonly labelsPrinted: number;
+  /** M52 (D-942): back because its lots were revised; its old labels no longer count. */
+  readonly revised?: {
+    readonly fromLots: number;
+    readonly by: string | null;
+    readonly at: string | null;
+  } | null;
   readonly pieces: number;
   readonly codPoisha: string;
 }

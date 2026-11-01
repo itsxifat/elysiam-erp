@@ -6,8 +6,10 @@ import { sql } from 'drizzle-orm';
 import {
   handoverComplete,
   handoverMissing,
+  judgeConfirmLots,
   judgeHandoverScan,
   judgeLotCount,
+  lotCountLimit,
 } from '@elysium/domain/packing';
 
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -48,6 +50,42 @@ function lotWords(lots: readonly number[]): string {
 }
 
 /**
+ * The lots whose label is not printed at the order's current count, with its consignment (D-928):
+ * a label printed for another count ("Lot 1 of 2" when there are now 3) is not the order's any
+ * more (D-805), so a revised count needs every lot's label again.
+ */
+export async function lotsAwaitingLabel(
+  tx: Tx,
+  orgId: string,
+  orderId: string,
+): Promise<{ readonly lotCount: number; readonly missing: readonly number[] }> {
+  const lotCount = await labels.lotCountOf(tx, orgId, orderId);
+  const printed = await labels.printedCounts(tx, orgId, [orderId]);
+  return {
+    lotCount,
+    missing: Array.from({ length: lotCount }, (_, index) => index + 1).filter(
+      (lot) => (printed.get(`${orderId}:label:${String(lot)}`) ?? 0) === 0,
+    ),
+  };
+}
+
+/**
+ * M52 (D-942): what the packer is told while labels are still to print, or null when they all
+ * are. After a revised count a label scanned meanwhile is an old one, or names a bag with no label
+ * yet, so no lot starts or closes on it.
+ */
+export async function awaitedLabelsWords(
+  tx: Tx,
+  input: { readonly orgId: string; readonly orderId: string; readonly orderNo: string },
+): Promise<string | null> {
+  const { lotCount, missing } = await lotsAwaitingLabel(tx, input.orgId, input.orderId);
+  if (missing.length === 0) return null;
+  return lotCount === 1
+    ? `Order ${input.orderNo} goes in one lot and its label is not printed yet: wait for it from Labels, then scan that.`
+    : `Order ${input.orderNo} goes in ${String(lotCount)} lots and the labels of ${lotWords(missing)} are not printed yet: wait for them from Labels, then scan those.`;
+}
+
+/**
  * D-928: every lot's label printed, at the order's current lot count and with its consignment (a
  * "Not booked" label is not the order's label). What packing waits for: the desk's Pack, the
  * station's opening scan and its Finish.
@@ -56,11 +94,7 @@ export async function assertLabelsPrinted(
   tx: Tx,
   input: { readonly orgId: string; readonly orderId: string; readonly orderNo: string },
 ): Promise<void> {
-  const lotCount = await labels.lotCountOf(tx, input.orgId, input.orderId);
-  const printed = await labels.printedCounts(tx, input.orgId, [input.orderId]);
-  const missing = Array.from({ length: lotCount }, (_, index) => index + 1).filter(
-    (lot) => (printed.get(`${input.orderId}:label:${String(lot)}`) ?? 0) === 0,
-  );
+  const { lotCount, missing } = await lotsAwaitingLabel(tx, input.orgId, input.orderId);
   if (missing.length === 0) return;
   throw new PackingError(
     'ORDER_LABEL_NOT_PRINTED',
@@ -77,9 +111,10 @@ export async function assertLabelsPrinted(
  *   label (D-914); in the courier's booking transaction the row gains its consignment (D-817); a
  *   booking that failed for good keeps it ready without one (D-914). Nothing prints by itself
  *   (D-917): the order waits in "Ready for label" until a person prints it, one or many at once;
- * - **the handover guard**: a Pack is refused until every lot's label was printed with its
- *   consignment (D-928), and a person's Ship of an order in several lots until every lot's label
- *   was scanned at the handover (D-808).
+ * - **the handover guard**: a person's Confirm above the brand's limit says how many lots (M52,
+ *   D-941), a Pack is refused until every lot's label was printed with its consignment (D-928),
+ *   and a person's Ship of an order in several lots until every lot's label was scanned at the
+ *   handover (D-808).
  *
  * The lot count and an order's handover scans change one at a time per order (an advisory lock),
  * and a count change also waits for the order's open packing session, so a scan at the station
@@ -219,6 +254,65 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
   }
 
   /**
+   * M52 (D-941): a person is confirming the order, its row already locked, so only the lots' lock
+   * is taken (W1's order). Under the brand's limit nobody is asked and it stays one lot; above it
+   * the person says how many. An answer of one writes nothing, as no row is one lot.
+   */
+  async settleLots(
+    tx: Tx,
+    input: {
+      readonly orgId: string;
+      readonly orderId: string;
+      readonly orderNo: string;
+      readonly userId: string;
+      readonly lots: number | undefined;
+      readonly request: AuditableRequest;
+    },
+  ): Promise<void> {
+    const [settings, [facts]] = await Promise.all([
+      station.settingsOf(tx, input.orgId),
+      this.orders.packingFacts(tx, input.orgId, [input.orderId]),
+    ]);
+    const pieces = (facts?.lines ?? []).reduce((sum, line) => sum + line.qty, 0);
+    const verdict = judgeConfirmLots({
+      pieces,
+      askAbovePieces: settings?.lot_ask_above_pieces ?? null,
+      lots: input.lots,
+    });
+    if (verdict === 'ask') {
+      throw new PackingError(
+        'ORDER_LOTS_REQUIRED',
+        `Order ${input.orderNo} has ${String(pieces)} pieces: open it and say how many lots it goes in.`,
+      );
+    }
+    if (verdict === 'out_of_range') {
+      throw new PackingError(
+        'LOT_COUNT_INVALID',
+        `Order ${input.orderNo} has ${String(pieces)} ${pieces === 1 ? 'piece' : 'pieces'}: it goes in 1 to ${String(lotCountLimit(pieces))} lots.`,
+      );
+    }
+    if (input.lots === undefined || input.lots === 1) return;
+    await labels.lockOrderLots(tx, input.orgId, input.orderId);
+    await labels.setLotCount(tx, {
+      orgId: input.orgId,
+      orderId: input.orderId,
+      count: input.lots,
+      by: input.userId,
+    });
+    await this.audit.record(tx, {
+      orgId: input.orgId,
+      actorUserId: input.userId,
+      operation: 'update',
+      action: 'packing.lot_count_set',
+      entityType: 'order',
+      entityId: input.orderId,
+      before: { lotCount: 1 },
+      after: { lotCount: input.lots, at: 'confirm' },
+      request: input.request,
+    });
+  }
+
+  /**
    * D-928: an order is packed only once every lot's label was printed with its consignment. Asked
    * by the orders module's Pack (the desk's and the station's Finish) with the order's row locked.
    */
@@ -254,7 +348,11 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
 
   // --- the lot count (D-805) ---------------------------------------------------------------
 
-  /** How many bags the order goes in: the label printer's or the packer's call, until handover. */
+  /**
+   * How many bags the order goes in: the label printer's or the packer's call, until handover.
+   * A change sends it back to Ready for label (M52, D-942): the labels printed at the old count
+   * stop counting, so it is listed first, marked, until every lot's new label is printed.
+   */
   async setLotCount(
     context: ActiveContext,
     request: AuditableRequest,
@@ -283,11 +381,13 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
             ? 0
             : (await labels.closuresOf(tx, context.orgId, session.id)).length;
         const handedLots = (await labels.handoverScansOf(tx, context.orgId, [orderId])).length;
+        const pieces = facts.lines.reduce((sum, line) => sum + line.qty, 0);
         const verdict = judgeLotCount({
           count: input.count,
           orderStatus: facts.status,
           closedLots,
           handedLots,
+          pieces,
         });
         if (verdict === 'not_open') {
           throw new PackingError(
@@ -311,6 +411,12 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         }
         if (verdict === 'out_of_range') {
           throw new PackingError('LOTS_LOCKED', 'An order goes in 1 to 20 lots.');
+        }
+        if (verdict === 'more_than_pieces') {
+          throw new PackingError(
+            'LOT_COUNT_INVALID',
+            `Order ${facts.orderNo} has ${String(pieces)} ${pieces === 1 ? 'piece' : 'pieces'}, and every lot holds at least one: it goes in 1 to ${String(lotCountLimit(pieces))} lots.`,
+          );
         }
         if (input.count !== before) {
           await labels.setLotCount(tx, {

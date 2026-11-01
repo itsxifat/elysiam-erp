@@ -49,7 +49,7 @@ import {
   startLotRecording,
   stopLotIfRunning,
 } from './lot-recording.js';
-import { assertLabelsPrinted } from './lots.service.js';
+import { assertLabelsPrinted, awaitedLabelsWords, lotsAwaitingLabel } from './lots.service.js';
 import { PACKING_QUEUES, type CameraCutPayload } from './packing.queues.js';
 import * as rec from './recording.repository.js';
 import { ordersForScannedCode, ScannerService } from './scanner.service.js';
@@ -335,6 +335,16 @@ export class PackStationService {
       scannedLot: scan.lot,
       openLotStarted: openStarted,
     });
+    // M52 (D-942): the count was revised and its labels are on their way, so this label is an old
+    // one: no lot starts or closes on it. A label refused anyway keeps its own, better reason.
+    const awaited =
+      reread || verdict.kind === 'refused'
+        ? null
+        : await awaitedLabelsWords(tx, {
+            orgId,
+            orderId: session.order_id,
+            orderNo: facts.orderNo,
+          });
     const written = await repo.insertScan(tx, {
       orgId,
       sessionId: session.id,
@@ -343,11 +353,14 @@ export class PackStationService {
       skuId: null,
       outcome: 'label',
       scannedBy: context.userId,
-      lotNo: reread || verdict.kind === 'refused' ? (open ?? lotCount) : verdict.lot,
+      lotNo:
+        reread || verdict.kind === 'refused' || awaited !== null ? (open ?? lotCount) : verdict.lot,
     });
     let answer: LabelAnswer;
     if (reread) {
       answer = { action: 'ignored', lot: open, message: null };
+    } else if (awaited !== null) {
+      answer = { action: 'refused', lot: open, message: awaited };
     } else if (verdict.kind === 'start') {
       await startLotRecording(tx, this.audit, {
         orgId,
@@ -416,7 +429,9 @@ export class PackStationService {
     const code = normaliseScannedCode(typed);
     const label = readOrderLabel(code, labelFactsOf(facts));
     if (label === null) return;
-    const lotCount = await labels.lotCountOf(tx, orgId, session.order_id);
+    // M52 (D-942): opened again while a revised count's labels are on their way: it only resumes.
+    const { lotCount, missing } = await lotsAwaitingLabel(tx, orgId, session.order_id);
+    if (missing.length > 0) return;
     const closed = (await labels.closuresOf(tx, orgId, session.id)).length;
     const open = openLot(lotCount, closed);
     const scans = await repo.scansOf(tx, orgId, session.id);
@@ -702,6 +717,13 @@ export class PackStationService {
         this.assertOpen(session);
         const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertPackable(facts);
+        // M52 (D-942): the button waits for a revised count's labels, as the label scan does.
+        const awaited = await awaitedLabelsWords(tx, {
+          orgId: context.orgId,
+          orderId: session.order_id,
+          orderNo: facts.orderNo,
+        });
+        if (awaited !== null) throw new PackingError('ORDER_LABEL_NOT_PRINTED', awaited);
         const done = await this.closeLotIn(tx, context, request, session, facts, {
           reason: 'closed',
           scanId: null,
@@ -870,6 +892,8 @@ export class PackStationService {
         videoEnabled: row?.video_enabled ?? true,
         // M51 (D-931): the pause after so many seconds with no scan.
         idlePauseSeconds: Math.round((row?.idle_pause_ms ?? PACKING_IDLE_PAUSE_DEFAULT_MS) / 1000),
+        // M52 (D-941): above how many pieces Confirm asks how many lots; null asks nobody.
+        lotAskAbovePieces: row?.lot_ask_above_pieces ?? null,
         updatedAt: row === undefined ? null : iso(row.updated_at),
         canEdit,
       };
@@ -879,7 +903,11 @@ export class PackStationService {
   async saveSettings(
     context: ActiveContext,
     request: AuditableRequest,
-    input: { readonly videoEnabled: boolean; readonly idlePauseSeconds?: number | undefined },
+    input: {
+      readonly videoEnabled: boolean;
+      readonly idlePauseSeconds?: number | undefined;
+      readonly lotAskAbovePieces?: number | null | undefined;
+    },
   ) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
       const before = await repo.settingsOf(tx, context.orgId);
@@ -891,6 +919,10 @@ export class PackStationService {
         orgId: context.orgId,
         videoEnabled: input.videoEnabled,
         idlePauseMs,
+        lotAskAbovePieces:
+          input.lotAskAbovePieces === undefined
+            ? (before?.lot_ask_above_pieces ?? null)
+            : input.lotAskAbovePieces,
         userId: context.userId,
       });
       await this.audit.record(tx, {
@@ -903,13 +935,19 @@ export class PackStationService {
         before: {
           videoEnabled: before?.video_enabled ?? true,
           idlePauseMs: before?.idle_pause_ms ?? PACKING_IDLE_PAUSE_DEFAULT_MS,
+          lotAskAbovePieces: before?.lot_ask_above_pieces ?? null,
         },
-        after: { videoEnabled: row.video_enabled, idlePauseMs: row.idle_pause_ms },
+        after: {
+          videoEnabled: row.video_enabled,
+          idlePauseMs: row.idle_pause_ms,
+          lotAskAbovePieces: row.lot_ask_above_pieces,
+        },
         request,
       });
       return {
         videoEnabled: row.video_enabled,
         idlePauseSeconds: Math.round(row.idle_pause_ms / 1000),
+        lotAskAbovePieces: row.lot_ask_above_pieces,
         updatedAt: iso(row.updated_at),
         canEdit: true,
       };
@@ -1172,16 +1210,17 @@ export class PackStationService {
     const itemOf = new Map(list.items.map((item) => [item.skuId, item]));
     const completedAt = at(session.completed_at);
     // M46 (D-807, D-804): the lots, the terminal and every camera filming it.
-    const [lotCount, closures, extraCameras, terminal, recordings, idleMs] = await Promise.all([
-      labels.lotCountOf(tx, orgId, session.order_id),
-      labels.closuresOf(tx, orgId, session.id),
-      cameras.extraCamerasOf(tx, orgId, session.id),
-      session.terminal_id === null
-        ? Promise.resolve(undefined)
-        : labels.terminalById(tx, orgId, session.terminal_id),
-      rec.recordingsOf(tx, orgId, session.id),
-      idlePauseMsOf(tx, orgId),
-    ]);
+    const [{ lotCount, missing }, closures, extraCameras, terminal, recordings, idleMs] =
+      await Promise.all([
+        lotsAwaitingLabel(tx, orgId, session.order_id),
+        labels.closuresOf(tx, orgId, session.id),
+        cameras.extraCamerasOf(tx, orgId, session.id),
+        session.terminal_id === null
+          ? Promise.resolve(undefined)
+          : labels.terminalById(tx, orgId, session.terminal_id),
+        rec.recordingsOf(tx, orgId, session.id),
+        idlePauseMsOf(tx, orgId),
+      ]);
     const lotPieces = piecesByLot(scans.map((row) => ({ lot: row.lot_no, outcome: row.outcome })));
     const open = session.status === 'open' ? openLot(lotCount, closures.length) : null;
     // M51 (D-930, D-936): the lots whose label started them (or that held a piece before M51).
@@ -1193,6 +1232,8 @@ export class PackStationService {
       idlePauseMs: idleMs,
       recordings: recordingViews(recordings, scans, names, new Date()),
       labelNeeded: open !== null && !started.has(open),
+      // M52 (D-942): the lots a revised count's new labels are still to print for.
+      labelsAwaited: session.status === 'open' ? missing : [],
       lots: {
         count: lotCount,
         open,

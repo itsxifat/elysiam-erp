@@ -59,6 +59,7 @@ import {
   closeLot,
   finishPacking,
   openPacking,
+  packingSession,
   packingSettings,
   scanPiece,
   takeOut,
@@ -330,6 +331,36 @@ function Station({
   const [answer, setAnswer] = useState<Answer>(null);
   const [justFinished, setJustFinished] = useState(false);
 
+  // M52 (D-942): the lots were revised and their new labels are being printed at the label desk.
+  // The station watches for them, so the packer is told at the table the moment they are out.
+  const stillOpen = view?.session.status === 'open';
+  const awaited = stillOpen ? (view?.labelsAwaited ?? []) : [];
+  const waiting = awaited.length > 0;
+  const sessionId = view?.session.id ?? '';
+  const watched = useQuery({
+    queryKey: ['packing', 'awaiting-labels', sessionId],
+    queryFn: () => packingSession(sessionId),
+    enabled: waiting,
+    refetchInterval: 5_000,
+    gcTime: 0,
+  });
+  const watchedView = watched.data;
+  useEffect(() => {
+    if (watchedView === undefined) return;
+    // A finish that landed meanwhile stands: an answer asked for before it must not undo it.
+    queryClient.setQueryData<PackView>(['packing', 'order', orderId], (current) =>
+      current?.session.status === 'open' ? watchedView : current,
+    );
+  }, [watchedView, queryClient, orderId]);
+  const wasWaiting = useRef(false);
+  useEffect(() => {
+    if (wasWaiting.current && !waiting && stillOpen) {
+      playScanSound('done');
+      setAnswer({ tone: 'success', text: t('ps.labels.arrived') });
+    }
+    wasWaiting.current = waiting;
+  }, [waiting, stillOpen, t]);
+
   const keep = (next: PackView) => queryClient.setQueryData(key, next);
   const refused = (error: unknown) => {
     playScanSound('refused');
@@ -553,11 +584,22 @@ function Station({
         ? { kind: 'paused', recordedMs: clock.recordedMs }
         : { kind: 'recording', recordedMs: clock.recordedMs, pauseInMs: clock.pauseInMs };
 
-  // A full box says so, unless the last thing that happened was a refusal to deal with.
+  // A full box says so, unless the last thing that happened was a refusal to deal with. While a
+  // revised count's labels are on their way that is what the packer needs to know (D-942).
   const shown: Answer =
-    open && view.progress.complete && isLast && lotStarted && answer?.tone !== 'danger'
-      ? { tone: 'success', text: t('ps.outcome.complete') }
-      : answer;
+    answer?.tone === 'danger'
+      ? answer
+      : waiting
+        ? {
+            tone: 'info',
+            text:
+              lots.count === 1
+                ? t('ps.labels.waitingOne')
+                : `${t('ps.labels.waiting')} ${awaited.join(', ')}.`,
+          }
+        : open && view.progress.complete && isLast && lotStarted
+          ? { tone: 'success', text: t('ps.outcome.complete') }
+          : answer;
   const camera = ipCamera === null ? null : source.lookup(ipCamera);
 
   return (
@@ -579,10 +621,15 @@ function Station({
               className="max-w-xl"
             />
             <AnswerBanner answer={shown} />
+            {waiting ? (
+              <p className="text-sm text-muted-foreground" data-testid="pack-labels-awaited">
+                {t('ps.labels.waitingHelp')}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-3" data-testid="pack-lots">
               <Button
                 size="lg"
-                disabled={!view.progress.complete || !isLast || finish.isPending}
+                disabled={!view.progress.complete || !isLast || finish.isPending || waiting}
                 onClick={() => finish.mutate(view.session.id)}
               >
                 <PackageCheck aria-hidden />
@@ -591,7 +638,7 @@ function Station({
               {lots.count > 1 && openLot !== null && openLot < lots.count ? (
                 <Button
                   variant="outline"
-                  disabled={close.isPending}
+                  disabled={close.isPending || waiting}
                   onClick={() => close.mutate(view.session.id)}
                   data-testid="close-lot"
                 >
@@ -667,6 +714,7 @@ function Station({
       {lotsOpen ? (
         <LotsDialog
           order={{ orderId: view.order.id, orderNo: view.order.orderNumber, lotCount: lots.count }}
+          revising
           onClose={() => {
             setLotsOpen(false);
             void queryClient

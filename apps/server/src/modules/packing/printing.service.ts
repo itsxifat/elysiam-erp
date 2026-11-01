@@ -549,9 +549,12 @@ export class PrintingService {
         ]),
       });
       const ids = rows.map((row) => row.order_id);
-      const [facts, printed] = await Promise.all([
+      const [facts, printed, names] = await Promise.all([
         this.orders.packingFacts(tx, context.orgId, ids),
         repo.printedCounts(tx, context.orgId, ids),
+        rows.some((row) => row.old_lot_count !== null)
+          ? this.names(tx, context.orgId)
+          : Promise.resolve(new Map<string, string>()),
       ]);
       const factOf = new Map(facts.map((fact) => [fact.id, fact]));
       return {
@@ -569,6 +572,15 @@ export class PrintingService {
               bookedAt: iso(row.booked_at),
               lotCount: row.lot_count,
               labelsPrinted: row.labels_printed,
+              // M52 (D-942): back because its lots were revised, with who changed them and when.
+              revised:
+                row.old_lot_count === null
+                  ? null
+                  : {
+                      fromLots: row.old_lot_count,
+                      by: row.lots_set_by === null ? null : (names.get(row.lots_set_by) ?? null),
+                      at: iso(row.lots_set_at),
+                    },
               pieces: order.lines.reduce((sum, line) => sum + line.qty, 0),
               codPoisha: order.codAmountPoisha.toString(),
               lots: Array.from({ length: row.lot_count }, (_, index) => ({

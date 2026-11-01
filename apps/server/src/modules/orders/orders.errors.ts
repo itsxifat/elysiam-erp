@@ -68,6 +68,8 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   // D-928: booked, labelled, packed, then handed over; print the label or pack it first.
   ORDER_LABEL_NOT_PRINTED: 409,
   ORDER_NOT_PACKED: 409,
+  // M52 (D-941): the desk asks how many lots and sends the confirm again with the answer.
+  ORDER_LOTS_REQUIRED: 409,
   // M48 (D-870 to D-889): a buyer's numbers, merges and an order's buyer.
   CUSTOMER_PHONE_NOT_FOUND: 404,
   CUSTOMER_PHONE_INVALID: 400,

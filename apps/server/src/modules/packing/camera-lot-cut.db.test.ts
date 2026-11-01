@@ -155,6 +155,35 @@ async function filmedSession(cameraId: string, others: readonly string[] = [], l
   return { order, sessionId };
 }
 
+/** Each lot's label printed, as the station needs before a label starts a lot (D-928, D-942). */
+async function labelsPrinted(order: { id: string; orderNo: string }, lots: number): Promise<void> {
+  await system(async (tx) => {
+    const [terminal] = await tx.execute<{ id: string }>(sql`
+      insert into packing.terminals (org_id, kind, name, created_by, updated_by)
+      values (${ORG_A}, 'label', ${`Cut ${randomUUID().slice(0, 8)}`}, ${PACKER}, ${PACKER})
+      returning id
+    `);
+    const [printer] = await tx.execute<{ id: string }>(sql`
+      insert into packing.printers
+        (org_id, terminal_id, name, connection, language, medium, width_um, height_um,
+         documents, created_by, updated_by)
+      values (${ORG_A}, ${terminal?.id ?? ''}, ${`Cut ${randomUUID().slice(0, 8)}`}, 'browser', 'pdf',
+              '4x6', 101600, 152400, array['label']::text[], ${PACKER}, ${PACKER})
+      returning id
+    `);
+    for (let lot = 1; lot <= lots; lot += 1) {
+      await tx.execute(sql`
+        insert into packing.print_jobs
+          (org_id, order_id, order_no, document, lot_no, lot_count, printer_id, terminal_id,
+           source, requested_by, consignment_no, state, printed_at)
+        values (${ORG_A}, ${order.id}, ${order.orderNo}, 'label', ${lot}, ${lots},
+                ${printer?.id ?? ''}, ${terminal?.id ?? ''}, 'manual', ${PACKER},
+                ${`CN-${order.orderNo}`}, 'printed', now())
+      `);
+    }
+  });
+}
+
 /**
  * A lot's recording as a person would have made it at the given instants: the label at `startMs`,
  * a piece at each of `piecesMs`, and, when `stopMs` is given, the label again then.
@@ -470,6 +499,7 @@ describe('through the station’s own scans', () => {
     const first = await addCamera();
     const second = await addCamera();
     const { order, sessionId } = await filmedSession(first, [second], 2);
+    await labelsPrinted(order, 2);
     const station = harness.app.get(PackStationService);
     const scan = (code: string) =>
       station.scan(context(), request(), sessionId, { scanId: randomUUID(), code });

@@ -404,13 +404,16 @@ export interface SettingsRow extends Record<string, unknown> {
   readonly video_enabled: boolean;
   /** M51 (D-931): how long with no scan before a lot's video pauses. */
   readonly idle_pause_ms: number;
+  /** M52 (D-941): above this many pieces a person confirming says how many lots; null never. */
+  readonly lot_ask_above_pieces: number | null;
   readonly updated_by: string;
   readonly updated_at: Date | string;
 }
 
 export async function settingsOf(tx: Tx, orgId: string): Promise<SettingsRow | undefined> {
   const rows = await tx.execute<SettingsRow>(sql`
-    select video_enabled, idle_pause_ms, updated_by, updated_at from packing.settings
+    select video_enabled, idle_pause_ms, lot_ask_above_pieces, updated_by, updated_at
+    from packing.settings
     where org_id = ${orgId}
   `);
   return rows[0];
@@ -422,16 +425,20 @@ export async function saveSettings(
     readonly orgId: string;
     readonly videoEnabled: boolean;
     readonly idlePauseMs: number;
+    readonly lotAskAbovePieces: number | null;
     readonly userId: string;
   },
 ): Promise<SettingsRow> {
   const rows = await tx.execute<SettingsRow>(sql`
-    insert into packing.settings (org_id, video_enabled, idle_pause_ms, updated_by)
-    values (${input.orgId}, ${input.videoEnabled}, ${input.idlePauseMs}, ${input.userId})
+    insert into packing.settings
+      (org_id, video_enabled, idle_pause_ms, lot_ask_above_pieces, updated_by)
+    values (${input.orgId}, ${input.videoEnabled}, ${input.idlePauseMs},
+            ${input.lotAskAbovePieces}, ${input.userId})
     on conflict (org_id) do update
        set video_enabled = excluded.video_enabled, idle_pause_ms = excluded.idle_pause_ms,
+           lot_ask_above_pieces = excluded.lot_ask_above_pieces,
            updated_by = excluded.updated_by, updated_at = now()
-    returning video_enabled, idle_pause_ms, updated_by, updated_at
+    returning video_enabled, idle_pause_ms, lot_ask_above_pieces, updated_by, updated_at
   `);
   const row = rows[0];
   if (row === undefined) throw new Error('the packing settings were not saved');

@@ -258,12 +258,17 @@ export function ThisComputer() {
   );
 }
 
-/** How many bags an order goes in (D-805), before its labels print. */
+/**
+ * How many bags an order goes in (D-805). `revising` is the packer at the table (M52, D-942): a
+ * change sends the order back to Ready for label, so the dialog says so before it is saved.
+ */
 export function LotsDialog({
   order,
+  revising = false,
   onClose,
 }: {
   readonly order: { readonly orderId: string; readonly orderNo: string; readonly lotCount: number };
+  readonly revising?: boolean;
   readonly onClose: () => void;
 }) {
   const t = useT();
@@ -287,7 +292,7 @@ export function LotsDialog({
         if (!open) onClose();
       }}
       title={`${t('lb.lots.for')} ${order.orderNo}`}
-      description={t('lb.lots.hint')}
+      description={revising ? t('lb.lots.reviseHint') : t('lb.lots.hint')}
       closeLabel={t('lb.close')}
       footer={
         <>

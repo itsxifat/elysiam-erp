@@ -705,6 +705,10 @@ export const ERROR_CODES = [
   'PRINT_JOB_STATE',
   /** The lot count cannot change now: the handover started, or lots are already closed (D-805). */
   'LOTS_LOCKED',
+  /** This order has more pieces than the brand's limit: say how many lots it goes in (D-941). */
+  'ORDER_LOTS_REQUIRED',
+  /** That many lots cannot be packed: 1 to 20, and each lot holds a piece (D-943). */
+  'LOT_COUNT_INVALID',
   /** This lot cannot be closed yet: it is empty, or too few pieces are left for the other lots. */
   'LOT_CLOSE_REFUSED',
   /** Every lot's label must be scanned before the order goes to the courier (D-808). */

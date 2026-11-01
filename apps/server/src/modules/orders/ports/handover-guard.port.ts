@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import type { Tx } from '@elysium/db';
 
+import type { AuditableRequest } from '../../../platform/audit/audit.interceptor.js';
+
 /**
  * Whether an order may be packed, or handed to the courier by a person's Ship (M46, D-808, D-928).
  *
@@ -24,6 +26,22 @@ export interface HandoverGuard {
     tx: Tx,
     input: { readonly orgId: string; readonly orderId: string; readonly orderNo: string },
   ): Promise<void>;
+  /**
+   * M52 (D-941): a person is confirming this order. Above the brand's limit it refuses with
+   * `ORDER_LOTS_REQUIRED` until `lots` says how many; an answer is saved in this transaction, so
+   * it commits or rolls back with the confirm.
+   */
+  settleLots(
+    tx: Tx,
+    input: {
+      readonly orgId: string;
+      readonly orderId: string;
+      readonly orderNo: string;
+      readonly userId: string;
+      readonly lots: number | undefined;
+      readonly request: AuditableRequest;
+    },
+  ): Promise<void>;
 }
 
 @Injectable()
@@ -40,5 +58,9 @@ export class HandoverGuardRegistry {
 
   async assertShippable(tx: Tx, input: Parameters<HandoverGuard['assertShippable']>[1]) {
     for (const guard of this.guards) await guard.assertShippable(tx, input);
+  }
+
+  async settleLots(tx: Tx, input: Parameters<HandoverGuard['settleLots']>[1]) {
+    for (const guard of this.guards) await guard.settleLots(tx, input);
   }
 }

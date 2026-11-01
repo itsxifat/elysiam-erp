@@ -31,6 +31,7 @@ import { ApiError } from '../../api.js';
 import { useAbility, useSession } from '../../auth/session.js';
 import { useLocale, useT } from '../../i18n/locale.js';
 import '../../i18n/order-edit.js';
+import { ConfirmLotsDialog } from './confirm-lots-dialog.js';
 import { OrderProductPicker } from './order-product-picker.js';
 import {
   availability,
@@ -131,6 +132,8 @@ interface Outcome {
   readonly orderId?: string;
   readonly orderNo?: string;
   readonly message?: string;
+  /** M52 (D-941): saved, and the server asks how many lots before it confirms. */
+  readonly askLots?: boolean;
 }
 
 /**
@@ -615,6 +618,7 @@ function Desk() {
           orderId: created.id,
           orderNo: created.orderNo,
           message: messageOf(error),
+          askLots: error instanceof ApiError && error.code === 'ORDER_LOTS_REQUIRED',
         };
       }
     },
@@ -692,7 +696,9 @@ function Desk() {
 
   // After a save, focus the one next action, so Enter takes the next order.
   useEffect(() => {
-    if (outcome !== null && outcome.kind !== 'failed') nextRef.current?.focus();
+    if (outcome !== null && outcome.kind !== 'failed' && outcome.askLots !== true) {
+      nextRef.current?.focus();
+    }
   }, [outcome]);
 
   const shortcuts: Shortcut[] = [
@@ -1410,6 +1416,21 @@ function Desk() {
       </div>
 
       <ShortcutsHelp open={helpOpen} onOpenChange={setHelpOpen} shortcuts={shortcuts} />
+      {outcome?.askLots === true &&
+      outcome.orderId !== undefined &&
+      outcome.orderNo !== undefined ? (
+        <ConfirmLotsDialog
+          orderId={outcome.orderId}
+          orderNo={outcome.orderNo}
+          pieces={lines.reduce((sum, line) => sum + line.qty, 0)}
+          // Not now leaves it saved as pending, with the reason the panel already shows.
+          onClose={() => setOutcome({ ...outcome, askLots: false })}
+          onConfirmed={() => {
+            setOutcome({ kind: 'confirmed', orderId: outcome.orderId, orderNo: outcome.orderNo });
+            void queryClient.invalidateQueries({ queryKey: ['orders'] });
+          }}
+        />
+      ) : null}
       {browsing ? (
         <Dialog
           open

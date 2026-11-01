@@ -490,7 +490,10 @@ export const buyerExportQuerySchema = buyerQuerySchema
 export type BuyerExportQuery = z.infer<typeof buyerExportQuerySchema>;
 
 /** Confirm carries no body; an empty object is accepted so existing clients keep working. */
-export const confirmOrderSchema = z.object({}).strict();
+/** M52 (D-941): `lots` is the person's answer when the order is above the brand's limit. */
+export const confirmOrderSchema = z
+  .object({ lots: z.number().int().min(1).max(20).optional() })
+  .strict();
 
 export const holdOrderSchema = z.object({ reason }).strict();
 export const cancelOrderSchema = z.object({ reason }).strict();

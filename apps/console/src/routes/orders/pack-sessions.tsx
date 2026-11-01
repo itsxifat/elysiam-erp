@@ -123,8 +123,18 @@ export function PackSettingsDialog({
   const [idle, setIdle] = useState(String(settings.idlePauseSeconds ?? 10));
   const idleSeconds = Number(idle);
   const idleValid = Number.isInteger(idleSeconds) && idleSeconds >= 3 && idleSeconds <= 60;
+  // M52 (D-941): above how many pieces Confirm asks how many lots; empty asks nobody.
+  const [lotAsk, setLotAsk] = useState(
+    settings.lotAskAbovePieces === null || settings.lotAskAbovePieces === undefined
+      ? ''
+      : String(settings.lotAskAbovePieces),
+  );
+  const lotAskValue = lotAsk.trim() === '' ? null : Number(lotAsk);
+  const lotAskValid =
+    lotAskValue === null ||
+    (Number.isInteger(lotAskValue) && lotAskValue >= 1 && lotAskValue <= 500);
   const save = useMutation({
-    mutationFn: () => savePackingSettings(videoEnabled, idleSeconds),
+    mutationFn: () => savePackingSettings(videoEnabled, idleSeconds, lotAskValue),
     onSuccess: (next) => {
       queryClient.setQueryData(['packing', 'settings'], next);
       onClose();
@@ -144,7 +154,10 @@ export function PackSettingsDialog({
           <Button variant="outline" onClick={onClose}>
             {t('ps.cancel')}
           </Button>
-          <Button disabled={save.isPending || !idleValid} onClick={() => save.mutate()}>
+          <Button
+            disabled={save.isPending || !idleValid || !lotAskValid}
+            onClick={() => save.mutate()}
+          >
             {save.isPending ? t('ps.saving') : t('ps.save')}
           </Button>
         </>
@@ -182,6 +195,30 @@ export function PackSettingsDialog({
           </div>
           <p id={`${id}-idle-help`} className="text-xs text-muted-foreground">
             {t('ps.settings.idleHelp')}
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor={`${id}-lot-ask`} className="font-medium">
+            {t('ps.settings.lotAsk')}
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              id={`${id}-lot-ask`}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={500}
+              value={lotAsk}
+              onChange={(event) => setLotAsk(event.target.value)}
+              aria-invalid={!lotAskValid}
+              aria-describedby={`${id}-lot-ask-help`}
+              className="w-24 tabular-nums"
+              data-testid="lot-ask-above"
+            />
+            <span className="text-muted-foreground">{t('ps.settings.lotAskUnit')}</span>
+          </div>
+          <p id={`${id}-lot-ask-help`} className="text-xs text-muted-foreground">
+            {t('ps.settings.lotAskHelp')}
           </p>
         </div>
         {save.error === null ? null : (

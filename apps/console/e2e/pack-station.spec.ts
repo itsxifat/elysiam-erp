@@ -21,6 +21,7 @@ const ORDER_NO = 'ELY-2611-00042';
 const SHOTS = '../../docs/review/M51';
 /** The brand's shortest idle time, so a test waits three seconds for the pause, not ten. */
 const IDLE_MS = 3_000;
+const LOT_SHOTS = '../../docs/review/M52';
 
 const SHIRT = { skuId: '55555555-5555-4555-8555-555555555551', code: '2000000000015' };
 const CAP = { skuId: '55555555-5555-4555-8555-555555555552', code: '2000000000022' };
@@ -68,7 +69,10 @@ function line(sku: typeof SHIRT, name: string, size: string, qty: number) {
 }
 
 /** A model of one order at one station: what the server would answer as scans come in. */
-function makeModel(kind: 'pack' | 'return', lotCount: number) {
+function makeModel(kind: 'pack' | 'return', startingLots: number) {
+  let lotCount = startingLots;
+  // M52 (D-942): the lots a revised count's new labels are still to print for.
+  let awaited: number[] = [];
   const lines =
     lotCount > 1
       ? [line(SHIRT, 'Linen shirt', 'M', 1), line(CAP, 'Canvas cap', 'One size', 1)]
@@ -171,6 +175,7 @@ function makeModel(kind: 'pack' | 'return', lotCount: number) {
       idlePauseMs: IDLE_MS,
       recordings,
       labelNeeded: open !== null && !recordings.some((entry) => entry.lot === open),
+      labelsAwaited: awaited,
       lots: {
         count: lotCount,
         open,
@@ -274,6 +279,15 @@ function makeModel(kind: 'pack' | 'return', lotCount: number) {
         return answer({ outcome: 'label', label: { action: 'started', lot: bag, message: null } });
       }
       const open = openLot() ?? lotCount;
+      if (awaited.length > 0) {
+        const message = `Order ${ORDER_NO} goes in ${String(lotCount)} lots and the labels of lots ${awaited.join(' and ')} are not printed yet: wait for them from Labels, then scan those.`;
+        log('label', code, open);
+        return answer({
+          outcome: 'label',
+          message,
+          label: { action: 'refused', lot: open, message },
+        });
+      }
       if (lot !== null && lot !== open) {
         const message = `That is lot ${String(lot)}’s label. Lot ${String(open)} is open: scan its label first.`;
         log('label', code, open);
@@ -344,6 +358,13 @@ function makeModel(kind: 'pack' | 'return', lotCount: number) {
     complete: () => {
       completed = true;
     },
+    setLots: (count: number) => {
+      lotCount = count;
+      awaited = Array.from({ length: count }, (_, index) => index + 1);
+    },
+    labelsPrinted: () => {
+      awaited = [];
+    },
   };
 }
 
@@ -392,6 +413,48 @@ async function stubApi(page: Page, model: ReturnType<typeof makeModel>): Promise
     }
     if (path === '/v1/packing/sessions' || path === '/v1/packing/returns') {
       return method === 'POST' ? json(model.view()) : json({ items: [] });
+    }
+    if (method === 'GET' && /^\/v1\/packing\/sessions\/[^/]+$/.test(path)) {
+      return json(model.view());
+    }
+    if (method === 'PUT' && /^\/v1\/packing\/orders\/[^/]+\/lots$/.test(path)) {
+      const { count } = request.postDataJSON() as { count: number };
+      model.setLots(count);
+      return json({ orderId: ORDER_ID, orderNo: ORDER_NO, lotCount: count, changed: true });
+    }
+    if (path === '/v1/labels/ready') {
+      return json({
+        items: [
+          {
+            orderId: ORDER_ID,
+            orderNo: ORDER_NO,
+            consignmentNo: '998877',
+            courier: 'Steadfast',
+            customer: 'Nusrat Jahan',
+            locationId: null,
+            bookedAt: new Date().toISOString(),
+            lotCount: 2,
+            labelsPrinted: 0,
+            revised: { fromLots: 1, by: person.name, at: new Date().toISOString() },
+            pieces: 3,
+            codPoisha: '295000',
+          },
+          {
+            orderId: '33333333-3333-4333-8333-333333333334',
+            orderNo: 'ELY-2611-00043',
+            consignmentNo: '998878',
+            courier: 'Steadfast',
+            customer: 'Farhana Akter',
+            locationId: null,
+            bookedAt: new Date().toISOString(),
+            lotCount: 1,
+            labelsPrinted: 0,
+            revised: null,
+            pieces: 1,
+            codPoisha: '125000',
+          },
+        ],
+      });
     }
     if (/^\/v1\/packing\/(sessions|returns)\/[^/]+\/scans$/.test(path)) {
       const { code } = request.postDataJSON() as { code: string };
@@ -471,13 +534,17 @@ async function scanCode(page: Page, code: string): Promise<void> {
   await field.press('Enter');
 }
 
-async function shoot(page: Page, name: string): Promise<void> {
-  mkdirSync(SHOTS, { recursive: true });
+async function shoot(page: Page, name: string, folder = SHOTS): Promise<void> {
+  mkdirSync(folder, { recursive: true });
+  // A dialog fades in: wait, so the picture shows the screen and not the fade.
+  await page.evaluate(() =>
+    Promise.all(document.getAnimations().map((running) => running.finished.catch(() => undefined))),
+  );
   await page.evaluate(() => {
     window.scrollTo(0, 0);
     for (const element of document.querySelectorAll('main')) element.scrollTo(0, 0);
   });
-  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+  await page.screenshot({ path: `${folder}/${name}.png`, fullPage: true });
 }
 
 test.use({
@@ -592,6 +659,90 @@ test.describe('the packing station', () => {
     await scanCode(page, SHIRT.code);
     await expect(page.getByTestId('pack-answer')).toContainText('Linen shirt');
     await shoot(page, 'g-pack-dark');
+  });
+});
+
+test.describe('who says how many lots (M52, D-941, D-942)', () => {
+  test('the packer revises the count, and the table waits for the new labels', async ({ page }) => {
+    const model = makeModel('pack', 1);
+    await stubApi(page, model);
+    await watchRecorders(page);
+    await page.goto(`/packaging?tab=packing&order=${ORDER_ID}`);
+    await scanCode(page, ORDER_NO);
+    await expect.poll(() => recorderStates(page)).toEqual(['recording']);
+    await scanCode(page, SHIRT.code);
+    await expect(page.getByTestId('pack-answer')).toContainText('Linen shirt');
+
+    // The bag is full: the dialog says what a change does before it is saved.
+    await page.getByRole('button', { name: 'Lots: 1' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('sends this order back to Labels');
+    await shoot(page, 'a-packer-revises', LOT_SHOTS);
+    await dialog.getByLabel('Lots').fill('2');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    // The table waits, and neither button pretends otherwise.
+    const answer = page.getByTestId('pack-answer');
+    await expect(answer).toContainText('Waiting for the new labels of lots 1, 2.');
+    await expect(page.getByTestId('pack-labels-awaited')).toContainText(
+      'old labels no longer count',
+    );
+    await expect(page.getByTestId('close-lot')).toBeDisabled();
+    await shoot(page, 'b-packer-waiting', LOT_SHOTS);
+
+    // The old label is refused, out loud, and the lot's recording runs on.
+    await scanCode(page, ORDER_NO);
+    await expect(answer).toContainText('are not printed yet');
+    await expect.poll(() => recorderStates(page)).toEqual(['recording']);
+    await expect(page.getByTestId('pack-lots')).toContainText('Lots: 2');
+
+    // The label desk prints them: the station hears it by itself, with nothing pressed.
+    model.labelsPrinted();
+    await expect(answer).toContainText('The new labels are printed', { timeout: 8_000 });
+    await expect(page.getByTestId('pack-labels-awaited')).toHaveCount(0);
+    await expect(page.getByTestId('close-lot')).toBeEnabled();
+    await shoot(page, 'c-packer-labels-arrived', LOT_SHOTS);
+
+    // The same table carries on with the new labels and finishes.
+    await scanCode(page, `${ORDER_NO}-L1`);
+    await expect(answer).toContainText('Lot 1 is closed');
+    await scanCode(page, `${ORDER_NO}-L2`);
+    await expect.poll(() => recorderStates(page)).toEqual(['inactive', 'recording']);
+    await scanCode(page, SHIRT.code);
+    await scanCode(page, CAP.code);
+    await expect(answer).toContainText('Every piece is in');
+    await scanCode(page, `${ORDER_NO}-L2`);
+    await expect(page.getByTestId('pack-finished')).toBeVisible();
+  });
+
+  test('the label desk sees the revised order first and marked', async ({ page }) => {
+    await stubApi(page, makeModel('pack', 1));
+    await page.goto('/labels');
+    await expect(page.getByTestId('ready-revised')).toContainText('Lots changed: 1');
+    const first = page.getByTestId('ready-table').locator('tbody tr').first();
+    await expect(first).toContainText(ORDER_NO);
+    await expect(first.getByTestId('ready-revised-row')).toContainText('New labels');
+    await expect(first.getByTestId('ready-revised-row')).toContainText('1 → 2 lots');
+    await expect(first.getByTestId('ready-revised-row')).toContainText(person.name);
+    await expect(page.getByTestId('ready-revised-row')).toHaveCount(1);
+    await shoot(page, 'd-ready-for-label', LOT_SHOTS);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await shoot(page, 'e-ready-for-label-dark', LOT_SHOTS);
+  });
+
+  test('a supervisor sets the limit in the packing settings', async ({ page }) => {
+    await stubApi(page, makeModel('pack', 1));
+    await page.goto('/packaging?tab=packing');
+    await page.getByRole('button', { name: 'Settings' }).click();
+    const field = page.getByTestId('lot-ask-above');
+    await expect(field).toHaveValue('');
+    await field.fill('5');
+    await shoot(page, 'f-packing-settings', LOT_SHOTS);
+    const saved = page.waitForRequest(
+      (request) => request.method() === 'PUT' && request.url().endsWith('/v1/packing/settings'),
+    );
+    await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+    expect((await saved).postDataJSON()).toMatchObject({ lotAskAbovePieces: 5 });
   });
 });
 

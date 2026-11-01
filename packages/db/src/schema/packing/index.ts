@@ -92,6 +92,11 @@ export const packingSettings = packing.table(
      * Ten seconds by default (the owner's number).
      */
     idlePauseMs: integer('idle_pause_ms').notNull().default(10_000),
+    /**
+     * M52 (D-941): an order of more than this many pieces is asked how many lots it goes in when
+     * a person confirms it. Null asks nobody: every order starts as one lot.
+     */
+    lotAskAbovePieces: integer('lot_ask_above_pieces'),
     updatedBy: text('updated_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
@@ -100,6 +105,10 @@ export const packingSettings = packing.table(
   (table) => [
     index('packing_settings_org_idx').on(table.orgId),
     check('packing_settings_idle_pause', sql`${table.idlePauseMs} between 3000 and 60000`),
+    check(
+      'packing_settings_lot_ask',
+      sql`${table.lotAskAbovePieces} is null or ${table.lotAskAbovePieces} between 1 and 500`,
+    ),
   ],
 );
 

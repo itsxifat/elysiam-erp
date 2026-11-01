@@ -1059,14 +1059,22 @@ export interface LabelOrderRow extends Record<string, unknown> {
   readonly booked_at: Instant;
   readonly lot_count: number;
   readonly labels_printed: number;
+  /**
+   * M52 (D-942): the lot count its last labels were printed for, when that is not the count now:
+   * the order is back because its lots were revised, and those labels no longer count.
+   */
+  readonly old_lot_count: number | null;
+  readonly lots_set_by: string | null;
+  readonly lots_set_at: Instant | null;
 }
 
 /**
- * Orders ready for their label with a lot whose label has not printed yet, oldest first, inside
- * the caller's scope (`orderInScope` on `lo.order_id`, which the orders module also limits to
- * the statuses the caller asks for, so an order that moved on never fills the page). Only an
- * order booked with its courier is ready (D-928): its label carries the consignment, and a label
- * printed without one does not count.
+ * Orders ready for their label with a lot whose label has not printed yet, inside the caller's
+ * scope (`orderInScope` on `lo.order_id`, which the orders module also limits to the statuses the
+ * caller asks for, so an order that moved on never fills the page). Only an order booked with its
+ * courier is ready (D-928): its label carries the consignment, and a label printed without one
+ * does not count. An order whose lots were revised comes first (M52, D-942): a packer is waiting
+ * at the table for it; the rest are oldest first.
  */
 export async function labelOrdersReady(
   tx: Tx,
@@ -1083,9 +1091,18 @@ export async function labelOrdersReady(
            (select count(distinct j.lot_no)::int from packing.print_jobs j
              where j.org_id = lo.org_id and j.order_id = lo.order_id and j.document = 'label'
                and j.state = 'printed' and j.consignment_no is not null
-               and j.lot_count = coalesce(ol.lot_count, 1)) as labels_printed
+               and j.lot_count = coalesce(ol.lot_count, 1)) as labels_printed,
+           old.lot_count as old_lot_count, ol.set_by as lots_set_by, ol.updated_at as lots_set_at
     from packing.label_orders lo
     left join packing.order_lots ol on ol.org_id = lo.org_id and ol.order_id = lo.order_id
+    left join lateral (
+      select j.lot_count from packing.print_jobs j
+       where j.org_id = lo.org_id and j.order_id = lo.order_id and j.document = 'label'
+         and j.state = 'printed' and j.consignment_no is not null
+         and j.lot_count <> coalesce(ol.lot_count, 1)
+       order by j.created_at desc, j.id desc
+       limit 1
+    ) old on true
     where lo.org_id = ${orgId}
       and lo.consignment_no is not null
       and ${options.orderInScope}
@@ -1099,7 +1116,7 @@ export async function labelOrdersReady(
               and j.state = 'printed' and j.consignment_no is not null
               and j.lot_count = coalesce(ol.lot_count, 1))
           < coalesce(ol.lot_count, 1)
-    order by lo.booked_at, lo.order_id
+    order by (old.lot_count is null), lo.booked_at, lo.order_id
     limit ${options.limit}
   `);
   return [...rows];

@@ -299,8 +299,13 @@ export const checkPromo = (body: {
   readonly customerId?: string;
 }) => api.post<PromoCheck>('/v1/promo/check', body);
 // M41 (D-710): `ack` sends the owner acknowledgement, after the person said go ahead.
-export const confirmOrder = (id: string, ack?: boolean) =>
-  api.post<OrderRow>(`/v1/orders/${id}/confirm`, {}, ackHeaders(ack));
+// M52 (D-941): `lots` answers the question an order above the brand's limit is asked.
+export const confirmOrder = (id: string, ack?: boolean, lots?: number) =>
+  api.post<OrderRow>(
+    `/v1/orders/${id}/confirm`,
+    lots === undefined ? {} : { lots },
+    ackHeaders(ack),
+  );
 export const claimOrder = (id: string) => api.post<OrderRow>(`/v1/orders/${id}/claim`);
 export const cancelOrder = (id: string, reason: string, ack?: boolean) =>
   api.post<OrderRow>(`/v1/orders/${id}/cancel`, { reason }, ackHeaders(ack));

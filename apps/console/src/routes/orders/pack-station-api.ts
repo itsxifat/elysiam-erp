@@ -101,6 +101,8 @@ export interface PackView {
   readonly idlePauseMs?: number;
   readonly recordings?: readonly LotRecording[];
   readonly labelNeeded?: boolean;
+  /** M52 (D-942): the lots a revised count's new labels are still to print for. */
+  readonly labelsAwaited?: readonly number[];
   /** M46 (D-807, D-802, D-804): the lots, the terminal and every camera filming it. */
   readonly lots?: PackLots;
   readonly terminal?: { readonly id: string; readonly name: string } | null;
@@ -252,6 +254,8 @@ export interface PackingSettings {
   readonly videoEnabled: boolean;
   /** M51 (D-931): seconds with no scan before a lot's video pauses. */
   readonly idlePauseSeconds?: number;
+  /** M52 (D-941): above how many pieces Confirm asks how many lots; null asks nobody. */
+  readonly lotAskAbovePieces?: number | null;
   readonly updatedAt: string | null;
   readonly canEdit: boolean;
 }
@@ -263,10 +267,12 @@ export function packingSettings(): Promise<PackingSettings> {
 export function savePackingSettings(
   videoEnabled: boolean,
   idlePauseSeconds?: number,
+  lotAskAbovePieces?: number | null,
 ): Promise<PackingSettings> {
   return api.put('/v1/packing/settings', {
     videoEnabled,
     ...(idlePauseSeconds === undefined ? {} : { idlePauseSeconds }),
+    ...(lotAskAbovePieces === undefined ? {} : { lotAskAbovePieces }),
   });
 }
 

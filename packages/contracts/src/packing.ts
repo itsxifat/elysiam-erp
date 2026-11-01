@@ -70,12 +70,14 @@ export type PackingVideoFileInput = z.infer<typeof packingVideoFileSchema>;
 
 /**
  * The brand's packing settings (D-615). M51 (D-931): how many seconds with no scan pause a lot's
- * video (3 to 60; absent keeps what is set).
+ * video (3 to 60; absent keeps what is set). M52 (D-941): above how many pieces a person confirming
+ * an order says how many lots (1 to 500; null asks nobody; absent keeps what is set).
  */
 export const packingSettingsSchema = z
   .object({
     videoEnabled: z.boolean(),
     idlePauseSeconds: z.number().int().min(3).max(60).optional(),
+    lotAskAbovePieces: z.number().int().min(1).max(500).nullable().optional(),
   })
   .strict();
 export type PackingSettingsInput = z.infer<typeof packingSettingsSchema>;

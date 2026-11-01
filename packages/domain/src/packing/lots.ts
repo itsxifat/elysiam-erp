@@ -1,13 +1,14 @@
 /**
  * Lots (M46, D-805 to D-808): one order packed in several bags. A gift order of four boxes is
  * one order with one consignment and four lots, each with its own slip and label ("Lot 2 of
- * 4") and its own barcode. The label printer or the packer decides how many.
+ * 4") and its own barcode. An order starts as one lot; above the brand's limit the person who
+ * confirms it says how many (M52, D-941); the label printer or the packer may change it after.
  *
  * The rules, pure, for the server to judge by and the console to show with:
  *
- * - **The count** is 1 to 20, set while the order is confirmed or packed, and fixed from the
- *   first lot scanned at the courier's handover. While it is being packed it never drops below
- *   the lots already closed.
+ * - **The count** is 1 to 20 and never more than the order's pieces, set while the order is
+ *   confirmed or packed, and fixed from the first lot scanned at the courier's handover. While it
+ *   is being packed it never drops below the lots already closed.
  * - **Packing** fills lot 1, then lot 2, …: each scan goes into the open lot. A lot closes
  *   with at least one piece in it and only if enough pieces are left for the lots after it to
  *   have one each. The last lot closes with Finish, which M38b's rule still decides (every piece
@@ -48,13 +49,46 @@ export function parseLotCode(
   return { orderCode, lot };
 }
 
-export type LotCountRefusal = 'out_of_range' | 'not_open' | 'handover_started' | 'below_closed';
+export type LotCountRefusal =
+  'out_of_range' | 'not_open' | 'handover_started' | 'below_closed' | 'more_than_pieces';
+
+/**
+ * The most lots an order of so many pieces can go in: every lot holds a piece (D-807), so a count
+ * above this could never be packed.
+ */
+export function lotCountLimit(pieces: number): number {
+  return Math.max(1, Math.min(LOT_COUNT_MAX, pieces));
+}
+
+export type ConfirmLotsVerdict = 'one_lot' | 'ask' | 'answered' | 'out_of_range';
+
+/**
+ * A person confirming an order (M52, D-941). With no answer the order is one lot, unless it has
+ * more pieces than the brand's limit, when the person is asked; no limit asks nobody. An answer
+ * is taken at any size, as long as it could be packed.
+ */
+export function judgeConfirmLots(input: {
+  readonly pieces: number;
+  /** The brand's limit; null asks nobody. */
+  readonly askAbovePieces: number | null;
+  /** What the person answered, if they were asked. */
+  readonly lots: number | undefined;
+}): ConfirmLotsVerdict {
+  if (input.lots === undefined) {
+    return input.askAbovePieces !== null && input.pieces > input.askAbovePieces ? 'ask' : 'one_lot';
+  }
+  if (!Number.isInteger(input.lots) || input.lots < 1 || input.lots > lotCountLimit(input.pieces)) {
+    return 'out_of_range';
+  }
+  return 'answered';
+}
 
 /**
  * Whether an order's lot count may become `count` now. While it is being packed the count must
  * leave a lot open after the closed ones (a scan always has a bag to go in); once it is packed
  * the count may grow (a bag split at the dispatch table) but never fall below the bags packed,
- * or the handover would let an order go with bags left at the hub (M46 ledger audit, W4).
+ * or the handover would let an order go with bags left at the hub (M46 ledger audit, W4). It is
+ * never more than the order's pieces, whoever says so (M52, D-943).
  */
 export function judgeLotCount(input: {
   readonly count: number;
@@ -63,6 +97,8 @@ export function judgeLotCount(input: {
   readonly closedLots: number;
   /** Lots already scanned at the courier's handover. */
   readonly handedLots: number;
+  /** The order's pieces. */
+  readonly pieces: number;
 }): LotCountRefusal | 'ok' {
   if (!Number.isInteger(input.count) || input.count < 1 || input.count > LOT_COUNT_MAX) {
     return 'out_of_range';
@@ -74,6 +110,7 @@ export function judgeLotCount(input: {
       ? input.count < input.closedLots
       : input.closedLots > 0 && input.count <= input.closedLots;
   if (below) return 'below_closed';
+  if (input.count > lotCountLimit(input.pieces)) return 'more_than_pieces';
   return 'ok';
 }
 
