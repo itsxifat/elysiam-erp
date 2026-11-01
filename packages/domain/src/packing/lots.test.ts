@@ -10,6 +10,7 @@ import {
   judgeLotClose,
   judgeLotCount,
   judgeLotFinish,
+  deliveredFromLots,
   lotCode,
   lotContents,
   lotCountLimit,
@@ -152,6 +153,36 @@ describe('who says how many lots (M52, D-941, D-943)', () => {
     const sealed = { orderStatus: 'confirmed', closedLots: 1, pieces: 4, piecesInClosedLots: 3 };
     expect(judgeLotCount({ ...sealed, count: 2 })).toBe('ok');
     expect(judgeLotCount({ ...sealed, count: 3 })).toBe('more_than_pieces');
+  });
+});
+
+describe('a partial delivery from the lots delivered (M53, D-948)', () => {
+  const lines = [
+    { skuId: 'shirt', qty: 3 },
+    { skuId: 'cap', qty: 1 },
+  ];
+  const lots = [
+    {
+      lot: 1,
+      items: [
+        { skuId: 'shirt', qty: 2 },
+        { skuId: 'cap', qty: 1 },
+      ],
+    },
+    { lot: 2, items: [{ skuId: 'shirt', qty: 1 }] },
+  ];
+  const of = (chosen: readonly number[], onOrder = lines) =>
+    Object.fromEntries(deliveredFromLots(lots, new Set(chosen), onOrder));
+
+  it('gives each line what the chosen lots hold, and nothing for what they do not', () => {
+    expect(of([1])).toEqual({ shirt: 2, cap: 1 });
+    expect(of([2])).toEqual({ shirt: 1, cap: 0 });
+    expect(of([1, 2])).toEqual({ shirt: 3, cap: 1 });
+    expect(of([])).toEqual({ shirt: 0, cap: 0 });
+  });
+
+  it('never gives more than the order has, if the order was edited after packing', () => {
+    expect(of([1, 2], [{ skuId: 'shirt', qty: 1 }])).toEqual({ shirt: 1 });
   });
 });
 

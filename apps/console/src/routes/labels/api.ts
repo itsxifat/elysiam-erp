@@ -361,6 +361,8 @@ export interface HandoverProgress {
   readonly scanned: readonly number[];
   readonly missing: readonly number[];
   readonly complete: boolean;
+  /** A courier's own status shipped it: a lot left behind is only recorded (M53, D-947). */
+  readonly withCourier?: boolean;
 }
 
 export const handoverScan = (code: string) =>

@@ -23,30 +23,6 @@ const ORDER: readonly OrderTrigger[] = [
 ];
 
 /** The triggers to offer: the server's list, in working order, for a caller who may act. */
-/**
- * What a partial delivery delivered, from the lots that were (M53, D-948): each line's quantity is
- * what the chosen lots hold of it, never more than the order has. The person can still change them.
- */
-export function deliveredFromLots(
-  lots: readonly {
-    readonly lot: number;
-    readonly items?: readonly { readonly skuId: string; readonly qty: number }[];
-  }[],
-  chosen: ReadonlySet<number>,
-  lines: readonly { readonly skuId: string; readonly qty: number }[],
-): Record<string, string> {
-  const inChosen = new Map<string, number>();
-  for (const lot of lots) {
-    if (!chosen.has(lot.lot)) continue;
-    for (const item of lot.items ?? []) {
-      inChosen.set(item.skuId, (inChosen.get(item.skuId) ?? 0) + item.qty);
-    }
-  }
-  return Object.fromEntries(
-    lines.map((line) => [line.skuId, String(Math.min(inChosen.get(line.skuId) ?? 0, line.qty))]),
-  );
-}
-
 export function offeredActions(
   transitions: OrderDetail['transitions'],
   mayUpdate: boolean,

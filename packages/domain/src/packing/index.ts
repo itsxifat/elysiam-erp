@@ -79,6 +79,7 @@ export {
 export {
   LOT_ASK_ABOVE_PIECES_DEFAULT,
   LOT_COUNT_MAX,
+  deliveredFromLots,
   handoverComplete,
   handoverMissing,
   judgeConfirmLots,

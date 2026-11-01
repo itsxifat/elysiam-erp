@@ -83,6 +83,12 @@ function CourierPortal() {
         playTone('message');
         return;
       }
+      // Its last lot recorded on an order a courier's own status already shipped (D-947).
+      if (order.withCourier === true) {
+        record({ ...base, ...known, outcome: 'already' });
+        playTone('message');
+        return;
+      }
       const result = await handOver([order.orderId]);
       const row = result.results[0];
       if (row?.ok === true) {

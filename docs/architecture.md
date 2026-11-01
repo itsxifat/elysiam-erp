@@ -1992,6 +1992,12 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   no page was printed at another count after it, and a code of the whole order is refused on an
   order in several lots, so an old sticker does not come back. A count is never more than the
   pieces can fill and is fixed once the order is packed.
+- **Lot by lot** (M53, D-946 to D-950): a label's and a slip's barcode is the order's ten digits and
+  two for the lot, `00` for an order in one lot and `01` to `20` for each of several; a code printed
+  for another count is refused. Lots may go to the courier on different days (the handover lists an
+  order until every lot went, and a lot is recorded after a courier's status shipped it), and each
+  lot's record is on the order page. One order stays one consignment, one COD and one return receipt
+  (D-950, open).
 - **Booking, printing and the handover, as run** (D-900 to D-905): Settings → Order workflow
   chooses when the courier is booked (`orders.courier_booking`: on confirm, the default since
   D-927, or by hand; on pack retired, D-928), and booking is what puts an order in Ready for label. A browser printer prints from every page of a

@@ -40,9 +40,12 @@ export function HandoverPanel({ locationId }: { readonly locationId: string | un
     mutationFn: handoverScan,
     onSuccess: (result) => {
       setScanned((current) => new Map(current).set(result.order.orderId, result.order));
+      // Its last lot recorded on an order already with the courier: nothing is left to do.
+      const finished = result.order.complete && result.order.withCourier === true;
       setGone((current) => {
         const next = new Set(current);
-        next.delete(result.order.orderId);
+        if (finished) next.add(result.order.orderId);
+        else next.delete(result.order.orderId);
         return next;
       });
       setNotice(
@@ -61,7 +64,7 @@ export function HandoverPanel({ locationId }: { readonly locationId: string | un
     },
   });
 
-  const ready = [...list.values()].filter((entry) => entry.complete);
+  const ready = [...list.values()].filter((entry) => entry.complete && entry.withCourier !== true);
   const go = useMutation({
     mutationFn: () => handOver(ready.map((entry) => entry.orderId)),
     onSuccess: async (result) => {
@@ -126,6 +129,11 @@ export function HandoverPanel({ locationId }: { readonly locationId: string | un
               >
                 <span className="font-medium tabular-nums">{entry.orderNo}</span>
                 <span className="flex items-center gap-2">
+                  {entry.withCourier === true ? (
+                    <span className="text-xs text-muted-foreground">
+                      {t('lb.handover.withCourier')}
+                    </span>
+                  ) : null}
                   <span className="text-xs text-muted-foreground tabular-nums">
                     {`${String(entry.scanned.length)}/${String(entry.lotCount)}`}
                   </span>

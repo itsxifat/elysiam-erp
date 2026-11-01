@@ -1203,17 +1203,18 @@ export async function setLotCount(
 }
 
 /**
- * M52 (D-945): pages still waiting to print for another lot count, cancelled as the count changes,
- * so no sticker with the old count reaches the table after it. A page being sent has gone.
+ * M52 (D-945): pages still to print for another lot count, waiting or failed, cancelled as the
+ * count changes, so no sticker with the old count reaches the table after it. A page being sent
+ * has gone, and may still print; it never counts as this order's page.
  */
-export async function cancelQueuedAtOtherCounts(
+export async function cancelUnprintedAtOtherCounts(
   tx: Tx,
   input: { readonly orgId: string; readonly orderId: string; readonly count: number },
 ): Promise<number> {
   const rows = await tx.execute<{ id: string }>(sql`
     update packing.print_jobs set state = 'cancelled', cancelled_at = now(), updated_at = now()
      where org_id = ${input.orgId} and order_id = ${input.orderId}
-       and state = 'queued' and lot_count <> ${input.count}
+       and state in ('queued', 'failed') and lot_count <> ${input.count}
     returning id
   `);
   return rows.length;
@@ -1311,6 +1312,27 @@ export async function insertHandoverScan(
 }
 
 /** Orders with a handover scan in the last day: the handover's list until they ship. */
+/**
+ * Orders a courier's own status shipped with a lot of theirs scanned and another not (M53, D-947):
+ * that lot is still at the hub, whatever the order says. Gone from here once delivered.
+ */
+export async function handoverLotsLeftBehind(
+  tx: Tx,
+  orgId: string,
+  orderInScope: SQL,
+): Promise<string[]> {
+  const rows = await tx.execute<{ order_id: string }>(sql`
+    select s.order_id from packing.handover_scans s
+    join packing.order_lots ol on ol.org_id = s.org_id and ol.order_id = s.order_id
+    where s.org_id = ${orgId} and ${orderInScope}
+    group by s.order_id, ol.lot_count
+    having count(distinct s.lot_no) < ol.lot_count
+    order by min(s.scanned_at)
+    limit 300
+  `);
+  return rows.map((row) => row.order_id);
+}
+
 export async function handoverOrdersStillPacked(
   tx: Tx,
   orgId: string,

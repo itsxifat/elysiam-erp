@@ -200,6 +200,30 @@ export function lotContents(
   return contents;
 }
 
+/**
+ * What a partial delivery delivered, from the lots that were (M53, D-948): each line's quantity is
+ * what the chosen lots hold of it, never more than the order has. The person can still change them.
+ */
+export function deliveredFromLots(
+  lots: readonly {
+    readonly lot: number;
+    readonly items?: readonly { readonly skuId: string; readonly qty: number }[];
+  }[],
+  chosen: ReadonlySet<number>,
+  lines: readonly { readonly skuId: string; readonly qty: number }[],
+): Map<string, number> {
+  const inChosen = new Map<string, number>();
+  for (const lot of lots) {
+    if (!chosen.has(lot.lot)) continue;
+    for (const item of lot.items ?? []) {
+      inChosen.set(item.skuId, (inChosen.get(item.skuId) ?? 0) + item.qty);
+    }
+  }
+  return new Map(
+    lines.map((line) => [line.skuId, Math.min(inChosen.get(line.skuId) ?? 0, line.qty)]),
+  );
+}
+
 export type HandoverScanOutcome = 'accepted' | 'already' | 'no_such_lot';
 
 /** One label scanned at the handover. */

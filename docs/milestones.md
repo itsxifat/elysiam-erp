@@ -1490,3 +1490,24 @@ The owner's request of 2026-11-01 (plan: `docs/plans/M52.md`; D-941 to D-945).
 9. On the order page: a confirm the server takes asks nothing; above the limit it asks and confirms again with the answer; more lots than pieces cannot be sent; any other refusal stays a refusal.
 10. A code of the whole order is refused on an order in several lots, and a one-lot order keeps it; a packed order's count is refused up and down; a count past what the pieces left can fill is refused; pages queued for the old count are cancelled and the new ones print through the real route with no reason asked.
 11. Typecheck, lint, i18n, migrations, schema drift, the route matrix, the API client, the white-label check and the first-download budget pass.
+
+## M53: Two lot digits on every label, and lots kept through the courier and returns
+
+The owner's request of 2026-11-02 (plan: `docs/plans/M53.md`; D-946 to D-950).
+
+- **Two digits on every label:** `00` for an order in one lot, `01` to `20` for each of several, after the order's ten (D-946).
+- **Lots on different days:** a lot left behind stays on the handover's list; one still at the hub when a courier's status ships the order is still recorded (D-947).
+- **Lot by lot on the record:** contents, packing, handover and what came back, on the order page and at the return station; a partial delivery fills from the lots delivered (D-948).
+- **Open:** a consignment per lot and stock back per lot move money, and wait for the owner's rules (D-950).
+
+**Acceptance checks**
+
+1. An order in one lot is packed from its `00` label, start to finish; a label printed before this, with ten digits, still works.
+2. The `00` of an old sticker is refused on an order now in several lots, and a lot's own code on an order now in one, at the table and the handover.
+3. A label's and a slip's bars decode to twelve digits at six dots a bar; an invoice's to the order's ten.
+4. An order with a lot left behind stays on the handover's list days later.
+5. A lot still at the hub is recorded after a courier's status shipped the order; a third scan is a repeat; a delivered order, a one-lot order and an unpacked order take none.
+6. The order's record says what went in each lot, when it was packed and handed and by whom, and reads an order packed at the desk.
+7. A partial delivery's quantities are what the lots ticked hold, never more than the order has.
+8. A brand that chose nothing is asked above five pieces; saving only the video setting keeps that; emptying the field asks nobody.
+9. Typecheck, lint, i18n, migrations, schema drift, the route matrix, the API client, the white-label check and the first-download budget pass.

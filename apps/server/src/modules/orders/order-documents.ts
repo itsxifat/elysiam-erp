@@ -840,7 +840,7 @@ export function renderLabelHtml(input: {
       </div>
 
       <div class="cod" data-field="collect">
-        <div class="cod-label">${nothing ? 'Paid in full · Collect nothing' : 'Cash on delivery · Collect'}</div>
+        <div class="cod-label">${nothing ? 'Paid in full · Collect nothing' : lotOf(data) === null ? 'Cash on delivery · Collect' : 'Whole order · Collect once only'}</div>
         <div class="cod-amount">${escapeHtml(takaText(nothing ? poisha(0n) : data.codAmountPoisha))}</div>
       </div>
 

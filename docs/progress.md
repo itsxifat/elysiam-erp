@@ -4131,3 +4131,28 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   were closed can strand the table (predates M52); an old "Lot 1 of 2" scans the same as a new
   "Lot 1 of 3" once printed, as a lot's code does not carry the count.
 - **New dependencies:** none.
+
+## 2026-11-02 · M53 · two lot digits on every label, and lots kept through the courier and returns
+
+- **What:** a label's and a slip's barcode is the order's ten digits and two for the lot, `00` for an
+  order in one lot and `01` to `20` for each of several; what was printed before still scans. Lots
+  may go to the courier on different days: one left behind stays on the handover's list, and is
+  recorded after a courier's status shipped the order. The order page keeps each lot's contents,
+  packing, handover and what came back; the return station shows what went out in each bag; a
+  partial delivery fills from the lots ticked. Confirm asks above five pieces until a brand chooses
+  (the owner left the number to us). Plan: `docs/plans/M53.md`. Decisions: D-946 to D-950.
+- **Not built, the owner's call (D-950):** a consignment per lot and stock back per lot. One order is
+  one consignment, one COD, one delivery journal and one return receipt; those two move money.
+- **Ledger audit:** 0 critical, 6 warnings, re-checking M52's fixes too (they hold). See the plan.
+  One warning was wrong (W1: the database allows one line per SKU per order).
+- **Found by the render test:** a new line under the COD pushed the fullest label ten rows of dots
+  off the 4 × 6 sticker; the words went into the caption instead.
+- **Verification:** `lot-wise.db.test.ts` and `lot-rule.db.test.ts` on real Postgres, with
+  `label-recording`, `camera-lot-cut`, `return-station`, the documents and thermal render through
+  Gotenberg (the barcode decoded off the dots), the domain and console tests, and
+  `e2e/pack-station.spec.ts` in Chromium. Typecheck, eslint, prettier and every `check:*`: PASS.
+  `pnpm verify` and the stack specs not run, per the minimal-tests rule.
+- **Older tests:** `handover.e2e`, and parts of `orders.e2e` and `workflow.e2e`, pack without printing
+  a label and fail on D-928's rule, as M51 noted of the others like them. One in `orders.e2e` was
+  mine and is fixed. `order-documents` and `pack-station-ui` follow the new code.
+- **New dependencies:** none.

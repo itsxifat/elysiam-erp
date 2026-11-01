@@ -1,3 +1,4 @@
+import { deliveredFromLots } from '@elysium/domain/packing';
 import {
   Button,
   Checkbox,
@@ -30,7 +31,7 @@ import {
 } from './api.js';
 import { ConfirmLotsDialog } from './confirm-lots-dialog.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
-import { deliveredFromLots, offeredActions } from './order-actions-logic.js';
+import { offeredActions } from './order-actions-logic.js';
 import { useOwnerGuard } from './owner-guard.js';
 import { liveParcelOf, useOrderParcels } from './parcel-panel.js';
 import { RETURN_REASONS, type ReturnReason } from './returns-logic.js';
@@ -443,7 +444,13 @@ function ActionDialog({
                         if (next.has(lot.lot)) next.delete(lot.lot);
                         else next.add(lot.lot);
                         setDeliveredLots(next);
-                        setDelivered(deliveredFromLots(lotChoices, next, order.lines));
+                        setDelivered(
+                          Object.fromEntries(
+                            [...deliveredFromLots(lotChoices, next, order.lines)].map(
+                              ([skuId, qty]) => [skuId, String(qty)],
+                            ),
+                          ),
+                        );
                       }}
                     />
                     {`${t('orders.action.partialLot')} ${String(lot.lot)}`}

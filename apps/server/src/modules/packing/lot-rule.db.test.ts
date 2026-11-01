@@ -548,9 +548,23 @@ describe('the packer revises the count (D-942, D-943)', () => {
         `),
       { orgId: ORG_A },
     );
+    await withSystem(
+      (tx) =>
+        tx.execute(sql`
+          insert into packing.print_jobs
+            (org_id, order_id, order_no, document, lot_no, lot_count, printer_id, terminal_id,
+             source, reason, requested_by, consignment_no, state, failed_at, last_error)
+          values (${ORG_A}, ${placed.id}, ${placed.orderNo}, 'label', 1, 1, ${printerId},
+                  ${terminalId}, 'reprint', 'Jammed', ${PERSON}, ${`CN-${placed.orderNo}`},
+                  'failed', now(), 'Out of paper')
+        `),
+      { orgId: ORG_A },
+    );
     await lots.setLotCount(context(), request(), placed.id, { count: 2 });
     expect(await jobsOf(placed.id, 'queued')).toEqual([]);
+    expect(await jobsOf(placed.id, 'failed')).toEqual([]);
     expect(await jobsOf(placed.id, 'cancelled')).toEqual([
+      { lot_no: 1, lot_count: 1, source: 'reprint' },
       { lot_no: 1, lot_count: 1, source: 'reprint' },
     ]);
 

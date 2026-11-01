@@ -355,7 +355,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
    * How many bags the order goes in: the label printer's or the packer's call, until it is packed
    * (D-944). A change sends it back to Ready for label (M52, D-942): the labels printed at the old
    * count stop counting, so it is listed first, marked, until every lot's new label is printed;
-   * pages still queued for the old count are cancelled (D-945).
+   * pages still to print for the old count are cancelled (D-945).
    */
   async setLotCount(
     context: ActiveContext,
@@ -430,7 +430,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
             count: input.count,
             by: context.userId,
           });
-          const cancelledPrints = await labels.cancelQueuedAtOtherCounts(tx, {
+          const cancelledPrints = await labels.cancelUnprintedAtOtherCounts(tx, {
             orgId: context.orgId,
             orderId,
             count: input.count,
@@ -553,6 +553,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
           outcome,
           order: {
             ...this.progress(orderId, facts.orderNo, lotCount, scanned),
+            withCourier: facts.status === 'shipped',
             // The courier portal counts each courier's parcels as they go (D-904): the booked
             // parcel's courier, else the order's own.
             courier: facts.parcel?.courierName ?? facts.courierName,
@@ -563,16 +564,23 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
   }
 
   /**
-   * The handover's list: packed orders with a lot scanned and what is still missing. However long
-   * ago (M53, D-947): a lot left behind stays listed until it goes.
+   * The handover's list: packed orders with a lot scanned and what is still missing, however long
+   * ago, and shipped ones with a lot left behind (M53, D-947), which stay listed until it goes.
    */
   async pending(context: ActiveContext, request: object) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const ids = await labels.handoverOrdersStillPacked(
-        tx,
-        context.orgId,
-        this.orders.orderInScopeSql(context.orgId, sql`s.order_id`, request, ['packed']),
-      );
+      const ids = [
+        ...(await labels.handoverOrdersStillPacked(
+          tx,
+          context.orgId,
+          this.orders.orderInScopeSql(context.orgId, sql`s.order_id`, request, ['packed']),
+        )),
+        ...(await labels.handoverLotsLeftBehind(
+          tx,
+          context.orgId,
+          this.orders.orderInScopeSql(context.orgId, sql`s.order_id`, request, ['shipped']),
+        )),
+      ];
       const [facts, lots, scans] = await Promise.all([
         this.orders.packingFacts(tx, context.orgId, ids),
         labels.lotCounts(tx, context.orgId, ids),
@@ -580,8 +588,10 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
       ]);
       return {
         items: facts
-          .filter((fact) => fact.status === 'packed')
+          .filter((fact) => fact.status === 'packed' || fact.status === 'shipped')
           .map((fact) => ({
+            // A courier's status shipped it: its lots are recorded, with nothing left to ship.
+            withCourier: fact.status === 'shipped',
             ...this.progress(
               fact.id,
               fact.orderNo,

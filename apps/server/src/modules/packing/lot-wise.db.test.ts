@@ -281,10 +281,39 @@ describe('lots going to the courier on different days (D-947)', () => {
     const second = await handOver(digits(lotScanCode(placed.orderNo, 2)));
     expect(second.outcome).toBe('accepted');
     expect(second.order.complete).toBe(true);
+    expect(second.order.withCourier).toBe(true);
     // Both are in now, so a third scan is a repeat, not a new fact.
     expect(await refusal(handOver(digits(lotScanCode(placed.orderNo, 2))))).toContain(
       'ORDER_ALREADY_HANDED',
     );
+  });
+
+  it('lists a lot left behind on an order a courier’s status shipped, until it goes', async () => {
+    const placed = await seed('shipped', 2);
+    await setStoredLots(placed.id, 2);
+    await handOver(digits(lotScanCode(placed.orderNo, 1)));
+    const pending = await lots.pending(context(), request());
+    const row = pending.items.find((item) => item.orderId === placed.id);
+    expect(row?.withCourier).toBe(true);
+    expect(row?.missing).toEqual([2]);
+
+    await handOver(digits(lotScanCode(placed.orderNo, 2)));
+    const after = await lots.pending(context(), request());
+    expect(after.items.some((item) => item.orderId === placed.id)).toBe(false);
+  });
+
+  it('does not list a shipped order with every lot gone', async () => {
+    const placed = await seed('packed', 1);
+    await handOver(digits(soleLotScanCode(placed.orderNo)));
+    await withSystem(
+      (tx) =>
+        tx.execute(
+          sql`update sales.orders set status = 'shipped' where org_id = ${ORG_A} and id = ${placed.id}`,
+        ),
+      { orgId: ORG_A },
+    );
+    const pending = await lots.pending(context(), request());
+    expect(pending.items.some((item) => item.orderId === placed.id)).toBe(false);
   });
 
   it('takes no lot of a delivered order, nor a one-lot order already with the courier', async () => {

@@ -217,6 +217,16 @@ describe('the order barcode is the code the packing station opens (check 1)', ()
     expect(readLotCode(ONE_LOT_DIGITS)).toEqual({ orderCode: ORDER_DIGITS, lot: null });
   });
 
+  it('tells the rider a lot’s COD is one collection for the whole order (D-950)', () => {
+    const label = (data: typeof SAMPLE_ORDER) =>
+      renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts: [] });
+    const lotted = { ...SAMPLE_ORDER, lot: { no: 2, count: 3 } };
+    expect(field(label(lotted), 'collect')).toContain('Whole order · Collect once only');
+    expect(label(SAMPLE_ORDER)).not.toContain('Collect once only');
+    // Nothing to collect, nothing to say.
+    expect(label({ ...lotted, codAmountPoisha: poisha(0n) })).not.toContain('Collect once only');
+  });
+
   it('prints the order number as text for an order with no digits-only code, as before', () => {
     // A counter past six digits (a million orders in a month) has no ten-digit code.
     const huge = { ...SAMPLE_ORDER, orderNo: 'ELY-2610-1000000' };

@@ -279,6 +279,7 @@ const en = {
   'lb.handover.add': 'Add',
   'lb.handover.missing': 'Still to scan',
   'lb.handover.allScanned': 'All lots scanned',
+  'lb.handover.withCourier': 'Order with the courier, lot left here',
   'lb.handover.already': 'Already scanned',
   'lb.handover.go': 'Hand over',
   'lb.handover.orders': 'orders',
