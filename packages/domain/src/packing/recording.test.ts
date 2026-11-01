@@ -168,8 +168,17 @@ describe('judgePackLabelScan', () => {
       judgePackLabelScan({ lotCount: 1, closedLots: 0, scannedLot: null, openLotStarted: false }),
     ).toEqual({ kind: 'start', lot: 1 });
     expect(
-      judgePackLabelScan({ lotCount: 1, closedLots: 0, scannedLot: 1, openLotStarted: true }),
+      judgePackLabelScan({ lotCount: 1, closedLots: 0, scannedLot: null, openLotStarted: true }),
     ).toEqual({ kind: 'stop', lot: 1 });
+  });
+
+  it('refuses a lot’s own code on an order now in one lot: an old sticker (D-946)', () => {
+    expect(
+      judgePackLabelScan({ lotCount: 1, closedLots: 0, scannedLot: 1, openLotStarted: true }),
+    ).toEqual({ kind: 'refused', reason: 'old_lot_label', lot: 1, expected: 1 });
+    expect(
+      judgePackLabelScan({ lotCount: 1, closedLots: 0, scannedLot: 1, openLotStarted: false }),
+    ).toMatchObject({ kind: 'refused', reason: 'old_lot_label' });
   });
 
   it('keeps the lots in order', () => {

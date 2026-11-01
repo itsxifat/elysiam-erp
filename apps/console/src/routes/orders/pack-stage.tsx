@@ -66,6 +66,8 @@ export function LotRail({
     readonly lot: number;
     readonly state: LotState;
     readonly pieces: number;
+    /** How many went out in this bag, at the return station (M53, D-948). */
+    readonly expected?: number | null;
     readonly video: LotVideoPhase | null;
   }[];
 }) {
@@ -77,7 +79,11 @@ export function LotRail({
         <li key={entry.lot} className="ps-lot" data-state={entry.state}>
           <span className="ps-lot-dot" aria-hidden />
           <strong>{`${t('ps.stage.lot')} ${String(entry.lot)}`}</strong>
-          <span>{`${String(entry.pieces)} ${t(entry.pieces === 1 ? 'ps.piece' : 'ps.pieces')}`}</span>
+          <span>
+            {entry.expected === null || entry.expected === undefined
+              ? `${String(entry.pieces)} ${t(entry.pieces === 1 ? 'ps.piece' : 'ps.pieces')}`
+              : `${String(entry.pieces)} ${t('ps.of')} ${String(entry.expected)} ${t(entry.expected === 1 ? 'ps.piece' : 'ps.pieces')}`}
+          </span>
           <span className="sr-only">{t(`ps.lots.state.${entry.state}` as ConsoleT)}</span>
           {entry.video === null ? null : <VideoMark phase={entry.video} />}
         </li>

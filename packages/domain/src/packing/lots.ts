@@ -20,6 +20,9 @@
 /** The most bags one order goes in. */
 export const LOT_COUNT_MAX = 20;
 
+/** Above how many pieces Confirm asks how many lots, until a brand chooses (D-949). */
+export const LOT_ASK_ABOVE_PIECES_DEFAULT = 5;
+
 /** The orders a lot count may be set on: confirmed, not yet packed (M52, D-944). */
 const LOT_OPEN_STATUSES: readonly string[] = ['confirmed'];
 
@@ -169,6 +172,32 @@ export function piecesByLot(
     if (scan.outcome === 'removed') counts.set(scan.lot, (counts.get(scan.lot) ?? 0) - 1);
   }
   return counts;
+}
+
+/**
+ * What each lot holds, from the station's scans: lot, then SKU, then pieces (accepted adds one,
+ * removed takes one away). What the order page shows bag by bag, and what fills a partial delivery
+ * from the lots that were delivered (M53, D-948).
+ */
+export function lotContents(
+  scans: readonly {
+    readonly lot: number;
+    readonly skuId: string | null;
+    readonly outcome: string;
+  }[],
+): Map<number, Map<string, number>> {
+  const contents = new Map<number, Map<string, number>>();
+  for (const scan of scans) {
+    if (scan.skuId === null) continue;
+    const change = scan.outcome === 'accepted' ? 1 : scan.outcome === 'removed' ? -1 : 0;
+    if (change === 0) continue;
+    const lot = contents.get(scan.lot) ?? new Map<string, number>();
+    const pieces = (lot.get(scan.skuId) ?? 0) + change;
+    if (pieces > 0) lot.set(scan.skuId, pieces);
+    else lot.delete(scan.skuId);
+    contents.set(scan.lot, lot);
+  }
+  return contents;
 }
 
 export type HandoverScanOutcome = 'accepted' | 'already' | 'no_such_lot';

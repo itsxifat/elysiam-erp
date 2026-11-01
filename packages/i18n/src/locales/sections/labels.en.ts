@@ -77,6 +77,8 @@ const en = {
   'lb.lots.closeLot': 'Close lot',
   'lb.lots.filling': 'Filling',
   'lb.lots.closed': 'Closed',
+  'lb.lots.packedAt': 'Packed',
+  'lb.lots.back': 'Came back',
   'lb.lots.empty': 'Empty',
   'lb.lots.pieces': 'pieces',
   'lb.lots.closeHint':

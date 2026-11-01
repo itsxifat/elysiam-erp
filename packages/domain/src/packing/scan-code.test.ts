@@ -7,6 +7,7 @@ import {
   lotScanCode,
   orderScanCode,
   parseLotScanCode,
+  soleLotScanCode,
   parseOrderScanCode,
   readLotCode,
   scannedOrderParts,
@@ -55,13 +56,24 @@ describe('an order’s digits-only code', () => {
     );
   });
 
+  it('says with two digits whether the label is of an order in one lot or of one of several (D-946)', () => {
+    expect(soleLotScanCode('ELY-2610-00042')).toBe('261000004200');
+    expect(lotScanCode('ELY-2610-00042', 2)).toBe('261000004202');
+    expect(soleLotScanCode('ELY-2610-1000000')).toBeNull();
+    expect(parseLotScanCode('261000004200')).toEqual({ orderCode: '2610000042', lot: null });
+    expect(readLotCode('261000004200')).toEqual({ orderCode: '2610000042', lot: null });
+    expect(parseLotScanCode('261000004202')).toEqual({ orderCode: '2610000042', lot: 2 });
+    // A search finds the order by any of its labels.
+    expect(scannedOrderParts('261000004200')).toEqual({ period: '2610', counter: '00042' });
+  });
+
   it('has none past a million orders in a month, and refuses what is no order’s code', () => {
     expect(orderScanCode('ELY-2610-1000000')).toBeNull();
     expect(orderScanCode('not an order')).toBeNull();
     for (const code of ['2613000042', '2600000042', '2610000000', '261000004', 'ELY2610000042']) {
       expect(parseOrderScanCode(code), code).toBeNull();
     }
-    for (const code of ['261000004200', '261000004221', '261300004202']) {
+    for (const code of ['261000004221', '261300004202']) {
       expect(parseLotScanCode(code), code).toBeNull();
     }
     expect(() => lotScanCode('ELY-2610-00042', 0)).toThrow(RangeError);

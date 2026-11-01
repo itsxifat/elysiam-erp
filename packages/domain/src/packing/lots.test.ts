@@ -11,6 +11,7 @@ import {
   judgeLotCount,
   judgeLotFinish,
   lotCode,
+  lotContents,
   lotCountLimit,
   openLot,
   parseLotCode,
@@ -151,6 +152,57 @@ describe('who says how many lots (M52, D-941, D-943)', () => {
     const sealed = { orderStatus: 'confirmed', closedLots: 1, pieces: 4, piecesInClosedLots: 3 };
     expect(judgeLotCount({ ...sealed, count: 2 })).toBe('ok');
     expect(judgeLotCount({ ...sealed, count: 3 })).toBe('more_than_pieces');
+  });
+});
+
+describe('what each lot holds (M53, D-948)', () => {
+  it('counts a lot’s pieces by SKU, less what was taken out, ignoring labels and refusals', () => {
+    const contents = lotContents([
+      { lot: 1, skuId: null, outcome: 'label' },
+      { lot: 1, skuId: 'shirt', outcome: 'accepted' },
+      { lot: 1, skuId: 'shirt', outcome: 'accepted' },
+      { lot: 1, skuId: 'shirt', outcome: 'removed' },
+      { lot: 1, skuId: 'cap', outcome: 'wrong_item' },
+      { lot: 2, skuId: 'cap', outcome: 'accepted' },
+      { lot: 2, skuId: 'cap', outcome: 'removed' },
+    ]);
+    expect([...(contents.get(1) ?? [])]).toEqual([['shirt', 1]]);
+    expect([...(contents.get(2) ?? [])]).toEqual([]);
+  });
+
+  it('holds exactly what was accepted less removed, per lot and SKU', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            lot: fc.integer({ min: 1, max: 3 }),
+            skuId: fc.constantFrom('a', 'b'),
+            take: fc.boolean(),
+          }),
+          { maxLength: 40 },
+        ),
+        (events) => {
+          // A piece is only taken out of a lot that holds one, as the station refuses otherwise.
+          const held = new Map<string, number>();
+          const scans = events.flatMap((event) => {
+            const key = `${String(event.lot)}:${event.skuId}`;
+            const now = held.get(key) ?? 0;
+            if (!event.take) {
+              held.set(key, now + 1);
+              return [{ lot: event.lot, skuId: event.skuId, outcome: 'accepted' }];
+            }
+            if (now === 0) return [];
+            held.set(key, now - 1);
+            return [{ lot: event.lot, skuId: event.skuId, outcome: 'removed' }];
+          });
+          const contents = lotContents(scans);
+          for (const [key, pieces] of held) {
+            const [lot = '', skuId = ''] = key.split(':');
+            expect(contents.get(Number(lot))?.get(skuId) ?? 0).toBe(pieces);
+          }
+        },
+      ),
+    );
   });
 });
 

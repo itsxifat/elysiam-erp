@@ -77,6 +77,7 @@ export {
 
 // M46: lots (D-805 to D-808) and the print queue (D-813 to D-819).
 export {
+  LOT_ASK_ABOVE_PIECES_DEFAULT,
   LOT_COUNT_MAX,
   handoverComplete,
   handoverMissing,
@@ -86,6 +87,7 @@ export {
   judgeLotCount,
   judgeLotFinish,
   lotCode,
+  lotContents,
   lotCountLimit,
   openLot,
   parseLotCode,
@@ -104,6 +106,7 @@ export {
   parseOrderScanCode,
   readLotCode,
   scannedOrderParts,
+  soleLotScanCode,
 } from './scan-code.js';
 
 // M51: label to label, the pause after the idle time, one video per lot, returns (D-930 to D-936).

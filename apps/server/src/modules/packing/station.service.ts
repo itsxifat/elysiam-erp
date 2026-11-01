@@ -29,6 +29,7 @@ import {
   readOrderLabel,
   type LabelVerdict,
   type PackScanOutcome,
+  LOT_ASK_ABOVE_PIECES_DEFAULT,
 } from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -112,6 +113,8 @@ export function labelRefusalWords(
       return 'Every lot of this order is done.';
     case 'whole_order':
       return `This order goes in ${String(lotCount)} lots: scan lot ${expected}’s own label.`;
+    case 'old_lot_label':
+      return 'That label is from when this order had more lots. It now goes in one: scan its new label.';
   }
 }
 
@@ -895,7 +898,8 @@ export class PackStationService {
         // M51 (D-931): the pause after so many seconds with no scan.
         idlePauseSeconds: Math.round((row?.idle_pause_ms ?? PACKING_IDLE_PAUSE_DEFAULT_MS) / 1000),
         // M52 (D-941): above how many pieces Confirm asks how many lots; null asks nobody.
-        lotAskAbovePieces: row?.lot_ask_above_pieces ?? null,
+        lotAskAbovePieces:
+          row === undefined ? LOT_ASK_ABOVE_PIECES_DEFAULT : row.lot_ask_above_pieces,
         updatedAt: row === undefined ? null : iso(row.updated_at),
         canEdit,
       };
@@ -923,7 +927,9 @@ export class PackStationService {
         idlePauseMs,
         lotAskAbovePieces:
           input.lotAskAbovePieces === undefined
-            ? (before?.lot_ask_above_pieces ?? null)
+            ? before === undefined
+              ? LOT_ASK_ABOVE_PIECES_DEFAULT
+              : before.lot_ask_above_pieces
             : input.lotAskAbovePieces,
         userId: context.userId,
       });
@@ -937,7 +943,8 @@ export class PackStationService {
         before: {
           videoEnabled: before?.video_enabled ?? true,
           idlePauseMs: before?.idle_pause_ms ?? PACKING_IDLE_PAUSE_DEFAULT_MS,
-          lotAskAbovePieces: before?.lot_ask_above_pieces ?? null,
+          lotAskAbovePieces:
+            before === undefined ? LOT_ASK_ABOVE_PIECES_DEFAULT : before.lot_ask_above_pieces,
         },
         after: {
           videoEnabled: row.video_enabled,

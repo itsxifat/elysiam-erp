@@ -150,6 +150,8 @@ describe('the packing slip (check 1)', () => {
 
 /** The sample order's ten digits and its lot 2's twelve (D-912). */
 const ORDER_DIGITS = '2610000042';
+/** What a label and a slip of an order in one lot carry (D-946). */
+const ONE_LOT_DIGITS = '261000004200';
 const LOT_DIGITS = '261000004202';
 
 /** One dot of a 203 dpi thermal head, in millimetres. */
@@ -179,16 +181,21 @@ describe('the order barcode is the code the packing station opens (check 1)', ()
       const { svg } = sized(html);
       expect(svg, kind).not.toBe('');
       const decoded = decodeCode128Svg(svg);
-      expect(decoded, `${kind} ${paper}`).toBe(ORDER_DIGITS);
+      // An invoice names the order; a label and a slip name the bag too (D-946).
+      const expected = kind === 'invoice' ? ORDER_DIGITS : ONE_LOT_DIGITS;
+      expect(decoded, `${kind} ${paper}`).toBe(expected);
       // What the station does with a scan before it looks the code up (`station.service.ts`).
-      expect(normaliseScannedCode(decoded)).toBe(ORDER_DIGITS);
+      expect(normaliseScannedCode(decoded)).toBe(expected);
       // No letter and no hyphen in the bars: the period and the counter of the order number.
       expect(decoded).toMatch(/^\d+$/);
-      expect(parseOrderScanCode(decoded)).toEqual({ period: '2610', counter: '00042' });
+      expect(parseOrderScanCode(decoded.slice(0, 10))).toEqual({
+        period: '2610',
+        counter: '00042',
+      });
       // The order number in letters is still printed, as the human copy, and on the label the
       // digits under the bars for typing; the A5 slip has no room left for them (D-905).
       expect(field(html, 'order-no')).toBe(SAMPLE_ORDER.orderNo);
-      if (kind === 'label') expect(field(html, 'scan-digits')).toBe(ORDER_DIGITS);
+      if (kind === 'label') expect(field(html, 'scan-digits')).toBe(ONE_LOT_DIGITS);
       else expect(html).not.toContain('data-field="scan-digits"');
     }
   });
@@ -203,8 +210,11 @@ describe('the order barcode is the code the packing station opens (check 1)', ()
       expect(decodeCode128Svg(sized(html).svg), `${kind} ${paper}`).toBe(LOT_DIGITS);
       expect(field(html, 'lot')).toBe('Lot 2 of 3');
     }
-    // A lot count of one is an order in one bag: the order's own ten digits.
-    expect(documentBarcodeValue({ ...SAMPLE_ORDER, lot: { no: 1, count: 1 } })).toBe(ORDER_DIGITS);
+    // A lot count of one is an order in one bag: the order's ten digits and `00` (D-946).
+    expect(documentBarcodeValue({ ...SAMPLE_ORDER, lot: { no: 1, count: 1 } })).toBe(
+      ONE_LOT_DIGITS,
+    );
+    expect(readLotCode(ONE_LOT_DIGITS)).toEqual({ orderCode: ORDER_DIGITS, lot: null });
   });
 
   it('prints the order number as text for an order with no digits-only code, as before', () => {
@@ -225,7 +235,7 @@ describe('the order barcode is the code the packing station opens (check 1)', ()
       expect(html.match(/data-barcode=/g)).toHaveLength(1);
       expect(html).toContain('data-field="scan"');
       const { width, height, value } = sized(html);
-      expect(value).toBe(ORDER_DIGITS);
+      expect(value).toBe(ONE_LOT_DIGITS);
       // D-912: 1 mm a bar, twice D-905's 0.5, and no wider than a lot's strip was at 0.5 mm, so a
       // scanner's window takes it in as before.
       expect(width / modulesOf(value)).toBeCloseTo(SLIP_MODULE_MM, 2);
@@ -281,8 +291,8 @@ describe('the order barcode is the code the packing station opens (check 1)', ()
     const label = (data: typeof SAMPLE_ORDER) =>
       sized(renderLabelHtml({ brand: SAMPLE_BRAND, data, fonts: [] }));
     const cases = [
-      // The order's ten digits and a lot's twelve: six dots, 0.75 mm.
-      { data: SAMPLE_ORDER, value: ORDER_DIGITS, dots: 6 },
+      // Both are twelve digits (D-946): six dots, 0.75 mm.
+      { data: SAMPLE_ORDER, value: ONE_LOT_DIGITS, dots: 6 },
       { data: { ...SAMPLE_ORDER, lot: { no: 2, count: 3 } }, value: LOT_DIGITS, dots: 6 },
       // A code that falls back to text: three dots, 0.375 mm, as every label had before, and two
       // for a long lot code that three would push past the label's edge.
@@ -411,7 +421,7 @@ describe('the parcel label', () => {
     expect(html).toContain('Steadfast');
     expect(html).not.toContain('Linen Panjabi');
     expect(html).not.toContain('Call before delivery');
-    expect(html).toContain(`data-barcode="${ORDER_DIGITS}"`);
+    expect(html).toContain(`data-barcode="${ONE_LOT_DIGITS}"`);
     // Ink is black: no grey a thermal head would dither into ash.
     expect(html).not.toMatch(/#(?!000\b|fff\b)[0-9a-f]{3,6}\b/i);
   });

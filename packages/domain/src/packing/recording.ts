@@ -161,7 +161,8 @@ export function isLabelReread(input: {
   return input.nowMs - input.last.atMs < PACKING_LABEL_REREAD_MS;
 }
 
-export type LabelRefusal = 'no_such_lot' | 'lot_done' | 'other_lot' | 'all_done' | 'whole_order';
+export type LabelRefusal =
+  'no_such_lot' | 'lot_done' | 'other_lot' | 'all_done' | 'whole_order' | 'old_lot_label';
 
 export type LabelVerdict =
   | { readonly kind: 'start'; readonly lot: number }
@@ -199,6 +200,10 @@ export function judgePackLabelScan(input: {
   }
   if (named === null && input.lotCount > 1) {
     return { kind: 'refused', reason: 'whole_order', lot: null, expected: open };
+  }
+  // One lot's own code on an order now in one lot: a sticker from before it was revised (D-946).
+  if (named !== null && input.lotCount === 1) {
+    return { kind: 'refused', reason: 'old_lot_label', lot: named, expected: open };
   }
   const lot = named ?? open;
   if (lot < open) return { kind: 'refused', reason: 'lot_done', lot, expected: open };

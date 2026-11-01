@@ -2851,6 +2851,8 @@ const en = {
   'orders.action.note': 'Note (optional)',
   'orders.action.choose': 'Choose…',
   'orders.action.reasonNeeded': 'Write a reason of at least three characters.',
+  'orders.action.partialLots': 'Lots delivered',
+  'orders.action.partialLot': 'Lot',
   'orders.lots.title': 'How many lots for',
   'orders.lots.pieces': 'Pieces in this order',
   'orders.lots.help':

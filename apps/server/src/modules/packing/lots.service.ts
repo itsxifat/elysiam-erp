@@ -4,6 +4,7 @@ import { withOrg, type Tx } from '@elysium/db';
 import { normaliseScannedCode } from '@elysium/domain/barcode';
 import { sql } from 'drizzle-orm';
 import {
+  LOT_ASK_ABOVE_PIECES_DEFAULT,
   handoverComplete,
   handoverMissing,
   judgeConfirmLots,
@@ -277,7 +278,8 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
     const pieces = (facts?.lines ?? []).reduce((sum, line) => sum + line.qty, 0);
     const verdict = judgeConfirmLots({
       pieces,
-      askAbovePieces: settings?.lot_ask_above_pieces ?? null,
+      askAbovePieces:
+        settings === undefined ? LOT_ASK_ABOVE_PIECES_DEFAULT : settings.lot_ask_above_pieces,
       lots: input.lots,
     });
     if (verdict === 'ask') {
@@ -461,6 +463,9 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
    * One label scanned as the parcel goes to the courier: its order number or ten digits (an order
    * in one lot), its lot code (`…-L2` or twelve digits, D-912) or, for an order in one lot, its
    * consignment or tracking code. An order in several lots needs each lot's own code.
+   *
+   * M53 (D-947): lots may go on different days. A courier's own status can ship the order while a
+   * lot is still at the hub, so a lot not yet scanned is still taken then, and recorded.
    */
   async scan(
     context: ActiveContext,
@@ -478,19 +483,33 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
         await this.lockOrder(tx, context.orgId, orderId);
         const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
         if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
-        if (HANDED_STATUSES.includes(facts.status)) {
+        const lotCount = await labels.lotCountOf(tx, context.orgId, orderId);
+        const scans = await labels.handoverScansOf(tx, context.orgId, [orderId]);
+        const scanned = new Set(scans.map((scan) => scan.lot_no));
+        const lateLot =
+          facts.status === 'shipped' &&
+          lotCount > 1 &&
+          found.lot !== null &&
+          !scanned.has(found.lot);
+        if (HANDED_STATUSES.includes(facts.status) && !lateLot) {
           throw new PackingError(
             'ORDER_ALREADY_HANDED',
             `Order ${facts.orderNo} is already with the courier.`,
           );
         }
-        if (facts.status !== 'packed') {
+        if (facts.status !== 'packed' && !lateLot) {
           throw new PackingError(
             'PACKING_NOT_PACKABLE',
             `Order ${facts.orderNo} is not packed yet: pack every lot first.`,
           );
         }
-        const lotCount = await labels.lotCountOf(tx, context.orgId, orderId);
+        // One lot's own code on an order now in one lot: a sticker from before it was revised.
+        if (lotCount === 1 && found.lot !== null) {
+          throw new PackingError(
+            'ORDER_LOTS_NOT_HANDED',
+            `That label is from when order ${facts.orderNo} had more lots. It now goes in one: scan its new label.`,
+          );
+        }
         let lot: number;
         if (found.lot !== null) {
           lot = found.lot;
@@ -502,8 +521,6 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
             `Order ${facts.orderNo} goes in ${String(lotCount)} lots: scan each lot's own label.`,
           );
         }
-        const scans = await labels.handoverScansOf(tx, context.orgId, [orderId]);
-        const scanned = new Set(scans.map((scan) => scan.lot_no));
         const outcome = judgeHandoverScan({ lotCount, scanned, lot });
         if (outcome === 'no_such_lot') {
           throw new PackingError(
@@ -528,7 +545,7 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
             action: 'packing.handover_scanned',
             entityType: 'order',
             entityId: orderId,
-            after: { lot, lotCount, terminalId: here?.terminal.id ?? null },
+            after: { lot, lotCount, terminalId: here?.terminal.id ?? null, late: lateLot },
             request,
           });
         }
@@ -545,12 +562,17 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
     );
   }
 
-  /** The handover's list: packed orders scanned in the last day, with what is still missing. */
+  /**
+   * The handover's list: packed orders with a lot scanned and what is still missing. However long
+   * ago (M53, D-947): a lot left behind stays listed until it goes.
+   */
   async pending(context: ActiveContext, request: object) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-      const recent = await labels.recentHandoverOrders(tx, context.orgId);
-      const visible = await this.orders.visibleOrderIds(tx, context.orgId, recent, request);
-      const ids = recent.filter((id) => visible.has(id));
+      const ids = await labels.handoverOrdersStillPacked(
+        tx,
+        context.orgId,
+        this.orders.orderInScopeSql(context.orgId, sql`s.order_id`, request, ['packed']),
+      );
       const [facts, lots, scans] = await Promise.all([
         this.orders.packingFacts(tx, context.orgId, ids),
         labels.lotCounts(tx, context.orgId, ids),

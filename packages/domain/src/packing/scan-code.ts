@@ -11,19 +11,25 @@ import { LOT_COUNT_MAX, parseLotCode } from './lots.js';
  *
  * - an order, ten digits: its `YYMM` and its counter to six digits, `ELY-2610-00042` →
  *   `2610000042`;
- * - one lot of several, twelve: the order's ten and the lot to two, lot 2 → `261000004202`.
+ * - what a label prints since M53 (D-946), twelve: the order's ten and two digits for the lot.
+ *   `00` says the order is in one lot (`261000004200`); `01` to `20` name one lot of several, lot 2
+ *   → `261000004202`. So every label names its bag, and a sticker printed for another count reads
+ *   as that: an order revised from one lot to two refuses its old `…00`, and one revised back
+ *   refuses its old `…01`.
  *
- * Fixed lengths, both even (subset C pairs every digit), and never the same length as each
- * other, so a code reads back to one order and at most one lot. An order whose counter passed
- * six digits (a million orders in a month) has no digits-only code and its barcode carries the
- * order number as before. The order number in letters stays the human copy beside the bars, and
- * a code printed before this (the order number, `…-L2`) still scans.
+ * Even lengths (subset C pairs every digit), so a code reads back to one order and at most one
+ * lot. An order whose counter passed six digits (a million orders in a month) has no digits-only
+ * code and its barcode carries the order number as before. The order number in letters stays the
+ * human copy beside the bars, and a code printed before this (the order number, its ten digits,
+ * `…-L2`) still scans.
  */
 
 /** An order's digits-only code: `YYMM` and the counter to six digits. */
 export const ORDER_SCAN_DIGITS = 10;
-/** One lot's digits-only code: the order's ten and the lot to two. */
+/** A label's digits-only code: the order's ten and the lot to two. */
 export const LOT_SCAN_DIGITS = 12;
+/** The two digits that say an order is in one lot (D-946). */
+export const SOLE_LOT_SUFFIX = '00';
 
 const ORDER_NO = /^[A-Z][A-Z0-9]{1,5}-(\d{4})-(\d{5,})$/;
 const ORDER_SCAN = /^(\d{4})(\d{6})$/;
@@ -48,6 +54,12 @@ export function lotScanCode(orderNo: string, lot: number): string | null {
   return order === null ? null : `${order}${String(lot).padStart(2, '0')}`;
 }
 
+/** The twelve digits on the label of an order in one lot, or null with no digits-only code. */
+export function soleLotScanCode(orderNo: string): string | null {
+  const order = orderScanCode(orderNo);
+  return order === null ? null : `${order}${SOLE_LOT_SUFFIX}`;
+}
+
 /**
  * The period and counter ten scanned digits name, as the order number writes them (the counter
  * to five digits, wider past them), or null for anything else. A month outside 01 to 12 or a
@@ -65,25 +77,29 @@ export function parseOrderScanCode(
   return { period, counter: String(sequence).padStart(5, '0') };
 }
 
-/** The order's ten digits and the lot twelve scanned digits name, or null for anything else. */
+/**
+ * The order's ten digits and the lot twelve scanned digits name, or null for anything else. The
+ * lot is null for `00`: the label of an order in one lot, which names no lot of several.
+ */
 export function parseLotScanCode(
   code: string,
-): { readonly orderCode: string; readonly lot: number } | null {
+): { readonly orderCode: string; readonly lot: number | null } | null {
   const match = LOT_SCAN.exec(code.trim());
   if (match === null) return null;
   const [, orderCode = '', digits = ''] = match;
   const lot = Number(digits);
-  if (lot < 1 || lot > LOT_COUNT_MAX || parseOrderScanCode(orderCode) === null) return null;
-  return { orderCode, lot };
+  if (lot > LOT_COUNT_MAX || parseOrderScanCode(orderCode) === null) return null;
+  return { orderCode, lot: digits === SOLE_LOT_SUFFIX ? null : lot };
 }
 
 /**
  * The order code and lot of a scanned lot code in either form, the order number's (`…-L2`) or
  * the twelve digits, or null for any other code. What the packing station and the handover read.
+ * The lot is null for `…00`, the label of an order in one lot (D-946).
  */
 export function readLotCode(
   code: string,
-): { readonly orderCode: string; readonly lot: number } | null {
+): { readonly orderCode: string; readonly lot: number | null } | null {
   return parseLotCode(code) ?? parseLotScanCode(code);
 }
 

@@ -93,10 +93,10 @@ export const packingSettings = packing.table(
      */
     idlePauseMs: integer('idle_pause_ms').notNull().default(10_000),
     /**
-     * M52 (D-941): an order of more than this many pieces is asked how many lots it goes in when
-     * a person confirms it. Null asks nobody: every order starts as one lot.
+     * M52 (D-941, D-949): an order of more than this many pieces is asked how many lots it goes in
+     * when a person confirms it. Five until the brand chooses; null asks nobody.
      */
-    lotAskAbovePieces: integer('lot_ask_above_pieces'),
+    lotAskAbovePieces: integer('lot_ask_above_pieces').default(5),
     updatedBy: text('updated_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),

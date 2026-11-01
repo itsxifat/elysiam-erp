@@ -1,5 +1,5 @@
 {
-  "id": "c317b3a2-b475-4ba7-94af-68adfaa09453",
+  "id": "d3d45949-fa66-4f87-88f0-90c4965ef91a",
   "prevId": "8983049b-f56d-4463-a1ab-2496e85dbe93",
   "version": "7",
   "dialect": "postgresql",
@@ -32389,7 +32389,8 @@
           "name": "lot_ask_above_pieces",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": 5
         },
         "updated_by": {
           "name": "updated_by",

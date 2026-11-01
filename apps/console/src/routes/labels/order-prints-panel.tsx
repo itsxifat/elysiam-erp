@@ -29,7 +29,7 @@ export function OrderPrintsPanel({ orderId }: { readonly orderId: string }) {
       className="space-y-3 rounded-lg border border-border bg-card p-5 text-sm"
     >
       <h2 id={id} className="text-base font-semibold tracking-tight">
-        {t('lb.labels.title')}
+        {data.lotCount > 1 ? t('lb.lots.title') : t('lb.labels.title')}
       </h2>
       <ul className="divide-y divide-border">
         {data.lots.map((lot) => (
@@ -37,12 +37,35 @@ export function OrderPrintsPanel({ orderId }: { readonly orderId: string }) {
             {data.lotCount > 1 ? (
               <p className="font-medium">{lotText(t, lot.lot, data.lotCount)}</p>
             ) : null}
+            {data.lotCount > 1 && (lot.items ?? []).length > 0 ? (
+              <p data-testid="order-lot-items">
+                {(lot.items ?? [])
+                  .map(
+                    (item) =>
+                      `${String(item.qty)} × ${item.name === '' ? item.skuCode : item.name}`,
+                  )
+                  .join(', ')}
+              </p>
+            ) : null}
             <Tally label={t('lb.doc.label')} tally={lot.label} />
             <Tally label={t('lb.doc.packing_slip')} tally={lot.slip} />
+            {lot.packedAt === null || lot.packedAt === undefined ? null : (
+              <p className="text-xs text-muted-foreground">
+                {`${t('lb.lots.packedAt')}: `}
+                <DateTime value={lot.packedAt} />
+              </p>
+            )}
             {lot.handedAt === null ? null : (
               <p className="text-xs text-muted-foreground">
                 {`${t('lb.handover.done')}: `}
                 <DateTime value={lot.handedAt} />
+                {lot.handedBy === null || lot.handedBy === undefined ? '' : ` · ${lot.handedBy}`}
+              </p>
+            )}
+            {lot.back === null || lot.back === undefined ? null : (
+              <p className="text-xs text-muted-foreground" data-testid="order-lot-back">
+                {`${t('lb.lots.back')}: ${String(lot.back.pieces)} ${t('lb.lots.pieces')} `}
+                {lot.back.at === null ? null : <DateTime value={lot.back.at} />}
               </p>
             )}
           </li>

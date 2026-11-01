@@ -1311,12 +1311,16 @@ export async function insertHandoverScan(
 }
 
 /** Orders with a handover scan in the last day: the handover's list until they ship. */
-export async function recentHandoverOrders(tx: Tx, orgId: string): Promise<string[]> {
+export async function handoverOrdersStillPacked(
+  tx: Tx,
+  orgId: string,
+  orderInScope: SQL,
+): Promise<string[]> {
   const rows = await tx.execute<{ order_id: string }>(sql`
-    select order_id from packing.handover_scans
-    where org_id = ${orgId} and scanned_at > now() - interval '1 day'
-    group by order_id
-    order by min(scanned_at)
+    select s.order_id from packing.handover_scans s
+    where s.org_id = ${orgId} and ${orderInScope}
+    group by s.order_id
+    order by min(s.scanned_at)
     limit 300
   `);
   return rows.map((row) => row.order_id);

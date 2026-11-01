@@ -16,6 +16,8 @@ import {
   printSummary,
   printerOnline,
   printerShownState,
+  lotContents,
+  piecesByLot,
 } from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
 
@@ -29,6 +31,8 @@ import { GotenbergClient } from '../files/pdf/gotenberg.client.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi } from '../orders/orders.api.js';
 import * as repo from './labels.repository.js';
+import * as rec from './recording.repository.js';
+import * as station from './station.repository.js';
 import { PACKING_QUEUES, type SendPrintPayload } from './packing.queues.js';
 import { destinationRefusal } from './printers/destination.js';
 import {
@@ -597,7 +601,8 @@ export class PrintingService {
 
   /**
    * One order's prints (D-818): each lot's label and slip, how many times and the newest, and
-   * the whole history. "Printed 3 times, last 17 Oct 14:02 by Rahim at Label 1."
+   * the whole history. "Printed 3 times, last 17 Oct 14:02 by Rahim at Label 1." And each lot's
+   * record (M53, D-948): what went in it, when it was packed and handed over, what came back.
    */
   async orderPrints(context: ActiveContext, request: object, orderId: string) {
     return mapPackingErrors(() =>
@@ -605,14 +610,31 @@ export class PrintingService {
         if (!(await this.orders.orderVisibleTo(tx, context.orgId, orderId, request))) {
           throw new PackingError('NOT_FOUND', 'No such order.');
         }
-        const [jobs, lotCount, names, printers, terminals, handover] = await Promise.all([
-          repo.jobsOfOrders(tx, context.orgId, [orderId]),
-          repo.lotCountOf(tx, context.orgId, orderId),
-          this.names(tx, context.orgId),
-          repo.printersOf(tx, context.orgId),
-          repo.terminalsOf(tx, context.orgId),
-          repo.handoverScansOf(tx, context.orgId, [orderId]),
+        const [jobs, lotCount, names, printers, terminals, handover, facts, packing, returning] =
+          await Promise.all([
+            repo.jobsOfOrders(tx, context.orgId, [orderId]),
+            repo.lotCountOf(tx, context.orgId, orderId),
+            this.names(tx, context.orgId),
+            repo.printersOf(tx, context.orgId),
+            repo.terminalsOf(tx, context.orgId),
+            repo.handoverScansOf(tx, context.orgId, [orderId]),
+            this.orders.packingFacts(tx, context.orgId, [orderId]),
+            station.sessionByOrder(tx, context.orgId, orderId, 'pack'),
+            station.sessionByOrder(tx, context.orgId, orderId, 'return'),
+          ]);
+        const [packScans, closures, returnScans, bags] = await Promise.all([
+          packing === undefined ? [] : station.scansOf(tx, context.orgId, packing.id),
+          packing === undefined ? [] : repo.closuresOf(tx, context.orgId, packing.id),
+          returning === undefined ? [] : station.scansOf(tx, context.orgId, returning.id),
+          returning === undefined ? [] : rec.recordingsOf(tx, context.orgId, returning.id),
         ]);
+        const contents = lotContents(
+          packScans.map((row) => ({ lot: row.lot_no, skuId: row.sku_id, outcome: row.outcome })),
+        );
+        const back = piecesByLot(
+          returnScans.map((row) => ({ lot: row.lot_no, outcome: row.outcome })),
+        );
+        const lineOf = new Map((facts[0]?.lines ?? []).map((line) => [line.skuId, line]));
         const terminalName = new Map(terminals.map((terminal) => [terminal.id, terminal.name]));
         const summaryOf = (document: PrintedDocument, lot: number) => {
           const summary = printSummary(
@@ -646,12 +668,34 @@ export class PrintingService {
         return {
           orderId,
           lotCount,
-          lots: Array.from({ length: lotCount }, (_, index) => ({
-            lot: index + 1,
-            label: summaryOf('label', index + 1),
-            slip: summaryOf('packing_slip', index + 1),
-            handedAt: iso(handover.find((scan) => scan.lot_no === index + 1)?.scanned_at ?? null),
-          })),
+          lots: Array.from({ length: lotCount }, (_, index) => {
+            const lot = index + 1;
+            const handed = handover.find((scan) => scan.lot_no === lot);
+            const closure = closures.find((row) => row.lot_no === lot);
+            const bag = bags.filter((row) => row.lot_no === lot).at(-1);
+            return {
+              lot,
+              label: summaryOf('label', lot),
+              slip: summaryOf('packing_slip', lot),
+              handedAt: iso(handed?.scanned_at ?? null),
+              handedBy: handed === undefined ? null : (names.get(handed.scanned_by) ?? null),
+              // What went in it, as the packer scanned it; none for an order packed at the desk.
+              items: [...(contents.get(lot) ?? [])].map(([skuId, qty]) => ({
+                skuId,
+                skuCode: lineOf.get(skuId)?.skuCode ?? '',
+                name: lineOf.get(skuId)?.productName ?? '',
+                qty,
+              })),
+              packedAt: iso(
+                closure?.closed_at ?? (lotCount === 1 ? (packing?.completed_at ?? null) : null),
+              ),
+              // Its bag opened at the return station.
+              back:
+                bag === undefined
+                  ? null
+                  : { pieces: back.get(lot) ?? 0, at: iso(bag.stopped_at ?? bag.started_at) },
+            };
+          }),
           history: [...jobs]
             .reverse()
             .map((job) => this.presentJob(job, names, printers, terminals)),

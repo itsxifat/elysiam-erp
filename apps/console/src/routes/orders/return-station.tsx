@@ -378,6 +378,7 @@ function Station({
       lot,
       state,
       pieces: view.lots.pieces.find((entry) => entry.lot === lot)?.pieces ?? 0,
+      expected: view.lots.pieces.find((entry) => entry.lot === lot)?.expected ?? null,
       video: recording === undefined ? null : lotVideoPhase(recording, view.videos),
     };
   });

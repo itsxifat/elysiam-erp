@@ -1,2 +1,2 @@
-ALTER TABLE "packing"."settings" ADD COLUMN "lot_ask_above_pieces" integer;--> statement-breakpoint
+ALTER TABLE "packing"."settings" ADD COLUMN "lot_ask_above_pieces" integer DEFAULT 5;--> statement-breakpoint
 ALTER TABLE "packing"."settings" ADD CONSTRAINT "packing_settings_lot_ask" CHECK ("packing"."settings"."lot_ask_above_pieces" is null or "packing"."settings"."lot_ask_above_pieces" between 1 and 500);

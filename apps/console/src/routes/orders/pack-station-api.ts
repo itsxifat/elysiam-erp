@@ -438,7 +438,12 @@ export interface ReturnView {
     /** The bag being opened now, if any. */
     readonly recording: number | null;
     readonly done: readonly number[];
-    readonly pieces: readonly { readonly lot: number; readonly pieces: number }[];
+    /** M53 (D-948): `expected` is what went out in the bag, when the station packed it. */
+    readonly pieces: readonly {
+      readonly lot: number;
+      readonly pieces: number;
+      readonly expected?: number | null;
+    }[];
   };
   readonly cameraIds: readonly string[];
   readonly you: PersonRef;

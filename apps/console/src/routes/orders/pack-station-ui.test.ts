@@ -112,8 +112,8 @@ describe('scanning at the table', () => {
     expect(isOrderSlip('2610000043', order)).toBe(false);
     expect(isOrderSlip('261000004302', order)).toBe(false);
     expect(isOrderSlip('ELY-2610-00043-L2', order)).toBe(false);
-    // Twelve digits that are not a lot (lot 00, lot 21) are not this order's.
-    expect(isOrderSlip('261000004200', order)).toBe(false);
+    // Lot 00 is the label of an order in one lot (D-946); twelve digits that are no lot are not.
+    expect(isOrderSlip('261000004200', order)).toBe(true);
     expect(isOrderSlip('261000004221', order)).toBe(false);
   });
 

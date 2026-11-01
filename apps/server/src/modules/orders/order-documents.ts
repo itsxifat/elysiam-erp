@@ -9,7 +9,7 @@ import {
   takaText,
   type Poisha,
 } from '@elysium/domain';
-import { lotCode, lotScanCode, orderScanCode } from '@elysium/domain/packing';
+import { lotCode, lotScanCode, orderScanCode, soleLotScanCode } from '@elysium/domain/packing';
 
 import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fonts.js';
 
@@ -137,16 +137,17 @@ function lotOf(data: OrderDocumentData): { readonly no: number; readonly count: 
 }
 
 /**
- * What the page's barcode carries (D-806, D-912): the order's ten digits, or for one
- * lot of several the lot's twelve (`261000004202`), which the packing station and the handover
- * read back. The owner: the brand's letters in front of the number printed hazy and the scanner
- * missed them; digits alone pair into half the symbols, so the bars can be twice as wide. An
- * order with no digits-only code (a counter past six digits) prints its order number or lot code
- * (`ELY-2610-00042-L2`) as before, and those still scan.
+ * What the page's barcode carries (D-806, D-912, D-946): the order's ten digits and two for the
+ * lot, `00` for an order in one lot (`261000004200`) and the lot's own for one of several
+ * (`261000004202`), which the packing station and the handover read back. The owner: the brand's
+ * letters in front of the number printed hazy and the scanner missed them; digits alone pair into
+ * half the symbols, so the bars can be twice as wide. An order with no digits-only code (a counter
+ * past six digits) prints its order number or lot code (`ELY-2610-00042-L2`) as before, and those
+ * still scan.
  */
 export function documentBarcodeValue(data: OrderDocumentData): string {
   const lot = lotOf(data);
-  if (lot === null) return orderScanCode(data.orderNo) ?? data.orderNo;
+  if (lot === null) return soleLotScanCode(data.orderNo) ?? data.orderNo;
   return lotScanCode(data.orderNo, lot.no) ?? lotCode(data.orderNo, lot.no);
 }
 
@@ -472,7 +473,11 @@ function masthead(
   paper: DocumentPaper,
   options: { readonly barcode: boolean } = { barcode: true },
 ): string {
-  const value = documentBarcodeValue(data);
+  // An invoice names the order, not a bag: its own ten digits, unless it was printed for one lot.
+  const value =
+    lotOf(data) === null
+      ? (orderScanCode(data.orderNo) ?? data.orderNo)
+      : documentBarcodeValue(data);
   // D-912: the digits are half the symbols the order number was, so the bars grow from 0.3 mm to
   // 0.5 mm and the code still takes less of the header than the order number's 63 mm did.
   const barcode = paper === 'a4' ? orderBarcode(value, 0.5, 12) : orderBarcode(value, 0.4, 9);

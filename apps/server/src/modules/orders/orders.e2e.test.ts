@@ -389,7 +389,10 @@ describe('invariant 7, over HTTP', () => {
     const order = await takeOrder(admin, {
       lines: [{ skuId: scarce, qty: 100_000, unitPricePoisha: '100' }],
     });
-    const refused = await admin.client.request('POST', `/v1/orders/${order.id}/confirm`);
+    // An order this size is asked how many lots first (D-941): answered, the stock refuses it.
+    const refused = await admin.client.request('POST', `/v1/orders/${order.id}/confirm`, {
+      body: { lots: 1 },
+    });
     expect(refused.statusCode).toBe(409);
     expect(errorCode(refused)).toBe('STOCK_INSUFFICIENT');
 

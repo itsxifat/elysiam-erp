@@ -1,10 +1,19 @@
-import { Button, Dialog, Select, controlClassName, poishaToTaka, takaToPoisha } from '@elysium/ui';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  Select,
+  controlClassName,
+  poishaToTaka,
+  takaToPoisha,
+} from '@elysium/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { setParcelStatus, type ParcelRow } from '../courier/api.js';
 import { ReceiveDialog } from '../courier/returns.js';
+import { orderPrints } from '../labels/api.js';
 import {
   cancelOrder,
   confirmOrder,
@@ -21,7 +30,7 @@ import {
 } from './api.js';
 import { ConfirmLotsDialog } from './confirm-lots-dialog.js';
 import { useOrdersT, type OrdersMessageKey } from './messages.js';
-import { offeredActions } from './order-actions-logic.js';
+import { deliveredFromLots, offeredActions } from './order-actions-logic.js';
 import { useOwnerGuard } from './owner-guard.js';
 import { liveParcelOf, useOrderParcels } from './parcel-panel.js';
 import { RETURN_REASONS, type ReturnReason } from './returns-logic.js';
@@ -224,6 +233,19 @@ function ActionDialog({
     Object.fromEntries(order.lines.map((line) => [line.skuId, String(line.qty)])),
   );
   const [problem, setProblem] = useState<string | null>(null);
+  // M53 (D-948): an order packed in several lots fills its quantities from the lots delivered.
+  const lotRecord = useQuery({
+    queryKey: ['labels', 'order', order.id],
+    queryFn: () => orderPrints(order.id),
+    enabled: trigger === 'deliver_partially',
+    retry: false,
+  });
+  const lotChoices =
+    (lotRecord.data?.lotCount ?? 1) > 1 &&
+    (lotRecord.data?.lots ?? []).every((lot) => (lot.items ?? []).length > 0)
+      ? (lotRecord.data?.lots ?? [])
+      : [];
+  const [deliveredLots, setDeliveredLots] = useState<ReadonlySet<number>>(new Set());
 
   const collectedPoisha = takaToPoisha(collected);
   const differs = collectedPoisha !== null && collectedPoisha !== cod;
@@ -407,6 +429,28 @@ function ActionDialog({
         {trigger === 'deliver_partially' ? (
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">{t('orders.action.partialLines')}</legend>
+            {lotChoices.length === 0 ? null : (
+              <div className="flex flex-wrap items-center gap-3" data-testid="partial-lots">
+                <span className="text-sm text-muted-foreground">
+                  {t('orders.action.partialLots')}
+                </span>
+                {lotChoices.map((lot) => (
+                  <label key={lot.lot} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={deliveredLots.has(lot.lot)}
+                      onCheckedChange={() => {
+                        const next = new Set(deliveredLots);
+                        if (next.has(lot.lot)) next.delete(lot.lot);
+                        else next.add(lot.lot);
+                        setDeliveredLots(next);
+                        setDelivered(deliveredFromLots(lotChoices, next, order.lines));
+                      }}
+                    />
+                    {`${t('orders.action.partialLot')} ${String(lot.lot)}`}
+                  </label>
+                ))}
+              </div>
+            )}
             {order.lines.map((line) => (
               <div key={line.skuId} className="flex items-center gap-3">
                 <ProductImage skuId={line.skuId} alt={line.productName} size="xs" />

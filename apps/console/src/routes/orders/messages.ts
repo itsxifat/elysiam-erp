@@ -340,6 +340,8 @@ const ORDERS_KEYS = [
   'orders.action.note',
   'orders.action.choose',
   'orders.action.reasonNeeded',
+  'orders.action.partialLots',
+  'orders.action.partialLot',
   'orders.lots.title',
   'orders.lots.pieces',
   'orders.lots.help',

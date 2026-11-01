@@ -381,8 +381,9 @@ export class ReturnStationService {
         if (!isReturnReasonCode(input.returnReason)) {
           throw new PackingError('RETURN_RECEIPT_INVALID', 'Choose why the parcel came back.');
         }
+        const scans = await repo.scansOf(tx, context.orgId, sessionId);
         const back = packedCounts(
-          (await repo.scansOf(tx, context.orgId, sessionId)).map((row) => ({
+          scans.map((row) => ({
             skuId: row.sku_id,
             outcome: row.outcome as PackScanOutcome,
           })),
@@ -489,6 +490,10 @@ export class ReturnStationService {
             receiptId: received.receiptId,
             pieces: [...back.values()].reduce((sum, qty) => sum + qty, 0),
             damaged: [...damaged.values()].reduce((sum, qty) => sum + qty, 0),
+            // M53 (D-948): what came back in which bag.
+            lots: Object.fromEntries(
+              piecesByLot(scans.map((row) => ({ lot: row.lot_no, outcome: row.outcome }))),
+            ),
           },
           request,
         });
@@ -876,6 +881,17 @@ export class ReturnStationService {
     const lotPieces = piecesByLot(scans.map((row) => ({ lot: row.lot_no, outcome: row.outcome })));
     const unitsExpected = lines.reduce((sum, line) => sum + line.expected, 0);
     const unitsBack = lines.reduce((sum, line) => sum + line.back, 0);
+    // M53 (D-948): what the packer put in each bag, when it went through the station.
+    const packing = await repo.sessionByOrder(tx, orgId, session.order_id, 'pack');
+    const wentOut =
+      packing === undefined
+        ? new Map<number, number>()
+        : piecesByLot(
+            (await repo.scansOf(tx, orgId, packing.id)).map((row) => ({
+              lot: row.lot_no,
+              outcome: row.outcome,
+            })),
+          );
     return {
       kind: 'return' as const,
       idlePauseMs: idleMs,
@@ -888,6 +904,7 @@ export class ReturnStationService {
         pieces: Array.from({ length: lotCount }, (_, index) => ({
           lot: index + 1,
           pieces: lotPieces.get(index + 1) ?? 0,
+          expected: wentOut.get(index + 1) ?? null,
         })),
       },
       cameraIds: [...(session.camera_id === null ? [] : [session.camera_id]), ...extraCameras],

@@ -289,11 +289,23 @@ export const readyForLabel = (locationId: string | undefined) =>
 export const setLotCount = (orderId: string, count: number) =>
   api.put<{ lotCount: number }>(`/v1/packing/orders/${orderId}/lots`, { count });
 
+/** What went in a lot, as the packer scanned it (M53, D-948). */
+export interface LotItem {
+  readonly skuId: string;
+  readonly skuCode: string;
+  readonly name: string;
+  readonly qty: number;
+}
+
 export interface OrderPrints {
   readonly orderId: string;
   readonly lotCount: number;
   readonly lots: readonly {
     readonly lot: number;
+    readonly items?: readonly LotItem[];
+    readonly packedAt?: string | null;
+    readonly handedBy?: string | null;
+    readonly back?: { readonly pieces: number; readonly at: string | null } | null;
     readonly label: PrintTally;
     readonly slip: PrintTally;
     readonly handedAt: string | null;
