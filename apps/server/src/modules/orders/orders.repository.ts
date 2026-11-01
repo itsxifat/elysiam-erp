@@ -695,15 +695,15 @@ export async function orgSlug(tx: Tx, orgId: string): Promise<string> {
  *
  * A brand that has never chosen has no row, and that is `on_confirm` (D-927): a confirmed
  * order goes to its courier and comes back with a consignment, as the owner asked. Only a
- * brand that picks `on_pack` or `manual` in Settings → Order workflow waits. An order whose
- * courier cannot be booked here (an own rider, no account) still confirms (D-901).
+ * brand that picks `manual` in Settings → Order workflow waits. An order whose courier cannot be
+ * booked here (an own rider, no account) still confirms (D-901). A saved `on_pack` reads as
+ * `on_confirm` (D-928): packing waits for the label, which waits for the booking.
  */
 export async function courierBookingSetting(tx: Tx, orgId: string): Promise<CourierBookingPolicy> {
   const rows = await tx.execute<{ value: unknown }>(sql`
     select value from org.settings where org_id = ${orgId} and key = 'orders.courier_booking'
   `);
-  const value = rows[0]?.value;
-  return value === 'on_pack' || value === 'manual' ? value : 'on_confirm';
+  return rows[0]?.value === 'manual' ? 'manual' : 'on_confirm';
 }
 
 /**

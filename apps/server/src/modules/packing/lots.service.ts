@@ -46,14 +46,38 @@ function lotWords(lots: readonly number[]): string {
 }
 
 /**
+ * D-928: every lot's label printed, at the order's current lot count and with its consignment (a
+ * "Not booked" label is not the order's label). What packing waits for: the desk's Pack, the
+ * station's opening scan and its Finish.
+ */
+export async function assertLabelsPrinted(
+  tx: Tx,
+  input: { readonly orgId: string; readonly orderId: string; readonly orderNo: string },
+): Promise<void> {
+  const lotCount = await labels.lotCountOf(tx, input.orgId, input.orderId);
+  const printed = await labels.printedCounts(tx, input.orgId, [input.orderId]);
+  const missing = Array.from({ length: lotCount }, (_, index) => index + 1).filter(
+    (lot) => (printed.get(`${input.orderId}:label:${String(lot)}`) ?? 0) === 0,
+  );
+  if (missing.length === 0) return;
+  throw new PackingError(
+    'ORDER_LABEL_NOT_PRINTED',
+    lotCount === 1
+      ? `Order ${input.orderNo}'s label is not printed yet: print it from Ready for label before packing.`
+      : `Order ${input.orderNo} goes in ${String(lotCount)} lots: print the label of ${lotWords(missing)} before packing.`,
+  );
+}
+
+/**
  * Lots and the handover (M46, D-805 to D-808), and the two hooks the orders module calls:
  *
  * - **the parcel observer**: in the confirm's transaction the order is kept as ready for its
  *   label (D-914); in the courier's booking transaction the row gains its consignment (D-817); a
  *   booking that failed for good keeps it ready without one (D-914). Nothing prints by itself
  *   (D-917): the order waits in "Ready for label" until a person prints it, one or many at once;
- * - **the handover guard**: a person's Ship of an order in several lots is refused until every
- *   lot's label was scanned at the handover (D-808).
+ * - **the handover guard**: a Pack is refused until every lot's label was printed with its
+ *   consignment (D-928), and a person's Ship of an order in several lots until every lot's label
+ *   was scanned at the handover (D-808).
  *
  * The lot count and an order's handover scans change one at a time per order (an advisory lock),
  * and a count change also waits for the order's open packing session, so a scan at the station
@@ -147,6 +171,17 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
       orderNo: order.orderNo,
       locationId: order.locationId,
     });
+  }
+
+  /**
+   * D-928: an order is packed only once every lot's label was printed with its consignment. Asked
+   * by the orders module's Pack (the desk's and the station's Finish) with the order's row locked.
+   */
+  async assertPackable(
+    tx: Tx,
+    input: { readonly orgId: string; readonly orderId: string; readonly orderNo: string },
+  ): Promise<void> {
+    await assertLabelsPrinted(tx, input);
   }
 
   /**

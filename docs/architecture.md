@@ -879,9 +879,9 @@ Implement this as an exhaustive, tested transition table:
 | pending                                | cancelled           | Agent                                                                                    | None                                                                         |
 | confirmed                              | on_hold             | Agent or fraud rule                                                                      | Keep the reservation                                                         |
 | on_hold                                | confirmed           | Agent                                                                                    | None                                                                         |
-| confirmed                              | packed              | Warehouse                                                                                | If the setting is `on_pack`, enqueue booking                                 |
+| confirmed                              | packed              | Warehouse, once every lot's label is printed with its consignment (D-928)                | None (`on_pack` booking is retired, D-928)                                   |
 | confirmed, packed                      | cancelled           | Agent or admin                                                                           | Release the reservation. Enqueue a courier cancel if the order was booked.   |
-| confirmed, packed                      | shipped             | Handover to courier                                                                      | Consume the reservation, create the dispatch movement, post goods in transit |
+| confirmed, packed                      | shipped             | Handover to courier: a person's only from `packed`, a courier's own pickup from either   | Consume the reservation, create the dispatch movement, post goods in transit |
 | shipped                                | delivered           | Courier status                                                                           | Post revenue, delivery income and COGS; update customer stats                |
 | shipped                                | partially_delivered | Courier status plus delivered lines                                                      | Post the delivered part; the rest follows the return path                    |
 | shipped                                | return_in_transit   | Courier status                                                                           | None                                                                         |
@@ -891,6 +891,7 @@ Implement this as an exhaustive, tested transition table:
 Notes:
 
 - Once an order is shipped it can't be cancelled; it becomes a return.
+- The hub's order of work (D-928): confirmed, booked with the courier (on Confirm by default, D-927), its label printed with the consignment, packed, handed over. Ready for label lists only booked orders and a label prints only with a consignment; Pack (the desk's and the station's) needs every lot's label printed; a person's Ship and the courier's Confirm handover need the order packed.
 - Every transition writes an outbox event and an audit row.
 - Until courier sync covers a status, staff can set `delivered`, `partially_delivered` and `returned` manually, with a reason. The postings are the same.
 - M17 adds three effects to the table (D-232 to D-234): `apply_advances` after the delivery postings (each verified advance records its share of what the delivery applied, oldest first, after any exchange credit), `settle_advances` on every cancel and every received return (what is left is kept or owed back, per the brand's policy), and `record_return_reason` on `receive_return` and `exchange`, which the machine refuses without a reason code from the fixed list.
@@ -1983,8 +1984,8 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   multi-lot order is refused through the orders module's `HandoverGuardRegistry`. One
   consignment per order; no courier is sent a lot count (none documents one, D-809).
 - **Booking, printing and the handover, as run** (D-900 to D-905): Settings → Order workflow
-  chooses when the courier is booked (`orders.courier_booking`: on confirm, on pack, by hand),
-  and booking is what starts auto-print. A browser printer prints from every page of a
+  chooses when the courier is booked (`orders.courier_booking`: on confirm, the default since
+  D-927, or by hand; on pack retired, D-928), and booking is what puts an order in Ready for label. A browser printer prints from every page of a
   computer bound to its label terminal (the work dock's `BackgroundPrintStation`, one tab per
   browser by a Web Lock), so its Online is printing. The courier portal (`/courier-portal`)
   ships each order the moment its last lot is scanned. Every ship records the parcel's

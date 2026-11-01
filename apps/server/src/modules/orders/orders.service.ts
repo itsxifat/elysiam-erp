@@ -1858,13 +1858,7 @@ export class OrdersService {
         if (PARCEL_RECORDED.includes(trigger)) {
           await this.transitions.assertNoLiveParcel(tx, context.orgId, order.id);
         }
-        if (trigger === 'ship') {
-          await this.handover.assertShippable(tx, {
-            orgId: context.orgId,
-            orderId: order.id,
-            orderNo: order.order_no,
-          });
-        }
+        await this.assertWorkflowStep(tx, context.orgId, order, trigger);
         if (trigger === 'ship' && options.courierId != null) {
           await this.transitions.assertCourierChangeAllowed(
             tx,
@@ -1900,8 +1894,37 @@ export class OrdersService {
   ): Promise<{ from: OrderStatus; to: OrderStatus }> {
     const order = await repo.orderForUpdate(tx, context.orgId, orderId);
     if (order === undefined) throw new OrdersError('ORDER_NOT_FOUND', 'No such order.');
+    await this.assertWorkflowStep(tx, context.orgId, order, trigger);
     const moved = await this.transitions.move(tx, context, request, order, trigger, options);
     return { from: moved.result.from, to: moved.result.to };
+  }
+
+  /**
+   * The hub's order of work (D-928): booked, its label printed, packed, then handed over. A Pack
+   * (the desk's, the bulk one, the station's Finish) needs every lot's label printed with its
+   * consignment, which the packing module answers; a person's Ship needs the order packed, and an
+   * order in several lots every lot scanned at the handover (D-808). The order is locked already.
+   * A courier's own status that ships an order does not come through here: the courier has it.
+   */
+  private async assertWorkflowStep(
+    tx: Tx,
+    orgId: string,
+    order: repo.OrderRow,
+    trigger: OrderTrigger,
+  ): Promise<void> {
+    const input = { orgId, orderId: order.id, orderNo: order.order_no };
+    if (trigger === 'pack' && order.status === 'confirmed') {
+      await this.handover.assertPackable(tx, input);
+    }
+    if (trigger === 'ship') {
+      if (order.status === 'confirmed') {
+        throw new OrdersError(
+          'ORDER_NOT_PACKED',
+          `Order ${order.order_no} is not packed yet: print its label and pack it before it goes to the courier.`,
+        );
+      }
+      await this.handover.assertShippable(tx, input);
+    }
   }
 
   // --- the queue (M10, M41: D-711, D-712) ---------------------------------------------
@@ -2960,7 +2983,11 @@ const DESK_ACT_TRIGGERS: ReadonlySet<OrderTrigger> = new Set<OrderTrigger>([
  * desk's acts and the owner's acknowledgement, so the console offers only those.
  */
 function transitionsFor(context: ActiveContext, order: repo.OrderRow) {
-  const all = transitionsFrom(order.status as OrderStatus);
+  // D-928: §9 keeps `confirmed → shipped` for a courier's own pickup, but a person ships only a
+  // packed order, so the order page never offers it.
+  const all = transitionsFrom(order.status as OrderStatus).filter(
+    (row) => !(order.status === 'confirmed' && row.trigger === 'ship'),
+  );
   if (
     !context.roles.includes('sales') ||
     orderInActScope(context, {

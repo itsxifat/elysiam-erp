@@ -43,6 +43,10 @@ const STATUS: Partial<Record<ErrorCode, number>> = {
   ORDER_LOTS_NOT_HANDED: 409,
   ORDER_ALREADY_HANDED: 409,
   ORDER_NOT_FOUND: 404,
+  // D-928: booked, labelled, packed, handed over, in that order.
+  LABEL_NOT_BOOKED: 409,
+  ORDER_LABEL_NOT_PRINTED: 409,
+  ORDER_NOT_PACKED: 409,
 };
 
 export class PackingError extends Error {

@@ -51,11 +51,12 @@ export const deskProfileSchema = z
 export type DeskProfileInput = z.infer<typeof deskProfileSchema>;
 
 /**
- * When the courier is booked (§9's `orders.courier_booking`, D-901): as the order is confirmed,
- * as it is packed, or only when a person books it. Booking gives the parcel its consignment,
- * and the label prints by itself from there (D-817).
+ * When the courier is booked (§9's `orders.courier_booking`, D-901): as the order is confirmed
+ * (the default, D-927), or only when a person books it. Booking gives the parcel its consignment,
+ * and only then can its label be printed; packing waits for the label (D-928), so "as it is
+ * packed" is no longer a choice.
  */
-export const COURIER_BOOKING_POLICIES = ['on_confirm', 'on_pack', 'manual'] as const;
+export const COURIER_BOOKING_POLICIES = ['on_confirm', 'manual'] as const;
 export type CourierBookingPolicy = (typeof COURIER_BOOKING_POLICIES)[number];
 
 /** Settings → Order workflow (D-715; the booking and the courier's hours, D-901, D-903). */

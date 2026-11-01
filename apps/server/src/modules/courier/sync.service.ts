@@ -1125,6 +1125,15 @@ export class CourierSyncService {
           'This parcel is not booked with the courier yet.',
         );
       }
+      // D-928: a person hands over only a packed order (its label printed, then packed). Before
+      // the confirmation is written, so a refused handover leaves no trace on the parcel.
+      const current = await this.orders.statusOf(tx, context.orgId, consignment.order_id);
+      if (current?.status === 'confirmed') {
+        throw new CourierError(
+          'ORDER_NOT_PACKED',
+          `Order ${consignment.reference} is not packed yet: print its label and pack it before it goes to the courier.`,
+        );
+      }
 
       const confirmed = await repo.confirmHandover(tx, {
         orgId: context.orgId,
@@ -1145,14 +1154,15 @@ export class CourierSyncService {
        * "picked up" comes second finds the order `shipped` and moves nothing — and the handover
        * journal's key (`order:<id>:handover`) posts once whatever happens.
        *
-       * Only from `confirmed` or `packed`. An order on hold is "do not ship", and a person
-       * decides what a signed-for parcel on a held order means. The dispatch is dated at the
-       * handover, so a handover dated outside today or yesterday is refused here as every
-       * order event is (`postingInstant`): a back-dated movement needs §7's approval.
+       * Only from `packed` (D-928; a confirmed order was refused above). An order on hold is
+       * "do not ship", and a person decides what a signed-for parcel on a held order means. The
+       * dispatch is dated at the handover, so a handover dated outside today or yesterday is
+       * refused here as every order event is (`postingInstant`): a back-dated movement needs
+       * §7's approval.
        */
       let orderTo: string | null = null;
       const order = await this.orders.statusOf(tx, context.orgId, consignment.order_id);
-      if (order !== null && (order.status === 'confirmed' || order.status === 'packed')) {
+      if (order !== null && order.status === 'packed') {
         if (!withinPostingWindow(at)) {
           throw new CourierError(
             'APPROVAL_REQUIRED',

@@ -213,6 +213,19 @@ export class PrintingService {
           repo.openJobsByTerminal(tx, context.orgId),
         ]);
         const stationSeen = await this.stationsSeen(tx, context.orgId);
+        const consignmentOf = (order: (typeof facts)[number]): string | null =>
+          labelOrders.get(order.id)?.consignmentNo ?? order.parcel?.consignmentNo ?? null;
+        // D-928: a label carries the courier's consignment, so it prints only once the order is
+        // booked; the whole request is refused, naming the order, rather than printing half of it.
+        if (input.documents.includes('label')) {
+          const unbooked = facts.find((order) => consignmentOf(order) === null);
+          if (unbooked !== undefined) {
+            throw new PackingError(
+              'LABEL_NOT_BOOKED',
+              `Order ${unbooked.orderNo} is not booked with a courier yet: its label prints once the courier gives it a consignment number.`,
+            );
+          }
+        }
 
         interface Planned {
           order: (typeof facts)[number];
@@ -291,10 +304,7 @@ export class PrintingService {
             reason: isReprint(entry.printedBefore) ? (input.reason ?? null) : null,
             requestedBy: context.userId,
             copies: input.copies ?? printer.copies,
-            consignmentNo:
-              labelOrders.get(entry.order.id)?.consignmentNo ??
-              entry.order.parcel?.consignmentNo ??
-              null,
+            consignmentNo: consignmentOf(entry.order),
           });
           if (job === undefined) throw new Error('a print job was not written');
           openJobs.set(printer.terminal_id, (openJobs.get(printer.terminal_id) ?? 0) + 1);
@@ -524,10 +534,10 @@ export class PrintingService {
 
   /**
    * Confirmed orders with a lot whose label has not printed, inside the caller's scope, at their
-   * location (or every location), oldest first (D-817). Since D-914 an order is here from its
-   * Confirm, with its consignment once the courier gives one (`consignmentNo` null until then).
-   * The status is part of the query, so orders that moved on (cancelled, packed, shipped) never
-   * take the page's places.
+   * location (or every location), oldest first (D-817). Since D-928 an order is here only once the
+   * courier has booked it, with its consignment; one still waiting for its booking, or whose
+   * booking failed, is not (Book now on the order brings it). The status is part of the query, so
+   * orders that moved on (cancelled, packed, shipped) never take the page's places.
    */
   async ready(context: ActiveContext, request: object, query: ReadyForLabelQuery) {
     return withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {

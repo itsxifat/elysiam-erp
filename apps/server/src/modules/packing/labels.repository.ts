@@ -905,7 +905,9 @@ export async function printedCounts(
 ): Promise<Map<string, number>> {
   if (orderIds.length === 0) return new Map();
   // A page printed for another lot count ("Lot 1 of 2" when there are now 3) is not this
-  // order's page any more: only prints at the order's current count are counted (D-805).
+  // order's page any more: only prints at the order's current count are counted (D-805). Nor is
+  // a label printed with no consignment ("Not booked", before D-928): the order's real label is
+  // still to print, and it is not a reprint.
   const rows = await tx.execute<{
     order_id: string;
     document: string;
@@ -917,6 +919,7 @@ export async function printedCounts(
     where j.org_id = ${orgId} and j.order_id = any (${sql.param([...orderIds])}::uuid[])
       and ${options.pending === true ? sql`j.state in ('queued', 'sending', 'printed')` : sql`j.state = 'printed'`}
       and j.lot_count = coalesce(ol.lot_count, 1)
+      and (j.document <> 'label' or j.consignment_no is not null)
     group by j.order_id, j.document, j.lot_no
   `);
   return new Map(
@@ -1060,7 +1063,9 @@ export interface LabelOrderRow extends Record<string, unknown> {
 /**
  * Orders ready for their label with a lot whose label has not printed yet, oldest first, inside
  * the caller's scope (`orderInScope` on `lo.order_id`, which the orders module also limits to
- * the statuses the caller asks for, so an order that moved on never fills the page).
+ * the statuses the caller asks for, so an order that moved on never fills the page). Only an
+ * order booked with its courier is ready (D-928): its label carries the consignment, and a label
+ * printed without one does not count.
  */
 export async function labelOrdersReady(
   tx: Tx,
@@ -1076,10 +1081,12 @@ export async function labelOrdersReady(
            coalesce(ol.lot_count, 1) as lot_count,
            (select count(distinct j.lot_no)::int from packing.print_jobs j
              where j.org_id = lo.org_id and j.order_id = lo.order_id and j.document = 'label'
-               and j.state = 'printed' and j.lot_count = coalesce(ol.lot_count, 1)) as labels_printed
+               and j.state = 'printed' and j.consignment_no is not null
+               and j.lot_count = coalesce(ol.lot_count, 1)) as labels_printed
     from packing.label_orders lo
     left join packing.order_lots ol on ol.org_id = lo.org_id and ol.order_id = lo.order_id
     where lo.org_id = ${orgId}
+      and lo.consignment_no is not null
       and ${options.orderInScope}
       and ${
         options.locationId === undefined
@@ -1088,7 +1095,8 @@ export async function labelOrdersReady(
       }
       and (select count(distinct j.lot_no) from packing.print_jobs j
             where j.org_id = lo.org_id and j.order_id = lo.order_id and j.document = 'label'
-              and j.state = 'printed' and j.lot_count = coalesce(ol.lot_count, 1))
+              and j.state = 'printed' and j.consignment_no is not null
+              and j.lot_count = coalesce(ol.lot_count, 1))
           < coalesce(ol.lot_count, 1)
     order by lo.booked_at, lo.order_id
     limit ${options.limit}

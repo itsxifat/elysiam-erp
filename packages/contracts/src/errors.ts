@@ -707,6 +707,12 @@ export const ERROR_CODES = [
   'ORDER_LOTS_NOT_HANDED',
   /** The order is already with the courier: shipped by an earlier scan, a person or the courier (D-904). */
   'ORDER_ALREADY_HANDED',
+  /** A label prints only for an order booked with its courier, carrying the consignment (D-928). */
+  'LABEL_NOT_BOOKED',
+  /** An order is packed only once every lot's label is printed with its consignment (D-928). */
+  'ORDER_LABEL_NOT_PRINTED',
+  /** An order goes to the courier only once it is packed (D-928). */
+  'ORDER_NOT_PACKED',
   // M47: phone calls through Envo (D-830 to D-853)
   /** No Envo connection, extension or call of this brand has that id. */
   'TELEPHONY_NOT_FOUND',

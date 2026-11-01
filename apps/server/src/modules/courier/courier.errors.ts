@@ -64,6 +64,9 @@ const STATUS: Readonly<Partial<Record<ErrorCode, number>>> = {
   RETURN_RECEIPT_INVALID: 400,
   COURIER_RECORD_IMMUTABLE: 409,
 
+  // D-928: a person hands over only a packed order.
+  ORDER_NOT_PACKED: 409,
+
   APPROVAL_REQUIRED: 409,
   IDEMPOTENCY_CONFLICT: 409,
   FORBIDDEN: 403,

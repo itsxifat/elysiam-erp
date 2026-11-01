@@ -37,6 +37,7 @@ import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { ORDERS_API, type OrdersApi, type PackingFacts } from '../orders/orders.api.js';
 import * as cameras from './camera.repository.js';
 import * as labels from './labels.repository.js';
+import { assertLabelsPrinted } from './lots.service.js';
 import { PACKING_QUEUES, type CameraCutPayload } from './packing.queues.js';
 import { ordersForScannedCode, ScannerService } from './scanner.service.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
@@ -119,6 +120,12 @@ export class PackStationService {
           const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
           if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
           this.assertPackable(facts);
+          // D-928: the packer is told at the first scan, not after filling the box.
+          await assertLabelsPrinted(tx, {
+            orgId: context.orgId,
+            orderId,
+            orderNo: facts.orderNo,
+          });
           const settings = await repo.settingsOf(tx, context.orgId);
           const { row, created } = await repo.openSession(tx, {
             orgId: context.orgId,

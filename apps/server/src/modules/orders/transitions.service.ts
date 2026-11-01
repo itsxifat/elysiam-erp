@@ -365,7 +365,7 @@ export class TransitionsService {
   }
 
   /** §9's booking trigger for this org, `on_confirm` until the brand chooses (D-927). */
-  private async bookingPolicy(tx: Tx, orgId: string): Promise<'on_confirm' | 'on_pack' | 'manual'> {
+  private async bookingPolicy(tx: Tx, orgId: string): Promise<'on_confirm' | 'manual'> {
     return repo.courierBookingSetting(tx, orgId);
   }
 

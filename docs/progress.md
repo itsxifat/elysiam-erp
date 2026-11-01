@@ -4009,3 +4009,21 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
 - **Tests:** server typecheck and prettier: PASS. `handover.e2e.test.ts`'s default assertion
   now expects `on_confirm`; not run here (Testcontainers), per the minimal-tests rule.
 - **New dependencies:** none. **Migration:** none.
+
+## 2026-11-01 · fix · booked, labelled, packed, handed over: the order of work is enforced
+
+- **Decision:** D-928. Ready for label lists only booked orders and a label prints only with
+  its consignment; Pack (desk, bulk, the station's opening scan and Finish) needs every lot's
+  label printed; a person's Ship and the courier's Confirm handover need the order packed; the
+  order page stops offering Ship on a confirmed order; `on_pack` booking is retired. A
+  courier's own pickup still ships from `confirmed`.
+- **Live data:** Elysiam has 9 labels printed as "Not booked" before this; those orders return
+  to Ready for label once booked (Book now), and their real label is not a reprint.
+- **Tests:** server and console typecheck, eslint, prettier, `check:i18n`: PASS. The
+  integration and stack suites were not run (minimal-tests rule).
+- **Follow-ups:** `preview:seed` packs and ships through the desk with no label printed, so it
+  now stops at Pack: it needs a label terminal, a printer and a printed label per order. The
+  suites that pack without a label (`labels.e2e`, `packing.e2e`, `handover.e2e`,
+  `order-lifecycle.stack.ts`, `packing.stack.ts`) need the same, plus tests for the new
+  refusals.
+- **New dependencies:** none. **Migration:** none.
