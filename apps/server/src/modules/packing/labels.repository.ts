@@ -348,7 +348,8 @@ export async function completedSince(
 ): Promise<Map<string, number>> {
   const rows = await tx.execute<{ terminal_id: string; n: number }>(sql`
     select terminal_id, count(*)::int as n from packing.sessions
-    where org_id = ${orgId} and terminal_id is not null and status = 'completed'
+    -- M51 (D-934): packings only; a return received at the terminal is no order packed.
+    where org_id = ${orgId} and terminal_id is not null and status = 'completed' and kind = 'pack'
       and completed_at >= ${since.toISOString()}::timestamptz
     group by terminal_id
   `);

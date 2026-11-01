@@ -1997,6 +1997,35 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   `parcel.not_received`). The packing slip's barcode is a strip of its own, 0.5 mm a bar,
   readable when the slip is shrunk onto a 4 × 6 label.
 
+### Label to label, the pause, one video per lot, and the return station (M51, D-930 to D-936)
+
+- **Label to label** (D-930): at the packing station a scan of the parcel's own label (order
+  number or digits, courier codes, a lot's code, `readOrderLabel`) is judged by the server
+  (`judgePackLabelScan`): it starts the open lot's recording, or stops it and closes the lot
+  (the last lot's finishes the order). The scan that opens the order counts. A piece before the
+  label is `PACKING_LABEL_FIRST`; a refused label is a `label` scan (`packing.scans.outcome`).
+- **Recordings** (`packing.recordings`, D-932, D-933): one per session and lot, started at the
+  label scan's own instant (the trigger checks the scan), its source (an IP camera that is on, or
+  this computer's camera), whether a video is expected, and the idle time; stopped once (label,
+  closed, finished, received, timed out), never past fifteen minutes. Every video part names its
+  recording and lot (`packing.videos.recording_id`, `lot_no`).
+- **The pause** (D-931): `recordingSpans` turns a recording's events (its lot's scans) into
+  stretches: each runs to the next event or the idle time (`packing.settings.idle_pause_ms`,
+  10 s default), whichever is first. The browser pauses and resumes its `MediaRecorder` on those
+  edges (the camera opens with the order; one part per lot); an IP camera's lot is cut along the
+  stretches (two seconds of lead each) by `packing.camera_cut` with `recordingId`, enqueued in the
+  stopping transaction, and the camera process stops an IP camera's lot at fifteen minutes. The
+  buffer keeps every uncut lot back to two seconds before its start.
+- **The return station** (D-934, Packaging → Returns, `/v1/packing/returns`): a packing session of
+  kind `return` (one per order; opened for an order on its way back or partly delivered,
+  completed only with it returned). The label starts a bag's recording (`judgeReturnLabelScan`,
+  bags in any order, one at a time); pieces are judged by `judgePackScan` against
+  `OrdersApi.returnableLines` (quantities only); Receive books the courier module's receipt
+  through `COURIER_API.receiveReturn` (`ReturnsService.receiveIn`: receipt, `receive_return`,
+  stock back at the dispatch cost, the journal) in the transaction that completes the session.
+  A return's video is kept thirty days after the receipt (D-935). The order page shows it beside
+  the packing record.
+
 ## 32. Phone calls through Envo (M47, D-830 to D-862)
 
 Staff call customers from the ERP through Envo, the owner's own SIP service. The `telephony`

@@ -1,21 +1,21 @@
 # How much of the ERP is built
 
-Last updated: **2026-10-31** (Order edit, packed-order change, returns with re-priced offers, a product picker that lists every product and scan-to-search everywhere (M50), live on both brands on 2026-10-31 (6026eec4), and the call card moved clear of the caller panel; the inbox workspace (M49) live on both brands (3270008c): a rounder, messaging-style inbox, a tabbed customer panel, the customer's numbers, email and addresses edited from the chat, every product a search finds; customer numbers and people (M48) live on both brands (2026-10-19, 3f8b4184); phone calls through Envo (M47) live on both brands (2026-10-19, e70fe2e9), with the owner's answers of 2026-10-19 (recordings played from Envo, a wrap-up after every call, the caller panel); Labels and Packaging, with terminals, printers and lots (M46), live on both brands; order ownership and auto-assign, the unified inbox, the English-only slips, the alive inbox, selling from the chat and voice messages and calls (M41 to M45) are live too; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
+Last updated: **2026-11-01** (Label-to-label packing videos, a pause after ten seconds with no scan, one video per lot and the return station (M51), built on branch `m51-label-recording`, not yet deployed; order edit, packed-order change, returns with re-priced offers, a product picker that lists every product and scan-to-search everywhere (M50), live on both brands on 2026-10-31 (6026eec4), and the call card moved clear of the caller panel; the inbox workspace (M49) live on both brands (3270008c): a rounder, messaging-style inbox, a tabbed customer panel, the customer's numbers, email and addresses edited from the chat, every product a search finds; customer numbers and people (M48) live on both brands (2026-10-19, 3f8b4184); phone calls through Envo (M47) live on both brands (2026-10-19, e70fe2e9), with the owner's answers of 2026-10-19 (recordings played from Envo, a wrap-up after every call, the caller panel); Labels and Packaging, with terminals, printers and lots (M46), live on both brands; order ownership and auto-assign, the unified inbox, the English-only slips, the alive inbox, selling from the chat and voice messages and calls (M41 to M45) are live too; the owner asked for minimal tests until the product is final). This is the short, plain-language view. The
 detail is in `progress.md` (session log), `plans/` (one file per milestone) and `decisions.md`.
 
 ## Overall
 
 ```
-Everything     [###################-]  97%   (about 45.6 of 47 milestones)
+Everything     [###################-]  97%   (about 46.5 of 48 milestones)
 First plan     [###################-]  98%   (M00 to M30)
 Wave 3         [##################--]  93%   (M31 to M39)
-Wave 4         [###################-]  99%   (M40 to M50; broad tests deferred, D-758)
+Wave 4         [###################-]  99%   (M40 to M51; broad tests deferred, D-758)
 ```
 
 - The first plan had 33 milestones; six are out on the owner's instruction (M13, M21, M22, M27,
-  M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620) and **wave 4 adds 10**
+  M28, M29), so **27 count** from it. **Wave 3 adds 9** (D-469, D-600, D-620) and **wave 4 adds 11**
   (M40 to M43, 2026-10-11; M44 and M45, 2026-10-12; M46, 2026-10-17; M47, 2026-10-18; M48 and
-  M49, 2026-10-19; M50, 2026-10-31), so **47 count** in all.
+  M49, 2026-10-19; M50, 2026-10-31; M51, 2026-11-01), so **48 count** in all.
 - A milestone counts 100% when it is built, tested and passed its audits; a part-built one counts
   for the share that is done.
 - Today: **33 done** (M32 and M38 on 2026-10-08), **3 part-built**: M14b and M30 (wait for a
@@ -108,6 +108,7 @@ Wave 4         [###################-]  99%   (M40 to M50; broad tests deferred, 
 | M48  | Customer numbers and people                     |   95% | Live 2026-10-19 (3f8b4184) on both brands: several numbers per buyer with staff notes, shared numbers, orders for someone else, change buyer and merge, the caller panel's numbers; no screen tests yet                                                        |
 | M49  | The inbox workspace, customer in the chat       |   95% | Live 2026-10-19 (3270008c) on both brands: rounded inbox, tabbed customer panel, the buyer's numbers, email and addresses edited from the chat, every product a search finds                                                                                   |
 | M50  | Order edit, returns with offers, every product  |   95% | Live 2026-10-31 (6026eec4) on both brands: edit an order before packing, change a packed one (cancel and replace), return items with re-priced offers and delivery charge, a picker with every product, scans fill search boxes                                |
+| M51  | Label-to-label videos, lots, return station     |   90% | Built 2026-11-01 (branch `m51-label-recording`): the parcel label starts and stops the recording, ten seconds with no scan pauses it, one video per lot, Packaging → Returns scans and films a returned parcel and receives it into stock; not deployed yet    |
 
 ## Being built now
 

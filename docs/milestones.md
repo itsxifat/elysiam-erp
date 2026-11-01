@@ -1445,3 +1445,21 @@ The owner's request of 2026-10-31 (plan: `docs/plans/M50.md`; D-921 to D-925).
 3. A return quote for a parcel with the courier gives nothing to collect for a whole return and, for a partial one, the kept goods less the chosen offer plus the typed charge, beside §7's expectation.
 4. The picker lists every product with nothing typed and finds one by barcode; a scan with focus anywhere on a list page fills its search box.
 5. Typecheck, lint, the route matrix, i18n, migrations, schema drift, the API client and the first-download budget pass.
+
+## M51: Label-to-label recording, per-lot videos and the return station
+
+The owner's request of 2026-11-01 (plan: `docs/plans/M51.md`; D-930 to D-936).
+
+- **Label to label:** the parcel's label starts each lot's recording, every piece is scanned, the label again stops it; a piece before the label is refused (D-930).
+- **The pause:** ten seconds with no scan (the brand's setting) pauses the video; the next scan resumes it, for this computer's camera and the IP cameras alike (D-931).
+- **One video per lot:** an order in several lots keeps a video per lot, all under the one order (D-932, D-933).
+- **The return station:** Packaging → Returns opens a returned parcel the same way, checks every piece against what went out and receives it into stock with the damaged ones marked, in one transaction (D-934, D-935).
+
+**Acceptance checks**
+
+1. A piece before the label is refused; the label starts lot 1's recording at its own instant; the label again stops it and the order is packed.
+2. A two-lot order: lot 2's label is refused while lot 1 is open; lot 1's label closes it and stops its recording; lot 2 is filmed on its own.
+3. The database refuses a recording without its label scan, a second stop, and a video part of another lot's recording.
+4. The return station opens a returning parcel by its label, refuses a piece that did not go out, and stops at the label; an order not on its way back is refused.
+5. The recording's stretches never overlap, lie inside it, and never pause within the idle time of an event (property test).
+6. Typecheck, lint, i18n, migrations, schema drift, the route matrix and the first-download budget pass.
