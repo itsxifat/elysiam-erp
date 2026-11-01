@@ -118,10 +118,10 @@ for each row execute function packing.assert_recording_insert();
 create or replace function packing.assert_recording_change() returns trigger
 language plpgsql as $$
 begin
-  if (new.id, new.org_id, new.session_id, new.lot_no, new.video_required, new.camera_id,
+  if (new.id, new.org_id, new.session_id, new.lot_no, new.take, new.video_required, new.camera_id,
       new.idle_ms, new.started_at, new.started_by, new.created_at)
      is distinct from
-     (old.id, old.org_id, old.session_id, old.lot_no, old.video_required, old.camera_id,
+     (old.id, old.org_id, old.session_id, old.lot_no, old.take, old.video_required, old.camera_id,
       old.idle_ms, old.started_at, old.started_by, old.created_at) then
     raise exception 'CONFLICT: a recording''s lot, source and start are fixed.';
   end if;

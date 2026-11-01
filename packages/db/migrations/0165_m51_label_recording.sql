@@ -3,6 +3,7 @@ CREATE TABLE "packing"."recordings" (
 	"org_id" uuid NOT NULL,
 	"session_id" uuid NOT NULL,
 	"lot_no" integer NOT NULL,
+	"take" integer DEFAULT 1 NOT NULL,
 	"video_required" boolean NOT NULL,
 	"camera_id" uuid,
 	"idle_ms" integer NOT NULL,
@@ -14,7 +15,8 @@ CREATE TABLE "packing"."recordings" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "packing_recordings_org_id_id_key" UNIQUE("org_id","id"),
-	CONSTRAINT "packing_recordings_session_lot_key" UNIQUE("org_id","session_id","lot_no"),
+	CONSTRAINT "packing_recordings_session_lot_take_key" UNIQUE("org_id","session_id","lot_no","take"),
+	CONSTRAINT "packing_recordings_take" CHECK ("packing"."recordings"."take" between 1 and 99),
 	CONSTRAINT "packing_recordings_lot_no" CHECK ("packing"."recordings"."lot_no" between 1 and 20),
 	CONSTRAINT "packing_recordings_idle" CHECK ("packing"."recordings"."idle_ms" between 3000 and 60000),
 	CONSTRAINT "packing_recordings_stop" CHECK (("packing"."recordings"."stopped_at" is null and "packing"."recordings"."stopped_by" is null and "packing"."recordings"."stop_reason" is null)

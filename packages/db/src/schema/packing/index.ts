@@ -497,6 +497,12 @@ export const packingRecordings = packing.table(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     sessionId: uuid('session_id').notNull(),
     lotNo: integer('lot_no').notNull(),
+    /**
+     * 1, or the next when a return's bag is reopened before its receipt (D-934): a bag stopped by
+     * mistake still has pieces to scan, and a parcel has one receipt. Each take is its own video.
+     * A packing's lot has one: a closed bag stays closed (D-807).
+     */
+    take: integer('take').notNull().default(1),
     /** Whether a video is expected: the brand records (D-615) and, for a camera, it is on. */
     videoRequired: boolean('video_required').notNull(),
     cameraId: uuid('camera_id'),
@@ -514,7 +520,13 @@ export const packingRecordings = packing.table(
   },
   (table) => [
     unique('packing_recordings_org_id_id_key').on(table.orgId, table.id),
-    unique('packing_recordings_session_lot_key').on(table.orgId, table.sessionId, table.lotNo),
+    unique('packing_recordings_session_lot_take_key').on(
+      table.orgId,
+      table.sessionId,
+      table.lotNo,
+      table.take,
+    ),
+    check('packing_recordings_take', sql`${table.take} between 1 and 99`),
     index('packing_recordings_org_idx').on(table.orgId),
     index('packing_recordings_camera_idx').on(table.orgId, table.cameraId, table.startedAt),
     index('packing_recordings_open_idx')

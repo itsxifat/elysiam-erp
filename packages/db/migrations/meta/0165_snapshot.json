@@ -1,5 +1,5 @@
 {
-  "id": "eb4df478-8df5-4254-9557-f1e8e9cfe1d5",
+  "id": "ab6e47d9-5638-48c7-9f71-c4f3cc44220b",
   "prevId": "985c4e3b-ea70-42fe-83fa-3053a512d289",
   "version": "7",
   "dialect": "postgresql",
@@ -31356,6 +31356,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "take": {
+          "name": "take",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
         "video_required": {
           "name": "video_required",
           "type": "boolean",
@@ -31571,18 +31578,23 @@
             "id"
           ]
         },
-        "packing_recordings_session_lot_key": {
-          "name": "packing_recordings_session_lot_key",
+        "packing_recordings_session_lot_take_key": {
+          "name": "packing_recordings_session_lot_take_key",
           "nullsNotDistinct": false,
           "columns": [
             "org_id",
             "session_id",
-            "lot_no"
+            "lot_no",
+            "take"
           ]
         }
       },
       "policies": {},
       "checkConstraints": {
+        "packing_recordings_take": {
+          "name": "packing_recordings_take",
+          "value": "\"packing\".\"recordings\".\"take\" between 1 and 99"
+        },
         "packing_recordings_lot_no": {
           "name": "packing_recordings_lot_no",
           "value": "\"packing\".\"recordings\".\"lot_no\" between 1 and 20"

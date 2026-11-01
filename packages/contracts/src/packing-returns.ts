@@ -28,8 +28,14 @@ export const packingReturnReceiveSchema = z
       .default([]),
     returnReason: z.string().trim().min(1).max(64),
     reason: z.string().trim().min(1).max(500),
-    inspectionNote: z.string().trim().max(2_000).optional(),
+    // Short of the receipt's 1,000: what did not come back is written in front of it.
+    inspectionNote: z.string().trim().max(600).optional(),
     damagedLocationId: uuid.optional(),
+    /**
+     * The person saw that pieces did not come back or a bag was not opened (D-939). A parcel has
+     * one receipt, so what is left out can never be booked in later: it is said, not assumed.
+     */
+    acknowledgeShort: z.boolean().optional(),
   })
   .strict();
 export type PackingReturnReceiveInput = z.infer<typeof packingReturnReceiveSchema>;

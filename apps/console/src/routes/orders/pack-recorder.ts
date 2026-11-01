@@ -84,7 +84,11 @@ export interface RecorderHandle {
   pause(): void;
   resume(): void;
   paused(): boolean;
-  /** Stop, wait for the last chunk to be kept. The camera stays open for the next lot. */
+  /**
+   * Stop, wait for the last chunk to be kept. The camera stays open for the next lot. `endedAt` is
+   * on the video's own clock: paused time is not counted, so `endedAt - startedAt` is how long the
+   * video runs.
+   */
   stop(): Promise<{ readonly endedAt: number }>;
 }
 
@@ -199,17 +203,21 @@ export async function openCamera(options: {
     let seq = 0;
     let kept: Promise<void> = Promise.resolve();
     let stopping: Promise<{ endedAt: number }> | null = null;
+    let pausedMs = 0;
+    let pausedSince: number | null = null;
+    const videoClock = (at: number) =>
+      at - pausedMs - (pausedSince === null ? 0 : at - pausedSince);
 
     const stop = (): Promise<{ endedAt: number }> => {
       stopping ??= new Promise((resolve) => {
         window.clearTimeout(limitTimer);
         recorder.onstop = () => {
-          const endedAt = Date.now();
+          const endedAt = videoClock(Date.now());
           // The last chunk arrives before `stop`; wait until it is kept.
           void kept.then(() => resolve({ endedAt }));
         };
         if (recorder.state === 'inactive') {
-          void kept.then(() => resolve({ endedAt: Date.now() }));
+          void kept.then(() => resolve({ endedAt: videoClock(Date.now()) }));
         } else {
           recorder.stop();
         }
@@ -242,10 +250,15 @@ export async function openCamera(options: {
       startedAt,
       bytes: () => bytes,
       pause: () => {
-        if (recorder.state === 'recording') recorder.pause();
+        if (recorder.state !== 'recording') return;
+        recorder.pause();
+        pausedSince = Date.now();
       },
       resume: () => {
-        if (recorder.state === 'paused') recorder.resume();
+        if (recorder.state !== 'paused') return;
+        recorder.resume();
+        if (pausedSince !== null) pausedMs += Date.now() - pausedSince;
+        pausedSince = null;
       },
       paused: () => recorder.state === 'paused',
       stop,

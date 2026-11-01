@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { withGlobal, withSystem } from '@elysium/db';
 import { internalEan13 } from '@elysium/domain/barcode';
-import { lotCode } from '@elysium/domain/packing';
+import { PACKING_LABEL_REREAD_MS, lotCode } from '@elysium/domain/packing';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -12,7 +12,6 @@ import type { ActiveContext } from '../../platform/http/context.js';
 import { ORG_A, startHttpHarness, type HttpHarness } from '../../testing/http-harness.js';
 import { seedProductWithSkus } from '../inventory/inventory.testing.js';
 import { applyOrderMigrations, seedCustomer, seedOrder } from '../orders/orders.testing.js';
-import { ReturnStationService } from './return-station.service.js';
 import { PackStationService } from './station.service.js';
 
 /**
@@ -24,8 +23,9 @@ import { PackStationService } from './station.service.js';
  *    closes it and stops its recording; lot 2 starts at its own label; the last label finishes.
  * 3. The database holds the recording: none without its lot's label scan, a stop set once, a
  *    video part only of its own lot's recording.
- * 4. The return station: the returned parcel's label starts a bag's recording, a piece that did
- *    not go out is refused, the label again stops it.
+ * 4. The scanner reading a label twice at once starts and stops nothing.
+ *
+ * The return station is `return-station.db.test.ts`, on a parcel really coming back.
  */
 
 const PACKER = `usr_m51_${randomUUID().slice(0, 8)}`;
@@ -33,11 +33,9 @@ const suffix = randomUUID().slice(0, 6);
 
 let harness: HttpHarness;
 let station: PackStationService;
-let returns: ReturnStationService;
 let customerId = '';
 let shirt: { id: string; code: string; barcode: string };
 let cap: { id: string; code: string; barcode: string };
-let stranger: { id: string; code: string; barcode: string };
 
 function request(): AuditableRequest {
   const value = {} as AuditableRequest;
@@ -74,7 +72,7 @@ async function order(
   lines: readonly { sku: { id: string; code: string }; qty: number }[],
 ) {
   return seedOrder(ORG_A, {
-    status: status as 'confirmed',
+    status,
     customerId,
     createdBy: PACKER,
     lines: lines.map((line) => ({
@@ -197,11 +195,16 @@ async function refusal(work: Promise<unknown>): Promise<string> {
 const scan = (sessionId: string, code: string) =>
   station.scan(context(), request(), sessionId, { scanId: randomUUID(), code });
 
+/** Past the scanner's repeat: a person's second scan of the same label. */
+const pastReread = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, PACKING_LABEL_REREAD_MS + 100);
+  });
+
 beforeAll(async () => {
   harness = await startHttpHarness('m51-label-recording');
   await applyOrderMigrations();
   station = harness.app.get(PackStationService);
-  returns = harness.app.get(ReturnStationService);
   await withGlobal(async (tx) => {
     await tx.execute(sql`
       insert into iam.users (id, email, name, email_verified)
@@ -211,11 +214,9 @@ beforeAll(async () => {
   });
   const shirts = await seedProductWithSkus(ORG_A, `m51s${suffix}`, 1);
   const caps = await seedProductWithSkus(ORG_A, `m51c${suffix}`, 1);
-  const others = await seedProductWithSkus(ORG_A, `m51o${suffix}`, 1);
   const base = Math.floor(Math.random() * 1_000_000);
   shirt = await withBarcode(shirts.skus[0] as { id: string; code: string }, base + 1);
   cap = await withBarcode(caps.skus[0] as { id: string; code: string }, base + 2);
-  stranger = await withBarcode(others.skus[0] as { id: string; code: string }, base + 3);
   customerId = await seedCustomer(ORG_A, { phoneE164: '+8801711000951', name: 'M51 buyer' });
 }, 420_000);
 
@@ -238,6 +239,7 @@ describe('the packing station, label to label (D-930)', () => {
 
     expect((await scan(sessionId, shirt.barcode)).outcome).toBe('accepted');
 
+    await pastReread();
     const finished = await scan(sessionId, placed.orderNo);
     expect(finished.label).toMatchObject({ action: 'finished', lot: 1 });
     expect(await orderStatus(placed.id)).toBe('packed');
@@ -252,6 +254,7 @@ describe('the packing station, label to label (D-930)', () => {
     const sessionId = await packSession(placed.id, placed.orderNo);
     await scan(sessionId, placed.orderNo);
     await scan(sessionId, shirt.barcode);
+    await pastReread();
     const early = await scan(sessionId, placed.orderNo);
     expect(early.label).toMatchObject({ action: 'refused' });
     expect(early.label?.message).toContain('1 of 2 pieces');
@@ -280,6 +283,7 @@ describe('the packing station, label to label (D-930)', () => {
     expect(await refusal(scan(sessionId, cap.barcode))).toContain('PACKING_LABEL_FIRST');
     expect((await scan(sessionId, lot2)).label).toMatchObject({ action: 'started', lot: 2 });
     expect((await scan(sessionId, cap.barcode)).outcome).toBe('accepted');
+    await pastReread();
     expect((await scan(sessionId, lot2)).label).toMatchObject({ action: 'finished', lot: 2 });
 
     const rows = await recordingsOf(sessionId);
@@ -287,6 +291,21 @@ describe('the packing station, label to label (D-930)', () => {
       [1, 'label'],
       [2, 'label'],
     ]);
+    expect(await orderStatus(placed.id)).toBe('packed');
+  });
+
+  it('takes the scanner reading a label twice at once for one scan', async () => {
+    const placed = await order('confirmed', [{ sku: shirt, qty: 1 }]);
+    await labelsPrinted(placed);
+    const sessionId = await packSession(placed.id, placed.orderNo);
+    expect((await scan(sessionId, placed.orderNo)).label?.action).toBe('started');
+    const repeat = await scan(sessionId, placed.orderNo);
+    expect(repeat.label).toMatchObject({ action: 'ignored', message: null });
+    expect((await recordingsOf(sessionId))[0]?.stopped_at).toBeNull();
+    expect((await scan(sessionId, shirt.barcode)).outcome).toBe('accepted');
+    // Even with every piece in, a repeat of the label finishes nothing until a person's scan.
+    await pastReread();
+    expect((await scan(sessionId, placed.orderNo)).label?.action).toBe('finished');
     expect(await orderStatus(placed.id)).toBe('packed');
   });
 
@@ -359,48 +378,5 @@ describe('the database holds the recording (0166)', () => {
         ),
       ),
     ).toContain('its own lot');
-  });
-});
-
-describe('the return station (D-934)', () => {
-  it('opens a returning parcel by its label, refuses what did not go out, and stops at the label', async () => {
-    const placed = await order('return_in_transit', [{ sku: shirt, qty: 2 }]);
-    const view = await returns.open(context(), request(), { code: placed.orderNo });
-    expect(view.recordings).toHaveLength(1);
-    expect(view.lines[0]).toMatchObject({ skuId: shirt.id, expected: 2, back: 0 });
-
-    const sessionId = view.session.id;
-    const back = await returns.scan(context(), request(), sessionId, {
-      scanId: randomUUID(),
-      code: shirt.barcode,
-    });
-    expect(back.outcome).toBe('accepted');
-    const wrong = await returns.scan(context(), request(), sessionId, {
-      scanId: randomUUID(),
-      code: stranger.barcode,
-    });
-    expect(wrong.outcome).toBe('wrong_item');
-
-    const stopped = await returns.scan(context(), request(), sessionId, {
-      scanId: randomUUID(),
-      code: placed.orderNo,
-    });
-    expect(stopped.label).toMatchObject({ action: 'stopped', lot: 1 });
-    expect(stopped.view.progress).toMatchObject({ unitsExpected: 2, unitsBack: 1, missing: 1 });
-    expect(stopped.view.labelNeeded).toBe(true);
-
-    // A packing session id is not the return station's, nor the other way round.
-    expect(
-      await refusal(
-        station.scan(context(), request(), sessionId, { scanId: randomUUID(), code: 'x' }),
-      ),
-    ).toContain('No such packing session');
-  });
-
-  it('refuses an order that is not on its way back', async () => {
-    const placed = await order('confirmed', [{ sku: cap, qty: 1 }]);
-    expect(await refusal(returns.open(context(), request(), { orderId: placed.id }))).toContain(
-      'not received as a return',
-    );
   });
 });

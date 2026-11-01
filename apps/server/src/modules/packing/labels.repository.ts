@@ -365,7 +365,7 @@ export async function openSessionsAtTerminals(
 > {
   const rows = await tx.execute<{ terminal_id: string; order_no: string; started_by: string }>(sql`
     select distinct on (terminal_id) terminal_id, order_no, started_by from packing.sessions
-    where org_id = ${orgId} and terminal_id is not null and status = 'open'
+    where org_id = ${orgId} and terminal_id is not null and status = 'open' and kind = 'pack'
     order by terminal_id, started_at desc
   `);
   return [...rows];

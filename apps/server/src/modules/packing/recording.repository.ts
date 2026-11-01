@@ -13,6 +13,8 @@ export interface LotRecordingRow extends Record<string, unknown> {
   readonly id: string;
   readonly session_id: string;
   readonly lot_no: number;
+  /** 1, or the next when a return's bag is reopened (D-934). */
+  readonly take: number;
   readonly video_required: boolean;
   readonly camera_id: string | null;
   readonly idle_ms: number;
@@ -23,7 +25,7 @@ export interface LotRecordingRow extends Record<string, unknown> {
   readonly stop_reason: RecordingStopReason | null;
 }
 
-const COLUMNS = sql`id, session_id, lot_no, video_required, camera_id, idle_ms, started_at,
+const COLUMNS = sql`id, session_id, lot_no, take, video_required, camera_id, idle_ms, started_at,
   started_by, stopped_at, stopped_by, stop_reason`;
 
 /** A session's recordings, lot by lot. */
@@ -35,7 +37,7 @@ export async function recordingsOf(
   const rows = await tx.execute<LotRecordingRow>(sql`
     select ${COLUMNS} from packing.recordings
     where org_id = ${orgId} and session_id = ${sessionId}
-    order by lot_no
+    order by lot_no, take
   `);
   return [...rows];
 }
@@ -53,6 +55,7 @@ export async function recordingById(
   return rows[0];
 }
 
+/** A lot's latest recording. */
 export async function recordingOfLot(
   tx: Tx,
   orgId: string,
@@ -63,6 +66,8 @@ export async function recordingOfLot(
   const rows = await tx.execute<LotRecordingRow>(sql`
     select ${COLUMNS} from packing.recordings
     where org_id = ${orgId} and session_id = ${sessionId} and lot_no = ${lot}
+    order by take desc
+    limit 1
     ${options.forUpdate === true ? sql`for update` : sql``}
   `);
   return rows[0];
@@ -87,12 +92,17 @@ export async function insertRecording(
 ): Promise<LotRecordingRow | undefined> {
   const rows = await tx.execute<LotRecordingRow>(sql`
     insert into packing.recordings
-      (org_id, session_id, lot_no, video_required, camera_id, idle_ms, started_at, started_by)
-    select ${input.orgId}, ${input.sessionId}, ${input.lot}, ${input.videoRequired},
-           ${input.cameraId}::uuid, ${input.idleMs}, c.scanned_at, c.scanned_by
+      (org_id, session_id, lot_no, take, video_required, camera_id, idle_ms, started_at,
+       started_by)
+    select ${input.orgId}, ${input.sessionId}, ${input.lot},
+           (select coalesce(max(r.take), 0) + 1 from packing.recordings r
+             where r.org_id = ${input.orgId} and r.session_id = ${input.sessionId}
+               and r.lot_no = ${input.lot}),
+           ${input.videoRequired}, ${input.cameraId}::uuid, ${input.idleMs}, c.scanned_at,
+           c.scanned_by
       from packing.scans c
      where c.org_id = ${input.orgId} and c.id = ${input.labelScanId}
-    on conflict (org_id, session_id, lot_no) do nothing
+    on conflict (org_id, session_id, lot_no, take) do nothing
     returning ${COLUMNS}
   `);
   return rows[0];

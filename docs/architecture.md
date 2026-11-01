@@ -2025,6 +2025,13 @@ D-551 to D-556. Four pieces the old website ran, now the ERP's:
   stock back at the dispatch cost, the journal) in the transaction that completes the session.
   A return's video is kept thirty days after the receipt (D-935). The order page shows it beside
   the packing record.
+- **Nothing stranded** (D-937 to D-939): a return's bag reopens at its own label until the receipt
+  is booked, each reopening a new `take` of the lot's recording with its own video; the same label
+  within two seconds is the scanner's repeat and changes nothing. A receipt's sellable units go to
+  the order's location, else the warehouse it was fulfilled from
+  (`OrdersApi.fulfilmentLocationOf`). `ParcelObserver.orderReturned` closes an open inspection
+  whichever route received the order; both routes lock consignment, order, session. A receipt
+  short of what went out, or with a bag unopened, needs `acknowledgeShort`.
 
 ## 32. Phone calls through Envo (M47, D-830 to D-862)
 

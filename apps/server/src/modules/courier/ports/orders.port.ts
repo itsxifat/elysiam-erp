@@ -230,6 +230,12 @@ export interface OrdersPort {
     readonly courierId: string | null;
   } | null>;
 
+  /**
+   * Where this order's stock lives: its own location, else the warehouse it was fulfilled from
+   * (an order from the desk or the inbox names none). A return's sellable units go back there.
+   */
+  fulfilmentLocationOf(tx: Tx, orgId: string, orderId: string): Promise<string | null>;
+
   /** What can still come back off this order, for the returns screen. */
   returnableLines(tx: Tx, orgId: string, orderId: string): Promise<readonly ReturnableLine[]>;
 

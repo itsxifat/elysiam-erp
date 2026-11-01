@@ -11,7 +11,10 @@ import {
   containerOf,
   effectiveCameraId,
   ipRecordingPhase,
+  lotVideoPhase,
   parsePackSource,
+  recordingClock,
+  runningRecording,
   serializePackSource,
   formatElapsed,
   formatMegabytes,
@@ -350,6 +353,80 @@ describe('the upload queue', () => {
 // --- M38c: the recording source and the IP camera (D-670, D-671, D-673) -----------------------
 
 const CAMERA = '6b0f3a0e-8f0e-4c55-9d0b-2b4a1f2b7c11';
+
+describe('a lot’s recording at the station (M51)', () => {
+  const at = (ms: number) => new Date(ms).toISOString();
+  const recording = {
+    id: 'rec-1',
+    lot: 1,
+    state: 'recording' as const,
+    videoRequired: true,
+    source: 'browser' as const,
+    idleMs: 10_000,
+    startedAt: at(0),
+    stoppedAt: null,
+    lastActivityAt: at(0),
+    recordedMs: 0,
+  };
+
+  it('counts down to the pause, pauses, and resumes at the next scan', () => {
+    const running = (now: number, localActivityAt: number | null = null) =>
+      recordingClock({ recording, activityMs: [0], localActivityAt, now });
+    expect(running(4_000)).toMatchObject({ paused: false, pauseInMs: 6_000, recordedMs: 4_000 });
+    expect(running(10_000)).toMatchObject({ paused: true, pauseInMs: 0, recordedMs: 10_000 });
+    // The video holds nothing while paused, and this page's own scan resumes it at once.
+    expect(running(25_000)).toMatchObject({ paused: true, recordedMs: 10_000, stretches: 1 });
+    expect(running(25_000, 25_000)).toMatchObject({ paused: false, pauseInMs: 10_000 });
+    expect(running(28_000, 25_000)).toMatchObject({ recordedMs: 13_000, stretches: 2 });
+  });
+
+  it('never counts past the idle time when the clock ticks behind a scan just sent', () => {
+    const clock = recordingClock({ recording, activityMs: [0], localActivityAt: 900, now: 700 });
+    expect(clock.paused).toBe(false);
+    expect(clock.pauseInMs).toBe(10_000);
+  });
+
+  it('holds still once stopped', () => {
+    const stopped = { ...recording, state: 'stopped' as const, stoppedAt: at(4_000) };
+    expect(
+      recordingClock({ recording: stopped, activityMs: [0], localActivityAt: null, now: 99_000 }),
+    ).toMatchObject({ paused: false, pauseInMs: 0, recordedMs: 4_000 });
+  });
+
+  it('finds the running one and says where each lot’s video stands', () => {
+    const stopped = { ...recording, id: 'rec-0', state: 'stopped' as const, stoppedAt: at(1) };
+    expect(runningRecording([stopped, recording])?.id).toBe('rec-1');
+    expect(runningRecording([stopped])).toBeNull();
+    expect(lotVideoPhase(recording, [])).toBe('recording');
+    expect(lotVideoPhase({ ...recording, videoRequired: false }, [])).toBe('off');
+    expect(lotVideoPhase(stopped, [])).toBe('processing');
+    expect(lotVideoPhase(stopped, [{ recordingId: 'rec-0', state: 'waiting' }])).toBe('processing');
+    expect(lotVideoPhase(stopped, [{ recordingId: 'rec-0', state: 'uploaded' }])).toBe('saved');
+    // Another lot's part says nothing about this one.
+    expect(lotVideoPhase(stopped, [{ recordingId: 'rec-9', state: 'uploaded' }])).toBe(
+      'processing',
+    );
+  });
+
+  it('names the lot and a return on the video', () => {
+    const caption = videoCaption({
+      orderNo: 'ELY-2611-00042',
+      packer: 'Rahim',
+      at: new Date('2026-11-01T06:00:00Z'),
+      lot: { no: 2, of: 3 },
+      kind: 'return',
+    });
+    expect(caption.startsWith('RETURN  ·  ELY-2611-00042  ·  LOT 2/3  ·  ')).toBe(true);
+    expect(
+      videoCaption({
+        orderNo: 'ELY-2611-00042',
+        packer: null,
+        at: new Date('2026-11-01T06:00:00Z'),
+        lot: { no: 1, of: 1 },
+      }),
+    ).not.toContain('LOT');
+  });
+});
 
 describe('this desk’s recording source', () => {
   it('is remembered under a neutral key, as this computer’s camera or an IP camera', () => {

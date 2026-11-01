@@ -970,6 +970,17 @@ export const OPERATIONS = {
     path: '/v1/packing/orders/{orderId}',
     ability: 'read:Order',
   },
+  getV1PackingReturns: { method: 'GET', path: '/v1/packing/returns', ability: 'read:Order' },
+  getV1PackingReturnsById: {
+    method: 'GET',
+    path: '/v1/packing/returns/{id}',
+    ability: 'read:Order',
+  },
+  getV1PackingReturnsOrdersByOrderId: {
+    method: 'GET',
+    path: '/v1/packing/returns/orders/{orderId}',
+    ability: 'read:Order',
+  },
   getV1PackingSessions: { method: 'GET', path: '/v1/packing/sessions', ability: 'read:Order' },
   getV1PackingSessionsById: {
     method: 'GET',
@@ -1097,6 +1108,11 @@ export const OPERATIONS = {
     method: 'GET',
     path: '/v1/storefront/payments/sessions',
     ability: 'read:Customer',
+  },
+  getV1StorefrontProductImages: {
+    method: 'GET',
+    path: '/v1/storefront/product-images',
+    ability: 'read:Catalog',
   },
   getV1StorefrontSettings: {
     method: 'GET',
@@ -2064,6 +2080,22 @@ export const OPERATIONS = {
     ability: 'update:Order',
   },
   postV1PackingLabels: { method: 'POST', path: '/v1/packing/labels', ability: 'read:Order' },
+  postV1PackingReturns: { method: 'POST', path: '/v1/packing/returns', ability: 'update:Order' },
+  postV1PackingReturnsByIdReceive: {
+    method: 'POST',
+    path: '/v1/packing/returns/{id}/receive',
+    ability: 'update:Order',
+  },
+  postV1PackingReturnsByIdRemovals: {
+    method: 'POST',
+    path: '/v1/packing/returns/{id}/removals',
+    ability: 'update:Order',
+  },
+  postV1PackingReturnsByIdScans: {
+    method: 'POST',
+    path: '/v1/packing/returns/{id}/scans',
+    ability: 'update:Order',
+  },
   postV1PackingSessions: { method: 'POST', path: '/v1/packing/sessions', ability: 'update:Order' },
   postV1PackingSessionsByIdComplete: {
     method: 'POST',
@@ -3682,6 +3714,20 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly orderId: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.getV1PackingOrdersByOrderId, input, options),
+    /** GET /v1/packing/returns */
+    getV1PackingReturns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PackingReturns, undefined, options),
+    /** GET /v1/packing/returns/:id */
+    getV1PackingReturnsById: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> => request(runtime, OPERATIONS.getV1PackingReturnsById, input, options),
+    /** GET /v1/packing/returns/orders/:orderId */
+    getV1PackingReturnsOrdersByOrderId: (
+      input: { readonly path: { readonly orderId: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1PackingReturnsOrdersByOrderId, input, options),
     /** GET /v1/packing/sessions */
     getV1PackingSessions: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1PackingSessions, undefined, options),
@@ -3832,6 +3878,9 @@ export function createApiClient(runtime: ApiRuntime) {
     /** GET /v1/storefront/payments/sessions */
     getV1StorefrontPaymentsSessions: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontPaymentsSessions, undefined, options),
+    /** GET /v1/storefront/product-images */
+    getV1StorefrontProductImages: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.getV1StorefrontProductImages, undefined, options),
     /** GET /v1/storefront/settings */
     getV1StorefrontSettings: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.getV1StorefrontSettings, undefined, options),
@@ -4955,6 +5004,27 @@ export function createApiClient(runtime: ApiRuntime) {
     /** POST /v1/packing/labels */
     postV1PackingLabels: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PackingLabels, undefined, options),
+    /** POST /v1/packing/returns */
+    postV1PackingReturns: (options?: RequestOptions): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingReturns, undefined, options),
+    /** POST /v1/packing/returns/:id/receive */
+    postV1PackingReturnsByIdReceive: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingReturnsByIdReceive, input, options),
+    /** POST /v1/packing/returns/:id/removals */
+    postV1PackingReturnsByIdRemovals: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingReturnsByIdRemovals, input, options),
+    /** POST /v1/packing/returns/:id/scans */
+    postV1PackingReturnsByIdScans: (
+      input: { readonly path: { readonly id: string } },
+      options?: RequestOptions,
+    ): Promise<unknown> =>
+      request(runtime, OPERATIONS.postV1PackingReturnsByIdScans, input, options),
     /** POST /v1/packing/sessions */
     postV1PackingSessions: (options?: RequestOptions): Promise<unknown> =>
       request(runtime, OPERATIONS.postV1PackingSessions, undefined, options),

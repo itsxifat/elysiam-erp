@@ -142,7 +142,8 @@ export function recordingClock(input: {
       : [];
   const events = [...input.activityMs, ...local];
   const last = Math.max(startedMs, Date.parse(recording.lastActivityAt), ...events);
-  const sinceLast = now - last;
+  // The clock ticks a moment behind a scan just sent, so an event may read as still to come.
+  const sinceLast = Math.max(0, now - last);
   const paused = stoppedMs === null && sinceLast >= recording.idleMs;
   const spans = recordingSpans({
     startedMs,

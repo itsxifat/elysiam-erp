@@ -21,6 +21,8 @@ import {
   type ParcelObserver,
 } from '../orders/ports/parcel-observer.port.js';
 import * as labels from './labels.repository.js';
+import { stopLotRecording } from './lot-recording.js';
+import * as rec from './recording.repository.js';
 import { ordersForScannedCode } from './scanner.service.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as station from './station.repository.js';
@@ -109,6 +111,49 @@ export class LotsService implements ParcelObserver, HandoverGuard, OnModuleInit 
   }
 
   // --- the orders module's hooks -----------------------------------------------------------
+
+  /**
+   * M51 (D-938): the order was received back, by the station, the courier's page or the order's
+   * own. Its open return inspection ends here, in that transaction: a bag still being opened
+   * stops, and the session completes, so no inspection reads open for ever and its videos reach
+   * their thirty days (D-935). Its own rows only.
+   */
+  async orderReturned(
+    tx: Tx,
+    input: {
+      readonly orgId: string;
+      readonly orderId: string;
+      readonly userId: string;
+      readonly at: Date;
+    },
+  ): Promise<void> {
+    const found = await station.sessionByOrder(tx, input.orgId, input.orderId, 'return');
+    if (found?.status !== 'open') return;
+    const session = await station.sessionById(tx, input.orgId, found.id, { forUpdate: true });
+    if (session?.status !== 'open') return;
+    for (const recording of await rec.recordingsOf(tx, input.orgId, session.id)) {
+      if (recording.stopped_at !== null) continue;
+      await stopLotRecording(tx, this.audit, {
+        orgId: input.orgId,
+        userId: input.userId,
+        session,
+        recording,
+        reason: 'received',
+        at: input.at,
+      });
+    }
+    if (!(await station.completeSession(tx, input.orgId, session.id, input.userId))) return;
+    await this.audit.record(tx, {
+      orgId: input.orgId,
+      actorUserId: input.userId,
+      operation: 'update',
+      action: 'packing.return_closed',
+      entityType: 'packing_session',
+      entityId: session.id,
+      before: { status: 'open' },
+      after: { status: 'completed', orderId: input.orderId },
+    });
+  }
 
   /**
    * D-817: inside the courier's booking transaction. The order's row in "Ready for label" gains

@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PACKING_CAMERA_MAX_MS,
+  PACKING_LABEL_REREAD_MS,
+  isLabelReread,
   judgePackLabelScan,
   judgeReturnLabelScan,
   pauseInMs,
@@ -224,6 +226,25 @@ describe('judgeReturnLabelScan', () => {
     ).toEqual({ kind: 'refused', reason: 'other_lot', lot: 1, expected: 3 });
   });
 
+  it('reopens a done bag by its own label, so a bag stopped by mistake strands nothing', () => {
+    expect(
+      judgeReturnLabelScan({
+        lotCount: 2,
+        scannedLot: 2,
+        recordingLot: null,
+        doneLots: new Set([2]),
+      }),
+    ).toEqual({ kind: 'start', lot: 2 });
+    expect(
+      judgeReturnLabelScan({
+        lotCount: 1,
+        scannedLot: null,
+        recordingLot: null,
+        doneLots: new Set([1]),
+      }),
+    ).toEqual({ kind: 'start', lot: 1 });
+  });
+
   it('takes the first bag not opened for a code of the whole order', () => {
     expect(
       judgeReturnLabelScan({
@@ -233,22 +254,29 @@ describe('judgeReturnLabelScan', () => {
         doneLots: new Set([1, 3]),
       }),
     ).toEqual({ kind: 'start', lot: 2 });
+    // Every bag done: a code of the whole order names none of several.
     expect(
       judgeReturnLabelScan({
         lotCount: 2,
-        scannedLot: 2,
-        recordingLot: null,
-        doneLots: new Set([2]),
-      }),
-    ).toEqual({ kind: 'refused', reason: 'lot_done', lot: 2, expected: 1 });
-    expect(
-      judgeReturnLabelScan({
-        lotCount: 1,
         scannedLot: null,
         recordingLot: null,
-        doneLots: new Set([1]),
+        doneLots: new Set([1, 2]),
       }),
     ).toMatchObject({ kind: 'refused', reason: 'all_done' });
+  });
+});
+
+describe('isLabelReread', () => {
+  const last = { code: 'ELY-2611-00042', atMs: 10_000 };
+
+  it('ignores the same label read again at once, and only that', () => {
+    const soon = 10_000 + PACKING_LABEL_REREAD_MS - 1;
+    expect(isLabelReread({ code: last.code, last, nowMs: soon })).toBe(true);
+    expect(isLabelReread({ code: last.code, last, nowMs: 10_000 + PACKING_LABEL_REREAD_MS })).toBe(
+      false,
+    );
+    expect(isLabelReread({ code: 'ELY-2611-00042-L2', last, nowMs: soon })).toBe(false);
+    expect(isLabelReread({ code: last.code, last: null, nowMs: soon })).toBe(false);
   });
 });
 

@@ -13,6 +13,7 @@ import { normaliseScannedCode } from '@elysium/domain/barcode';
 import {
   PACKING_IDLE_PAUSE_DEFAULT_MS,
   cameraRecordingTo,
+  isLabelReread,
   isPackScanRefusal,
   judgeLotClose,
   judgeLotFinish,
@@ -85,7 +86,8 @@ const REFUSAL_WORDS: Readonly<Record<string, string>> = {
 
 /** What a label scan did (M51, D-930): the answer the station shows and sounds. */
 export interface LabelAnswer {
-  readonly action: 'started' | 'lot_closed' | 'finished' | 'refused';
+  /** `ignored`: the scanner read the same label again at once (D-934); nothing changed. */
+  readonly action: 'started' | 'lot_closed' | 'finished' | 'refused' | 'ignored';
   readonly lot: number | null;
   readonly message: string | null;
 }
@@ -321,6 +323,11 @@ export class PackStationService {
     const closures = await labels.closuresOf(tx, orgId, session.id);
     const scans = await repo.scansOf(tx, orgId, session.id);
     const open = openLot(lotCount, closures.length);
+    const reread = isLabelReread({
+      code: scan.code,
+      last: lastLabelOf(scans),
+      nowMs: (await cameras.transactionNow(tx)).getTime(),
+    });
     const openStarted = open !== null && (await this.lotStarted(tx, orgId, session, open, scans));
     const verdict = judgePackLabelScan({
       lotCount,
@@ -336,10 +343,12 @@ export class PackStationService {
       skuId: null,
       outcome: 'label',
       scannedBy: context.userId,
-      lotNo: verdict.kind === 'refused' ? (open ?? lotCount) : verdict.lot,
+      lotNo: reread || verdict.kind === 'refused' ? (open ?? lotCount) : verdict.lot,
     });
     let answer: LabelAnswer;
-    if (verdict.kind === 'start') {
+    if (reread) {
+      answer = { action: 'ignored', lot: open, message: null };
+    } else if (verdict.kind === 'start') {
       await startLotRecording(tx, this.audit, {
         orgId,
         userId: context.userId,
@@ -1320,6 +1329,14 @@ export class PackStationService {
 type Refusable =
   | { readonly ok: true }
   | { readonly ok: false; readonly code: ErrorCode; readonly message: string };
+
+/** The session's last label scan, for telling the scanner's repeat from a person's scan. */
+export function lastLabelOf(
+  scans: readonly repo.ScanRow[],
+): { readonly code: string; readonly atMs: number } | null {
+  const last = scans.filter((row) => row.outcome === 'label').at(-1);
+  return last === undefined ? null : { code: last.code, atMs: new Date(last.scanned_at).getTime() };
+}
 
 /** The codes printed on an order's slip and labels, for `readOrderLabel` (D-930). */
 export function labelFactsOf(facts: PackingFacts) {

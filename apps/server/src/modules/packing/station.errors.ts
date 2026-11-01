@@ -24,6 +24,7 @@ const STATUS: Partial<Record<ErrorCode, number>> = {
   PACKING_LABEL_FIRST: 409,
   PACKING_NOT_RETURNABLE: 409,
   RETURN_RECEIPT_INVALID: 400,
+  CONSIGNMENT_NOT_FOUND: 404,
   PACKING_VIDEO_INVALID: 409,
   PACKING_VIDEO_GONE: 410,
   PACKING_CAMERA_INVALID: 409,
@@ -123,6 +124,11 @@ function toPackingHttpError(error: unknown): unknown {
     // The tables' triggers (migrations 0130 and 0133) raise `CONFLICT: <sentence>`.
     const prefixed = /^CONFLICT: (.*)$/s.exec(current.message);
     if (prefixed !== null) return packingHttpError('CONFLICT', prefixed[1] ?? current.message);
+    // The courier's triggers raise `<CODE>: <sentence>` too (a return's receipt, D-934).
+    const coded = /^([A-Z][A-Z_]+): (.*)$/s.exec(current.message);
+    if (coded?.[1] !== undefined && isErrorCode(coded[1])) {
+      return packingHttpError(coded[1], coded[2] ?? current.message);
+    }
     const code = (current as { code?: unknown }).code;
     if (typeof code === 'string' && isErrorCode(code)) {
       return packingHttpError(ORDER_CODES[code] ?? code, current.message);

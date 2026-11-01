@@ -669,6 +669,10 @@ export class TestOrdersPort implements OrdersPort {
     };
   }
 
+  async fulfilmentLocationOf(_tx: Tx, orgId: string, orderId: string): Promise<string | null> {
+    return (await this.statusOf(_tx, orgId, orderId))?.locationId ?? null;
+  }
+
   async statusOf(tx: Tx, orgId: string, orderId: string) {
     const rows = await tx.execute<{
       status: string;

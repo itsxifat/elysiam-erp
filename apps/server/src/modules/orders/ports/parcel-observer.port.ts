@@ -66,10 +66,25 @@ export interface ParcelObserver {
     tx: Tx,
     input: { readonly orgId: string; readonly orderId: string; readonly at: Date },
   ): Promise<void>;
+
+  /**
+   * The order was received back (M51, D-938), by whichever route, in that transaction: its open
+   * return inspection ends with it.
+   */
+  orderReturned?(
+    tx: Tx,
+    input: {
+      readonly orgId: string;
+      readonly orderId: string;
+      readonly userId: string;
+      readonly at: Date;
+    },
+  ): Promise<void>;
 }
 
 type ConfirmedInput = Parameters<NonNullable<ParcelObserver['orderConfirmed']>>[1];
 type FailedInput = Parameters<NonNullable<ParcelObserver['bookingFailed']>>[1];
+type ReturnedInput = Parameters<NonNullable<ParcelObserver['orderReturned']>>[1];
 
 @Injectable()
 export class ParcelObserverRegistry {
@@ -91,6 +106,11 @@ export class ParcelObserverRegistry {
   /** D-914: the order's booking failed for good. */
   async notifyBookingFailed(tx: Tx, input: FailedInput): Promise<void> {
     for (const observer of this.observers) await observer.bookingFailed?.(tx, input);
+  }
+
+  /** M51 (D-938): the order was received back. */
+  async notifyReturned(tx: Tx, input: ReturnedInput): Promise<void> {
+    for (const observer of this.observers) await observer.orderReturned?.(tx, input);
   }
 
   /** Whether anyone listens: a confirm with no listener opens no savepoint. */

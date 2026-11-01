@@ -4040,3 +4040,44 @@ Catalog` as well), zones locked against a concurrent change; re-connecting keeps
 - **Follow-ups:** the till (Sell and Returns lines) has no photos yet; native selects (stock
   adjust and transfer, supplier returns) cannot show one; a route-matrix run for the new route.
 - **New dependencies:** none. **Migration:** none.
+
+## 2026-11-01 · M51 · label-to-label recording, per-lot videos and the return station
+
+- **What:** the parcel's label starts each lot's recording and the label again stops it (a piece
+  before the label is refused); no scan for the brand's idle time (10 s, 3 to 60) pauses the video
+  and the next scan resumes it, for this computer's camera and IP cameras alike; one video per lot
+  under the one order; Packaging → Returns films and scans a returned parcel and receives it into
+  stock. Screens rebuilt: camera stage with REC, PAUSED and a countdown ring, step rail, lot rail.
+  Plan: `docs/plans/M51.md`. Decisions: D-930 to D-940.
+- **Migrations:** 0165, 0166 (`packing.recordings`, `sessions.kind`, the `label` scan, the idle
+  time; never applied before this release, so `take` was folded into them, not added after).
+- **Ledger audit:** 3 critical, 4 warnings. Fixed: receive refused every order with no location,
+  on the older Returns dialog too (D-937); a bag stopped by mistake stranded its pieces (D-937);
+  the receipt path had no test (`return-station.db.test.ts`, below); a return received from
+  another page left its session open (D-938); a short receipt took one press (D-939); terminal
+  cards mixed returns in; both routes locked in opposite orders (D-938); a trigger's code became a
+  500; the note could cut off what was missing. Open, the owner's: D-940. The fixes were not
+  re-audited; the tests below exercise them.
+- **Found by looking at it:** the line progress bars did not show; "Pauses in 4 s" with a 3 s idle;
+  the Videos row's time stood still while REC ran; "1 pieces"; the stage asking for a label after
+  the last bag. `docs/review/M51/` has the pictures.
+- **Tests (run):** `return-station.db.test.ts` 13 (real stock and journals on a parcel really
+  coming back) and `label-recording.db.test.ts` 6 on real Postgres; `courier.db.test.ts`,
+  `tenancy.test.ts`, `module-boundaries.test.ts` (144 with the above's 6); domain `packing` 71;
+  `pack-station-ui.test.ts` 27; `e2e/pack-station.spec.ts` 5 in Chromium with a fake camera,
+  reading the real `MediaRecorder`'s state. Typecheck, eslint, prettier, `check:i18n`,
+  `check:migrations`, `check:schema`, `check:routes`, `check:api-client`, `check:white-label`,
+  `check:bundle` (249.6 of 250 KB): PASS.
+- **Not tested:** an IP camera's cut along the stretches has no test of its own (the segment
+  selection reuses M38c's tested functions; a real camera has not filmed it), and no real barcode
+  scanner or browser camera has been used. `pnpm verify` and the stack specs were not run, per the
+  minimal-tests rule, and are known stale: `pack-station.e2e`, `camera.e2e`, `labels.e2e`,
+  `packing.e2e` and `packing.stack.ts` pack without a label scan, on top of D-928's printed-label
+  rule.
+- **Also:** the call card's position key named the product (D-926), failing `check:white-label`;
+  renamed to `erp.phone-dock.offset` (a saved position resets once).
+- **Follow-ups:** the browser's camera takes a moment to open when the first scan opens the order
+  from the Find screen, so that lot's first second or so may be missed (an IP camera's buffer is
+  not affected); a piece's condition chosen at the scan; a stale screen's `ipRecordingPhase` and
+  `IpCameraCard` remain only for sessions filmed before M51.
+- **New dependencies:** none.

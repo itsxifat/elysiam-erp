@@ -356,6 +356,25 @@ export class TransitionsService {
       }
     }
 
+    // M51 (D-938): an order received back ends its open return inspection, whichever route
+    // received it. In a savepoint, as above: the return is the business change.
+    if (trigger === 'receive_return' && result.to === 'returned' && !this.parcels.empty) {
+      try {
+        await tx.transaction(async (savepoint) =>
+          this.parcels.notifyReturned(savepoint, {
+            orgId: context.orgId,
+            orderId: order.id,
+            userId: context.userId,
+            at,
+          }),
+        );
+      } catch (error) {
+        this.logger.warn(
+          `a returned order's inspection did not close for order ${order.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     // M41 (D-717): an order that left New is offered to nobody any more, whichever path moved
     // it (the desk, a website payment, the marketplace, a courier), so no card outlives it.
     if (order.status === 'pending') await this.offers.withdrawFor(tx, context.orgId, order.id);

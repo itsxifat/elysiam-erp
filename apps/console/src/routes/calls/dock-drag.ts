@@ -12,7 +12,7 @@
  * own re-renders (its clock ticks every second).
  */
 
-const STORAGE_KEY = 'elysium.phone-dock.offset';
+const STORAGE_KEY = 'erp.phone-dock.offset';
 const STEP = 24;
 const MARGIN = 8;
 

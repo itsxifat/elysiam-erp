@@ -643,6 +643,12 @@ export interface OrdersApi {
   returnableLines(tx: Tx, orgId: string, orderId: string): Promise<readonly ReturnableLine[]>;
 
   /**
+   * Where this order's stock lives: its own location, else the warehouse `locationFor` fulfils
+   * it from. Null only for a brand with no warehouse at all.
+   */
+  fulfilmentLocationOf(tx: Tx, orgId: string, orderId: string): Promise<string | null>;
+
+  /**
    * Run §9's trigger for a courier event, with all of its effects.
    *
    * Locks the order, asks the domain, performs the effects and moves the status — one
@@ -1965,6 +1971,13 @@ export class OrdersApiService implements OrdersApi {
       locationId: order.location_id,
       courierId: order.courier_id,
     };
+  }
+
+  async fulfilmentLocationOf(tx: Tx, orgId: string, orderId: string): Promise<string | null> {
+    const order = await repo.orderById(tx, orgId, orderId);
+    if (order === undefined) return null;
+    if (order.location_id !== null) return order.location_id;
+    return (await repo.defaultFulfilmentLocation(tx, orgId, order.branch_id))?.id ?? null;
   }
 
   async returnableLines(

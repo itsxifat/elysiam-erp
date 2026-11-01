@@ -401,6 +401,11 @@ function Station({
   const onLabel = (result: ScanAnswer) => {
     const label = result.label;
     if (label === null || label === undefined) return;
+    // The scanner's own repeat: nothing changed, so nothing is said.
+    if (label.action === 'ignored') {
+      keep(result.view);
+      return;
+    }
     if (label.action === 'finished') {
       finished(result.view, true);
       return;
@@ -520,7 +525,7 @@ function Station({
 
   const lotRail = Array.from({ length: lots.count }, (_, index) => {
     const lot = index + 1;
-    const recording = recordings.find((entry) => entry.lot === lot);
+    const recording = recordings.filter((entry) => entry.lot === lot).at(-1);
     const state: LotState = !open
       ? 'done'
       : openLot !== null && lot < openLot
@@ -647,7 +652,16 @@ function Station({
             {`${t('lb.thisComputer')}: ${view.terminal.name}`}
           </p>
         )}
-        <LotVideos recordings={recordings} videos={view.videos} lotCount={lots.count} />
+        <LotVideos
+          recordings={recordings}
+          videos={view.videos}
+          lotCount={lots.count}
+          live={
+            running === null || clock === null
+              ? null
+              : { id: running.id, recordedMs: clock.recordedMs }
+          }
+        />
         <ScanTimeline scans={view.scans} lotCount={lots.count} />
       </aside>
       {lotsOpen ? (

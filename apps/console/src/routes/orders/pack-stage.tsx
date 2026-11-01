@@ -32,6 +32,8 @@ export function StepRail({
   }[];
 }) {
   const t = useT();
+  // Two steps may be lit (a bag may take another piece, or be closed): one is the current one.
+  const current = steps.findIndex((step) => step.state === 'current');
   return (
     <ol className="ps-steps" aria-label={t('ps.steps.label')} data-testid="pack-steps">
       {steps.map((step, index) => (
@@ -39,7 +41,7 @@ export function StepRail({
           key={step.title}
           className="ps-step"
           data-state={step.state}
-          aria-current={step.state === 'current' ? 'step' : undefined}
+          aria-current={index === current ? 'step' : undefined}
         >
           <span className="ps-step-mark" aria-hidden>
             {step.state === 'done' ? <Check className="size-4" /> : String(index + 1)}
@@ -75,7 +77,7 @@ export function LotRail({
         <li key={entry.lot} className="ps-lot" data-state={entry.state}>
           <span className="ps-lot-dot" aria-hidden />
           <strong>{`${t('ps.stage.lot')} ${String(entry.lot)}`}</strong>
-          <span>{`${String(entry.pieces)} ${t('ps.pieces')}`}</span>
+          <span>{`${String(entry.pieces)} ${t(entry.pieces === 1 ? 'ps.piece' : 'ps.pieces')}`}</span>
           <span className="sr-only">{t(`ps.lots.state.${entry.state}` as ConsoleT)}</span>
           {entry.video === null ? null : <VideoMark phase={entry.video} />}
         </li>
@@ -165,10 +167,13 @@ export function LotVideos({
   recordings,
   videos,
   lotCount,
+  live,
 }: {
   readonly recordings: readonly RecordingFacts[];
   readonly videos: readonly { readonly recordingId?: string | null; readonly state: string }[];
   readonly lotCount: number;
+  /** The running recording's own clock: the server's count is as old as its last answer. */
+  readonly live: { readonly id: string; readonly recordedMs: number } | null;
 }) {
   const t = useT();
   const id = useId();
@@ -197,7 +202,9 @@ export function LotVideos({
               </span>
               <span className="flex items-center gap-2">
                 <span className="text-muted-foreground tabular-nums">
-                  {formatElapsed(recording.recordedMs)}
+                  {formatElapsed(
+                    live?.id === recording.id ? live.recordedMs : recording.recordedMs,
+                  )}
                 </span>
                 <StatusBadge
                   tone={

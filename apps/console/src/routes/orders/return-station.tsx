@@ -1,4 +1,4 @@
-import { Button, EmptyState, Select, Skeleton, StatusBadge, cn } from '@elysium/ui';
+import { Button, Checkbox, EmptyState, Select, Skeleton, StatusBadge, cn } from '@elysium/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Minus, PackageOpen, Plus, TriangleAlert, Undo2 } from 'lucide-react';
@@ -281,7 +281,8 @@ function Station({
 
   const onLabel = (result: ReturnScanAnswer) => {
     const label = result.label;
-    if (label === null) return;
+    // The scanner's own repeat: nothing changed, so nothing is said.
+    if (label === null || label.action === 'ignored') return;
     const count = result.view.lots.count;
     if (label.action === 'refused') {
       playScanSound('refused');
@@ -370,7 +371,7 @@ function Station({
 
   const lotRail = Array.from({ length: lotCount }, (_, index) => {
     const lot = index + 1;
-    const recording = recordings.find((entry) => entry.lot === lot);
+    const recording = recordings.filter((entry) => entry.lot === lot).at(-1);
     const state: LotState =
       bag === lot ? 'recording' : done.has(lot) ? 'done' : open ? 'waiting' : 'done';
     return {
@@ -384,7 +385,9 @@ function Station({
   const status: StageStatus = !open
     ? { kind: 'done', lot: null }
     : running === null || clock === null
-      ? { kind: 'label' }
+      ? allDone
+        ? { kind: 'done', lot: null }
+        : { kind: 'label' }
       : clock.paused
         ? { kind: 'paused', recordedMs: clock.recordedMs }
         : { kind: 'recording', recordedMs: clock.recordedMs, pauseInMs: clock.pauseInMs };
@@ -402,8 +405,20 @@ function Station({
             <StepRail steps={steps} />
             <LotRail lots={lotRail} />
             <ScanField
-              label={running === null ? t('rs.scan.labelFirst') : t('rs.scan.label')}
-              hint={running === null ? t('rs.scan.labelHint') : t('rs.scan.hint')}
+              label={
+                running !== null
+                  ? t('rs.scan.label')
+                  : allDone
+                    ? t('rs.scan.reopen')
+                    : t('rs.scan.labelFirst')
+              }
+              hint={
+                running !== null
+                  ? t('rs.scan.hint')
+                  : allDone
+                    ? t('rs.scan.reopenHint')
+                    : t('rs.scan.labelHint')
+              }
               onCode={(code) => scan.mutate({ sessionId: view.session.id, code })}
               message={scan.isPending ? t('ps.scan.sending') : null}
               className="max-w-xl"
@@ -459,7 +474,16 @@ function Station({
           <SourceChoice choice={source} locked={open && view.session.cameraLocked} />
         )}
         {ipCamera === null ? <CameraChoice recorder={recorder} /> : null}
-        <LotVideos recordings={recordings} videos={view.videos} lotCount={lotCount} />
+        <LotVideos
+          recordings={recordings}
+          videos={view.videos}
+          lotCount={lotCount}
+          live={
+            running === null || clock === null
+              ? null
+              : { id: running.id, recordedMs: clock.recordedMs }
+          }
+        />
         <ScanTimeline scans={view.scans} lotCount={lotCount} />
       </aside>
     </div>
@@ -625,6 +649,13 @@ function ReceivePanel({
   );
   const damagedTotal = Object.values(damaged).reduce((sum, qty) => sum + qty, 0);
   const back = view.lines.filter((line) => line.back > 0);
+  // A parcel has one receipt: what it leaves out can never be booked in later (D-939).
+  const opened = new Set(view.recordings.map((recording) => recording.lot));
+  const unopened = Array.from({ length: view.lots.count }, (_, index) => index + 1).filter(
+    (lot) => !opened.has(lot),
+  );
+  const short = view.progress.missing > 0 || unopened.length > 0;
+  const [acknowledged, setAcknowledged] = useState(false);
   const receive = useMutation({
     mutationFn: () =>
       receiveReturnInspection(view.session.id, {
@@ -635,6 +666,7 @@ function ReceivePanel({
         reason: reason.trim(),
         ...(note.trim() === '' ? {} : { inspectionNote: note.trim() }),
         ...(damagedTotal === 0 || damagedLocationId === '' ? {} : { damagedLocationId }),
+        ...(short ? { acknowledgeShort: acknowledged } : {}),
       }),
     onSuccess: onReceived,
   });
@@ -642,6 +674,7 @@ function ReceivePanel({
     returnReason !== '' &&
     reason.trim() !== '' &&
     (damagedTotal === 0 || damagedLocationId !== '') &&
+    (!short || acknowledged) &&
     !receive.isPending;
   const step = (skuId: string, by: number, max: number) =>
     setDamaged((current) => ({
@@ -664,14 +697,34 @@ function ReceivePanel({
           <p className="text-sm text-muted-foreground">{t('rs.receive.detail')}</p>
         </div>
       </div>
-      {view.progress.missing > 0 ? (
-        <p
+      {short ? (
+        <div
           role="status"
-          className="flex items-start gap-2 rounded-md border border-warning bg-warning-subtle px-3 py-2 text-sm text-warning-subtle-foreground"
+          className="space-y-2 rounded-md border border-warning bg-warning-subtle px-3 py-2 text-sm text-warning-subtle-foreground"
         >
-          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-          {`${String(view.progress.missing)} ${t('rs.receive.missing')}`}
-        </p>
+          <p className="flex items-start gap-2 font-medium">
+            <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+            {[
+              view.progress.missing > 0
+                ? `${t('rs.receive.missing')}: ${String(view.progress.missing)}`
+                : null,
+              unopened.length > 0 ? `${t('rs.receive.unopened')}: ${unopened.join(', ')}` : null,
+            ]
+              .filter((part) => part !== null)
+              .join(' · ')}
+          </p>
+          <p>{t('rs.receive.missingNote')}</p>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={`${id}-short`}
+              checked={acknowledged}
+              onCheckedChange={(next) => setAcknowledged(next === true)}
+            />
+            <label htmlFor={`${id}-short`} className="font-medium">
+              {t('rs.receive.acknowledge')}
+            </label>
+          </div>
+        </div>
       ) : null}
       <ul className="divide-y divide-border rounded-md border border-border">
         {back.map((line) => {
@@ -759,7 +812,7 @@ function ReceivePanel({
         <textarea
           id={`${id}-note`}
           rows={2}
-          maxLength={900}
+          maxLength={600}
           value={note}
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25 focus-visible:outline-none"
           onChange={(event) => setNote(event.target.value)}

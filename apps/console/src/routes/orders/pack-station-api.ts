@@ -157,7 +157,8 @@ export interface PackView {
 
 /** What a label scan did (M51, D-930): started, closed the lot, finished, stopped or refused. */
 export interface LabelAnswer {
-  readonly action: 'started' | 'lot_closed' | 'finished' | 'stopped' | 'refused';
+  /** `ignored`: the scanner read the same label again at once; nothing changed. */
+  readonly action: 'started' | 'lot_closed' | 'finished' | 'stopped' | 'refused' | 'ignored';
   readonly lot: number | null;
   readonly message: string | null;
 }
@@ -527,6 +528,7 @@ export function receiveReturnInspection(
     readonly reason: string;
     readonly inspectionNote?: string;
     readonly damagedLocationId?: string;
+    readonly acknowledgeShort?: boolean;
   },
 ): Promise<ReturnView> {
   return api.post(`/v1/packing/returns/${sessionId}/receive`, input);

@@ -170,8 +170,12 @@ export class ReturnsService {
       }
     }
 
-    const locationId = input.locationId ?? order.locationId;
-    if (locationId === null || locationId === undefined) {
+    // An order from the desk or the inbox names no location: its units go back to the warehouse
+    // it was fulfilled from, as the transition's own `locationFor` would choose (D-937).
+    const locationId =
+      input.locationId ??
+      (await this.orders.fulfilmentLocationOf(tx, context.orgId, consignment.order_id));
+    if (locationId === null) {
       throw new CourierError(
         'RETURN_RECEIPT_INVALID',
         'Name the location the sellable units go back to.',

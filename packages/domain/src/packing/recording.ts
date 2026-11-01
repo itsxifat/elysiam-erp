@@ -30,6 +30,12 @@ export const PACKING_IDLE_PAUSE_MAX_MS = 60_000;
 /** How far an IP camera's stretch reaches back before its event (M38c's two seconds). */
 export const PACKING_RESUME_LEAD_MS = PACKING_CAMERA_PREROLL_MS;
 
+/**
+ * A label read again this soon is the scanner's own repeat, not a person's second scan: it starts
+ * or stops nothing. A person cannot put a label down and pick it up in under two seconds.
+ */
+export const PACKING_LABEL_REREAD_MS = 2_000;
+
 /** How long a return's video is kept after the return was received (D-935, ASSUMED). */
 export const PACKING_RETURN_VIDEO_KEEP_DAYS = 30;
 
@@ -145,6 +151,16 @@ function normalised(value: string): string {
   return value.trim().toUpperCase();
 }
 
+/** Whether this label is the scanner repeating the session's last label scan (D-934). */
+export function isLabelReread(input: {
+  readonly code: string;
+  readonly last: { readonly code: string; readonly atMs: number } | null;
+  readonly nowMs: number;
+}): boolean {
+  if (input.last === null || input.last.code !== input.code) return false;
+  return input.nowMs - input.last.atMs < PACKING_LABEL_REREAD_MS;
+}
+
 export type LabelRefusal = 'no_such_lot' | 'lot_done' | 'other_lot' | 'all_done';
 
 export type LabelVerdict =
@@ -188,7 +204,9 @@ export function judgePackLabelScan(input: {
 /**
  * A label scanned at the return station (D-934). A returned parcel's bags come back in any
  * order: one lot is opened at a time, its label again stops it, and a code of the whole order
- * means the lot being opened, else the first not yet opened.
+ * means the lot being opened, else the first not yet opened. A done bag's own label reopens it
+ * (a parcel has one receipt, so a bag stopped by mistake must not strand its pieces); a code of
+ * the whole order reopens only a parcel of one bag, since with several it names none of them.
  */
 export function judgeReturnLabelScan(input: {
   readonly lotCount: number;
@@ -215,11 +233,8 @@ export function judgeReturnLabelScan(input: {
       break;
     }
   }
-  const lot = named ?? firstOpen;
+  const lot = named ?? firstOpen ?? (input.lotCount === 1 ? 1 : null);
   if (lot === null) return { kind: 'refused', reason: 'all_done', lot: null, expected: null };
-  if (input.doneLots.has(lot)) {
-    return { kind: 'refused', reason: 'lot_done', lot, expected: firstOpen };
-  }
   return { kind: 'start', lot };
 }
 

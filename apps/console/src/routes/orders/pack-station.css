@@ -278,6 +278,7 @@
 /* --- the line's progress bar ---------------------------------------------------------------- */
 
 .ps-bar {
+  display: block;
   height: 0.25rem;
   width: 100%;
   overflow: hidden;
@@ -363,13 +364,20 @@
 
 @media (width >= 64rem) {
   .ps-grid {
-    grid-template-columns: minmax(0, 1fr) 24rem;
+    grid-template-columns: minmax(0, 1fr) 22rem;
     align-items: start;
   }
 
   .ps-grid > aside {
     position: sticky;
     top: calc(var(--topbar-height) + 1rem);
+  }
+}
+
+/* The camera, large, once the window has the room: the packer reads it from across the table. */
+@media (width >= 90rem) {
+  .ps-grid {
+    grid-template-columns: minmax(0, 1fr) 30rem;
   }
 }
 

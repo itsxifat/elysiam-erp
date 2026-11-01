@@ -13,6 +13,7 @@ import { withOrg, type Tx } from '@elysium/db';
 import { isReturnReasonCode } from '@elysium/domain';
 import { normaliseScannedCode } from '@elysium/domain/barcode';
 import {
+  isLabelReread,
   isPackScanRefusal,
   judgePackRemoval,
   judgePackScan,
@@ -48,7 +49,12 @@ import * as rec from './recording.repository.js';
 import { ordersForScannedCode, ScannerService } from './scanner.service.js';
 import { mapPackingErrors, PackingError } from './station.errors.js';
 import * as repo from './station.repository.js';
-import { labelFactsOf, labelRefusalWords, PackStationService } from './station.service.js';
+import {
+  labelFactsOf,
+  labelRefusalWords,
+  lastLabelOf,
+  PackStationService,
+} from './station.service.js';
 import { TerminalsService } from './terminals.service.js';
 
 const iso = (value: Date | string | null): string | null =>
@@ -79,7 +85,8 @@ const REFUSAL_WORDS: Readonly<Record<string, string>> = {
 
 /** What a label scan did at the return table (D-934). */
 export interface ReturnLabelAnswer {
-  readonly action: 'started' | 'stopped' | 'refused';
+  /** `ignored`: the scanner read the same label again at once; nothing changed. */
+  readonly action: 'started' | 'stopped' | 'refused' | 'ignored';
   readonly lot: number | null;
   readonly message: string | null;
 }
@@ -126,6 +133,12 @@ export class ReturnStationService {
           const [facts] = await this.orders.packingFacts(tx, context.orgId, [orderId]);
           if (facts === undefined) throw new PackingError('NOT_FOUND', 'No such order.');
           this.assertReturnable(facts);
+          if ((await this.courier.parcelOfOrder(tx, context.orgId, orderId)) === null) {
+            throw new PackingError(
+              'PACKING_NOT_RETURNABLE',
+              `Order ${facts.orderNo} has no courier parcel to receive back. Receive it from its own page.`,
+            );
+          }
           const settings = await repo.settingsOf(tx, context.orgId);
           const { row, created } = await repo.openSession(tx, {
             orgId: context.orgId,
@@ -195,7 +208,7 @@ export class ReturnStationService {
   ) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const session = await this.sessionInScope(tx, context.orgId, request, sessionId, true);
+        const { session, facts } = await this.locked(tx, context.orgId, request, sessionId);
         const again = await repo.scanByScanId(tx, context.orgId, sessionId, input.scanId);
         if (again !== undefined) {
           return this.answer(again.outcome as PackScanOutcome, again.sku_id, null, {
@@ -204,7 +217,6 @@ export class ReturnStationService {
           });
         }
         this.assertOpen(session);
-        const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertReturnable(facts);
         const code = normaliseScannedCode(input.code);
         const label = readOrderLabel(code, labelFactsOf(facts));
@@ -282,11 +294,10 @@ export class ReturnStationService {
   ) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const session = await this.sessionInScope(tx, context.orgId, request, sessionId, true);
+        const { session, facts } = await this.locked(tx, context.orgId, request, sessionId);
         const again = await repo.scanByScanId(tx, context.orgId, sessionId, input.scanId);
         if (again !== undefined) return this.view(tx, context.orgId, session, context.userId);
         this.assertOpen(session);
-        const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertReturnable(facts);
         const scans = await repo.scansOf(tx, context.orgId, sessionId);
         const running = (await rec.recordingsOf(tx, context.orgId, sessionId)).find(
@@ -352,9 +363,20 @@ export class ReturnStationService {
   ) {
     return mapPackingErrors(() =>
       withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
-        const session = await this.sessionInScope(tx, context.orgId, request, sessionId, true);
+        const peek = await this.sessionInScope(tx, context.orgId, request, sessionId, false);
+        this.assertOpen(peek);
+        // The consignment first, as every receipt takes it (N1): two routes at one parcel wait.
+        const parcel = await this.courier.parcelOfOrder(tx, context.orgId, peek.order_id, {
+          forUpdate: true,
+        });
+        if (parcel === null) {
+          throw new PackingError(
+            'PACKING_NOT_RETURNABLE',
+            `Order ${peek.order_no} has no courier parcel to receive back.`,
+          );
+        }
+        const { session, facts } = await this.locked(tx, context.orgId, request, sessionId);
         this.assertOpen(session);
-        const facts = await this.lockedFacts(tx, context.orgId, session.order_id);
         this.assertReturnable(facts);
         if (!isReturnReasonCode(input.returnReason)) {
           throw new PackingError('RETURN_RECEIPT_INVALID', 'Choose why the parcel came back.');
@@ -383,11 +405,22 @@ export class ReturnStationService {
             );
           }
         }
-        const parcel = await this.courier.parcelOfOrder(tx, context.orgId, session.order_id);
-        if (parcel === null) {
+        // What this receipt leaves out can never be booked in later (a parcel has one receipt),
+        // so it is said out loud first (D-939).
+        const missing = await this.missingWords(tx, context.orgId, facts, back);
+        const opened = new Set(
+          (await rec.recordingsOf(tx, context.orgId, sessionId)).map((row) => row.lot_no),
+        );
+        const lotCount = await labels.lotCountOf(tx, context.orgId, session.order_id);
+        const unopened = Array.from({ length: lotCount }, (_, index) => index + 1).filter(
+          (lot) => !opened.has(lot),
+        );
+        const unopenedWords =
+          unopened.length === 0 ? '' : `Bags not opened: ${unopened.map(String).join(', ')}`;
+        if ((missing !== '' || unopened.length > 0) && input.acknowledgeShort !== true) {
           throw new PackingError(
-            'PACKING_NOT_RETURNABLE',
-            `Order ${facts.orderNo} has no courier parcel to receive back.`,
+            'RETURN_RECEIPT_INVALID',
+            `${[missing, unopenedWords].filter((part) => part !== '').join('. ')}. A parcel has one receipt: confirm this, or scan them first.`,
           );
         }
         // Every bag still being opened stops with the receipt (D-932).
@@ -402,8 +435,10 @@ export class ReturnStationService {
             reason: 'received',
           });
         }
-        const missing = await this.missingWords(tx, context.orgId, facts, back);
-        const note = [input.inspectionNote ?? '', missing].filter((part) => part !== '').join('\n');
+        // What did not come back first: the note is cut at the receipt's 1,000 (N3).
+        const note = [missing, unopenedWords, input.inspectionNote ?? '']
+          .filter((part) => part !== '')
+          .join('\n');
         let received: { readonly receiptId: string; readonly orderStatus: string };
         try {
           received = await this.courier.receiveReturn(tx, context, request, parcel.consignmentId, {
@@ -432,8 +467,13 @@ export class ReturnStationService {
             `Order ${facts.orderNo} did not move to returned; receive it from the order page.`,
           );
         }
+        // `orderReturned` closed it in the receipt's own transaction (D-938); should its listener
+        // have failed, it closes here, or nothing of this receipt stands.
         if (!(await repo.completeSession(tx, context.orgId, sessionId, context.userId))) {
-          throw new PackingError('CONFLICT', 'This return changed; open it again.');
+          const closed = await repo.sessionById(tx, context.orgId, sessionId);
+          if (closed?.status !== 'completed') {
+            throw new PackingError('CONFLICT', 'This return changed; open it again.');
+          }
         }
         await this.audit.record(tx, {
           orgId: context.orgId,
@@ -523,6 +563,11 @@ export class ReturnStationService {
     const lotCount = await labels.lotCountOf(tx, orgId, session.order_id);
     const recordings = await rec.recordingsOf(tx, orgId, session.id);
     const running = recordings.find((row) => row.stopped_at === null)?.lot_no ?? null;
+    const reread = isLabelReread({
+      code: scan.code,
+      last: lastLabelOf(await repo.scansOf(tx, orgId, session.id)),
+      nowMs: (await cameras.transactionNow(tx)).getTime(),
+    });
     const verdict = judgeReturnLabelScan({
       lotCount,
       scannedLot: scan.lot,
@@ -539,10 +584,12 @@ export class ReturnStationService {
       skuId: null,
       outcome: 'label',
       scannedBy: context.userId,
-      lotNo: verdict.kind === 'refused' ? (running ?? 1) : verdict.lot,
+      lotNo: reread || verdict.kind === 'refused' ? (running ?? 1) : verdict.lot,
     });
     let answer: ReturnLabelAnswer;
-    if (verdict.kind === 'start') {
+    if (reread) {
+      answer = { action: 'ignored', lot: running, message: null };
+    } else if (verdict.kind === 'start') {
       await startLotRecording(tx, this.audit, {
         orgId,
         userId: context.userId,
@@ -597,6 +644,8 @@ export class ReturnStationService {
     if (label === null) return;
     const recordings = await rec.recordingsOf(tx, orgId, session.id);
     if (recordings.some((row) => row.stopped_at === null)) return;
+    // Opening again only resumes the return: a done bag reopens at the station's own scan.
+    if (recordings.length > 0 && label.lot === null) return;
     const verdict = judgeReturnLabelScan({
       lotCount: await labels.lotCountOf(tx, orgId, session.order_id),
       scannedLot: label.lot,
@@ -661,6 +710,23 @@ export class ReturnStationService {
       throw new PackingError('NOT_FOUND', 'No such return.');
     }
     return session;
+  }
+
+  /**
+   * The session and its order, locked in the order a receipt from any route locks them: the
+   * order, then this session through `orderReturned` (N1). A scan racing a receipt from another
+   * page waits for it and is then told, rather than deadlocking with it.
+   */
+  private async locked(
+    tx: Tx,
+    orgId: string,
+    request: object,
+    sessionId: string,
+  ): Promise<{ readonly session: repo.SessionRow; readonly facts: PackingFacts }> {
+    const peek = await this.sessionInScope(tx, orgId, request, sessionId, false);
+    const facts = await this.lockedFacts(tx, orgId, peek.order_id);
+    const session = (await repo.sessionById(tx, orgId, sessionId, { forUpdate: true })) ?? peek;
+    return { session, facts };
   }
 
   private async lockedFacts(tx: Tx, orgId: string, orderId: string): Promise<PackingFacts> {
@@ -805,6 +871,8 @@ export class ReturnStationService {
       };
     });
     const running = recordings.find((row) => row.stopped_at === null)?.lot_no ?? null;
+    // A bag reopened (D-934) is being opened, not done.
+    const doneLots = new Set(recordings.map((row) => row.lot_no).filter((lot) => lot !== running));
     const lotPieces = piecesByLot(scans.map((row) => ({ lot: row.lot_no, outcome: row.outcome })));
     const unitsExpected = lines.reduce((sum, line) => sum + line.expected, 0);
     const unitsBack = lines.reduce((sum, line) => sum + line.back, 0);
@@ -812,11 +880,11 @@ export class ReturnStationService {
       kind: 'return' as const,
       idlePauseMs: idleMs,
       recordings: recordingViews(recordings, scans, names, new Date()),
-      labelNeeded: open && running === null,
+      labelNeeded: open && running === null && doneLots.size < lotCount,
       lots: {
         count: lotCount,
         recording: running,
-        done: recordings.filter((row) => row.stopped_at !== null).map((row) => row.lot_no),
+        done: [...doneLots].sort((a, b) => a - b),
         pieces: Array.from({ length: lotCount }, (_, index) => ({
           lot: index + 1,
           pieces: lotPieces.get(index + 1) ?? 0,
@@ -905,11 +973,8 @@ function returnRefusal(verdict: Extract<LabelVerdict, { kind: 'refused' }>, lotC
   if (verdict.reason === 'other_lot') {
     return `Bag ${String(verdict.expected ?? '')} is being opened: scan its label again to finish it first.`;
   }
-  if (verdict.reason === 'lot_done') {
-    return verdict.expected === null
-      ? `Bag ${String(verdict.lot ?? '')} is done.`
-      : `Bag ${String(verdict.lot ?? '')} is done. Scan another bag’s label, or receive the return.`;
+  if (verdict.reason === 'all_done') {
+    return 'Every bag of this parcel is done: receive the return, or scan a bag’s own label to reopen it.';
   }
-  if (verdict.reason === 'all_done') return 'Every bag of this parcel is done: receive the return.';
   return labelRefusalWords(verdict, lotCount);
 }

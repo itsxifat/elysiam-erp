@@ -14,8 +14,16 @@ import { ReturnsService } from './returns.service.js';
  * inspection, the receipt, the stock and the journal are one unit.
  */
 export interface CourierApi {
-  /** The order's live parcel, if it has one: its id and the codes printed on it. */
-  parcelOfOrder(tx: Tx, orgId: string, orderId: string): Promise<ReturnParcel | null>;
+  /**
+   * The order's live parcel, if it has one: its id and the codes printed on it. `forUpdate` takes
+   * the consignment's lock, the first a receipt takes.
+   */
+  parcelOfOrder(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    options?: { readonly forUpdate?: boolean },
+  ): Promise<ReturnParcel | null>;
 
   /**
    * Receive and inspect a returned parcel inside the caller's transaction: the receipt, the
@@ -46,9 +54,18 @@ export const COURIER_API = Symbol('CourierApi');
 export class CourierApiService implements CourierApi {
   constructor(private readonly returns: ReturnsService) {}
 
-  async parcelOfOrder(tx: Tx, orgId: string, orderId: string): Promise<ReturnParcel | null> {
-    const row = await repo.consignmentByOrder(tx, orgId, orderId);
-    if (row === undefined) return null;
+  async parcelOfOrder(
+    tx: Tx,
+    orgId: string,
+    orderId: string,
+    options: { readonly forUpdate?: boolean } = {},
+  ): Promise<ReturnParcel | null> {
+    const found = await repo.consignmentByOrder(tx, orgId, orderId);
+    if (found === undefined) return null;
+    const row =
+      options.forUpdate === true
+        ? ((await repo.consignmentForUpdate(tx, orgId, found.id)) ?? found)
+        : found;
     return {
       consignmentId: row.id,
       consignmentNo: row.consignment_no,

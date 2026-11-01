@@ -1462,4 +1462,8 @@ The owner's request of 2026-11-01 (plan: `docs/plans/M51.md`; D-930 to D-936).
 3. The database refuses a recording without its label scan, a second stop, and a video part of another lot's recording.
 4. The return station opens a returning parcel by its label, refuses a piece that did not go out, and stops at the label; an order not on its way back is refused.
 5. The recording's stretches never overlap, lie inside it, and never pause within the idle time of an event (property test).
-6. Typecheck, lint, i18n, migrations, schema drift, the route matrix and the first-download budget pass.
+6. Receive books what was scanned: stock split between the shelf and the damaged shelf, one journal at the dispatch value, one receipt, the session closed, no cost in the answer; a failure after that rolls all of it back.
+7. An order with no location of its own is received; a short receipt needs its acknowledgement; a bag stopped by mistake or by its fifteen minutes reopens; the scanner's repeat changes nothing.
+8. An order received from another page ends its inspection; both routes at once book it once, with no deadlock.
+9. In a real browser with a fake camera, the recorder is recording from the label, paused after the idle time, recording again at the next scan, stopped by the label again, and each lot uploads its own video.
+10. Typecheck, lint, i18n, migrations, schema drift, the route matrix, the API client, the white-label check and the first-download budget pass.

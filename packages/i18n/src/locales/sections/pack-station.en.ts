@@ -13,6 +13,7 @@ const en = {
   'ps.close': 'Close',
   'ps.save': 'Save',
   'ps.saving': 'Saving…',
+  'ps.piece': 'piece',
   'ps.pieces': 'pieces',
   'ps.of': 'of',
   'ps.find.label': 'Parcel label',
@@ -33,7 +34,7 @@ const en = {
   // M51: label to label, the pause, one video per lot, returns (D-930 to D-936).
   'ps.scan.labelFirst': 'Scan the parcel label',
   'ps.scan.labelHint':
-    'The label (or slip) starts the recording. Ten seconds with no scan pauses it; the next scan resumes it.',
+    'The label (or slip) starts the recording. It pauses when nothing is scanned, and the next scan resumes it.',
   'ps.stage.rec': 'REC',
   'ps.stage.paused': 'Paused',
   'ps.stage.scanLabel': 'Scan the label to start',
@@ -258,7 +259,10 @@ const en = {
   'rs.scan.label': 'Scan each piece that came back',
   'rs.scan.labelFirst': 'Scan the returned parcel’s label',
   'rs.scan.labelHint':
-    'The label starts the recording of the bag you open. Ten seconds with no scan pauses it.',
+    'The label starts the recording of the bag you open. It pauses when nothing is scanned, and the next scan resumes it.',
+  'rs.scan.reopen': 'Scan a bag’s label to reopen it',
+  'rs.scan.reopenHint':
+    'Every bag is done: receive the return below. A piece left out? Scan the label again and its bag reopens, with a video of its own.',
   'rs.scan.hint':
     'Scan the sticker on each piece as it comes out. When the bag is empty, scan its label again.',
   'rs.lines.title': 'What went out',
@@ -268,7 +272,11 @@ const en = {
   'rs.receive.title': 'Receive into stock',
   'rs.receive.detail':
     'Every piece scanned back goes to stock. Mark the damaged ones: they go to the damaged shelf.',
-  'rs.receive.missing': 'pieces that went out did not come back. The receipt says so.',
+  'rs.receive.missing': 'Pieces that went out and did not come back',
+  'rs.receive.missingNote':
+    'A parcel has one receipt, so what it leaves out cannot be booked in later. Scan the label to reopen a bag if anything is still inside.',
+  'rs.receive.unopened': 'Bags not opened',
+  'rs.receive.acknowledge': 'I checked: receive only what was scanned',
   'rs.receive.damaged': 'Damaged',
   'rs.receive.lessDamaged': 'One fewer damaged',
   'rs.receive.moreDamaged': 'One more damaged',

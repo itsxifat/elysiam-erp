@@ -29,8 +29,8 @@ export async function idlePauseMsOf(tx: Tx, orgId: string): Promise<number> {
 
 /**
  * Start a lot's recording at its label scan. The IP camera the session chose films it while that
- * camera is on; otherwise this computer's camera does (the browser records, D-670). Null when the
- * lot already has one (two scans racing: the first wins).
+ * camera is on; otherwise this computer's camera does (the browser records, D-670). A return's
+ * reopened bag takes the next take (D-934).
  */
 export async function startLotRecording(
   tx: Tx,
@@ -71,6 +71,7 @@ export async function startLotRecording(
       orderId: session.order_id,
       kind: session.kind,
       lot: input.lot,
+      take: row.take,
       recordingId: row.id,
       cameraId,
       videoRequired: row.video_required,
