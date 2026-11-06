@@ -4187,6 +4187,10 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   `check:bundle` (249.9 of 250 KB): PASS. `catalog-stock.stack.ts` and `delete-archive.stack.ts`
   now add their locations on `/locations`; edited, not run, per the minimal-tests rule.
   **Not deployed.**
-- **Open for the owner:** Elysiam's chart of accounts and main warehouse are still missing; posting
-  stock in hand fails until they are back. Re-running that brand's seed (idempotent) restores them.
+- **Elysiam's chart of accounts restored, nothing else** (the owner: "do not add any previous data"):
+  on 2026-11-06 the seed's `seedChartOfAccounts` alone ran in the release image, after a backup
+  (`~/erp-brands/backups/elysium-erp-before-accounts-20261106-101819.dump`, 0600, customer data:
+  delete once settled). 1 account became 43 (the 41 of the template, Head Office's hand cash and
+  the owner's Petty Cash). No location, zone, courier or old row was added: the owner's own
+  "Uttara 01" is still the only location, and there are no journals yet.
 - **New dependencies:** none.
