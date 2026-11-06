@@ -121,14 +121,17 @@ test('catalog setup: sizes, colours, a category and a showroom, linked from Cata
   await categories.getByRole('button', { name: 'Add category' }).click();
   await expect(categories.getByRole('listitem').filter({ hasText: CATEGORY })).toBeVisible();
 
+  await noBlockingViolations('catalog setup');
+  await shot('01-catalog-setup');
+
+  // D-951: the stock locations have a page of their own, in the menu under Stock.
+  await page.goto('/locations');
   const locations = page.getByRole('region', { name: 'Stock locations' });
   await locations.getByLabel('Location name').fill(SHOWROOM);
   await choose(locations.getByLabel('Kind'), 'Showroom');
   await locations.getByRole('button', { name: 'Add location' }).click();
   await expect(locations.getByRole('listitem').filter({ hasText: SHOWROOM })).toBeVisible();
-
-  await noBlockingViolations('catalog setup');
-  await shot('01-catalog-setup');
+  await noBlockingViolations('locations');
 });
 
 test('a supplier to receive from', async () => {

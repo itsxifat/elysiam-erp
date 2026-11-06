@@ -28,6 +28,7 @@ import { websiteRoutes } from './website/routes.js';
 import { inboxRoutes } from './inbox/routes.js';
 import { labelsRoutes } from './labels/routes.js';
 import { callsRoutes } from './calls/routes.js';
+import { locationsRoutes } from './locations/routes.js';
 import { AppShell } from '../shell/app-shell.js';
 import { useT } from '../i18n/locale.js';
 import { tableSearchSchema } from '../lib/table-search.js';
@@ -159,6 +160,8 @@ const inbox = inboxRoutes(rootRoute);
 const labels = labelsRoutes(rootRoute);
 /** M47 owns `/calls`: every call through Envo, the live calls and the extensions (D-845). */
 const calls = callsRoutes(rootRoute);
+/** D-951: `/locations`, the stock locations on a page of their own (they were in Catalog setup). */
+const locations = locationsRoutes(rootRoute);
 
 const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
   .filter(
@@ -192,6 +195,7 @@ const placeholderRoutes = NAVIGATION.flatMap((section) => section.items)
         // D-904: the courier portal is the labels module's route, not a placeholder.
         '/courier-portal',
         '/calls',
+        '/locations',
       ].includes(item.to),
   )
   .map((item) =>
@@ -227,6 +231,7 @@ const routeTree = rootRoute.addChildren([
   ...inbox,
   ...labels,
   ...calls,
+  ...locations,
   ...placeholderRoutes,
 ]);
 

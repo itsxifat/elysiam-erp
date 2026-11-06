@@ -17,20 +17,16 @@ import { ApiError } from '../../api.js';
 import {
   archiveAttribute,
   archiveCategory,
-  archiveLocation,
   archiveValue,
   attributeUsage,
   categoryUsage,
   deleteAttribute,
   deleteCategory,
-  deleteLocation,
   deleteValue,
   emptyAndDeleteCategory,
-  locationUsage,
   reorderValues,
   restoreAttribute,
   restoreCategory,
-  restoreLocation,
   restoreValue,
   valueUsage,
 } from '../../api/manage.js';
@@ -39,13 +35,6 @@ import { useT } from '../../i18n/locale.js';
 import '../../i18n/manage.js';
 import { DEFAULT_PAGE_SIZE } from '../../lib/table-search.js';
 import { DeleteOrArchive } from '../../ui/delete-or-archive.js';
-import {
-  createLocation,
-  listAllLocations,
-  listBranchOptions,
-  updateLocation,
-  type StockLocation,
-} from '../stock/api.js';
 import {
   createAttribute,
   createAttributeValue,
@@ -64,12 +53,12 @@ import { codeFrom } from './variant-grid.js';
 import '../../i18n/website.js';
 
 /**
- * Catalog setup: categories, the size and colour lists, and the brand's stock locations
- * (plan `catalog-stock-ux`, D-424, D-429). Linked from the Catalog header rather than
- * given a menu item of its own: it is the catalog's vocabulary, set up once and touched
- * rarely.
+ * Catalog setup: categories and the size and colour lists (plan `catalog-stock-ux`, D-424,
+ * D-429). Linked from the Catalog header rather than given a menu item of its own: it is
+ * the catalog's vocabulary, set up once and touched rarely. The stock locations were its
+ * last section until D-951 gave them a page of their own (`/locations`).
  *
- * Every code (category, list, value, location) is suggested from the name and can be
+ * Every code (category, list, value) is suggested from the name and can be
  * changed before saving, and none can be changed afterwards: codes are inside every SKU
  * code and label already printed. Names and labels can always be fixed.
  */
@@ -83,7 +72,6 @@ export function CatalogStructurePage() {
   const mayUpdate = ability.can('update', 'Catalog');
   // M39a (D-621): deleting is its own grant; archiving and restoring are `update`.
   const mayDelete = ability.can('delete', 'Catalog');
-  const mayStock = ability.can('read', 'Stock');
 
   const categories = useQuery({
     queryKey: ['catalog', 'categories'],
@@ -94,11 +82,6 @@ export function CatalogStructurePage() {
     queryKey: ['catalog', 'attributes'],
     queryFn: listAttributes,
     enabled: mayRead,
-  });
-  const locations = useQuery({
-    queryKey: ['stock', 'locations', 'all'],
-    queryFn: listAllLocations,
-    enabled: mayStock,
   });
 
   const refresh = () => {
@@ -140,15 +123,6 @@ export function CatalogStructurePage() {
           mayDelete={mayDelete}
           onDone={refresh}
         />
-        <PermissionGate allowed={mayStock}>
-          <Locations
-            items={locations.data?.items ?? []}
-            mayCreate={mayCreate}
-            mayUpdate={mayUpdate}
-            mayDelete={mayDelete}
-            onDone={refresh}
-          />
-        </PermissionGate>
       </div>
     </PermissionGate>
   );
@@ -940,226 +914,6 @@ function Rename({
             value={value}
             maxLength={maxLength}
             onChange={(event) => setValue(event.target.value)}
-            className={control}
-          />
-        </Field>
-        <Problem error={save.error} />
-      </div>
-    </Dialog>
-  );
-}
-
-// --- locations --------------------------------------------------------------------
-
-function Locations({
-  items,
-  mayCreate,
-  mayUpdate,
-  mayDelete,
-  onDone,
-}: {
-  readonly items: readonly StockLocation[];
-  readonly mayCreate: boolean;
-  readonly mayUpdate: boolean;
-  readonly mayDelete: boolean;
-  readonly onDone: () => void;
-}) {
-  const [managing, setManaging] = useState<StockLocation | null>(null);
-  const t = useT();
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<'warehouse' | 'showroom'>('showroom');
-  const [branchId, setBranchId] = useState('');
-  const [code, setCode] = useState<string | null>(null);
-  const [editing, setEditing] = useState<StockLocation | null>(null);
-  const suggested = code ?? codeFrom(name, 16);
-
-  const branches = useQuery({
-    queryKey: ['hr', 'branch-options'],
-    queryFn: listBranchOptions,
-    enabled: mayCreate,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  const branchList = branches.data?.items ?? [];
-  const chosenBranch = branchId !== '' ? branchId : (branchList[0]?.id ?? '');
-
-  const create = useMutation({
-    mutationFn: () =>
-      createLocation({
-        code: suggested,
-        name: name.trim(),
-        kind,
-        ...(kind === 'showroom' ? { branchId: chosenBranch } : {}),
-      }),
-    onSuccess: () => {
-      setName('');
-      setCode(null);
-      onDone();
-    },
-  });
-
-  // Every kind, in-transit included, so a switched-off one can be switched back on
-  // (ledger audit L2).
-  const shown = items;
-
-  return (
-    <section
-      aria-labelledby="locations-heading"
-      className="space-y-4 rounded-lg border border-border bg-card p-5"
-    >
-      <h2 id="locations-heading" className="text-base font-semibold tracking-tight">
-        {t('cs.setup.locations')}
-      </h2>
-      <p className="text-sm text-muted-foreground">{t('cs.setup.locationsHelp')}</p>
-      <ul className="divide-y divide-border rounded-lg border border-border">
-        {shown.map((location) => (
-          <li key={location.id} className="flex min-h-row items-center gap-3 px-4 py-1.5 text-sm">
-            <span className="font-medium">{location.name}</span>
-            <span className="text-xs text-muted-foreground tabular-nums">{location.code}</span>
-            <StatusBadge tone="neutral">{t(`cs.locationKind.${location.kind}`)}</StatusBadge>
-            {location.isActive ? null : (
-              <StatusBadge tone="neutral">{t('mg.archivedBadge')}</StatusBadge>
-            )}
-            <span className="flex-1" />
-            <PermissionGate allowed={mayUpdate}>
-              <Button size="sm" variant="ghost" onClick={() => setEditing(location)}>
-                {t('cs.edit')}
-              </Button>
-            </PermissionGate>
-            <PermissionGate allowed={mayUpdate || mayDelete}>
-              <ManageButton name={location.name} onClick={() => setManaging(location)} />
-            </PermissionGate>
-          </li>
-        ))}
-      </ul>
-
-      <PermissionGate allowed={mayCreate}>
-        <div className="flex flex-wrap items-end gap-3 rounded-lg bg-muted/50 p-4">
-          <Field label={t('cs.setup.locationName')}>
-            <input
-              value={name}
-              maxLength={120}
-              placeholder={t('cs.setup.locationExample')}
-              onChange={(event) => setName(event.target.value)}
-              className={control}
-            />
-          </Field>
-          <Field label={t('cs.setup.locationKind')}>
-            <Select
-              value={kind}
-              onValueChange={(value) => setKind(value as 'warehouse' | 'showroom')}
-              className="min-w-36"
-              options={[
-                { value: 'showroom', label: t('cs.locationKind.showroom') },
-                { value: 'warehouse', label: t('cs.locationKind.warehouse') },
-              ]}
-            />
-          </Field>
-          {kind === 'showroom' ? (
-            <Field label={t('cs.setup.branch')}>
-              <Select
-                value={chosenBranch}
-                onValueChange={setBranchId}
-                className="min-w-44"
-                options={branchList.map((branch) => ({ value: branch.id, label: branch.name }))}
-              />
-            </Field>
-          ) : null}
-          <Field label={t('cs.setup.code')}>
-            <input
-              value={suggested}
-              maxLength={16}
-              onChange={(event) => setCode(event.target.value.toUpperCase())}
-              className={`${control} w-28 font-mono uppercase`}
-            />
-          </Field>
-          <Button
-            size="sm"
-            disabled={
-              name.trim() === '' ||
-              !/^[A-Z0-9][A-Z0-9-]{0,15}$/.test(suggested) ||
-              (kind === 'showroom' && chosenBranch === '') ||
-              create.isPending
-            }
-            onClick={() => create.mutate()}
-          >
-            {t('cs.setup.addLocation')}
-          </Button>
-          <Problem error={create.error} />
-        </div>
-      </PermissionGate>
-
-      {editing === null ? null : (
-        <EditLocation
-          key={editing.id}
-          location={editing}
-          onClose={() => setEditing(null)}
-          onDone={onDone}
-        />
-      )}
-
-      {managing === null ? null : (
-        <DeleteOrArchive
-          key={managing.id}
-          open
-          onClose={() => setManaging(null)}
-          queryKey={['stock', 'locations', managing.id]}
-          loadUsage={() => locationUsage(managing.id)}
-          onDelete={mayDelete ? () => deleteLocation(managing.id) : undefined}
-          onArchive={mayUpdate ? () => archiveLocation(managing.id) : undefined}
-          archiveNote={t('mg.archive.location')}
-          onRestore={mayUpdate ? () => restoreLocation(managing.id) : undefined}
-          onDone={onDone}
-        />
-      )}
-    </section>
-  );
-}
-
-function EditLocation({
-  location,
-  onClose,
-  onDone,
-}: {
-  readonly location: StockLocation;
-  readonly onClose: () => void;
-  readonly onDone: () => void;
-}) {
-  const t = useT();
-  const [name, setName] = useState(location.name);
-  const save = useMutation({
-    mutationFn: () => updateLocation(location.id, { name: name.trim() }),
-    onSuccess: () => {
-      onDone();
-      onClose();
-    },
-  });
-  return (
-    <Dialog
-      open
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      title={t('cs.setup.editLocation')}
-      description={t('mg.setup.locationCodeFixed')}
-      closeLabel={t('cs.close')}
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            {t('cs.cancel')}
-          </Button>
-          <Button disabled={name.trim() === '' || save.isPending} onClick={() => save.mutate()}>
-            {t('cs.save')}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-3">
-        <Field label={t('cs.setup.locationName')}>
-          <input
-            value={name}
-            maxLength={120}
-            onChange={(event) => setName(event.target.value)}
             className={control}
           />
         </Field>

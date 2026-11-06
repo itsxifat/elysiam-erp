@@ -23,6 +23,19 @@ const en = {
   'st.col.when': 'When',
   'st.col.actions': 'Actions',
 
+  // The Locations page (D-951): every place that holds stock, and where it is added.
+  'st.loc.title': 'Locations',
+  'st.loc.help':
+    'The warehouses and showrooms that hold your stock. A showroom belongs to a branch; a warehouse can belong to one or serve the whole brand.',
+  'st.loc.empty':
+    'No stock locations yet. Add the first one below: stock in hand, transfers and receiving all need one.',
+  'st.loc.errorTitle': 'The locations could not be loaded.',
+  'st.loc.deniedTitle': 'Stock locations are not part of your role',
+  'st.loc.deniedDetail': 'Ask an admin if you need to see where stock is kept.',
+  'st.loc.wholeBrand': 'Whole brand',
+  'st.loc.noBranch': 'No branch: the whole brand',
+  'st.loc.branchFixed': 'The branch stays the same once the location is saved.',
+
   // Scanning (D-605).
   'st.scan.label': 'Scan or type a barcode',
   'st.scan.hint': 'Each scan adds one piece. Typing a code and pressing Enter works too.',

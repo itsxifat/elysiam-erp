@@ -27,6 +27,7 @@ const CONSOLE_KEYS = [
   'nav.customers',
   'nav.catalog',
   'nav.stock',
+  'nav.locations',
   'nav.supply',
   'nav.courier',
   'nav.branches',

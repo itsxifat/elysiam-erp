@@ -38,6 +38,7 @@ import {
   UserSearch,
   Users,
   Wallet,
+  Warehouse,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -224,6 +225,17 @@ export const NAVIGATION: readonly NavSection[] = [
         to: '/stock',
         labelKey: 'nav.stock',
         icon: Boxes,
+        required: { action: 'read', subject: 'Stock' },
+      },
+      /*
+       * D-951: the warehouses and showrooms that hold stock, on a page of their own. They
+       * were the last section of Catalog setup, behind links that named only categories,
+       * sizes and colours. `read Stock`, like the stock screens that pick one.
+       */
+      {
+        to: '/locations',
+        labelKey: 'nav.locations',
+        icon: Warehouse,
         required: { action: 'read', subject: 'Stock' },
       },
       {

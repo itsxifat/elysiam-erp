@@ -4166,3 +4166,27 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   a label and fail on D-928's rule, as M51 noted of the others like them. One in `orders.e2e` was
   mine and is fixed. `order-documents` and `pack-station-ui` follow the new code.
 - **New dependencies:** none.
+
+## 2026-11-06 · Locations page · stock locations get a page and a menu item of their own
+
+- **Why:** the owner reported every location dropdown blank on Elysiam's ERP. The cause was the
+  data, not the code: a manual cleanup on the server on 2026-11-05 (backup
+  `~/erp-backups/elysium-erp-20261105-152938.dump`) deleted the brand's only location, its whole
+  chart of accounts (1 account left, Petty Cash, where Beownz has 42), its delivery zones, the
+  own-rider courier and the website settings. Nothing on the server was changed. Looking for
+  where to add a location, the owner could not find it: it was the last section of Catalog setup,
+  behind links that named only categories, sizes and colours.
+- **What:** `/locations`, under Stock in the menu (`read Stock`): every location with its code,
+  kind, branch ("Whole brand" when none) and archived state, with the add form, the rename dialog
+  and Delete or archive moved from Catalog setup unchanged. The add form now offers a branch for
+  a warehouse too (none by default), as the server always allowed. Decision: D-951. No server,
+  schema or permission change.
+- **Verification:** `locations-page.test.tsx` (5, happy-dom: the list with branch names, the empty
+  hint, a showroom under a chosen branch, a warehouse with and without one, a read-only role),
+  `navigation.test.ts`, `messages.test.ts`; console typecheck, eslint, prettier, `check:i18n` and
+  `check:bundle` (249.9 of 250 KB): PASS. `catalog-stock.stack.ts` and `delete-archive.stack.ts`
+  now add their locations on `/locations`; edited, not run, per the minimal-tests rule.
+  **Not deployed.**
+- **Open for the owner:** Elysiam's chart of accounts and main warehouse are still missing; posting
+  stock in hand fails until they are back. Re-running that brand's seed (idempotent) restores them.
+- **New dependencies:** none.

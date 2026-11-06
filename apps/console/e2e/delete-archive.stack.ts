@@ -255,7 +255,7 @@ test('a list is put in order', async () => {
 });
 
 test('a stock location made by mistake is deleted; the edit dialog no longer says its code is in product codes', async () => {
-  await page.goto('/catalog/structure');
+  await page.goto('/locations');
   const locations = page.getByRole('region', { name: 'Stock locations' });
   await locations.getByLabel('Location name').fill(`Typo warehouse ${RUN}`);
   await choose(locations.getByLabel('Kind'), 'Warehouse');
