@@ -4309,3 +4309,13 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   `iam.super_admin_votes`, `iam.super_admin_removal_votes`) and their guard triggers.
 - **Follow-up:** tell every super admin when one is made or removed (one stolen super admin
   session can now change them all at once; the owner link is the recovery).
+- **Deployed:** `7db191e8` to both brands 2026-11-08: migrations 0169 and 0170 applied (no
+  maker/reviewer/four-eyes constraint left, `iam.promote_super_admin` without votes,
+  `loans.assert_loan_change` without the self-void rule, no reset open), API and worker healthy,
+  both consoles 200.
+- **The demo website connected again:** a new site key for Elysiam ("demo.elysium-lifestyle.bd
+  website") issued in the release container and piped into `/etc/elysium-web/demo.env` in place
+  of the October key the 2026-11-05 cleanup had removed (old file kept as
+  `demo.env.bak-20261108-121409`); Site URL saved as `https://demo.elysium-lifestyle.bd`; the
+  website recreated. Products answer 200 with no 401; a quote with only a delivery area prices
+  Inside Dhaka Tk 80 and Outside Dhaka Tk 130 from Website → Settings.
