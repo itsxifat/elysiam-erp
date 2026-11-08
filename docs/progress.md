@@ -4262,4 +4262,12 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   `check:api-client`, `check:bundle` (249.9 KB), `check:migrations`, `check:schema` PASS. Website:
   `npm test` (40) PASS, eslint clean. `order-desk.stack.ts` updated for the address box and zone
   menu, not run (minimal-tests rule).
+- **Deployed:** `86d89264` to both brands 2026-11-08 (migration 0168 applied; the four columns
+  nullable on both; API and worker healthy; both consoles 200). Website `7ede228a682a` (only the
+  five address files; the uncommitted flash-sale work in `D:\Projects\elysium` left alone) to
+  demo.elysium-lifestyle.bd: healthy, 200, previous image tagged `elysium-web:previous`.
+- **Found, not fixed:** the demo website gets 401 on every ERP read: Elysiam's ERP has no website
+  key (`storefront.site_keys` empty) while the site still sends the key issued in October,
+  likely removed by the 2026-11-05 cleanup. A new key (`website-key`, runbook brand-deploy §5)
+  piped into `/etc/elysium-web/demo.env` fixes it; awaiting the owner.
 - **New dependencies:** none.
