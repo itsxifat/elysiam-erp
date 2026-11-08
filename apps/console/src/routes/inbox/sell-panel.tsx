@@ -27,6 +27,7 @@ import {
   type Want,
 } from './sell-logic.js';
 import { useSellT } from './sell-messages.js';
+import { oneLineAddress } from '../orders/desk-logic.js';
 
 /**
  * Selling from the chat (M44b, D-770 to D-777): at the top of the customer panel, the side card
@@ -93,24 +94,28 @@ export function SellPanel({
       prefillCustomer(current, {
         name: view.customer?.name ?? view.contact.name,
         phone: view.contact.phone ?? view.customer?.phone ?? view.phonesFound[0]?.phone ?? null,
+        // D-953: the address as one line, whichever source has it.
         address:
-          view.contact.address ??
-          (saved === undefined
-            ? null
-            : {
-                districtId: saved.districtId,
-                thanaId: saved.thanaId,
-                area: saved.area,
-                addressLine: saved.addressLine,
-              }) ??
-          (firstFound === undefined
-            ? null
-            : {
-                districtId: firstFound.districtId,
-                thanaId: firstFound.thanaId,
-                area: null,
-                addressLine: firstFound.line,
-              }),
+          view.contact.address !== null
+            ? { addressLine: oneLineAddress(view.contact.address) }
+            : saved !== undefined
+              ? {
+                  addressLine: oneLineAddress({
+                    addressLine: saved.addressLine,
+                    area: saved.area,
+                    thana: saved.thanaName,
+                    district: saved.districtName,
+                  }),
+                }
+              : firstFound === undefined
+                ? null
+                : {
+                    addressLine: oneLineAddress({
+                      addressLine: firstFound.line,
+                      thana: firstFound.thanaName,
+                      district: firstFound.districtName,
+                    }),
+                  },
       }),
     );
   }, [view, saved, firstFound, update]);
@@ -148,7 +153,7 @@ export function SellPanel({
     colour: card.summary.colour?.colour ?? null,
     qty: card.summary.quantity?.qty ?? null,
   };
-  const draftHasAddress = draft.customer.thanaId !== null || draft.customer.addressLine !== '';
+  const draftHasAddress = draft.customer.addressLine !== '';
   const place =
     firstFound === undefined || draftHasAddress
       ? null
@@ -194,9 +199,11 @@ export function SellPanel({
           ...next,
           customer: {
             ...next.customer,
-            districtId: firstFound.districtId,
-            thanaId: firstFound.thanaId,
-            addressLine: firstFound.line,
+            addressLine: oneLineAddress({
+              addressLine: firstFound.line,
+              thana: firstFound.thanaName,
+              district: firstFound.districtName,
+            }),
           },
         };
       }

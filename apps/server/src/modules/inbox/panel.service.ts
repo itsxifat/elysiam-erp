@@ -186,8 +186,6 @@ export class ContactPanelService {
             stageSetAt: iso(contact.stage_set_at),
             phone: contact.phone_e164,
             address:
-              contact.district_id === null ||
-              contact.thana_id === null ||
               contact.address_line === null
                 ? null
                 : {
@@ -456,18 +454,21 @@ export class ContactPanelService {
           conversationId,
           acknowledged,
         );
-        const zone = await this.orders.deliveryZoneForArea(
-          tx,
-          context.orgId,
-          input.districtId,
-          input.thanaId,
-        );
-        if (!zone.valid) {
-          throw new InboxError('INBOX_INVALID', 'That thana is not in that district.');
+        // D-953: the address is one written line; a district and thana are still accepted.
+        const districtId = input.districtId ?? null;
+        const thanaId = input.thanaId ?? null;
+        if (districtId !== null || thanaId !== null) {
+          const zone =
+            districtId === null || thanaId === null
+              ? { valid: false }
+              : await this.orders.deliveryZoneForArea(tx, context.orgId, districtId, thanaId);
+          if (!zone.valid) {
+            throw new InboxError('INBOX_INVALID', 'That thana is not in that district.');
+          }
         }
         await repo.setContactAddress(tx, context.orgId, row.contact_id, {
-          districtId: input.districtId,
-          thanaId: input.thanaId,
+          districtId,
+          thanaId,
           area: input.area === undefined || input.area === '' ? null : input.area,
           addressLine: input.addressLine,
         });
@@ -477,7 +478,7 @@ export class ContactPanelService {
           ownership,
           entityType: 'inbox_contact',
           entityId: row.contact_id,
-          after: { districtId: input.districtId, thanaId: input.thanaId },
+          after: { districtId, thanaId },
         });
         return { saved: true };
       }),
@@ -721,8 +722,6 @@ export class ContactPanelService {
           phone,
           name: contact.display_name ?? conversation.profile_name,
           address:
-            contact.district_id === null ||
-            contact.thana_id === null ||
             contact.address_line === null
               ? null
               : {

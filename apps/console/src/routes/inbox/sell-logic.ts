@@ -60,9 +60,13 @@ export interface DraftCustomer {
   readonly name: string;
   /** As typed: `01712-345678`, Bangla digits allowed. */
   readonly phone: string;
-  readonly districtId: number | null;
-  readonly thanaId: number | null;
+  /**
+   * D-953: the delivery zone picked (Settings → Delivery zones), which sets the charge. Null
+   * until picked, and in a draft saved before zones were picked here.
+   */
+  readonly zoneId?: string | null;
   readonly area: string;
+  /** The whole address, one written line (D-953). */
   readonly addressLine: string;
 }
 
@@ -134,8 +138,7 @@ export function emptyDraft(conversationId: string, now = Date.now()): SellDraft 
     customer: {
       name: '',
       phone: '',
-      districtId: null,
-      thanaId: null,
+      zoneId: null,
       area: '',
       addressLine: '',
     },
@@ -390,12 +393,8 @@ export interface CustomerSources {
   readonly name: string | null;
   /** E.164 or as typed. */
   readonly phone: string | null;
-  readonly address: {
-    readonly districtId: number;
-    readonly thanaId: number;
-    readonly area: string | null;
-    readonly addressLine: string;
-  } | null;
+  /** The address as one line (D-953). */
+  readonly address: { readonly addressLine: string } | null;
 }
 
 /**
@@ -417,17 +416,11 @@ export function prefillCustomer(draft: SellDraft, sources: CustomerSources): Sel
   const address = sources.address;
   if (
     address !== null &&
-    open('districtId') &&
-    open('thanaId') &&
+    address.addressLine.trim() !== '' &&
     open('addressLine') &&
-    customer.districtId === null &&
-    customer.thanaId === null &&
     customer.addressLine === ''
   ) {
-    customer.districtId = address.districtId;
-    customer.thanaId = address.thanaId;
-    customer.area = customer.area === '' ? (address.area ?? '') : customer.area;
-    customer.addressLine = address.addressLine;
+    customer.addressLine = address.addressLine.trim();
     changed = true;
   }
   return changed ? { ...draft, customer } : draft;
@@ -494,6 +487,8 @@ export function placeCheck(
   draft: SellDraft,
   zoneChargePoisha: string | null,
   promo: PromoState,
+  /** The brand has delivery zones, so one must be picked (D-953). */
+  zoneRequired = false,
 ): PlaceCheck {
   const deliveryPoisha =
     draft.deliveryTaka === null ? (zoneChargePoisha ?? '0') : takaInput(draft.deliveryTaka);
@@ -516,7 +511,7 @@ export function placeCheck(
   if (draft.lines.length === 0) missing.push('items');
   if (draft.customer.name.trim() === '') missing.push('name');
   if (typedPhone(draft.customer.phone) === null) missing.push('phone');
-  if (draft.customer.districtId === null || draft.customer.thanaId === null) missing.push('area');
+  if (zoneRequired && (draft.customer.zoneId ?? null) === null) missing.push('area');
   if (draft.customer.addressLine.trim().length < 3) missing.push('address');
   if (priced === null) missing.push('money');
   if (draft.promoCode.trim() !== '' && promo.kind !== 'ok') missing.push('promo');
@@ -541,11 +536,11 @@ export interface OrderBody {
   readonly customer: { readonly phone: string; readonly name: string };
   readonly shipTo: {
     readonly name: string;
-    readonly districtId: number;
-    readonly thanaId: number;
     readonly area?: string;
     readonly addressLine: string;
   };
+  /** D-953: the zone picked; its charge applies unless one was typed. */
+  readonly deliveryZoneId?: string;
   readonly lines: readonly {
     readonly skuId: string;
     readonly qty: number;
@@ -574,8 +569,8 @@ export function orderBody(
   },
 ): OrderBody | null {
   const phone = typedPhone(draft.customer.phone);
-  const { districtId, thanaId } = draft.customer;
-  if (!check.ready || phone === null || districtId === null || thanaId === null) return null;
+  const zoneId = draft.customer.zoneId ?? null;
+  if (!check.ready || phone === null) return null;
   const name = draft.customer.name.trim();
   const area = draft.customer.area.trim();
   const notes = draft.notes.trim();
@@ -584,11 +579,10 @@ export function orderBody(
     customer: { phone, name },
     shipTo: {
       name,
-      districtId,
-      thanaId,
       ...(area === '' ? {} : { area }),
       addressLine: draft.customer.addressLine.trim(),
     },
+    ...(zoneId === null ? {} : { deliveryZoneId: zoneId }),
     // Every line's price, always: the order charges exactly what the panel showed, even if the
     // catalog moved since the item was picked (the discount ceiling still guards a lower one).
     lines: draft.lines.map((line) => ({

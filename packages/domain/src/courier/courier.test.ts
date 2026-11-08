@@ -316,6 +316,12 @@ describe('parcel input', () => {
     }
   });
 
+  it('accepts an address written as one line, with no district or thana (D-953)', () => {
+    expect(() =>
+      assertParcelInput(parcel({ address: { ...parcel().address, district: '', thana: '' } })),
+    ).not.toThrow();
+  });
+
   it('allows a prepaid parcel with no COD', () => {
     expect(() => assertParcelInput(parcel({ codAmountPoisha: poisha(0) }))).not.toThrow();
   });

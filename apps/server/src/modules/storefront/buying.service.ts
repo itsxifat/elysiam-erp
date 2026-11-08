@@ -18,6 +18,7 @@ import {
   type CartLineInput,
   type CartQuote,
   type CartSku,
+  type WebZone,
 } from '@elysium/domain/storefront';
 import type { Logger } from 'pino';
 
@@ -59,6 +60,8 @@ export interface PricedCart {
   readonly variantByKey: ReadonlyMap<string, string>;
   readonly webLocationIds: readonly string[];
   readonly customerId: string | null;
+  /** The ERP delivery zone the order goes in (D-953), null when none applies. */
+  readonly deliveryZoneId: string | null;
 }
 
 export interface CheckoutReceipt {
@@ -145,7 +148,11 @@ export class BuyingService {
     orgId: string,
     input: {
       readonly lines: CartQuoteRequest['lines'];
-      readonly address: { readonly districtId: number; readonly thanaId: number } | null;
+      readonly address: {
+        readonly zone?: WebZone | undefined;
+        readonly districtId?: number | undefined;
+        readonly thanaId?: number | undefined;
+      } | null;
       readonly codes: readonly string[];
       readonly customerId: string | null;
       readonly now: Date;
@@ -192,15 +199,21 @@ export class BuyingService {
       ]),
     );
 
-    // 3. Where it goes.
+    // 3. Where it goes: the website zone the shopper picked (D-953), else the district's zone.
+    const rule = await this.shippingRule(tx, orgId);
     let deliveryZoneId: string | null | undefined;
-    if (input.address !== null) {
-      const area = await this.orders.deliveryZoneForArea(
-        tx,
-        orgId,
-        input.address.districtId,
-        input.address.thanaId,
-      );
+    let webZone: WebZone | undefined;
+    const districtId = input.address?.districtId;
+    const thanaId = input.address?.thanaId;
+    if (input.address?.zone !== undefined) {
+      webZone = input.address.zone;
+      // The order's ERP zone: the first the website zone covers, which names its courier.
+      deliveryZoneId = rule.zones[webZone].deliveryZoneIds[0] ?? null;
+    } else if (districtId !== undefined || thanaId !== undefined) {
+      const area =
+        districtId === undefined || thanaId === undefined
+          ? { valid: false, zoneId: null }
+          : await this.orders.deliveryZoneForArea(tx, orgId, districtId, thanaId);
       if (!area.valid) {
         throw new StorefrontError(
           'VALIDATION_FAILED',
@@ -210,10 +223,9 @@ export class BuyingService {
       }
       deliveryZoneId = area.zoneId;
     }
-    const rule = await this.shippingRule(tx, orgId);
 
     // 4. Flash prices, planned on the lines that can be bought (M35a, D-542).
-    const first = quoteCart({ lines, skus, rule, deliveryZoneId });
+    const first = quoteCart({ lines, skus, rule, deliveryZoneId, webZone });
     const flash = new Map<string, FlashLinePlan>();
     if (first.lines.length > 0) {
       const offers = await this.promo.liveFlashOffers(
@@ -241,7 +253,7 @@ export class BuyingService {
     const flashPrices = new Map(
       [...flash.entries()].map(([skuId, plan]) => [skuId, plan.unitPricePoisha]),
     );
-    const second = quoteCart({ lines, skus, rule, deliveryZoneId, flashPrices });
+    const second = quoteCart({ lines, skus, rule, deliveryZoneId, webZone, flashPrices });
 
     // 5. Every discount the engine gives this basket (D-540, D-548).
     let applied: readonly AppliedDiscountView[] = [];
@@ -270,6 +282,7 @@ export class BuyingService {
       skus,
       rule,
       deliveryZoneId,
+      webZone,
       flashPrices,
       discounts: applied.map((discount) => ({
         code: discount.code ?? discount.title,
@@ -286,6 +299,7 @@ export class BuyingService {
       variantByKey,
       webLocationIds,
       customerId: input.customerId,
+      deliveryZoneId: deliveryZoneId ?? null,
     };
   }
 
@@ -370,7 +384,7 @@ export class BuyingService {
         const customerId = await this.customerFor(tx, orgId, null, phone);
         const priced = await this.price(tx, orgId, {
           lines: input.lines,
-          address: { districtId: input.address.districtId, thanaId: input.address.thanaId },
+          address: input.address,
           codes: input.codes ?? [],
           customerId,
           now,
@@ -381,7 +395,9 @@ export class BuyingService {
           throw new StorefrontError(
             'CART_NOT_DELIVERABLE',
             HttpStatus.CONFLICT,
-            'The website does not deliver to that address.',
+            input.address.zone === undefined && input.address.districtId === undefined
+              ? 'address.zone: choose a delivery area.'
+              : 'The website does not deliver to that address.',
           );
         }
         const reasons = repricedReasons(
@@ -416,8 +432,10 @@ export class BuyingService {
             customer: { phone, name: input.contact.name },
             shipTo: {
               name: input.contact.name,
-              districtId: input.address.districtId,
-              thanaId: input.address.thanaId,
+              ...(input.address.districtId === undefined
+                ? {}
+                : { districtId: input.address.districtId }),
+              ...(input.address.thanaId === undefined ? {} : { thanaId: input.address.thanaId }),
               ...(input.address.area === undefined || input.address.area === ''
                 ? {}
                 : { area: input.address.area }),
@@ -433,6 +451,7 @@ export class BuyingService {
               quote.deliveryDiscountPoisha,
             ).toString(),
             discountPoisha: quote.discountPoisha.toString(),
+            ...(priced.deliveryZoneId === null ? {} : { deliveryZoneId: priced.deliveryZoneId }),
             ...(input.notes === undefined || input.notes === '' ? {} : { notes: input.notes }),
           },
           { holdStockAt: locationId, promoCodeId: attributedDiscount(priced.applied) },
@@ -525,7 +544,10 @@ export class BuyingService {
             name: input.contact.name,
             phoneE164: phone,
             email: orderEmail,
-            city: await districtName(tx, input.address.districtId),
+            city:
+              input.address.districtId === undefined
+                ? null
+                : await districtName(tx, input.address.districtId),
             customerId: summary.customerId,
           },
           browser: input.tracking,
@@ -747,7 +769,7 @@ export class BuyingService {
       const fresh = await withOrg({ orgId }, async (tx) =>
         this.price(tx, orgId, {
           lines: input.lines,
-          address: { districtId: input.address.districtId, thanaId: input.address.thanaId },
+          address: input.address,
           codes: input.codes ?? [],
           customerId: await this.customerFor(
             tx,

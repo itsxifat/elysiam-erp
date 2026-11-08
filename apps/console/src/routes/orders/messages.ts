@@ -82,6 +82,7 @@ const ORDERS_KEYS = [
   'orders.desk.savedAddresses',
   'orders.desk.useAddress',
   'orders.desk.zone',
+  'orders.desk.zonePick',
   'orders.desk.noZone',
   'orders.desk.items',
   'orders.desk.skuSearch',

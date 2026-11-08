@@ -43,13 +43,12 @@ import {
   listAreas,
   lookupCustomer,
   searchSkus,
-  type Area,
   type OrderChannel,
 } from './api.js';
 import {
   addLine,
   deskPhone,
-  filterAreas,
+  oneLineAddress,
   previewWithPromo,
   promoLines,
   toAsciiDigits,
@@ -189,12 +188,9 @@ function Desk() {
   // --- the form -------------------------------------------------------------------
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
-  const [areaQuery, setAreaQuery] = useState('');
-  const [area, setArea] = useState<Area | null>(null);
-  const [areaOpen, setAreaOpen] = useState(false);
-  const [areaActive, setAreaActive] = useState(0);
   const [addressLine, setAddressLine] = useState('');
-  const [areaDetail, setAreaDetail] = useState('');
+  // D-953: the delivery zone picked from Settings → Delivery zones; it sets the charge.
+  const [zoneId, setZoneId] = useState('');
   const [skuQuery, setSkuQuery] = useState('');
   const [skuActive, setSkuActive] = useState(0);
   const [lines, setLines] = useState<DeskLine[]>([]);
@@ -222,7 +218,7 @@ function Desk() {
   const [behalf, setBehalf] = useState<Behalf>(NO_BEHALF);
 
   const phoneRef = useRef<HTMLInputElement>(null);
-  const areaRef = useRef<HTMLInputElement>(null);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
   const skuRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
@@ -259,28 +255,20 @@ function Desk() {
   const latestPhone = useRef<string | null>(null);
   function prefillFor(whole: string) {
     latestPhone.current = whole;
-    void Promise.all([
-      queryClient.fetchQuery({
+    void queryClient
+      .fetchQuery({
         queryKey: ['orders', 'lookup', whole],
         queryFn: () => lookupCustomer(whole),
         staleTime: 60_000,
-      }),
-      queryClient.ensureQueryData({ queryKey: ['orders', 'areas'], queryFn: listAreas }),
-    ])
-      .then(([found, reference]) => {
+      })
+      .then((found) => {
         const buyer = found.customer;
         // The agent typed on while this was in flight: a different number, a different buyer.
         if (buyer === null || latestPhone.current !== whole) return;
         setName((current) => (current === '' ? buyer.name : current));
         const preferred = buyer.addresses.find((entry) => entry.isDefault) ?? buyer.addresses[0];
         if (preferred === undefined) return;
-        const matched = reference.areas.find((entry) => entry.thanaId === preferred.thanaId);
-        if (matched !== undefined) {
-          setArea((current) => current ?? matched);
-          setAreaQuery((current) => (current === '' ? areaLabel(matched) : current));
-        }
-        setAddressLine((current) => (current === '' ? preferred.addressLine : current));
-        setAreaDetail((current) => (current === '' ? (preferred.area ?? '') : current));
+        setAddressLine((current) => (current === '' ? oneLineAddress(preferred) : current));
       })
       // A failed lookup leaves a blank form, which is what a new buyer gets anyway; the
       // query below renders the error state for the buyer panel.
@@ -315,18 +303,7 @@ function Desk() {
     if (chat.name !== null) setName((current) => (current === '' ? (chat.name ?? '') : current));
     const address = chat.address;
     if (address !== null) {
-      void queryClient
-        .ensureQueryData({ queryKey: ['orders', 'areas'], queryFn: listAreas })
-        .then((reference) => {
-          const matched = reference.areas.find((entry) => entry.thanaId === address.thanaId);
-          if (matched !== undefined) {
-            setArea((current) => current ?? matched);
-            setAreaQuery((current) => (current === '' ? areaLabel(matched) : current));
-          }
-          setAddressLine((current) => (current === '' ? address.addressLine : current));
-          setAreaDetail((current) => (current === '' ? (address.area ?? '') : current));
-        })
-        .catch(() => undefined);
+      setAddressLine((current) => (current === '' ? oneLineAddress(address) : current));
     }
     const skuIds = chat.lines.map((line) => line.skuId);
     if (skuIds.length > 0) {
@@ -377,49 +354,17 @@ function Desk() {
   const fraudConversation =
     flags.data?.fraud === true ? (flags.data.contacts[0]?.conversationId ?? null) : null;
 
-  // --- the area combobox -------------------------------------------------------------
-  const areaMatches = useMemo(
-    () =>
-      area !== null && areaQuery === areaLabel(area)
-        ? []
-        : filterAreas(areas.data?.areas ?? [], areaQuery),
-    [areas.data, areaQuery, area],
-  );
-  const zone = useMemo(
-    () => areas.data?.zones.find((entry) => entry.id === area?.zoneId) ?? null,
-    [areas.data, area],
-  );
+  // --- the delivery zone ---------------------------------------------------------------
+  const zones = areas.data?.zones ?? [];
+  const zone = zones.find((entry) => entry.id === zoneId) ?? null;
 
   // The zone's charge, until the agent types their own: derived, not copied into state, so
-  // picking another area moves it without an effect chasing the zone.
+  // picking another zone moves it without an effect chasing the zone.
   const deliveryShown = deliveryTouched
     ? deliveryTaka
     : zone === null
       ? ''
       : poishaToTaka(zone.chargePoisha);
-
-  function pickArea(chosen: Area) {
-    setArea(chosen);
-    setAreaQuery(areaLabel(chosen));
-    setAreaOpen(false);
-  }
-
-  function onAreaKey(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setAreaOpen(true);
-      setAreaActive((index) => Math.min(index + 1, Math.max(areaMatches.length - 1, 0)));
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setAreaActive((index) => Math.max(index - 1, 0));
-    } else if (event.key === 'Enter' && areaOpen && areaMatches.length > 0) {
-      event.preventDefault();
-      const chosen = areaMatches[areaActive] ?? areaMatches[0];
-      if (chosen !== undefined) pickArea(chosen);
-    } else if (event.key === 'Escape') {
-      setAreaOpen(false);
-    }
-  }
 
   // --- the SKU combobox ---------------------------------------------------------------
   const skuTerm = useDebounced(skuQuery.trim().toUpperCase(), 150);
@@ -564,7 +509,8 @@ function Desk() {
   const ready =
     normalized !== null &&
     name.trim() !== '' &&
-    area !== null &&
+    // A brand with delivery zones picks one, which is what prices the delivery (D-953).
+    (zones.length === 0 || zone !== null) &&
     addressLine.trim().length >= 3 &&
     lines.length > 0 &&
     !moneyInvalid &&
@@ -576,7 +522,7 @@ function Desk() {
   // --- saving ------------------------------------------------------------------------------
   const save = useMutation({
     mutationFn: async (confirm: boolean): Promise<Outcome> => {
-      if (area === null || normalized === null) throw new Error(t('orders.desk.missing'));
+      if (normalized === null) throw new Error(t('orders.desk.missing'));
       const forSomeoneElse = behalfFields(behalf);
       const { recipient, ...behalfRest } = forSomeoneElse ?? { recipient: null };
       const created = await createOrder({
@@ -586,11 +532,9 @@ function Desk() {
         shipTo: {
           name: recipient?.name ?? name.trim(),
           ...(recipient === null ? {} : { phone: recipient.phone }),
-          districtId: area.districtId,
-          thanaId: area.thanaId,
-          ...(areaDetail.trim() === '' ? {} : { area: areaDetail.trim() }),
           addressLine: addressLine.trim(),
         },
+        ...(zone === null ? {} : { deliveryZoneId: zone.id }),
         lines: lines.map((line) => ({ skuId: line.skuId, qty: line.qty })),
         ...(deliveryTouched && deliveryPoisha !== null
           ? { deliveryChargePoisha: deliveryPoisha }
@@ -639,10 +583,8 @@ function Desk() {
   function reset() {
     setPhone('');
     setName('');
-    setAreaQuery('');
-    setArea(null);
     setAddressLine('');
-    setAreaDetail('');
+    setZoneId('');
     setSkuQuery('');
     setLines([]);
     setDiscountTaka('');
@@ -820,100 +762,42 @@ function Desk() {
               onChange={setBehalf}
               attempted={attempted}
             />
-            <div className="relative space-y-1.5 sm:col-span-2">
-              <Label htmlFor={`${ids}-area`} required>
-                {t('orders.desk.area')}
-              </Label>
-              <Input
-                id={`${ids}-area`}
-                ref={areaRef}
-                role="combobox"
-                aria-expanded={areaOpen && areaMatches.length > 0}
-                aria-controls={`${ids}-area-list`}
-                aria-autocomplete="list"
-                aria-activedescendant={
-                  areaOpen && areaMatches.length > 0
-                    ? `${ids}-area-${String(areaActive)}`
-                    : undefined
-                }
-                aria-describedby={`${ids}-area-hint`}
-                aria-invalid={attempted && area === null}
-                autoComplete="off"
-                value={areaQuery}
-                onChange={(event) => {
-                  setAreaQuery(event.target.value);
-                  setArea(null);
-                  setAreaOpen(true);
-                  setAreaActive(0);
-                }}
-                onKeyDown={onAreaKey}
-                onBlur={() => setAreaOpen(false)}
-                onFocus={() => setAreaOpen(true)}
-              />
-              <p id={`${ids}-area-hint`} className="text-xs text-muted-foreground">
-                {area === null
-                  ? t('orders.desk.areaHint')
-                  : zone === null
-                    ? t('orders.desk.noZone')
-                    : `${t('orders.desk.zone')}: ${zone.nameEn}`}
-              </p>
-              {areaOpen && areaQuery.trim() !== '' && area === null ? (
-                <ul
-                  id={`${ids}-area-list`}
-                  role="listbox"
-                  className="absolute top-full right-0 left-0 z-20 mt-1 max-h-72 overflow-auto rounded-md border border-border bg-popover p-1 text-sm shadow-popover"
-                >
-                  {areaMatches.length === 0 ? (
-                    <li className="px-2 py-1.5 text-muted-foreground">
-                      {t('orders.desk.areaNone')}
-                    </li>
-                  ) : (
-                    areaMatches.map((match, index) => (
-                      <li
-                        key={match.thanaId}
-                        id={`${ids}-area-${String(index)}`}
-                        role="option"
-                        aria-selected={index === areaActive}
-                        className={cn(
-                          'flex cursor-pointer justify-between gap-3 rounded-sm px-2 py-1.5',
-                          index === areaActive ? 'bg-accent text-accent-foreground' : '',
-                        )}
-                        // mousedown, not click: the input's blur would close the list first.
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          pickArea(match);
-                        }}
-                      >
-                        <span>{areaLabel(match)}</span>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              ) : null}
-            </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor={`${ids}-address`} required>
                 {t('orders.desk.addressLine')}
               </Label>
-              <Input
+              <textarea
                 id={`${ids}-address`}
+                ref={areaRef}
+                rows={2}
+                maxLength={500}
                 value={addressLine}
                 autoComplete="off"
-                onChange={(event) => {
-                  setAddressLine(event.target.value);
-                }}
+                onChange={(event) => setAddressLine(event.target.value)}
                 aria-invalid={attempted && addressLine.trim().length < 3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               />
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor={`${ids}-area-detail`}>{t('orders.desk.areaText')}</Label>
-              <Input
-                id={`${ids}-area-detail`}
-                value={areaDetail}
-                autoComplete="off"
-                onChange={(event) => setAreaDetail(event.target.value)}
-              />
-            </div>
+            {zones.length > 0 ? (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor={`${ids}-zone`} required>
+                  {t('orders.desk.zone')}
+                </Label>
+                <Select
+                  id={`${ids}-zone`}
+                  value={zoneId}
+                  placeholder={t('orders.desk.zonePick')}
+                  onValueChange={setZoneId}
+                  options={zones.map((option) => ({
+                    value: option.id,
+                    label: `${option.nameEn} · Tk ${poishaToTaka(option.chargePoisha)}`,
+                  }))}
+                />
+                {attempted && zone === null ? (
+                  <p className="text-xs text-destructive">{t('orders.desk.zonePick')}</p>
+                ) : null}
+              </div>
+            ) : null}
             {customer !== null && customer.addresses.length > 1 ? (
               <div className="space-y-1 sm:col-span-2">
                 <p className="text-xs font-medium text-muted-foreground">
@@ -926,14 +810,7 @@ function Desk() {
                         variant="outline"
                         size="sm"
                         aria-label={`${t('orders.desk.useAddress')}: ${saved.addressLine}`}
-                        onClick={() => {
-                          const found = areas.data?.areas.find(
-                            (entry) => entry.thanaId === saved.thanaId,
-                          );
-                          if (found !== undefined) pickArea(found);
-                          setAddressLine(saved.addressLine);
-                          setAreaDetail(saved.area ?? '');
-                        }}
+                        onClick={() => setAddressLine(oneLineAddress(saved))}
                       >
                         {saved.addressLine}
                       </Button>
@@ -1550,9 +1427,4 @@ function OutcomePanel({
       )}
     </div>
   );
-}
-
-/** "Savar, Dhaka": the English names (D-750, D-756). */
-function areaLabel(area: Area): string {
-  return `${area.thanaEn}, ${area.districtEn}`;
 }

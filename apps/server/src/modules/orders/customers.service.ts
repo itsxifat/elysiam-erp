@@ -9,6 +9,7 @@ import { assertInScope, scopeOf, scopeWhere } from '../../platform/auth/scope.js
 import type { ActiveContext } from '../../platform/http/context.js';
 import { IAM_API, type IamApi } from '../iam/iam.api.js';
 import { addNumber, phoneViews, pickPersonByPhone } from './numbers.helpers.js';
+import { checkedArea } from './area.helpers.js';
 import * as repo from './orders.repository.js';
 import { mapOrderErrors, OrdersError } from './orders.errors.js';
 import type { CustomerAddressInput, CustomerAddressView } from '@elysium/contracts/customers';
@@ -335,13 +336,13 @@ export class CustomersService {
     if (!changed) throw new OrdersError('CUSTOMER_NOT_FOUND', 'No such buyer.');
 
     if (patch.address !== undefined) {
-      await assertArea(tx, patch.address);
+      const area = await checkedArea(tx, patch.address);
       await repo.insertAddress(tx, {
         orgId: context.orgId,
         customerId: id,
         label: null,
-        districtId: patch.address.districtId,
-        thanaId: patch.address.thanaId,
+        districtId: area.districtId,
+        thanaId: area.thanaId,
         area: patch.address.area ?? null,
         addressLine: patch.address.addressLine,
         isDefault: true,
@@ -444,21 +445,21 @@ export class CustomersService {
     // One change to this buyer's book at a time (the default rule holds under concurrency).
     await repo.lockCustomer(tx, context.orgId, customerId);
     await this.requireLive(tx, context.orgId, customerId);
-    await assertArea(tx, input);
+    const area = await checkedArea(tx, input);
     const existing = await repo.listAddresses(tx, context.orgId, customerId);
     const isDefault = existing.length === 0 || input.isDefault === true;
     const addressId = await repo.insertAddress(tx, {
       orgId: context.orgId,
       customerId,
       label: input.label ?? null,
-      districtId: input.districtId,
-      thanaId: input.thanaId,
+      districtId: area.districtId,
+      thanaId: area.thanaId,
       area: emptyToNull(input.area),
       addressLine: input.addressLine,
       isDefault,
     });
     await this.auditAddress(tx, context, request, 'customer.address_added', customerId, {
-      after: { addressId, districtId: input.districtId, thanaId: input.thanaId, isDefault },
+      after: { addressId, districtId: area.districtId, thanaId: area.thanaId, isDefault },
     });
     return { addresses: await this.addressViews(tx, context.orgId, customerId) };
   }
@@ -475,7 +476,7 @@ export class CustomersService {
     // One change to this buyer's book at a time (the default rule holds under concurrency).
     await repo.lockCustomer(tx, context.orgId, customerId);
     await this.requireLive(tx, context.orgId, customerId);
-    await assertArea(tx, input);
+    const area = await checkedArea(tx, input);
     const existing = await repo.listAddresses(tx, context.orgId, customerId);
     const current = existing.find((row) => row.id === addressId);
     // The default stays the default until another is made it: the desk always has one to fill.
@@ -485,8 +486,8 @@ export class CustomersService {
       customerId,
       addressId,
       label: input.label ?? null,
-      districtId: input.districtId,
-      thanaId: input.thanaId,
+      districtId: area.districtId,
+      thanaId: area.thanaId,
       area: emptyToNull(input.area),
       addressLine: input.addressLine,
       isDefault,
@@ -501,7 +502,7 @@ export class CustomersService {
         thanaId: before.thana_id,
         isDefault: before.is_default,
       },
-      after: { addressId, districtId: input.districtId, thanaId: input.thanaId, isDefault },
+      after: { addressId, districtId: area.districtId, thanaId: area.thanaId, isDefault },
     });
     return { addresses: await this.addressViews(tx, context.orgId, customerId) };
   }
@@ -618,13 +619,13 @@ export class CustomersService {
         : await repo.customerById(tx, context.orgId, existing.customerId);
     if (existing !== undefined && existingRow !== undefined) {
       if (input.address !== undefined) {
-        await assertArea(tx, input.address);
+        const area = await checkedArea(tx, input.address);
         await repo.insertAddress(tx, {
           orgId: context.orgId,
           customerId: existingRow.id,
           label: null,
-          districtId: input.address.districtId,
-          thanaId: input.address.thanaId,
+          districtId: area.districtId,
+          thanaId: area.thanaId,
           area: input.address.area ?? null,
           addressLine: input.address.addressLine,
           isDefault: true,
@@ -662,13 +663,13 @@ export class CustomersService {
       addedByUserId: context.userId,
     });
     if (input.address !== undefined) {
-      await assertArea(tx, input.address);
+      const area = await checkedArea(tx, input.address);
       await repo.insertAddress(tx, {
         orgId: context.orgId,
         customerId: id,
         label: null,
-        districtId: input.address.districtId,
-        thanaId: input.address.thanaId,
+        districtId: area.districtId,
+        thanaId: area.thanaId,
         area: input.address.area ?? null,
         addressLine: input.address.addressLine,
         isDefault: true,
@@ -718,17 +719,4 @@ export class CustomersService {
 /** A typed area left empty is no area. */
 function emptyToNull(value: string | null | undefined): string | null {
   return value === undefined || value === null || value.trim() === '' ? null : value.trim();
-}
-
-/** An address's district and thana, checked against the reference data (M30, D2). */
-async function assertArea(
-  tx: Tx,
-  address: { readonly districtId: number; readonly thanaId: number },
-): Promise<void> {
-  if (!(await repo.areaExists(tx, address.districtId, address.thanaId))) {
-    throw new OrdersError(
-      'VALIDATION_FAILED',
-      'That thana is not one of the district’s. Choose the district, then a thana in it.',
-    );
-  }
 }

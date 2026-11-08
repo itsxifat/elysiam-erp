@@ -174,8 +174,8 @@ export type CustomerDetailsInput = z.infer<typeof customerDetailsSchema>;
 export const customerAddressSchema = z
   .object({
     label: z.string().trim().min(1).max(40).nullable().optional(),
-    districtId: z.number().int().positive(),
-    thanaId: z.number().int().positive(),
+    districtId: z.number().int().positive().optional(),
+    thanaId: z.number().int().positive().optional(),
     area: z.string().trim().max(160).nullable().optional(),
     addressLine: z.string().trim().min(3).max(500),
     isDefault: z.boolean().optional(),
@@ -187,9 +187,9 @@ export type CustomerAddressInput = z.infer<typeof customerAddressSchema>;
 export interface CustomerAddressView {
   readonly id: string;
   readonly label: string | null;
-  readonly districtId: number;
+  readonly districtId: number | null;
   readonly districtName: string | null;
-  readonly thanaId: number;
+  readonly thanaId: number | null;
   readonly thanaName: string | null;
   readonly area: string | null;
   readonly addressLine: string;

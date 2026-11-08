@@ -130,6 +130,32 @@ describe('quoteCart (M34, D-520)', () => {
     expect(repricedReasons({ totalPoisha: quote.totalPoisha }, quote)).toEqual(['not_deliverable']);
   });
 
+  it('charges the fee of the zone the shopper picked, with no district at all (D-953)', () => {
+    const base = {
+      lines: [{ key: 'a', skuId: 'a', qty: 1 }],
+      skus: new Map([['a', sku('a', 1_000n, 1)]]),
+    };
+    const picked = quoteCart({ ...base, rule: rule(), webZone: 'suburbs' });
+    expect(picked.zone).toBe('suburbs');
+    expect(picked.deliverable).toBe(true);
+    expect(picked.deliveryPoisha).toBe(10_000n);
+    // A website zone that covers no ERP zone is still shipped to, at its fee.
+    const unmapped = rule({
+      zones: {
+        ...rule().zones,
+        outside_dhaka: { feePoisha: poisha(13_000n), deliveryZoneIds: [] },
+      },
+    });
+    const outside = quoteCart({ ...base, rule: unmapped, webZone: 'outside_dhaka' });
+    expect(outside.deliverable).toBe(true);
+    expect(outside.deliveryPoisha).toBe(13_000n);
+    // The pick wins over a district's zone.
+    expect(
+      quoteCart({ ...base, rule: rule(), webZone: 'inside_dhaka', deliveryZoneId: ZONE_OUT })
+        .deliveryPoisha,
+    ).toBe(6_000n);
+  });
+
   it('ships free at the threshold, and a threshold of zero means always free', () => {
     const lines = [{ key: 'a', skuId: 'a', qty: 1 }];
     const skus = new Map([['a', sku('a', 150_000n, 1)]]);

@@ -27,7 +27,6 @@ import { peopleOnNumber } from '../people/api.js';
 import { AUTO, BuyerChooser, buyerFields, type BuyerChoice } from '../people/desk-people.js';
 import { addNote, INBOX_KEY, type ConversationItem } from './api.js';
 import { fillComposer } from './composer-bridge.js';
-import { districtsOf, thanasOf } from './logic.js';
 import { useOwnerGuard } from './owner-guard.js';
 import {
   ADVANCE_METHODS,
@@ -116,11 +115,9 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
     queryFn: listAreas,
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const allAreas = areas.data?.areas ?? [];
-  const districts = districtsOf(allAreas);
-  const thanas = thanasOf(allAreas, draft.customer.districtId);
-  const area = allAreas.find((entry) => entry.thanaId === draft.customer.thanaId) ?? null;
-  const zone = areas.data?.zones.find((entry) => entry.id === area?.zoneId) ?? null;
+  // D-953: the address is one line; the delivery zone picked sets the charge.
+  const zones = areas.data?.zones ?? [];
+  const zone = zones.find((entry) => entry.id === (draft.customer.zoneId ?? null)) ?? null;
 
   // The promo code's live check, as the desk makes it: a preview; the order prices it again.
   const code = useDebounced(draft.promoCode.trim(), 400);
@@ -174,7 +171,7 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
               }
             : { kind: 'refused', reason: promo.data.reason };
 
-  const check = placeCheck(draft, zone?.chargePoisha ?? null, promoState);
+  const check = placeCheck(draft, zone?.chargePoisha ?? null, promoState, zones.length > 0);
   const totals = check.totals;
 
   const refresh = () => {
@@ -276,12 +273,7 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
               advancePoisha: advance,
               toCollectPoisha: total - advance,
             },
-            address: [
-              draft.customer.addressLine.trim(),
-              draft.customer.area.trim(),
-              area?.thanaEn ?? '',
-              area?.districtEn ?? '',
-            ]
+            address: [draft.customer.addressLine.trim(), draft.customer.area.trim()]
               .filter((part) => part !== '')
               .join(', '),
             phone: typedPhone(draft.customer.phone) ?? draft.customer.phone,
@@ -518,68 +510,38 @@ export function DraftOrder({ draft, update, conversation, me, picker }: DraftOrd
           value={buyerChoice}
           onChange={setBuyerChoice}
         />
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <Label htmlFor={`${ids}-district`}>{t('inbox.sell.draft.district')}</Label>
-            <Select
-              id={`${ids}-district`}
-              size="sm"
-              value={draft.customer.districtId === null ? '' : String(draft.customer.districtId)}
-              placeholder={t('inbox.sell.draft.choose')}
-              disabled={areas.isPending}
-              onValueChange={(value) =>
-                update((current) =>
-                  typeCustomer(
-                    typeCustomer(current, 'districtId', value === '' ? null : Number(value)),
-                    'thanaId',
-                    null,
-                  ),
-                )
-              }
-              options={districts.map((entry) => ({ value: String(entry.id), label: entry.name }))}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor={`${ids}-thana`}>{t('inbox.sell.draft.thana')}</Label>
-            <Select
-              id={`${ids}-thana`}
-              size="sm"
-              value={draft.customer.thanaId === null ? '' : String(draft.customer.thanaId)}
-              placeholder={t('inbox.sell.draft.choose')}
-              disabled={draft.customer.districtId === null}
-              onValueChange={(value) =>
-                update((current) =>
-                  typeCustomer(current, 'thanaId', value === '' ? null : Number(value)),
-                )
-              }
-              options={thanas.map((entry) => ({ value: String(entry.id), label: entry.name }))}
-            />
-          </div>
-        </div>
         <div className="space-y-1">
           <Label htmlFor={`${ids}-line`}>{t('inbox.sell.draft.addressLine')}</Label>
-          <Input
+          <textarea
             id={`${ids}-line`}
+            rows={2}
             value={draft.customer.addressLine}
             maxLength={500}
             autoComplete="off"
             onChange={(event) =>
               update((current) => typeCustomer(current, 'addressLine', event.target.value))
             }
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           />
         </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${ids}-area`}>{t('inbox.sell.draft.area')}</Label>
-          <Input
-            id={`${ids}-area`}
-            value={draft.customer.area}
-            maxLength={160}
-            autoComplete="off"
-            onChange={(event) =>
-              update((current) => typeCustomer(current, 'area', event.target.value))
-            }
-          />
-        </div>
+        {zones.length > 0 ? (
+          <div className="space-y-1">
+            <Label htmlFor={`${ids}-zone`}>{t('inbox.sell.draft.zone')}</Label>
+            <Select
+              id={`${ids}-zone`}
+              size="sm"
+              value={draft.customer.zoneId ?? ''}
+              placeholder={t('inbox.sell.draft.choose')}
+              onValueChange={(value) =>
+                update((current) => typeCustomer(current, 'zoneId', value === '' ? null : value))
+              }
+              options={zones.map((entry) => ({
+                value: entry.id,
+                label: `${entry.nameEn} · Tk ${poishaToTaka(entry.chargePoisha)}`,
+              }))}
+            />
+          </div>
+        ) : null}
       </fieldset>
 
       <fieldset className="space-y-2">

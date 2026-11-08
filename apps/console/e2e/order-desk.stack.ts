@@ -68,17 +68,18 @@ test('check 1: phone to confirmed order, keyboard only, inside the 30-second bud
   await page.keyboard.type(throwawayPhone());
   await page.keyboard.press('Tab');
   await page.keyboard.type('E2E Buyer');
-  // M48 (D-878): "For someone else" sits between the buyer and the area. The parcel is the
-  // buyer's own here, so Tab passes the box unticked and lands on the area.
+  // M48 (D-878): "For someone else" sits between the buyer and the address. The parcel is the
+  // buyer's own here, so Tab passes the box unticked and lands on the address: one line (D-953).
   await page.keyboard.press('Tab');
   await expect(page.getByRole('checkbox', { name: 'For someone else' })).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('combobox', { name: /^Area/ })).toBeFocused();
-  await page.keyboard.type('savar');
-  await expect(page.getByRole('option', { name: /Savar, Dhaka/ })).toBeVisible();
-  await page.keyboard.press('Enter');
+  await expect(page.getByRole('textbox', { name: /^Address/ })).toBeFocused();
+  await page.keyboard.type('House 7, Road 3, Savar, Dhaka');
+  // Then the delivery zone, which sets the charge.
   await page.keyboard.press('Tab');
-  await page.keyboard.type('House 7, Road 3');
+  await expect(page.getByRole('combobox', { name: /^Delivery zone/ })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.getByRole('option', { name: /Dhaka suburbs/ }).click();
   await page.keyboard.press('Alt+K');
   await expect(page.getByRole('combobox', { name: /Find a SKU/ })).toBeFocused();
   await page.keyboard.type(skuFragment);
@@ -203,9 +204,9 @@ test('M16 check 5: a promo code applied in the order desk prices the order and i
 
   await page.getByRole('textbox', { name: /^Phone/ }).fill(throwawayPhone());
   await page.getByRole('textbox', { name: /^Buyer name/ }).fill('Promo Buyer');
-  await page.getByRole('combobox', { name: /^Area/ }).fill('savar');
-  await page.getByRole('option', { name: /Savar, Dhaka/ }).click();
-  await page.getByRole('textbox', { name: /^Address/ }).fill('House 9, Road 4');
+  await page.getByRole('textbox', { name: /^Address/ }).fill('House 9, Road 4, Savar, Dhaka');
+  await page.getByRole('combobox', { name: /^Delivery zone/ }).click();
+  await page.getByRole('option', { name: /Dhaka suburbs/ }).click();
   await page.getByRole('combobox', { name: /Find a SKU/ }).fill(skuFragment);
   await page.getByRole('option', { name: new RegExp(skuCode) }).click();
   await expect(page.getByRole('row', { name: new RegExp(skuCode) })).toBeVisible();

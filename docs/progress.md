@@ -4233,3 +4233,33 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
 - **Follow-up:** rework `default-courier.db.test.ts`'s `shippedWithNoCourier` to book, print the
   label and pack before shipping (D-928), so its two delivery tests run again.
 - **New dependencies:** none.
+
+## 2026-11-08 · change · one address line everywhere; the delivery zone sets the charge
+
+- **Why:** the owner: addresses in orders, everywhere and on the website, are one detail-address
+  field, with no district, upazila or thana; the charge comes from the zones in settings (inside
+  Dhaka, suburbs, outside Dhaka, or others).
+- **What (D-953):** migration 0168 makes `sales.orders.ship_district_id`/`ship_thana_id` and
+  `sales.customer_addresses.district_id`/`thana_id` nullable. Every address schema takes a district
+  and thana as optional (both or neither, `checkedArea` in `orders/area.helpers.ts`); the zone
+  comes from `deliveryZoneId` (console) or the website's `address.zone` (`quoteCart`'s new
+  `webZone`; the order goes in the first ERP zone that website zone covers). Console: the order desk,
+  the inbox's draft order and contact address, and the customer address dialog have one address box;
+  the desk and the inbox draft add a Delivery zone menu with each zone's charge (required when the
+  brand has zones). `assertParcelInput` no longer needs a district or thana, so Steadfast books with
+  the address line alone. Website (`D:\Projects\elysium`, branch `erp-storefront`): checkout has
+  one Full Address box and a Delivery area choice of the three zones with their fees; the account
+  page's saved addresses likewise.
+- **Verification:** server, console and domain typecheck PASS; console tests (48 files, 435
+  tests, with the inbox, courier-adapter and document suites) PASS; `buying.test.ts` (new: a picked
+  zone's fee, an unmapped zone still shipped to, the pick over a district), `courier.test.ts` (new:
+  a one-line parcel accepted), `orders-ui.test.ts` (new: `oneLineAddress`), `sell-logic.test.ts`
+  PASS; `default-courier.db.test.ts` new D-953 tests PASS (an order with only an address line and a
+  zone is saved with no district at the zone's charge, and its courier snapshot carries the line;
+  a district without its thana refused); `buying.e2e.test.ts`, `customer-card.e2e.test.ts` PASS.
+  `orders.db.test.ts` / `orders.e2e.test.ts`: 12 FAIL, every one "label not printed" / "not packed
+  yet", the stale pack-step follow-up already logged; none about addresses. api-client regenerated,
+  `check:api-client`, `check:bundle` (249.9 KB), `check:migrations`, `check:schema` PASS. Website:
+  `npm test` (40) PASS, eslint clean. `order-desk.stack.ts` updated for the address box and zone
+  menu, not run (minimal-tests rule).
+- **New dependencies:** none.

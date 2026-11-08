@@ -20,12 +20,11 @@ import {
   cn,
   controlClassName,
 } from '@elysium/ui';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { MapPin, MoreHorizontal, Star } from 'lucide-react';
 import { useId, useMemo, useState, type ReactNode } from 'react';
 
 import { DatePicker } from '../../ui/date-picker.js';
-import { listAreas } from '../orders/api.js';
 import { GENDERS } from './api.js';
 import { usePeopleT } from './messages.js';
 import type { PersonActions } from './person-actions.js';
@@ -410,7 +409,7 @@ export function AddressList({
             <div className="min-w-0 flex-1 space-y-0.5 text-sm">
               <p className="flex flex-wrap items-center gap-1.5">
                 <span className="font-medium">
-                  {address.label ?? address.thanaName ?? t('people.addresses.address')}
+                  {address.label ?? t('people.addresses.address')}
                 </span>
                 {address.isDefault ? (
                   <StatusBadge tone="info">{t('people.addresses.default')}</StatusBadge>
@@ -490,8 +489,8 @@ export function AddressList({
 function inputOf(address: CustomerAddressView, isDefault: boolean): CustomerAddressInput {
   return {
     label: address.label,
-    districtId: address.districtId,
-    thanaId: address.thanaId,
+    ...(address.districtId === null ? {} : { districtId: address.districtId }),
+    ...(address.thanaId === null ? {} : { thanaId: address.thanaId }),
     area: address.area,
     addressLine: address.addressLine,
     isDefault,
@@ -500,13 +499,11 @@ function inputOf(address: CustomerAddressView, isDefault: boolean): CustomerAddr
 
 /** A starting point for a new address: one found in the chat, say. */
 export interface AddressDraft {
-  readonly districtId: number | null;
-  readonly thanaId: number | null;
-  readonly area: string | null;
+  /** The address as one line (D-953). */
   readonly addressLine: string;
 }
 
-/** Add an address (from `draft` when given) or edit one; the district first, then its thana. */
+/** Add an address (from `draft` when given) or edit one: a label and the address, one line (D-953). */
 export function AddressDialog({
   actions,
   address,
@@ -520,44 +517,16 @@ export function AddressDialog({
 }) {
   const t = usePeopleT();
   const id = useId();
-  const areas = useQuery({
-    queryKey: ['orders', 'areas'],
-    queryFn: listAreas,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  const start = address ?? draft;
   const [label, setLabel] = useState(address?.label ?? '');
-  const [district, setDistrict] = useState<number | null>(start?.districtId ?? null);
-  const [thana, setThana] = useState<number | null>(start?.thanaId ?? null);
-  const [area, setArea] = useState(start?.area ?? '');
-  const [line, setLine] = useState(start?.addressLine ?? '');
-  const [isDefault, setIsDefault] = useState(address?.isDefault ?? false);
-
-  const all = useMemo(() => areas.data?.areas ?? [], [areas.data]);
-  const districts = useMemo(() => {
-    const seen = new Map<number, string>();
-    for (const entry of all)
-      if (!seen.has(entry.districtId)) seen.set(entry.districtId, entry.districtEn);
-    return [...seen]
-      .map(([value, name]) => ({ value: String(value), label: name }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [all]);
-  const thanas = useMemo(
-    () =>
-      district === null
-        ? []
-        : all
-            .filter((entry) => entry.districtId === district)
-            .map((entry) => ({ value: String(entry.thanaId), label: entry.thanaEn }))
-            .sort((a, b) => a.label.localeCompare(b.label)),
-    [all, district],
+  // An older address's area, thana and district are folded into the one line it is edited as.
+  const [line, setLine] = useState(
+    address === undefined ? (draft?.addressLine ?? '') : addressText(address),
   );
+  const [isDefault, setIsDefault] = useState(address?.isDefault ?? false);
 
   const body = (): CustomerAddressInput => ({
     label: typed(label),
-    districtId: district ?? 0,
-    thanaId: thana ?? 0,
-    area: typed(area),
+    area: null,
     addressLine: line.trim(),
     isDefault,
   });
@@ -568,7 +537,7 @@ export function AddressDialog({
         : actions.replaceAddress(address.id, body()),
     onSuccess: onClose,
   });
-  const ready = district !== null && thana !== null && line.trim().length >= 3;
+  const ready = line.trim().length >= 3;
 
   return (
     <Dialog
@@ -600,55 +569,17 @@ export function AddressDialog({
             onChange={(event) => setLabel(event.target.value)}
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor={`${id}-district`} required>
-              {t('people.addresses.district')}
-            </Label>
-            <Select
-              id={`${id}-district`}
-              value={district === null ? '' : String(district)}
-              placeholder={t('people.addresses.choose')}
-              disabled={areas.isPending}
-              options={districts}
-              onValueChange={(value) => {
-                setDistrict(value === '' ? null : Number(value));
-                setThana(null);
-              }}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor={`${id}-thana`} required>
-              {t('people.addresses.thana')}
-            </Label>
-            <Select
-              id={`${id}-thana`}
-              value={thana === null ? '' : String(thana)}
-              placeholder={t('people.addresses.choose')}
-              disabled={district === null}
-              options={thanas}
-              onValueChange={(value) => setThana(value === '' ? null : Number(value))}
-            />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor={`${id}-area`}>{t('people.addresses.area')}</Label>
-          <Input
-            id={`${id}-area`}
-            value={area}
-            maxLength={160}
-            onChange={(event) => setArea(event.target.value)}
-          />
-        </div>
         <div className="space-y-1.5">
           <Label htmlFor={`${id}-line`} required>
             {t('people.addresses.line')}
           </Label>
-          <Input
+          <textarea
             id={`${id}-line`}
+            rows={3}
             value={line}
             maxLength={500}
             onChange={(event) => setLine(event.target.value)}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           />
         </div>
         <label className="flex items-center gap-2 text-sm">
@@ -658,11 +589,6 @@ export function AddressDialog({
           />
           {t('people.addresses.makeDefaultCheck')}
         </label>
-        {areas.isError ? (
-          <p role="alert" className="text-sm text-destructive-text">
-            {t('people.addresses.areasFailed')}
-          </p>
-        ) : null}
         {save.isError ? (
           <p role="alert" className="text-sm text-destructive-text">
             {save.error.message}

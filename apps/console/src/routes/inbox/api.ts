@@ -98,8 +98,8 @@ export interface PanelView {
     readonly stageSetAt: string | null;
     readonly phone: string | null;
     readonly address: {
-      readonly districtId: number;
-      readonly thanaId: number;
+      readonly districtId: number | null;
+      readonly thanaId: number | null;
       readonly area: string | null;
       readonly addressLine: string;
     } | null;
@@ -183,8 +183,8 @@ export interface OrderDraft {
   readonly phone: string | null;
   readonly name: string | null;
   readonly address: {
-    readonly districtId: number;
-    readonly thanaId: number;
+    readonly districtId: number | null;
+    readonly thanaId: number | null;
     readonly area: string | null;
     readonly addressLine: string;
   } | null;
@@ -276,7 +276,7 @@ export const savePhone = (id: string, phone: string, acknowledged: boolean) =>
   send<unknown>('PUT', at(id, '/contact/phone'), { phone }, acknowledged);
 export const saveAddress = (
   id: string,
-  address: { districtId: number; thanaId: number; area?: string; addressLine: string },
+  address: { area?: string; addressLine: string },
   acknowledged: boolean,
 ) => send<unknown>('PUT', at(id, '/contact/address'), address, acknowledged);
 export const setStage = (

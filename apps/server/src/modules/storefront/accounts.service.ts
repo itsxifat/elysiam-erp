@@ -504,18 +504,24 @@ export class AccountsService {
         let defaultSeen = false;
         const checked = [];
         for (const address of input.addresses) {
-          const area = await this.orders.deliveryZoneForArea(
-            tx,
-            orgId,
-            address.districtId,
-            address.thanaId,
-          );
-          if (!area.valid) {
-            throw new StorefrontError(
-              'VALIDATION_FAILED',
-              HttpStatus.BAD_REQUEST,
-              'addresses: a thana is not one of its district’s.',
-            );
+          // D-953: one written line and a picked zone; a district and thana still checked.
+          if (address.districtId !== undefined || address.thanaId !== undefined) {
+            const area =
+              address.districtId === undefined || address.thanaId === undefined
+                ? { valid: false }
+                : await this.orders.deliveryZoneForArea(
+                    tx,
+                    orgId,
+                    address.districtId,
+                    address.thanaId,
+                  );
+            if (!area.valid) {
+              throw new StorefrontError(
+                'VALIDATION_FAILED',
+                HttpStatus.BAD_REQUEST,
+                'addresses: a thana is not one of its district’s.',
+              );
+            }
           }
           const isDefault: boolean = address.isDefault === true && !defaultSeen;
           defaultSeen ||= isDefault;
@@ -524,8 +530,9 @@ export class AccountsService {
             label: address.label ?? null,
             name: address.name,
             phone: this.phoneOf(address.phone),
-            districtId: address.districtId,
-            thanaId: address.thanaId,
+            zone: address.zone ?? null,
+            districtId: address.districtId ?? null,
+            thanaId: address.thanaId ?? null,
             area: address.area ?? null,
             addressLine: address.addressLine,
             isDefault,

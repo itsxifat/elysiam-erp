@@ -1470,6 +1470,7 @@ const en = {
   'orders.desk.areaHint': 'Type to search, arrow keys to move, Enter to pick',
   'orders.desk.areaNone': 'No area matches',
   'orders.desk.addressLine': 'Address',
+  'orders.desk.zonePick': 'Choose the delivery zone',
   'orders.desk.areaText': 'Area detail (optional)',
   'orders.desk.savedAddresses': 'Saved addresses',
   'orders.desk.useAddress': 'Use this address',

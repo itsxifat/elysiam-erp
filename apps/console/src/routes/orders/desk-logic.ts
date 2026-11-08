@@ -44,6 +44,27 @@ export function deskPhone(input: string): string | null {
 }
 
 /**
+ * An address as the one line the forms show and send (D-953). Older addresses carry an area
+ * (and sometimes a thana and district) beside the line; they are joined onto it, skipping any
+ * part the line already says, so nothing a rider needs is lost when it is edited.
+ */
+export function oneLineAddress(address: {
+  readonly addressLine: string;
+  readonly area?: string | null | undefined;
+  readonly thana?: string | null | undefined;
+  readonly district?: string | null | undefined;
+}): string {
+  let line = address.addressLine.trim();
+  for (const part of [address.area, address.thana, address.district]) {
+    const text = part?.trim() ?? '';
+    if (text !== '' && !line.toLowerCase().includes(text.toLowerCase())) {
+      line = line === '' ? text : `${line}, ${text}`;
+    }
+  }
+  return line;
+}
+
+/**
  * Areas matching what was typed, best first.
  *
  * A thana whose name *starts* with the query ranks above one that merely contains it, and a

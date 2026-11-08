@@ -364,8 +364,8 @@ export interface ShopperOrderFacts {
   readonly shipTo: {
     readonly name: string;
     readonly phoneE164: string;
-    readonly districtId: number;
-    readonly thanaId: number;
+    readonly districtId: number | null;
+    readonly thanaId: number | null;
     readonly districtEn: string | null;
     readonly districtBn: string | null;
     readonly thanaEn: string | null;
@@ -1167,8 +1167,8 @@ export interface OrdersApi {
       readonly phoneE164: string;
       readonly newPerson: boolean;
       readonly address?: {
-        readonly districtId: number;
-        readonly thanaId: number;
+        readonly districtId?: number | undefined;
+        readonly thanaId?: number | undefined;
         readonly area?: string | undefined;
         readonly addressLine: string;
       };

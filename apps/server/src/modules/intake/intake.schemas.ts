@@ -55,8 +55,8 @@ export const publicOrderSchema = z
       .strict(),
     address: z
       .object({
-        districtId: z.number().int().positive(),
-        thanaId: z.number().int().positive(),
+        districtId: z.number().int().positive().optional(),
+        thanaId: z.number().int().positive().optional(),
         area: z.string().trim().max(160).optional(),
         addressLine: z.string().trim().min(3).max(500),
       })

@@ -367,12 +367,9 @@ export const customerAddresses = sales.table(
     customerId: uuid('customer_id').notNull(),
     /** `home`, `office`, or whatever the buyer called it. */
     label: text('label'),
-    districtId: integer('district_id')
-      .notNull()
-      .references(() => districts.id),
-    thanaId: integer('thana_id')
-      .notNull()
-      .references(() => thanas.id),
+    // Optional since D-953: a saved address is one written line.
+    districtId: integer('district_id').references(() => districts.id),
+    thanaId: integer('thana_id').references(() => thanas.id),
     /** The neighbourhood: "Dhanmondi 27", "Sector 10". */
     area: text('area'),
     /** House, road, landmark — what a rider actually reads. */
@@ -554,12 +551,9 @@ export const orders = sales.table(
      */
     shipName: text('ship_name').notNull(),
     shipPhoneE164: text('ship_phone_e164').notNull(),
-    shipDistrictId: integer('ship_district_id')
-      .notNull()
-      .references(() => districts.id),
-    shipThanaId: integer('ship_thana_id')
-      .notNull()
-      .references(() => thanas.id),
+    // Optional since D-953: the address is one written line; the delivery zone sets the charge.
+    shipDistrictId: integer('ship_district_id').references(() => districts.id),
+    shipThanaId: integer('ship_thana_id').references(() => thanas.id),
     shipArea: text('ship_area'),
     shipAddressLine: text('ship_address_line').notNull(),
     deliveryZoneId: uuid('delivery_zone_id'),

@@ -216,8 +216,8 @@ export async function listCustomers(
 export interface AddressRow extends Record<string, unknown> {
   readonly id: string;
   readonly label: string | null;
-  readonly district_id: number;
-  readonly thana_id: number;
+  readonly district_id: number | null;
+  readonly thana_id: number | null;
   readonly area: string | null;
   readonly address_line: string;
   readonly is_default: boolean;
@@ -243,8 +243,8 @@ export async function insertAddress(
     readonly orgId: string;
     readonly customerId: string;
     readonly label: string | null;
-    readonly districtId: number;
-    readonly thanaId: number;
+    readonly districtId: number | null;
+    readonly thanaId: number | null;
     readonly area: string | null;
     readonly addressLine: string;
     readonly isDefault: boolean;
@@ -306,8 +306,8 @@ export async function replaceAddress(
     readonly customerId: string;
     readonly addressId: string;
     readonly label: string | null;
-    readonly districtId: number;
-    readonly thanaId: number;
+    readonly districtId: number | null;
+    readonly thanaId: number | null;
     readonly area: string | null;
     readonly addressLine: string;
     readonly isDefault: boolean;
@@ -783,8 +783,8 @@ export interface OrderRow extends Record<string, unknown> {
   readonly customer_phone: string;
   readonly ship_name: string;
   readonly ship_phone_e164: string;
-  readonly ship_district_id: number;
-  readonly ship_thana_id: number;
+  readonly ship_district_id: number | null;
+  readonly ship_thana_id: number | null;
   readonly ship_area: string | null;
   readonly ship_address_line: string;
   readonly delivery_zone_id: string | null;
@@ -851,8 +851,8 @@ export async function insertOrder(
     readonly customerId: string;
     readonly shipName: string;
     readonly shipPhoneE164: string;
-    readonly shipDistrictId: number;
-    readonly shipThanaId: number;
+    readonly shipDistrictId: number | null;
+    readonly shipThanaId: number | null;
     readonly shipArea: string | null;
     readonly shipAddressLine: string;
     readonly deliveryZoneId: string | null;
@@ -1390,8 +1390,8 @@ export async function updateOrderCommercials(
     readonly codAmountPoisha: bigint;
     readonly shipName: string;
     readonly shipPhoneE164: string;
-    readonly shipDistrictId: number;
-    readonly shipThanaId: number;
+    readonly shipDistrictId: number | null;
+    readonly shipThanaId: number | null;
     readonly shipArea: string | null;
     readonly shipAddressLine: string;
     readonly deliveryZoneId: string | null;
@@ -1636,11 +1636,13 @@ export async function damagedLocation(tx: Tx, orgId: string): Promise<{ id: stri
 
 export async function areaNames(
   tx: Tx,
-  districtId: number,
-  thanaId: number,
+  districtId: number | null,
+  thanaId: number | null,
 ): Promise<
   { district_en: string; district_bn: string; thana_en: string; thana_bn: string } | undefined
 > {
+  // D-953: an address written as one line names no district or thana.
+  if (districtId === null || thanaId === null) return undefined;
   const rows = await tx.execute<{
     district_en: string;
     district_bn: string;
@@ -2009,8 +2011,8 @@ export interface ShopperOrderRow extends Record<string, unknown> {
   readonly customer_id: string;
   readonly ship_name: string;
   readonly ship_phone_e164: string;
-  readonly ship_district_id: number;
-  readonly ship_thana_id: number;
+  readonly ship_district_id: number | null;
+  readonly ship_thana_id: number | null;
   readonly ship_area: string | null;
   readonly ship_address_line: string;
   readonly items_poisha: string;

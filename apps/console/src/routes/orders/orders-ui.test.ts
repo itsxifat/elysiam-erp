@@ -5,6 +5,7 @@ import {
   addLine,
   deskPhone,
   filterAreas,
+  oneLineAddress,
   previewTotals,
   previewWithPromo,
   promoLines,
@@ -53,6 +54,21 @@ describe('deskPhone', () => {
       expect(deskPhone(typed), typed).toBeNull();
     }
     expect(toAsciiDigits('ফোন ০১৯')).toBe('ফোন 019');
+  });
+});
+
+describe('oneLineAddress (D-953)', () => {
+  it('folds an older address’s area, thana and district into the one line, once', () => {
+    expect(oneLineAddress({ addressLine: 'House 4, Road 2' })).toBe('House 4, Road 2');
+    expect(
+      oneLineAddress({
+        addressLine: 'House 4, Road 2',
+        area: 'Dhanmondi 27',
+        thana: 'Dhanmondi',
+        district: 'Dhaka',
+      }),
+    ).toBe('House 4, Road 2, Dhanmondi 27, Dhaka');
+    expect(oneLineAddress({ addressLine: '  ', area: null, thana: 'Savar' })).toBe('Savar');
   });
 });
 

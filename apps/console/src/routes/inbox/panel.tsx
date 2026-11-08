@@ -12,7 +12,6 @@ import {
   MenuItem,
   MenuTrigger,
   Money,
-  Select,
   Skeleton,
   StatusBadge,
   buttonVariants,
@@ -54,7 +53,6 @@ import { useLocale } from '../../i18n/locale.js';
 import { CallButton } from '../calls/call-button.js';
 import { customersPath } from '../customers/customers-nav.js';
 import { isOrdersKey, useOrdersT } from '../orders/messages.js';
-import { listAreas } from '../orders/api.js';
 import { ordersPath } from '../orders/paths.js';
 import { typedMobile } from '../people/api.js';
 import {
@@ -91,12 +89,13 @@ import {
   type PanelView,
 } from './api.js';
 import { ContactAvatar } from './avatar.js';
-import { displayPhone, districtsOf, parseTags, priceRange, stageTone, thanasOf } from './logic.js';
+import { displayPhone, parseTags, priceRange, stageTone } from './logic.js';
 import { useInboxT } from './messages.js';
 import { useOwnerGuard } from './owner-guard.js';
 import { useLoadMore, useProductSearch } from './product-search.js';
 import { ProductThumb } from './product-thumb.js';
 import { SellPanel } from './sell-panel.js';
+import { oneLineAddress } from '../orders/desk-logic.js';
 
 /**
  * The customer panel beside a thread (M42, D-738 to D-742; M49, D-890 to D-895): who this is, in a
@@ -664,9 +663,7 @@ function LinkedCustomer({
   const foundAddresses = view.addressesFound.filter(
     (found) =>
       !card.addresses.some(
-        (saved) =>
-          saved.thanaId === found.thanaId &&
-          saved.addressLine.trim().toLowerCase() === found.line.trim().toLowerCase(),
+        (saved) => saved.addressLine.trim().toLowerCase() === found.line.trim().toLowerCase(),
       ),
   );
 
@@ -751,10 +748,11 @@ function LinkedCustomer({
                 type="button"
                 onClick={() =>
                   setAddingAddress({
-                    districtId: found.districtId,
-                    thanaId: found.thanaId,
-                    area: null,
-                    addressLine: found.line,
+                    addressLine: oneLineAddress({
+                      addressLine: found.line,
+                      thana: found.thanaName,
+                      district: found.districtName,
+                    }),
                   })
                 }
                 className="flex w-full items-start gap-2 rounded-lg border border-border px-2.5 py-2 text-left text-xs hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
@@ -1193,20 +1191,10 @@ function ContactAddressSection({ ctx }: { readonly ctx: Ctx }) {
   const t = useInboxT();
   const ids = useId();
   const { view, mayWrite, busy, run, id } = ctx;
-  const areas = useQuery({
-    queryKey: ['orders', 'areas'],
-    queryFn: listAreas,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
   const saved = view.contact.address;
-  const [district, setDistrict] = useState<number | null>(saved?.districtId ?? null);
-  const [thana, setThana] = useState<number | null>(saved?.thanaId ?? null);
-  const [area, setArea] = useState(saved?.area ?? '');
-  const [line, setLine] = useState(saved?.addressLine ?? '');
-  const all = areas.data?.areas ?? [];
-  const districts = districtsOf(all);
-  const thanas = thanasOf(all, district);
-  const ready = district !== null && thana !== null && line.trim().length >= 3;
+  // D-953: the address is one line; an older one's area is folded into it.
+  const [line, setLine] = useState(saved === null ? '' : oneLineAddress(saved));
+  const ready = line.trim().length >= 3;
 
   return (
     <Section icon={MapPin} title={t('inbox.panel.address')}>
@@ -1238,9 +1226,11 @@ function ContactAddressSection({ ctx }: { readonly ctx: Ctx }) {
                       saveAddress(
                         id,
                         {
-                          districtId: found.districtId,
-                          thanaId: found.thanaId,
-                          addressLine: found.line,
+                          addressLine: oneLineAddress({
+                            addressLine: found.line,
+                            thana: found.thanaName,
+                            district: found.districtName,
+                          }),
                         },
                         ack,
                       ),
@@ -1259,67 +1249,19 @@ function ContactAddressSection({ ctx }: { readonly ctx: Ctx }) {
         onSubmit={(event) => {
           event.preventDefault();
           if (!ready) return;
-          run((ack) =>
-            saveAddress(
-              id,
-              {
-                districtId: district,
-                thanaId: thana,
-                ...(area.trim() === '' ? {} : { area: area.trim() }),
-                addressLine: line.trim(),
-              },
-              ack,
-            ),
-          );
+          run((ack) => saveAddress(id, { addressLine: line.trim() }, ack));
         }}
       >
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <Label htmlFor={`${ids}-district`}>{t('inbox.panel.district')}</Label>
-            <Select
-              id={`${ids}-district`}
-              size="sm"
-              value={district === null ? '' : String(district)}
-              placeholder={t('inbox.panel.chooseDistrict')}
-              disabled={!mayWrite || areas.isPending}
-              onValueChange={(value) => {
-                setDistrict(value === '' ? null : Number(value));
-                setThana(null);
-              }}
-              options={districts.map((entry) => ({ value: String(entry.id), label: entry.name }))}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor={`${ids}-thana`}>{t('inbox.panel.thana')}</Label>
-            <Select
-              id={`${ids}-thana`}
-              size="sm"
-              value={thana === null ? '' : String(thana)}
-              placeholder={t('inbox.panel.chooseThana')}
-              disabled={!mayWrite || district === null}
-              onValueChange={(value) => setThana(value === '' ? null : Number(value))}
-              options={thanas.map((entry) => ({ value: String(entry.id), label: entry.name }))}
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${ids}-area`}>{t('inbox.panel.area')}</Label>
-          <Input
-            id={`${ids}-area`}
-            value={area}
-            onChange={(event) => setArea(event.target.value)}
-            disabled={!mayWrite}
-            maxLength={160}
-          />
-        </div>
         <div className="space-y-1">
           <Label htmlFor={`${ids}-line`}>{t('inbox.panel.addressLine')}</Label>
-          <Input
+          <textarea
             id={`${ids}-line`}
+            rows={2}
             value={line}
             onChange={(event) => setLine(event.target.value)}
             disabled={!mayWrite}
             maxLength={500}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
           />
         </div>
         {mayWrite ? (

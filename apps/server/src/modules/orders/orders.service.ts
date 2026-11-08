@@ -64,6 +64,7 @@ import { OffersService } from './offers.service.js';
 import { OwnershipGate } from './ownership.gate.js';
 import { orderQueueSql } from './queues.js';
 import * as desk from './desk.repository.js';
+import { checkedArea } from './area.helpers.js';
 import * as repo from './orders.repository.js';
 import {
   deskActScopeFor,
@@ -153,8 +154,8 @@ export interface OrderView {
   readonly shipTo: {
     readonly name: string;
     readonly phone: string;
-    readonly districtId: number;
-    readonly thanaId: number;
+    readonly districtId: number | null;
+    readonly thanaId: number | null;
     readonly area: string | null;
     readonly addressLine: string;
   };
@@ -330,8 +331,9 @@ const PARCEL_RECORDED: readonly OrderTrigger[] = ['deliver', 'deliver_partially'
 interface ShipTo {
   readonly name: string;
   readonly phoneE164: string;
-  readonly districtId: number;
-  readonly thanaId: number;
+  /** Optional since D-953: the address is one written line, the zone is picked. */
+  readonly districtId: number | null;
+  readonly thanaId: number | null;
   readonly area: string | null;
   readonly addressLine: string;
 }
@@ -1248,7 +1250,7 @@ export class OrdersService {
       advancePaidPoisha: poisha(BigInt(order.advance_paid_poisha)),
     });
 
-    if (patch.shipTo !== undefined) await this.assertArea(tx, patch.shipTo);
+    const patchArea = patch.shipTo === undefined ? undefined : await this.areaOf(tx, patch.shipTo);
     const shipTo: ShipTo =
       patch.shipTo === undefined
         ? {
@@ -1266,8 +1268,8 @@ export class OrdersService {
               patch.shipTo.phone === undefined
                 ? order.ship_phone_e164
                 : normalizeBdPhone(patch.shipTo.phone),
-            districtId: patch.shipTo.districtId,
-            thanaId: patch.shipTo.thanaId,
+            districtId: patchArea?.districtId ?? null,
+            thanaId: patchArea?.thanaId ?? null,
             area: patch.shipTo.area ?? null,
             addressLine: patch.shipTo.addressLine,
           };
@@ -1754,8 +1756,8 @@ export class OrdersService {
             shipTo: input.shipTo ?? {
               name: order.ship_name,
               phone: order.ship_phone_e164,
-              districtId: order.ship_district_id,
-              thanaId: order.ship_thana_id,
+              ...(order.ship_district_id === null ? {} : { districtId: order.ship_district_id }),
+              ...(order.ship_thana_id === null ? {} : { thanaId: order.ship_thana_id }),
               ...(order.ship_area === null ? {} : { area: order.ship_area }),
               addressLine: order.ship_address_line,
             },
@@ -2653,8 +2655,8 @@ export class OrdersService {
           name: shipTo.name,
           // The recipient's own address is theirs: the parcel's, saved as their default.
           address: {
-            districtId: shipTo.districtId,
-            thanaId: shipTo.thanaId,
+            ...(shipTo.districtId === null ? {} : { districtId: shipTo.districtId }),
+            ...(shipTo.thanaId === null ? {} : { thanaId: shipTo.thanaId }),
             ...(shipTo.area === null ? {} : { area: shipTo.area }),
             addressLine: shipTo.addressLine,
           },
@@ -2678,17 +2680,15 @@ export class OrdersService {
     return { placedFor, recipientCustomerId };
   }
 
-  /** A district and thana the reference data has, the thana inside the district (D2). */
-  private async assertArea(
+  /**
+   * The district and thana an address names, checked (D2), or neither (D-953: the address is
+   * one written line and the delivery zone is picked). One without the other is refused.
+   */
+  private async areaOf(
     tx: Tx,
-    address: { readonly districtId: number; readonly thanaId: number },
-  ): Promise<void> {
-    if (!(await repo.areaExists(tx, address.districtId, address.thanaId))) {
-      throw new OrdersError(
-        'VALIDATION_FAILED',
-        'That thana is not one of the district’s. Choose the district, then a thana in it.',
-      );
-    }
+    address: { readonly districtId?: number | undefined; readonly thanaId?: number | undefined },
+  ): Promise<{ districtId: number | null; thanaId: number | null }> {
+    return checkedArea(tx, address);
   }
 
   /**
@@ -2707,13 +2707,13 @@ export class OrdersService {
     options: CreateOrderOptions,
   ): Promise<ShipTo> {
     if (input.shipTo !== undefined) {
-      await this.assertArea(tx, input.shipTo);
+      const area = await this.areaOf(tx, input.shipTo);
       return {
         name: input.shipTo.name ?? buyer.name,
         // M48 (D-878): the recipient's phone when the parcel is someone else's.
         phoneE164: normalizeBdPhone(input.shipTo.phone ?? buyer.phoneE164),
-        districtId: input.shipTo.districtId,
-        thanaId: input.shipTo.thanaId,
+        districtId: area.districtId,
+        thanaId: area.thanaId,
         area: input.shipTo.area ?? null,
         addressLine: input.shipTo.addressLine,
       };
@@ -2767,7 +2767,10 @@ export class OrdersService {
      * charge then comes from the body, or from the order being exchanged, or is zero,
      * and `GET /v1/delivery-zones/for-area` is where a desk finds out there is no zone.
      */
-    const found = await repo.zoneForArea(tx, context.orgId, shipTo.districtId, shipTo.thanaId);
+    const found =
+      shipTo.districtId === null
+        ? undefined
+        : await repo.zoneForArea(tx, context.orgId, shipTo.districtId, shipTo.thanaId);
     if (found !== undefined) {
       return {
         id: found.id,

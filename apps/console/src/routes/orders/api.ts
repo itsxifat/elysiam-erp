@@ -71,8 +71,8 @@ export interface OrderRow {
   readonly shipTo: {
     readonly name: string;
     readonly phone: string;
-    readonly districtId: number;
-    readonly thanaId: number;
+    readonly districtId: number | null;
+    readonly thanaId: number | null;
     readonly area: string | null;
     readonly addressLine: string;
   };
@@ -237,9 +237,8 @@ export interface CreateOrderBody {
     readonly name: string;
     /** The recipient's phone, when the parcel is someone else's. */
     readonly phone?: string;
-    readonly districtId: number;
-    readonly thanaId: number;
     readonly area?: string;
+    /** D-953: the whole address, one written line; the delivery zone sets the charge. */
     readonly addressLine: string;
   };
   readonly lines: readonly {
@@ -248,6 +247,8 @@ export interface CreateOrderBody {
     /** M44b: a price the agent typed in the inbox's draft; left out, the list price. */
     readonly unitPricePoisha?: string;
   }[];
+  /** D-953: the delivery zone picked on the form; its charge applies unless one is typed. */
+  readonly deliveryZoneId?: string;
   readonly deliveryChargePoisha?: string;
   readonly discountPoisha?: string;
   /** The word the buyer gave. Never an id or an amount: the server prices it (D-204). */
@@ -397,8 +398,8 @@ export interface LookedUpCustomer {
   };
   readonly addresses: readonly {
     readonly id: string;
-    readonly districtId: number;
-    readonly thanaId: number;
+    readonly districtId: number | null;
+    readonly thanaId: number | null;
     readonly area: string | null;
     readonly addressLine: string;
     readonly isDefault: boolean;

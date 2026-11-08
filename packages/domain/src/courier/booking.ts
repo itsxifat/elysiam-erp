@@ -23,7 +23,9 @@ export interface ParcelAddress {
   readonly recipientName: string;
   /** E.164, as `sales.orders.ship_phone_e164` stores it. */
   readonly recipientPhoneE164: string;
+  /** Empty when the address names none (D-953: one written line). */
   readonly district: string;
+  /** Empty when the address names none (D-953). */
   readonly thana: string;
   readonly area: string | null;
   readonly addressLine: string;
@@ -84,15 +86,17 @@ const BD_MOBILE = /^\+8801[13456789]\d{8}$/;
 export function assertParcelInput(input: ParcelInput): void {
   const { address } = input;
 
-  for (const [what, value, limit] of [
-    ['recipient name', address.recipientName, MAX_NAME],
-    ['address', address.addressLine, MAX_ADDRESS],
-    ['district', address.district, MAX_NAME],
-    ['thana', address.thana, MAX_NAME],
-    ['reference', input.reference, MAX_NAME],
+  // D-953: an address is one written line, so a district and thana may be empty (never long).
+  for (const [what, value, limit, required] of [
+    ['recipient name', address.recipientName, MAX_NAME, true],
+    ['address', address.addressLine, MAX_ADDRESS, true],
+    ['district', address.district, MAX_NAME, false],
+    ['thana', address.thana, MAX_NAME, false],
+    ['reference', input.reference, MAX_NAME, true],
   ] as const) {
     const trimmed = value.trim();
     if (trimmed.length === 0) {
+      if (!required) continue;
       throw new LedgerError('POSTING_INPUT_INVALID', `A parcel needs its ${what}.`);
     }
     if (trimmed.length > limit) {

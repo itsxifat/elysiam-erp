@@ -308,6 +308,90 @@ describe('a brand whose zones name no courier (D-952)', () => {
   });
 });
 
+describe('an address written as one line, with the zone picked (D-953)', () => {
+  it('saves the order with no district or thana, at the picked zone’s charge', async () => {
+    const location = await warehouseId(ORG_A);
+    const { skus } = await seedProductWithSkus(ORG_A, `d953${randomUUID().slice(0, 6)}`, 1);
+    const skuId = skus[0]?.id ?? '';
+    const actor = { orgId: ORG_A, userId: SYSTEM_USER };
+    await withOrg(actor, (tx) =>
+      inventory.receiveSupply(tx, actor, {
+        supplyId: randomUUID(),
+        supplierId: randomUUID(),
+        locationId: location,
+        branchId: null,
+        occurredAt: new Date(),
+        lines: [{ skuId, qty: 1, unitCostPoisha: poisha(40_000n) }],
+      }),
+    );
+    const zone = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ id: string; charge_poisha: string }>(sql`
+            select id, charge_poisha::text from sales.delivery_zones
+            where org_id = ${ORG_A} and code = 'outside_dhaka'
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(zone).toBeDefined();
+
+    const created = await orders.create(context(), request(), {
+      channel: 'phone',
+      customer: { phone: '01712345953', name: 'Sadia Islam' },
+      shipTo: { addressLine: 'House 12, Road 5, Uttara Sector 7, Dhaka' },
+      deliveryZoneId: zone?.id ?? '',
+      locationId: location,
+      lines: [{ skuId, qty: 1, unitPricePoisha: '150000' }],
+    });
+
+    const row = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{
+            ship_district_id: number | null;
+            ship_thana_id: number | null;
+            ship_address_line: string;
+            delivery_zone_id: string | null;
+            delivery_charge_poisha: string;
+          }>(sql`
+            select ship_district_id, ship_thana_id, ship_address_line, delivery_zone_id,
+                   delivery_charge_poisha::text
+            from sales.orders where org_id = ${ORG_A} and id = ${created.id}
+          `)
+        )[0],
+      { orgId: ORG_A },
+    );
+    expect(row).toMatchObject({
+      ship_district_id: null,
+      ship_thana_id: null,
+      ship_address_line: 'House 12, Road 5, Uttara Sector 7, Dhaka',
+      delivery_zone_id: zone?.id,
+      delivery_charge_poisha: zone?.charge_poisha,
+    });
+
+    // What a courier is sent: the one line, with no district or thana to refuse it over.
+    const snapshot = await withOrg(actor, (tx) => ordersApi.bookingSnapshot(tx, ORG_A, created.id));
+    expect(snapshot).toMatchObject({
+      district: '',
+      thana: '',
+      addressLine: 'House 12, Road 5, Uttara Sector 7, Dhaka',
+    });
+  });
+
+  it('refuses a district without its thana', async () => {
+    await expect(
+      orders.create(context(), request(), {
+        channel: 'phone',
+        customer: { phone: '01712345954', name: 'Rafiq Ahmed' },
+        shipTo: { addressLine: 'House 3, Road 1', districtId: 1 },
+        deliveryChargePoisha: '6000',
+        lines: [{ skuId: randomUUID(), qty: 1 }],
+      }),
+    ).rejects.toThrow(/thana/);
+  });
+});
+
 async function clearBrandDefault(): Promise<void> {
   await withSystem(
     (tx) =>

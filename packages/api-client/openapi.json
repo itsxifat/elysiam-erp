@@ -489,7 +489,7 @@
             "type": "boolean"
           }
         },
-        "required": ["districtId", "thanaId", "addressLine"],
+        "required": ["addressLine"],
         "additionalProperties": false
       },
       "CustomerDetails": {
@@ -750,7 +750,7 @@
             "maxLength": 500
           }
         },
-        "required": ["districtId", "thanaId", "addressLine"],
+        "required": ["addressLine"],
         "additionalProperties": false
       },
       "InboxChannelUpdate": {

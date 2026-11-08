@@ -69,10 +69,20 @@ export const cartLineSchema = z
 
 const cartLinesSchema = z.array(cartLineSchema).min(1).max(MAX_CART_LINES);
 
+/** The website's delivery zones (Website → Settings → Shipping, D-503). */
+export const WEBSITE_DELIVERY_ZONES = ['inside_dhaka', 'suburbs', 'outside_dhaka'] as const;
+export type WebsiteDeliveryZone = (typeof WEBSITE_DELIVERY_ZONES)[number];
+
+/**
+ * Where the parcel goes, for pricing. D-953: the shopper picks one of the website's delivery
+ * zones (the fees the public settings list) and writes one address line. A district and thana
+ * are still accepted from an older website and then resolve the zone as before.
+ */
 const areaSchema = z
   .object({
-    districtId: z.number().int().positive(),
-    thanaId: z.number().int().positive(),
+    zone: z.enum(WEBSITE_DELIVERY_ZONES).optional(),
+    districtId: z.number().int().positive().optional(),
+    thanaId: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -204,8 +214,10 @@ export const savedAddressSchema = z
     label: z.string().trim().max(40).optional(),
     name: z.string().trim().min(1).max(200),
     phone: phoneInput,
-    districtId: z.number().int().positive(),
-    thanaId: z.number().int().positive(),
+    /** D-953: the delivery zone the shopper picked for this address. */
+    zone: z.enum(WEBSITE_DELIVERY_ZONES).optional(),
+    districtId: z.number().int().positive().optional(),
+    thanaId: z.number().int().positive().optional(),
     area: z.string().trim().max(160).optional(),
     addressLine: z.string().trim().min(3).max(500),
     isDefault: z.boolean().optional(),

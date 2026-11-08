@@ -893,8 +893,8 @@ export async function setContactAddress(
   orgId: string,
   id: string,
   address: {
-    readonly districtId: number;
-    readonly thanaId: number;
+    readonly districtId: number | null;
+    readonly thanaId: number | null;
     readonly area: string | null;
     readonly addressLine: string;
   },

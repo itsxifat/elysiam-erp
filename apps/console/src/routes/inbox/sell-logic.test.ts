@@ -155,7 +155,7 @@ describe('the delivery details', () => {
   const sources = {
     name: 'Rahim',
     phone: '+8801712345678',
-    address: { districtId: 1, thanaId: 10, area: null, addressLine: 'House 4, Mirpur 10' },
+    address: { addressLine: 'House 4, Mirpur 10' },
   };
 
   it('fills what is empty from the chat, never what the agent typed', () => {
@@ -163,8 +163,6 @@ describe('the delivery details', () => {
     expect(filled.customer).toMatchObject({
       name: 'Rahim',
       phone: '01712345678',
-      districtId: 1,
-      thanaId: 10,
       addressLine: 'House 4, Mirpur 10',
     });
     const typed = typeCustomer(emptyDraft('c'), 'name', '');
@@ -185,14 +183,16 @@ describe('placing', () => {
     draft = prefillCustomer(draft, {
       name: 'Rahim',
       phone: '01712345678',
-      address: { districtId: 1, thanaId: 10, area: null, addressLine: 'House 4, Road 4' },
+      address: { addressLine: 'House 4, Road 4' },
     });
     return draft;
   };
 
   it('says what is missing, and is ready once nothing is', () => {
     const empty = placeCheck(emptyDraft('c'), null, { kind: 'none' });
-    expect(empty.missing).toEqual(['items', 'name', 'phone', 'area', 'address']);
+    expect(empty.missing).toEqual(['items', 'name', 'phone', 'address']);
+    // A brand with delivery zones needs one picked (D-953).
+    expect(placeCheck(emptyDraft('c'), null, { kind: 'none' }, true).missing).toContain('area');
     expect(empty.ready).toBe(false);
     const check = placeCheck(ready(), '6000', { kind: 'none' });
     expect(check.ready).toBe(true);
@@ -241,7 +241,7 @@ describe('placing', () => {
     expect(body).toEqual({
       channel: 'facebook',
       customer: { phone: '01712345678', name: 'Rahim' },
-      shipTo: { name: 'Rahim', districtId: 1, thanaId: 10, addressLine: 'House 4, Road 4' },
+      shipTo: { name: 'Rahim', addressLine: 'House 4, Road 4' },
       lines: [{ skuId: 's-xxl', qty: 2, unitPricePoisha: '160000' }],
       assignedTo: 'usr_agent',
       source: { inboxConversationId: 'conv-1' },

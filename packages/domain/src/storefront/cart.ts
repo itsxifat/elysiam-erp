@@ -76,6 +76,11 @@ export interface CartQuoteInput {
    * falls in no zone, undefined when no address was given yet.
    */
   readonly deliveryZoneId?: string | null | undefined;
+  /**
+   * D-953: the website zone the shopper picked outright. Wins over `deliveryZoneId`: a zone
+   * picked is shipped to, at that zone's fee.
+   */
+  readonly webZone?: WebZone | undefined;
   readonly discounts?: readonly CartDiscount[];
 }
 
@@ -197,7 +202,10 @@ export function quoteCart(input: CartQuoteInput): CartQuote {
 
   let zone: WebZone | null = null;
   let deliverable: boolean | null = null;
-  if (input.deliveryZoneId !== undefined) {
+  if (input.webZone !== undefined) {
+    zone = input.webZone;
+    deliverable = true;
+  } else if (input.deliveryZoneId !== undefined) {
     zone = input.deliveryZoneId === null ? null : webZoneFor(input.rule, input.deliveryZoneId);
     deliverable = zone !== null;
   }

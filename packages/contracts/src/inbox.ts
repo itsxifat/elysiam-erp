@@ -77,8 +77,8 @@ export type InboxPhoneInput = z.infer<typeof inboxPhoneSchema>;
 
 export const inboxAddressSchema = z
   .object({
-    districtId: z.number().int().positive(),
-    thanaId: z.number().int().positive(),
+    districtId: z.number().int().positive().optional(),
+    thanaId: z.number().int().positive().optional(),
     area: z.string().trim().max(160).optional(),
     addressLine: z.string().trim().min(3).max(500),
   })
