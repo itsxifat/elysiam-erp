@@ -106,6 +106,36 @@
   color: var(--primary-text);
 }
 
+/*
+ * Brand-coloured text on a dark surface (M30's accessibility pass). `text-primary` and
+ * `bg-primary` share one variable, and the dark fill is too dim to read as text, so text alone
+ * takes `--primary-text` in the dark theme. Outside the utilities layer on purpose, so it wins
+ * over the utility it corrects.
+ */
+.dark .text-primary {
+  color: var(--primary-text);
+}
+
+/*
+ * Brand-coloured text on a dark surface (M30's accessibility pass). `text-primary` and
+ * `bg-primary` share one variable, and the dark fill is too dim to read as text, so text alone
+ * takes `--primary-text` in the dark theme. Outside the utilities layer on purpose, so it wins
+ * over the utility it corrects.
+ */
+.dark .text-primary {
+  color: var(--primary-text);
+}
+
+/*
+ * Brand-coloured text on a dark surface (M30's accessibility pass). `text-primary` and
+ * `bg-primary` share one variable, and the dark fill is too dim to read as text, so text alone
+ * takes `--primary-text` in the dark theme. Outside the utilities layer on purpose, so it wins
+ * over the utility it corrects.
+ */
+.dark .text-primary {
+  color: var(--primary-text);
+}
+
 @layer base {
   *,
   ::after,
