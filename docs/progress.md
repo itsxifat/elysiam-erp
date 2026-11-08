@@ -4342,8 +4342,11 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   directions) PASS; server, console typecheck and lint PASS. New e2e cases in
   `stock-in-hand.e2e.test.ts` (opening correction posts no expense; the cap; a write-off moved
   to opening equity by reversal; 403 for the warehouse; once only; the database refuses undoing
-  it) written; see the deploy note for whether they ran (Docker Desktop had stopped).
+  it) written and run (see the deploy note).
 - **New dependencies:** none.
 - **Not done on the live books:** the existing write-offs were not moved. The owner (or anyone
   with approve StockAdjustment) presses "Was an opening count mistake" on each row in Stock →
   Adjustments that was a counting error; the six "Count difference" rows total Tk 47,820.
+- **Deployed:** `679e6a50` to both brands 2026-11-08: migration 0171 applied (Elysiam's 10
+  adjustments read `shrinkage`), API and worker healthy, the new route answers 403 unsigned.
+  The e2e file `stock-in-hand.e2e.test.ts` ran against real Postgres: 25/25 PASS.
