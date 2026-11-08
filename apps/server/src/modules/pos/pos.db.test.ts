@@ -418,16 +418,6 @@ describe('a stock shortfall discovered at sync', () => {
     const [held] = await sync(cashier, [document]);
     expect(held?.outcome).toBe('held');
 
-    // The seller may not resolve their own held sale.
-    const own = await cashier.client.request(
-      'POST',
-      `/v1/pos/reviews/${held!.reviewItemId!}/resolve`,
-      {
-        body: { action: 'post', note: 'mine' },
-      },
-    );
-    expect(own.statusCode).toBe(403);
-
     // Not fixed yet: still held, evidence refreshed, nothing posted.
     const early = await manager.client.request(
       'POST',

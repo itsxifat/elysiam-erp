@@ -217,9 +217,7 @@ describe('a bonus rule version is the JSON a checker approved', () => {
     ).toMatch(/^BONUS_RULE_FROZEN/);
   });
 
-  it('goes into force only on its own approved request, decided by somebody but its author', async () => {
-    // Raised by somebody else and approved by the author: the approvals table allows it,
-    // because maker ≠ checker there is about the request; 0091 is about the terms.
+  it('goes into force only on its own approved request (D-954: whoever decided it)', async () => {
     const forged = await seedVersion('usr_author');
     const forgedRequest = await seedRequest('usr_other', forged.versionId);
     expect(await asA((tx) => repo.markSubmitted(tx, ORG_A, forged.versionId, forgedRequest))).toBe(
@@ -228,10 +226,9 @@ describe('a bonus rule version is the JSON a checker approved', () => {
     expect(
       await refusal(asA((tx) => repo.setVersionStatus(tx, ORG_A, forged.versionId, 'approved'))),
     ).toMatch(/^BONUS_RULE_FROZEN/);
+    // Approved by its own author: in force, the permission being the rule (D-954).
     await decide(forgedRequest, 'approved', 'usr_author');
-    expect(
-      await refusal(asA((tx) => repo.setVersionStatus(tx, ORG_A, forged.versionId, 'approved'))),
-    ).toMatch(/^BONUS_RULE_FROZEN/);
+    await asA((tx) => repo.setVersionStatus(tx, ORG_A, forged.versionId, 'approved'));
 
     const honest = await seedVersion('usr_author');
     const honestRequest = await seedRequest('usr_author', honest.versionId);

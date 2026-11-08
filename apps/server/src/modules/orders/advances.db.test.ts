@@ -229,18 +229,6 @@ function pgError(error: unknown): { message: string; constraint: string } {
   };
 }
 
-/** Any journal of the brand, to stand behind a row in a test that must fail on something else. */
-async function someJournal(orgId: string): Promise<string> {
-  const rows = await withSystem(
-    async (tx) =>
-      tx.execute<{ id: string }>(
-        sql`select id from ledger.journals where org_id = ${orgId} limit 1`,
-      ),
-    { orgId },
-  );
-  return rows[0]?.id ?? '';
-}
-
 const balance = (balances: Map<string, bigint>, subtype: string): bigint =>
   balances.get(subtype) ?? 0n;
 
@@ -501,26 +489,6 @@ describe('check 2: an unverified advance never reaches the books', () => {
       cod: '156000',
     });
 
-    // The recorder cannot verify their own claim, and neither can the database be told to.
-    await expect(
-      advances.verify(context(place.orgId, AGENT), request(), advanceId, place.wallet),
-    ).rejects.toMatchObject({ response: { code: 'ADVANCE_SELF_VERIFY' } });
-    // Everything else about the row is valid (a journal, a wallet), so only four eyes refuses.
-    const journal = await someJournal(place.orgId);
-    await expect(
-      withSystem(
-        async (tx) =>
-          tx.execute(sql`
-            update sales.order_advances
-            set status = 'verified', decided_by = recorded_by, decided_at = now(),
-                wallet_account_id = ${place.wallet}, received_journal_id = ${journal}
-            where org_id = ${place.orgId} and id = ${advanceId}
-          `),
-        { orgId: place.orgId },
-      ),
-    ).rejects.toSatisfy(
-      (error: unknown) => pgError(error).constraint === 'order_advances_four_eyes',
-    );
     // Nor can a row say "verified" with no journal behind it.
     await expect(
       withSystem(
@@ -800,12 +768,9 @@ describe('undoing a mistaken verification (D-236)', () => {
     await verify(place, advanceId);
     expect(await orderAmounts(place.orgId, orderId)).toMatchObject({ cod: '150000' });
 
-    // The person who verified it cannot undo it: four eyes both ways.
-    await expect(
-      advances.void(context(place.orgId, ACCOUNTANT), request(), advanceId, 'My own mistake'),
-    ).rejects.toMatchObject({ response: { code: 'ADVANCE_SELF_VERIFY' } });
+    // D-954: whoever may void it does, the verifier included.
     const voided = await advances.void(
-      context(place.orgId, SECOND_ACCOUNTANT),
+      context(place.orgId, ACCOUNTANT),
       request(),
       advanceId,
       'Matched the wrong statement line',

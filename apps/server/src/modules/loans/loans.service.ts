@@ -369,12 +369,6 @@ export class LoansService {
         if (loan.voided_at !== null) {
           throw new LoansHttpError('LOAN_IMMUTABLE', 'That loan is already void.');
         }
-        if (loan.created_by === context.userId) {
-          throw new LoansHttpError(
-            'LOAN_SELF_VOID',
-            'The person who recorded a loan cannot also void it; another accounts user can.',
-          );
-        }
         if ((await repo.livePayments(tx, context.orgId, loan.id)) > 0) {
           throw new LoansHttpError(
             'LOAN_IMMUTABLE',
@@ -451,12 +445,9 @@ export class LoansService {
         receivedJournalId: loan.received_journal_id,
         memo: loan.memo,
         voidedAt: loan.voided_at === null ? null : new Date(loan.voided_at).toISOString(),
-        // Whether this viewer may void it now: not void, nothing repaid or waiting, and not
-        // the person who recorded it. The void route checks each again.
-        voidable:
-          !voided &&
-          loan.created_by !== context.userId &&
-          payments.every((payment) => payment.status === 'rejected'),
+        // Whether it may be voided now: not void, nothing repaid or waiting. The void route
+        // checks each again.
+        voidable: !voided && payments.every((payment) => payment.status === 'rejected'),
         voidReason: loan.void_reason,
         voidJournalId: loan.void_journal_id,
       },

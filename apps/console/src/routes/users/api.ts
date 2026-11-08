@@ -36,83 +36,23 @@ export interface StaffRow {
   readonly hasRoleHere: boolean;
   readonly inOtherBrand: boolean;
   readonly isSelf: boolean;
-  readonly resetNeedsApproval: boolean;
-  /** For an active admin who is not a super admin: the admins' trust in them (D-654). */
-  readonly trust: TrustView | null;
-  /** For an admin who could be made a super admin (D-659), as this viewer sees it. */
-  readonly superAdminNomination: NominationView | null;
-  /** For an active super admin who is not an owner (D-686), as this viewer sees it. */
-  readonly superAdminRemoval: RemovalView | null;
-}
-
-/** Removing one super admin, or stepping down, as this viewer sees it (D-685, D-686). */
-export interface RemovalView {
-  readonly pending: boolean;
-  readonly votes: number;
-  /** Every other active super admin; 0 while that is at most one. */
-  readonly needed: number;
-  /** At most one other super admin: the next yes removes at once. */
-  readonly immediate: boolean;
-  readonly votedByMe: boolean;
-  /** The first super admin: removed only by stepping down. */
-  readonly isFirst: boolean;
-  readonly canVote: boolean;
-  readonly canWithdraw: boolean;
-  /** The first super admin or an owner (D-666). */
-  readonly canStart: boolean;
+  /** The viewer may make this person a super admin now (D-954). */
+  readonly canMakeSuperAdmin: boolean;
+  /** The viewer may remove this person's super admin power now (D-954). */
+  readonly canRemoveSuperAdmin: boolean;
   /** The viewer's own row, and another super admin remains. */
   readonly canStepDown: boolean;
 }
 
-export interface RemovalOutcome {
-  readonly userId: string;
-  readonly outcome: 'removed' | 'pending';
-  readonly votes: number;
-  readonly needed: number;
-  readonly sessionsEnded: number;
-}
-
-/** Making one admin a super admin, as this viewer sees it (D-659). */
-export interface NominationView {
-  readonly pending: boolean;
-  readonly votes: number;
-  /** Every active super admin; 0 while there is at most one. */
-  readonly needed: number;
-  /** At most one super admin: the next yes promotes at once. */
-  readonly immediate: boolean;
-  readonly votedByMe: boolean;
-  readonly canVote: boolean;
-  readonly canWithdraw: boolean;
-  /** The caller may start a nomination: the first super admin or an owner (D-666). */
-  readonly canStart: boolean;
-}
-
 export interface NominationOutcome {
   readonly userId: string;
-  readonly outcome: 'promoted' | 'pending';
-  readonly votes: number;
-  readonly needed: number;
+  readonly outcome: 'promoted';
 }
 
-export type TrustRefusalCode =
-  | 'self'
-  | 'not_admin'
-  | 'no_two_factor'
-  | 'invited_candidate'
-  | 'invited_by_candidate'
-  | 'same_inviter';
-
-/** The admins' trust in one admin, as this viewer sees it (D-654 to D-656). */
-export interface TrustView {
-  readonly votes: number;
-  readonly needed: number;
-  readonly trusted: boolean;
-  /** This viewer has a vote recorded: theirs to withdraw. */
-  readonly votedByMe: boolean;
-  /** This viewer's vote would count. */
-  readonly canVote: boolean;
-  readonly reason: string | null;
-  readonly reasonCode: TrustRefusalCode | null;
+export interface RemovalOutcome {
+  readonly userId: string;
+  readonly outcome: 'removed';
+  readonly sessionsEnded: number;
 }
 
 export interface OpenReset {
@@ -155,7 +95,7 @@ export type TwoFactorOutcome =
 export function listStaff(): Promise<{
   items: readonly StaffRow[];
   resets: readonly OpenReset[];
-  /** Only the first super admin (or an owner) invites or starts a super admin (D-666). */
+  /** Any super admin invites a super admin (D-954). */
   canStartSuperAdmin?: boolean;
 }> {
   return api.get('/v1/users');
@@ -200,32 +140,14 @@ export function signOutEverywhere(
   return api.post(`/v1/users/${encodeURIComponent(userId)}/sign-out-everywhere`);
 }
 
-export function voteTrust(userId: string): Promise<{ userId: string; trust: TrustView }> {
-  return api.post(`/v1/users/${encodeURIComponent(userId)}/trust`);
-}
-
-export function withdrawTrust(userId: string): Promise<{ userId: string; trust: TrustView }> {
-  return api.delete(`/v1/users/${encodeURIComponent(userId)}/trust`);
-}
-
-export function voteSuperAdmin(userId: string): Promise<NominationOutcome> {
+/** Make an active admin a super admin, at once (D-954). */
+export function makeSuperAdmin(userId: string): Promise<NominationOutcome> {
   return api.post(`/v1/users/${encodeURIComponent(userId)}/super-admin`);
 }
 
-export function withdrawSuperAdmin(
-  userId: string,
-): Promise<{ userId: string; withdrawnVotes: number }> {
-  return api.delete(`/v1/users/${encodeURIComponent(userId)}/super-admin`);
-}
-
-export function voteSuperAdminRemoval(userId: string): Promise<RemovalOutcome> {
+/** Remove a super admin's super admin power, at once (D-954). */
+export function removeSuperAdmin(userId: string): Promise<RemovalOutcome> {
   return api.post(`/v1/users/${encodeURIComponent(userId)}/super-admin-removal`);
-}
-
-export function withdrawSuperAdminRemoval(
-  userId: string,
-): Promise<{ userId: string; withdrawnVotes: number }> {
-  return api.delete(`/v1/users/${encodeURIComponent(userId)}/super-admin-removal`);
 }
 
 /** Give up your own super admin power; your sessions end, this one included (D-685). */
@@ -238,7 +160,7 @@ export function invite(input: {
   name: string;
   role: MembershipRole;
   branchIds: readonly string[];
-  /** Invite them as a super admin too (D-659); the role is then org_admin. */
+  /** Invite them as a super admin too (D-954); the role is then org_admin. */
   superAdmin?: boolean;
 }): Promise<{
   userId: string;

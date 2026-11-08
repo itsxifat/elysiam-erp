@@ -93,11 +93,9 @@ export function requiresApprovalForDay(
 }
 
 /**
- * Can this person decide this request?
- *
- * The database has the same rule as a CHECK constraint, which is what actually
- * enforces it. This exists so the API can say why, rather than surfacing a
- * constraint violation to someone who has done nothing unusual.
+ * Can this request still be decided? Only while it is pending. Who may decide it is the
+ * permission matrix's answer alone (D-954): anyone whose role may decide the type, in scope,
+ * the person who raised it included.
  */
 export function canDecide(input: {
   readonly requestedBy: string;
@@ -106,9 +104,6 @@ export function canDecide(input: {
 }): { readonly ok: boolean; readonly reason?: string } {
   if (input.status !== 'pending') {
     return { ok: false, reason: 'This request has already been decided.' };
-  }
-  if (input.requestedBy === input.decidedBy) {
-    return { ok: false, reason: 'The person who requested an action cannot approve it.' };
   }
   return { ok: true };
 }

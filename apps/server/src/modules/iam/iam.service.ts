@@ -21,7 +21,7 @@ import type { FastifyRequest } from 'fastify';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { lockSuperAdmins } from './super-admin.repository.js';
-import { requireSuperAdmin, voteSuperAdmin, type NominationOutcome } from './super-admin.js';
+import { makeSuperAdmin, requireSuperAdmin, type NominationOutcome } from './super-admin.js';
 import { usersHttpError } from './users.errors.js';
 import {
   addGranter,
@@ -207,7 +207,7 @@ export class IamService {
     if (!isAdmin) {
       throw new ForbiddenException('Only an organisation admin can create users.');
     }
-    // Before any row is written: only a super admin makes a super admin (D-659).
+    // Before any row is written: only a super admin makes a super admin (D-954).
     if (input.superAdmin === true) requireSuperAdmin(input.caller);
 
     const email = input.email;
@@ -228,9 +228,8 @@ export class IamService {
 
     /*
      * The staff screen's rules hold here too (the ledger audit's C2): this route is a
-     * second door to a person's roles. Granting yourself a role would also make you your
-     * own granter and cut the lineage that keeps you from approving for whoever could
-     * have set your password (D-077); and a super admin is a super admin's to change.
+     * second door to a person's roles. Nobody changes their own access here (that is how
+     * an admin would lift their own limits), and a super admin is a super admin's to change.
      */
     if (userId === input.caller.userId) {
       throw usersHttpError(
@@ -360,7 +359,7 @@ export class IamService {
         // the user created, is still the interceptor's.
         const nominated =
           input.superAdmin === true
-            ? await voteSuperAdmin(
+            ? await makeSuperAdmin(
                 tx,
                 this.audit,
                 {

@@ -1170,6 +1170,20 @@
       "when": 1794133481339,
       "tag": "0168_address_one_line",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1794136364279,
+      "tag": "0169_permission_only_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1794136378799,
+      "tag": "0170_permission_only_functions",
+      "breakpoints": true
     }
   ]
 }

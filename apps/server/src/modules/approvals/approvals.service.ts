@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -39,22 +38,17 @@ import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { assertInScope, scopeWhere } from '../../platform/auth/scope.js';
 import type { ActiveContext } from '../../platform/http/context.js';
-import { IAM_API, type IamApi } from '../iam/iam.api.js';
 
 /**
- * Maker-checker (architecture §6, §25).
+ * Approvals (architecture §6, §25).
  *
- * The rule — one person requests, a *different* person approves — is enforced
- * in three places on purpose, weakest to strongest:
- *
- * 1. Here, so the API can explain itself.
- * 2. The database: `approval_requests_maker_is_not_checker`, the
- *    never-auto-approved CHECK, and the trigger that fixes a request's terms
- *    from the moment it is raised (migrations 0009–0011). A service can be
- *    refactored, called from a job, or bypassed by the next module; those
- *    cannot.
- * 3. The permission matrix plus the per-type lists (`REQUESTER_TYPES`,
- *    `CHECKER_TYPES`), which decide who may raise and who may decide what.
+ * Who may decide a request is the permission matrix alone (D-954): a role whose
+ * per-type list (`CHECKER_TYPES`) names the type, within the caller's scope (a
+ * branch manager's branches, at a branch manager's threshold). The person who
+ * raised it may decide it too; there is no invite-lineage rule and no trust vote.
+ * The database still fixes a request's terms from the moment it is raised, keeps
+ * a decision final and records the signed-in person as the decider
+ * (migrations 0009–0015).
  *
  * **Below the threshold is auto-approved (D-068)**, but only where the
  * threshold can be trusted to mean something: never for a control type
@@ -235,10 +229,7 @@ export class ApprovalsService {
   private readonly executors = new Map<ApprovalType, ApprovalExecutor>();
   private readonly rejectionHandlers = new Map<ApprovalType, RejectionHandler>();
 
-  constructor(
-    private readonly audit: AuditService,
-    @Inject(IAM_API) private readonly iam: IamApi,
-  ) {}
+  constructor(private readonly audit: AuditService) {}
 
   /**
    * Register what approving a type does. One executor per type, registered
@@ -723,11 +714,7 @@ export class ApprovalsService {
       // branch A gets the same "not found" for branch B's request (§6).
       assertInScope(input.request, { branchId: row.branch_id, createdBy: row.requested_by });
 
-      /*
-       * What you may check, as distinct from whether you are a checker (§6).
-       * Checked before maker≠checker so a checker who may not touch this type
-       * is told that, rather than being told they raised it.
-       */
+      // What you may check (§6): the permission is the whole rule (D-954).
       const tier = checkerTier(context.roles, row.type, context.isSuperAdmin);
       if (tier === null || !canDecideType(context.roles, row.type, context.isSuperAdmin)) {
         throw new ForbiddenException(
@@ -737,22 +724,13 @@ export class ApprovalsService {
 
       if (tier === 'branch') await this.assertBranchTier(tx, context, row);
 
-      if (!context.isSuperAdmin) await this.assertNotGrantedByRequester(tx, context, row);
-
       const verdict = canDecide({
         requestedBy: row.requested_by,
         decidedBy: context.userId,
         status: row.status,
       });
 
-      if (!verdict.ok) {
-        // 403 for self-approval, 409 for an already-decided request: one is a
-        // permission answer and the other is a state answer.
-        if (row.requested_by === context.userId) {
-          throw new ForbiddenException(verdict.reason);
-        }
-        throw new ConflictException(verdict.reason);
-      }
+      if (!verdict.ok) throw new ConflictException(verdict.reason);
 
       await tx.execute(sql`
         update approvals.approval_requests
@@ -942,71 +920,6 @@ export class ApprovalsService {
         'This request is at or above the threshold a branch manager may approve. It needs an org-level checker.',
       );
     }
-  }
-
-  /**
-   * Nobody approves for whoever granted them the power to (D-077).
-   *
-   * Until M16 emails invites, `POST /v1/users` hands the new user's invite
-   * token to the admin who created them — who can therefore set that user's
-   * password and act as them. An org admin who mints a second "org admin" has
-   * minted a puppet checker. So a checker may not decide a request raised by
-   * anyone in the grant lineage of their memberships in this org: whoever
-   * granted them, whoever granted that person, and so on. Transitive, because
-   * X → Y → Z is the same puppet one step removed.
-   */
-  private async assertNotGrantedByRequester(
-    tx: Tx,
-    context: ActiveContext,
-    row: { readonly requested_by: string; readonly type: ApprovalType },
-  ): Promise<void> {
-    /*
-     * Every granter counts, not only the latest (gaps-users-auth, D-410): a re-grant or a
-     * reset by a second admin overwrites `memberships.granted_by`, and the first granter —
-     * who may have held the password link — would drop out of the lineage with it.
-     * `iam.membership_granters` keeps them all.
-     */
-    const found = await tx.execute<{ hit: number }>(sql`
-      with recursive grants (user_id, granted_by) as (
-        select user_id, granted_by from iam.memberships
-        where org_id = ${context.orgId} and granted_by is not null
-        union
-        select user_id, granted_by from iam.membership_granters
-        where org_id = ${context.orgId}
-      ),
-      lineage (user_id, depth) as (
-        select g.granted_by, 1
-        from grants g
-        where g.user_id = ${context.userId}
-        union
-        select g.granted_by, l.depth + 1
-        from grants g
-        join lineage l on g.user_id = l.user_id
-        where l.depth < 16
-      )
-      select 1 as hit from lineage where user_id = ${row.requested_by} limit 1
-    `);
-
-    if (found.length === 0) return;
-
-    /*
-     * Unless the brand's independent admins trust this checker (D-655): two thirds of them,
-     * and at least two, none in the checker's invitation chain. Counted now, under the
-     * candidate's trust lock and the admin memberships held for share. Never for a sign-in
-     * reset: whoever holds a person's password link stays out of deciding resets, trusted
-     * or not (D-404 to D-406 unchanged). Maker ≠ checker is untouched: `canDecide` below
-     * and the table's CHECK still refuse a person's own request.
-     */
-    if (row.type !== 'credential_reset') {
-      const trust = await this.iam.checkerTrust(tx, context.orgId, context.userId, {
-        requesterId: row.requested_by,
-      });
-      if (trust.trusted) return;
-    }
-
-    throw new ForbiddenException(
-      'You cannot decide a request raised by the person who granted you your role, directly or through someone they granted, unless the other admins trust you on the Staff screen.',
-    );
   }
 
   /**

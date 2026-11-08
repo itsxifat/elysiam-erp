@@ -4271,3 +4271,41 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   likely removed by the 2026-11-05 cleanup. A new key (`website-key`, runbook brand-deploy §5)
   piped into `/etc/elysium-web/demo.env` fixes it; awaiting the owner.
 - **New dependencies:** none.
+
+## 2026-11-08 · change · the permission is the rule: no "who may approve whose", no votes
+
+- **Why:** the owner: remove the logic on who can approve whose and who added which (super)
+  admin; anyone with the permission can do it, and nobody can go beyond their permissions.
+- **What (D-954):** removed the approvals' invite-lineage rule and trust votes (domain `trust.ts`,
+  `trust.repository.ts`, the `…/trust` routes and the Staff screen's Trust section), maker ≠ checker
+  in approvals (`canDecide`; CHECK `approval_requests_maker_is_not_checker` dropped in migration
+  0169), the second admin for sign-in resets (`SECOND_ADMIN_RESET_ROLES`, `resetNeedsSecondPerson`;
+  a reset still waiting from before is replaced by the next, `supersede`), super admin votes and
+  the "first super admin" (domain, server and `iam.promote_super_admin`/`demote_super_admin` in
+  migration 0170; the `DELETE …/super-admin` and `DELETE …/super-admin-removal` routes gone), and the
+  "not by the same person" rules for advances (CHECKs reshaped in 0169), company loans (0170's
+  `loans.assert_loan_change`), staff loans and payout details, investor withdrawals (CHECK
+  dropped), bonus rules (app and 0170's `hr.assert_bonus_rule_version_change`) and the till's
+  review items. Kept: the permission matrix and scopes, thresholds, super admins only acting on
+  super admins, no changing your own access on the Staff screen, owners and the last super admin
+  protected, two-step sign-in for super admin changes, decisions final and recorded as the
+  signed-in person, audit.
+- **Verification:** domain, server, console and mother typecheck PASS; domain iam/approvals and
+  contracts tests (193) PASS; console users tests PASS; `super-admin.e2e`, `super-admin-removal.e2e`
+  (rewritten for D-954) and `users.e2e` (32) PASS; approvals, loans, hr, investors, pos, inventory
+  stock-in-hand suites PASS after the tests of the removed rules were rewritten or removed; the
+  remaining `advances.db.test.ts` failures (7) are the logged pack-step follow-up ("not packed
+  yet") and one jobs-runtime test, none about permissions. `check:routes`, `check:api-client`,
+  `check:bundle` (249.5 KB), `check:migrations`, `check:schema`, format and lint PASS.
+- **New dependencies:** none.
+- **Ledger audit:** 0 critical. W1 (three committed snapshots reformatted) restored and added to
+  `.prettierignore`; W2 (`security-policy.e2e`, `users.stack.ts` expecting a second admin)
+  rewritten; W3/W4 (a reset-replacing path that could deadlock, untested) replaced by migration
+  0170 closing every reset still open from before (approvals withdrawn, then the resets), so none
+  is ever open again; W5: direct database tests of `iam.promote_super_admin` added (a non-super
+  admin, a super admin without two-step sign-in, self, a non-admin candidate, the flag past the
+  function). N3 (an investor withdrawal's "three people" check) removed too.
+- **Follow-up:** drop or revoke the now unused vote tables (`iam.trust_votes`,
+  `iam.super_admin_votes`, `iam.super_admin_removal_votes`) and their guard triggers.
+- **Follow-up:** tell every super admin when one is made or removed (one stolen super admin
+  session can now change them all at once; the owner link is the recovery).

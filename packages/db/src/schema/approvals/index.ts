@@ -174,18 +174,7 @@ export const approvalRequests = approvals.table(
       foreignColumns: [branches.orgId, branches.id],
     }).onDelete('restrict'),
 
-    /**
-     * Maker ≠ checker, at the database.
-     *
-     * The service checks it too, and says something helpful when it fails. This
-     * exists for the paths that do not go through the service: a job, a repair
-     * script, a future module that writes the row directly. Any of those can
-     * forget the rule; none of them can get past this.
-     */
-    check(
-      'approval_requests_maker_is_not_checker',
-      sql`${table.decidedBy} <> ${table.requestedBy}`,
-    ),
+    // D-954: who decides is the permission matrix's answer alone; the requester may, too.
 
     /**
      * A decision is all-or-nothing.

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import {
   bonusRuleToJson,
@@ -291,11 +291,6 @@ export class BonusRulesService implements OnModuleInit {
           if (version.status !== 'draft') {
             throw new HrError('BONUS_RULE_FROZEN', 'Only a draft version can be submitted.');
           }
-          if (version.created_by !== context.userId) {
-            throw new ForbiddenException(
-              'Only the person who wrote this version can send it for approval; somebody else then approves it.',
-            );
-          }
           await this.closeDecidedPending(tx, context, version.rule_id, request);
           if ((await repo.pendingVersionOf(tx, context.orgId, version.rule_id)) !== undefined) {
             throw new HrError(
@@ -424,12 +419,6 @@ export class BonusRulesService implements OnModuleInit {
   private readonly execute: ApprovalExecutor = async (tx, { context, approval, request }) => {
     const version = await repo.versionByApproval(tx, context.orgId, approval.id);
     if (version?.status !== 'pending_approval') return;
-    // The author approving their own terms (W1). Submit already makes the author the
-    // requester, whom the approvals module refuses; this is the second lock, and 0091 the
-    // third.
-    if (version.created_by === context.userId) {
-      throw new ForbiddenException('The person who wrote a bonus rule version cannot approve it.');
-    }
     await this.activate(tx, context, version, approval.id, request);
   };
 

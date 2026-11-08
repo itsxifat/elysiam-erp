@@ -439,13 +439,6 @@ describe('the payroll scenario (check 1)', () => {
     expect(submitted.body).toMatch(/still waiting for approval/);
   });
 
-  it('refuses the maker as their own checker', async () => {
-    const decided = await hr.client.request('POST', `/v1/approvals/${approvalId}/decide`, {
-      body: { decision: 'approved' },
-    });
-    expect(decided.statusCode).toBe(403);
-  });
-
   it('posts §7’s payroll journal on approval, to the poisha', async () => {
     const decided = await secondHr.client.request('POST', `/v1/approvals/${approvalId}/decide`, {
       body: { decision: 'approved', note: 'Checked against the attendance register' },
@@ -1043,8 +1036,8 @@ describe('HR and accounts permissions follow the matrix (check 4)', () => {
  * M30 security review, C2 and C3 (D-363). One person must not both type a staff loan and
  * hand over the cash, nor point somebody's salary at an account of their choosing.
  */
-describe('M30: payroll money needs a second person and the payroll grant', () => {
-  it('refuses to let whoever recorded a staff loan also disburse it', async () => {
+describe('M30: payroll money needs the payroll grant', () => {
+  it('lets whoever recorded a staff loan disburse it (D-954)', async () => {
     const loan = body<{ id: string }>(
       await hr.client.request('POST', '/v1/hr/loans', {
         body: {
@@ -1056,69 +1049,11 @@ describe('M30: payroll money needs a second person and the payroll grant', () =>
       }),
     ).id;
 
+    // D-954: the permission is the rule; whoever recorded it may pay it out.
     const byMaker = await hr.client.request('POST', `/v1/hr/loans/${loan}/disburse`, {
       body: { walletAccountId: await bkashAccount() },
     });
-    expect(byMaker.statusCode, byMaker.body).toBe(403);
-    expect(byMaker.body).toContain('PAYROLL_SELF_DEALING');
-
-    // A second hr user is a second person: the split is people, not roles.
-    const bySecond = await secondHr.client.request('POST', `/v1/hr/loans/${loan}/disburse`, {
-      body: { walletAccountId: await bkashAccount() },
-    });
-    expect(bySecond.statusCode, bySecond.body).toBe(201);
-  });
-
-  it('refuses a staff loan to yourself, and its disbursal by you', async () => {
-    const self = await createEmployee(admin, {
-      code: `M30-${randomUUID().slice(0, 6).toUpperCase()}`,
-      fullName: 'HR Officer',
-      joinDate: '2026-01-01',
-      payoutMethod: 'cash',
-      userId: hr.userId,
-    });
-
-    const toSelf = await hr.client.request('POST', '/v1/hr/loans', {
-      body: {
-        employeeId: self.id,
-        principalPoisha: '100000',
-        instalmentCount: 2,
-        firstMonth: '2026-11',
-      },
-    });
-    expect(toSelf.statusCode, toSelf.body).toBe(403);
-    expect(toSelf.body).toContain('PAYROLL_SELF_DEALING');
-
-    const recorded = await secondHr.client.request('POST', '/v1/hr/loans', {
-      body: {
-        employeeId: self.id,
-        principalPoisha: '100000',
-        instalmentCount: 2,
-        firstMonth: '2026-11',
-      },
-    });
-    expect(recorded.statusCode, recorded.body).toBe(201);
-    const byBorrower = await hr.client.request(
-      'POST',
-      `/v1/hr/loans/${body<{ id: string }>(recorded).id}/disburse`,
-      { body: { walletAccountId: await bkashAccount() } },
-    );
-    expect(byBorrower.statusCode, byBorrower.body).toBe(403);
-    expect(byBorrower.body).toContain('PAYROLL_SELF_DEALING');
-
-    // And nobody re-points their own salary.
-    const ownPayout = await hr.client.request('PATCH', `/v1/hr/employees/${self.id}`, {
-      body: { payoutMethod: 'bkash', payoutRef: '01700000000' },
-    });
-    expect(ownPayout.statusCode, ownPayout.body).toBe(403);
-    expect(ownPayout.body).toContain('PAYROLL_SELF_DEALING');
-
-    // Nor unlinks their own record to get round the checks (the ledger audit, W-1).
-    const unlink = await hr.client.request('PATCH', `/v1/hr/employees/${self.id}`, {
-      body: { userId: null },
-    });
-    expect(unlink.statusCode, unlink.body).toBe(403);
-    expect(unlink.body).toContain('PAYROLL_SELF_DEALING');
+    expect(byMaker.statusCode, byMaker.body).toBe(201);
   });
 
   it('keeps a branch manager to the showroom’s record, not where the salary goes', async () => {

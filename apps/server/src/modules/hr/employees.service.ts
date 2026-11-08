@@ -827,21 +827,4 @@ function assertPayrollFieldsAllowed(
       'Payout details, the linked login and bringing back someone who left are changed by HR.',
     );
   }
-  if (payout && before.user_id !== null && before.user_id === context.userId) {
-    throw new HrError(
-      'PAYROLL_SELF_DEALING',
-      'Your own payout account is changed by someone else in HR.',
-    );
-  }
-  /*
-   * Nobody unlinks their own record or links a record to themselves (the ledger audit,
-   * W-1). The self-dealing checks read the link, so an hr user who unlinked their own row
-   * could pay themselves a loan a colleague recorded, then link it back.
-   */
-  if (relinks && (before.user_id === context.userId || input.userId === context.userId)) {
-    throw new HrError(
-      'PAYROLL_SELF_DEALING',
-      'The login on your own employee record is changed by someone else in HR.',
-    );
-  }
 }

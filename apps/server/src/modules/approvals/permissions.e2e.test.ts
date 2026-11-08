@@ -480,7 +480,7 @@ async function currentThreshold(type: string): Promise<string | null> {
 }
 
 describe('check 4: maker-checker', () => {
-  it('refuses a requester approving their own request', async () => {
+  it('lets a requester decide their own request when their role may decide it (D-954)', async () => {
     const { client } = await asRole('org_admin');
     const { id } = await requestApproval(client, 'wallet_adjustment', '900000');
 
@@ -488,27 +488,7 @@ describe('check 4: maker-checker', () => {
       body: { decision: 'approved' },
     });
 
-    expect(decided.statusCode, decided.body).toBe(403);
-  });
-
-  it('and the database refuses it too, not only the service', async () => {
-    // The service check is a courtesy. This is the control: it bypasses the
-    // service entirely and writes the row the way a job or a repair script
-    // would — as the application role, through RLS.
-    const { client, userId } = await asRole('org_admin');
-    const { id } = await requestApproval(client, 'wallet_adjustment', '900000');
-
-    await expectRefused(
-      withOrg({ orgId: ORG_A, userId }, async (tx) => {
-        await tx.execute(sql`
-          update approvals.approval_requests
-          set status = 'approved', decided_by = ${userId}, decided_at = now()
-          where id = ${id}
-        `);
-      }),
-      /approval_requests_maker_is_not_checker/,
-      '23514',
-    );
+    expect(decided.statusCode, decided.body).toBe(201);
   });
 
   it('lets a different person decide', async () => {
@@ -976,67 +956,6 @@ describe('a type right and its branch scope come from the same role (C-1)', () =
   });
 });
 
-describe('nobody approves for whoever granted them their role (final pass W4, D-077)', () => {
-  async function grantedBy(userId: string, granter: string): Promise<void> {
-    await withSystem(
-      async (tx) => {
-        await tx.execute(sql`
-          update iam.memberships set granted_by = ${granter}
-          where user_id = ${userId} and org_id = ${ORG_A}
-        `);
-      },
-      { orgId: ORG_A },
-    );
-  }
-
-  it('refuses a checker granted by the requester, and one granted down that chain', async () => {
-    const { client: x, userId: xId } = await asRole('org_admin');
-    const { client: y, userId: yId } = await asRole('org_admin');
-    const { client: z, userId: zId } = await asRole('org_admin');
-    await grantedBy(yId, xId);
-    await grantedBy(zId, yId);
-
-    const { id } = await requestApproval(x, 'wallet_adjustment', '900000000');
-
-    const byY = await y.request('POST', `/v1/approvals/${id}/decide`, {
-      body: { decision: 'approved' },
-    });
-    expect(byY.statusCode, byY.body).toBe(403);
-    expect(byY.body).toMatch(/granted you/);
-
-    const byZ = await z.request('POST', `/v1/approvals/${id}/decide`, {
-      body: { decision: 'approved' },
-    });
-    expect(byZ.statusCode, byZ.body).toBe(403);
-
-    // The positive control: an admin outside that lineage may decide it.
-    const { client: other } = await asRole('org_admin');
-    const byOther = await other.request('POST', `/v1/approvals/${id}/decide`, {
-      body: { decision: 'approved' },
-    });
-    expect(byOther.statusCode, byOther.body).toBe(201);
-  });
-
-  it('records who granted a membership created through the API', async () => {
-    const { client, userId } = await asRole('org_admin');
-    const email = `granted_${String(Date.now())}@example.invalid`;
-    const created = await client.request('POST', '/v1/users', {
-      body: { email, name: 'Granted', role: 'accounts', branchIds: [] },
-    });
-    expect(created.statusCode, created.body).toBe(201);
-    const { userId: newUser } = parse<{ userId: string }>(created.body);
-
-    const [row] = await withSystem(
-      async (tx) =>
-        tx.execute<{ granted_by: string | null }>(sql`
-          select granted_by from iam.memberships where user_id = ${newUser} and org_id = ${ORG_A}
-        `),
-      { orgId: ORG_A },
-    );
-    expect(row?.granted_by).toBe(userId);
-  });
-});
-
 describe('threshold changes, as a checker sees and decides them (final pass W1, W2)', () => {
   it('shows the terms of a threshold change in the list and the decide view', async () => {
     await setThreshold('supplier_payment', '1000');
@@ -1220,8 +1139,8 @@ describe('the maker side has per-type authority (W5, D-072)', () => {
   });
 });
 
-describe('relaxing a threshold needs a second org admin (W4, D-073)', () => {
-  it('holds a raise until another org admin approves it', async () => {
+describe('relaxing a threshold goes through an approval (W4, D-073)', () => {
+  it('holds a raise until an org admin approves it', async () => {
     await setThreshold('wallet_adjustment', '500000');
     const { client: admin } = await asRole('org_admin');
 
@@ -1237,14 +1156,8 @@ describe('relaxing a threshold needs a second org admin (W4, D-073)', () => {
     const own = await requestApproval(admin, 'wallet_adjustment', '800000000');
     expect(own.status).toBe('pending');
 
-    // The proposer cannot approve their own change.
-    const self = await admin.request('POST', `/v1/approvals/${approvalId}/decide`, {
-      body: { decision: 'approved' },
-    });
-    expect(self.statusCode, self.body).toBe(403);
-
-    const { client: second } = await asRole('org_admin');
-    const approved = await second.request('POST', `/v1/approvals/${approvalId}/decide`, {
+    // D-954: an org admin decides it, the proposer included.
+    const approved = await admin.request('POST', `/v1/approvals/${approvalId}/decide`, {
       body: { decision: 'approved' },
     });
     expect(approved.statusCode, approved.body).toBe(201);

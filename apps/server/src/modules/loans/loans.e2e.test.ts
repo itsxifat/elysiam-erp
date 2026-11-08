@@ -257,14 +257,6 @@ describe('check 4: the postings are correct (golden books)', () => {
     const replay = await pay(loanId, first?.id ?? '', paymentId);
     expect(body<Payment>(replay).approvalId).toBe(payment.approvalId);
 
-    // The maker cannot approve their own repayment.
-    const self = await maker.client.request(
-      'POST',
-      `/v1/approvals/${payment.approvalId ?? ''}/decide`,
-      { body: { decision: 'approved' } },
-    );
-    expect(self.statusCode, self.body).toBe(403);
-
     await decide(payment.approvalId ?? '', 'approved');
     const after = await statement(loanId);
     expect(after.instalments[0]?.state).toBe('paid');
@@ -838,18 +830,13 @@ describe('voiding a loan recorded by mistake (W3, D-304)', () => {
     expect(voided.statusCode, voided.body).toBe(409);
   });
 
-  it('needs a second person: the one who recorded a loan cannot void it (W-B)', async () => {
+  it('lets the one who recorded a loan void it, with the permission (D-954)', async () => {
     const loan = await flatLoan(50_000n, 'Own Loan Lender');
-    const own = await voidLoan(loan.loan.id, 'My own mistake', maker);
-    expect(own.statusCode, own.body).toBe(403);
-    expect(body<{ code: string }>(own).code).toBe('LOAN_SELF_VOID');
-    expect(await voidedAt(loan.loan.id)).toBeNull();
-
-    // The statement tells each viewer whether they may.
     const asMaker = await maker.client.request('GET', `/v1/loans/${loan.loan.id}`);
-    const asChecker = await checker.client.request('GET', `/v1/loans/${loan.loan.id}`);
-    expect(body<{ loan: { voidable: boolean } }>(asMaker).loan.voidable).toBe(false);
-    expect(body<{ loan: { voidable: boolean } }>(asChecker).loan.voidable).toBe(true);
+    expect(body<{ loan: { voidable: boolean } }>(asMaker).loan.voidable).toBe(true);
+    const own = await voidLoan(loan.loan.id, 'My own mistake', maker);
+    expect(own.statusCode, own.body).toBe(201);
+    expect(await voidedAt(loan.loan.id)).not.toBeNull();
   });
 });
 
@@ -966,11 +953,6 @@ describe('a void and a repayment cannot both commit (W-A)', () => {
 });
 
 describe('what the database refuses of a void (0096, 0097; W-D)', () => {
-  it('refuses a void by the person who recorded the loan', async () => {
-    const loan = await flatLoan(50_000n, 'DB Self Void Lender');
-    await refusedWith(voidInDatabase(loan.loan.id, { voidedBy: maker.userId }), /LOAN_SELF_VOID/);
-  });
-
   it('refuses a void that names a journal other than the receipt’s reversal', async () => {
     const loan = await flatLoan(50_000n, 'DB Wrong Journal Lender');
     await refusedWith(

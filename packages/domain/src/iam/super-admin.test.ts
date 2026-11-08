@@ -1,138 +1,57 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import {
-  startRefusal,
-  isSuperAdminCandidate,
-  nominationRefusal,
-  nominationTally,
-  type NominationCandidate,
-} from './index.js';
+import { isSuperAdminCandidate, nominationRefusal, type NominationCandidate } from './index.js';
 
-/**
- * Super admins making super admins (D-659), as properties. The database holds the same rule
- * in `iam.promote_super_admin`; the server tests that one against real Postgres.
- */
+/** Making a super admin (D-954): a super admin's permission is the whole rule. */
 
-const PEOPLE = ['a', 'b', 'c', 'd', 'e', 'f'] as const;
-const person = fc.constantFrom(...PEOPLE);
-const people = fc.uniqueArray(person, { maxLength: PEOPLE.length });
-const voters = fc.array(person, { maxLength: 10 });
-
-const candidates = fc.record({
-  userId: person,
+const ids = fc.constantFrom('usr_a', 'usr_b', 'usr_c');
+const candidates = fc.record<NominationCandidate>({
+  userId: ids,
   isActive: fc.boolean(),
   isSuperAdmin: fc.boolean(),
   isOwner: fc.boolean(),
   activeAdminHere: fc.boolean(),
-}) satisfies fc.Arbitrary<NominationCandidate>;
-
-describe('nominationTally', () => {
-  it('promotes at once while the brand has one super admin or none', () => {
-    fc.assert(
-      fc.property(fc.uniqueArray(person, { maxLength: 1 }), voters, (superAdmins, cast) => {
-        expect(nominationTally(superAdmins, cast)).toEqual({
-          votes: 0,
-          needed: 0,
-          immediate: true,
-          complete: true,
-        });
-      }),
-    );
-  });
-
-  it('with two or more, completes exactly when every one of them has voted yes', () => {
-    fc.assert(
-      fc.property(people, voters, (superAdmins, cast) => {
-        if (superAdmins.length < 2) return;
-        const tally = nominationTally(superAdmins, cast);
-        expect(tally.immediate).toBe(false);
-        expect(tally.needed).toBe(superAdmins.length);
-        expect(tally.complete).toBe(superAdmins.every((id) => cast.includes(id)));
-        expect(tally.votes).toBe(superAdmins.filter((id) => cast.includes(id)).length);
-      }),
-    );
-  });
-
-  it('counts only the super admins whose vote is required, once each', () => {
-    fc.assert(
-      fc.property(people, voters, (superAdmins, cast) => {
-        const tally = nominationTally(superAdmins, cast);
-        expect(tally.votes).toBeLessThanOrEqual(tally.needed);
-        // Votes from anyone else (an owner, a former super admin) change nothing.
-        const outsiders = PEOPLE.filter((id) => !superAdmins.includes(id));
-        expect(nominationTally(superAdmins, [...cast, ...outsiders])).toEqual(tally);
-      }),
-    );
-  });
-
-  it('one missing vote holds a nomination back', () => {
-    fc.assert(
-      fc.property(people, fc.nat(), (superAdmins, pick) => {
-        if (superAdmins.length < 2) return;
-        const missing = superAdmins[pick % superAdmins.length];
-        const tally = nominationTally(
-          superAdmins,
-          superAdmins.filter((id) => id !== missing),
-        );
-        expect(tally.complete).toBe(false);
-        expect(tally.votes).toBe(superAdmins.length - 1);
-      }),
-    );
-  });
-
-  it('the owner scenario: the second is immediate, the third waits for the first two', () => {
-    expect(nominationTally(['first'], ['first']).immediate).toBe(true);
-    expect(nominationTally(['first', 'second'], ['first'])).toEqual({
-      votes: 1,
-      needed: 2,
-      immediate: false,
-      complete: false,
-    });
-    expect(nominationTally(['first', 'second'], ['first', 'second']).complete).toBe(true);
-  });
 });
 
 describe('nominationRefusal', () => {
-  it('refuses anyone but a super admin, before anything else', () => {
+  it('lets any super admin make any eligible admin a super admin, at once', () => {
     fc.assert(
-      fc.property(person, candidates, (actor, candidate) => {
-        expect(nominationRefusal({ userId: actor, isSuperAdmin: false }, candidate)).toBe(
+      fc.property(ids, candidates, (actorId, candidate) => {
+        const refusal = nominationRefusal({ userId: actorId, isSuperAdmin: true }, candidate);
+        if (actorId !== candidate.userId && isSuperAdminCandidate(candidate)) {
+          expect(refusal).toBeNull();
+        } else {
+          expect(refusal).not.toBeNull();
+        }
+      }),
+    );
+  });
+
+  it('refuses everyone who is not a super admin', () => {
+    fc.assert(
+      fc.property(ids, candidates, (actorId, candidate) => {
+        expect(nominationRefusal({ userId: actorId, isSuperAdmin: false }, candidate)).toBe(
           'not_super_admin',
         );
       }),
     );
   });
 
-  it('nobody nominates themselves', () => {
-    fc.assert(
-      fc.property(candidates, (candidate) => {
-        expect(nominationRefusal({ userId: candidate.userId, isSuperAdmin: true }, candidate)).toBe(
-          'self',
-        );
-      }),
-    );
-  });
-
-  it('a super admin may nominate exactly the active admins here who hold no supreme authority', () => {
-    fc.assert(
-      fc.property(person, candidates, (actor, candidate) => {
-        if (actor === candidate.userId) return;
-        const refusal = nominationRefusal({ userId: actor, isSuperAdmin: true }, candidate);
-        expect(refusal === null).toBe(isSuperAdminCandidate(candidate));
-        if (candidate.isSuperAdmin || candidate.isOwner)
-          expect(refusal).toBe('already_super_admin');
-      }),
-    );
-  });
-});
-
-describe('who starts a nomination (D-666)', () => {
-  it('the first super admin or an owner, and nobody else', () => {
-    const starters = new Set(['first', 'owner']);
-    expect(startRefusal('first', starters)).toBeNull();
-    expect(startRefusal('owner', starters)).toBeNull();
-    expect(startRefusal('second', starters)).toBe('not_first_super_admin');
-    expect(startRefusal('first', new Set())).toBe('not_first_super_admin');
+  it('never makes an owner, a super admin or someone who is not an active admin a candidate', () => {
+    const base = {
+      userId: 'usr_b',
+      isActive: true,
+      isSuperAdmin: false,
+      isOwner: false,
+      activeAdminHere: true,
+    };
+    const root = { userId: 'usr_a', isSuperAdmin: true };
+    expect(nominationRefusal(root, base)).toBeNull();
+    expect(nominationRefusal(root, { ...base, isOwner: true })).toBe('already_super_admin');
+    expect(nominationRefusal(root, { ...base, isSuperAdmin: true })).toBe('already_super_admin');
+    expect(nominationRefusal(root, { ...base, activeAdminHere: false })).toBe('not_admin_here');
+    expect(nominationRefusal(root, { ...base, isActive: false })).toBe('not_admin_here');
+    expect(nominationRefusal(root, { ...base, userId: 'usr_a' })).toBe('self');
   });
 });

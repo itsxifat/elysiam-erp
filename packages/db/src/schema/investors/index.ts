@@ -477,12 +477,6 @@ export const withdrawals = investorsSchema.table(
             else ${table.journalId} is null
           end`,
     ),
-    // The one that is about people rather than shape: whoever reviewed a
-    // withdrawal may not also be the person who asked for it.
-    check(
-      'withdrawals_reviewer_is_not_requester',
-      sql`${table.reviewedBy} is null or ${table.reviewedBy} <> ${table.requestedBy}`,
-    ),
   ],
 );
 

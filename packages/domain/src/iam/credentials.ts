@@ -31,17 +31,11 @@ export interface ResetTarget {
   /** Has a password account: they have redeemed an invite at least once. */
   readonly hasPasswordAccount: boolean;
   readonly twoFactorEnabled: boolean;
-  /**
-   * Their roles here, held now or ever, can raise or decide an approval (contracts'
-   * `resetNeedsSecondPerson`), so a reset needs a second admin (D-404).
-   */
-  readonly needsSecondPerson: boolean;
 }
 
 export type ResetPlan =
   | { readonly decision: 'refuse'; readonly code: ResetRefusal; readonly reason: string }
-  | { readonly decision: 'now'; readonly effect: ResetEffect }
-  | { readonly decision: 'approval'; readonly effect: 'password' | 'two_factor' };
+  | { readonly decision: 'now'; readonly effect: ResetEffect };
 
 /**
  * Decide a reset (D-402 to D-406). In order, and each refusal is final:
@@ -56,9 +50,8 @@ export type ResetPlan =
  * 5. **Nothing to reset** is said plainly, rather than "done".
  *
  * Then: a password link for someone who never set a password is a re-sent invite,
- * issued at once (D-406: the issuer is recorded as the granter instead). A super
- * admin acts alone. A person who can decide approvals at org tier needs a second
- * admin (D-404). Everyone else is reset at once.
+ * issued at once (D-406: the issuer is recorded as the granter instead). Every other
+ * allowed reset happens at once (D-954: no second admin).
  */
 export function planCredentialReset(input: {
   readonly actor: ResetActor;
@@ -89,10 +82,9 @@ export function planCredentialReset(input: {
     );
   }
 
+  // D-954: whoever may reset does it at once; no second admin.
   if (kind === 'password' && !target.hasPasswordAccount)
     return { decision: 'now', effect: 'invite' };
-  if (actor.isSuperAdmin) return { decision: 'now', effect: kind };
-  if (target.needsSecondPerson) return { decision: 'approval', effect: kind };
   return { decision: 'now', effect: kind };
 }
 

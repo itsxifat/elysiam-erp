@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   Header,
   Param,
@@ -155,35 +154,14 @@ export class UsersController {
   }
 
   /**
-   * Vouch for an admin (D-654 to D-656). Refused, not stored, when the vote would not count:
-   * the reason names the invitation chain, the shared inviter or the missing second factor.
-   */
-  @RequireAbility('update', 'User')
-  @Post(':id/trust')
-  async vote(@Req() request: FastifyRequest, @Param('id') id: string) {
-    const userId = parse(userIdParamSchema, id);
-    return this.users.vote(requireContext(request), auditable(request), userId);
-  }
-
-  /** Withdraw the caller's own vote for an admin. */
-  @RequireAbility('update', 'User')
-  @Delete(':id/trust')
-  async withdrawVote(@Req() request: FastifyRequest, @Param('id') id: string) {
-    const userId = parse(userIdParamSchema, id);
-    return this.users.withdrawVote(requireContext(request), auditable(request), userId);
-  }
-
-  /**
-   * A super admin's yes for making an active admin here a super admin (D-659). With at most
-   * one super admin in the brand it promotes at once; with two or more, the promotion waits
-   * until every one of them has said yes, and the last vote makes it. Anyone else is refused
-   * by the handler: only a super admin changes who is one.
+   * Make an active admin here a super admin, at once (D-954). Anyone who is not a super admin
+   * is refused by the handler: only a super admin changes who is one.
    */
   @RequireAbility('update', 'User')
   @Post(':id/super-admin')
-  async voteSuperAdmin(@Req() request: FastifyRequest, @Param('id') id: string) {
+  async makeSuperAdmin(@Req() request: FastifyRequest, @Param('id') id: string) {
     const userId = parse(userIdParamSchema, id);
-    return this.users.voteSuperAdmin(requireContext(request), auditable(request), userId);
+    return this.users.makeSuperAdmin(requireContext(request), auditable(request), userId);
   }
 
   /**
@@ -198,39 +176,13 @@ export class UsersController {
   }
 
   /**
-   * A super admin's yes for removing another super admin (D-686). Only the first super admin
-   * or an owner starts one; it removes once every other super admin but the target has said
-   * yes, at once while that is at most one. The first super admin is removed only by
-   * stepping down. Anyone who is not a super admin is refused by the handler.
+   * Remove another super admin's super admin power, at once (D-954); never the last one, never
+   * an owner. Anyone who is not a super admin is refused by the handler.
    */
   @RequireAbility('update', 'User')
   @Post(':id/super-admin-removal')
   async removeSuperAdmin(@Req() request: FastifyRequest, @Param('id') id: string) {
     const userId = parse(userIdParamSchema, id);
     return this.users.removeSuperAdmin(requireContext(request), auditable(request), userId);
-  }
-
-  /** Withdraw a pending super admin removal: every vote for it goes. */
-  @RequireAbility('update', 'User')
-  @Delete(':id/super-admin-removal')
-  async withdrawSuperAdminRemoval(@Req() request: FastifyRequest, @Param('id') id: string) {
-    const userId = parse(userIdParamSchema, id);
-    return this.users.withdrawSuperAdminRemoval(
-      requireContext(request),
-      auditable(request),
-      userId,
-    );
-  }
-
-  /** Withdraw a pending super admin nomination: every vote for the person goes. */
-  @RequireAbility('update', 'User')
-  @Delete(':id/super-admin')
-  async withdrawSuperAdmin(@Req() request: FastifyRequest, @Param('id') id: string) {
-    const userId = parse(userIdParamSchema, id);
-    return this.users.withdrawSuperAdminNomination(
-      requireContext(request),
-      auditable(request),
-      userId,
-    );
   }
 }

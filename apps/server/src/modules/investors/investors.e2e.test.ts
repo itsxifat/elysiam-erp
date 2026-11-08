@@ -550,15 +550,6 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
     expect(early.statusCode).toBe(409);
     expect(body<{ code: string }>(early).code).toBe('APPROVAL_REQUIRED');
 
-    // The requester may not review their own request: the maker-checker rule
-    // starts here, and the database holds it too (0058).
-    const selfReview = await accounts.client.request(
-      'POST',
-      `/v1/investors/withdrawals/${withdrawalId}/review`,
-      { body: { walletAccountId: wallet } },
-    );
-    expect(selfReview.statusCode).toBe(403);
-
     const reviewed = await reviewer.client.request(
       'POST',
       `/v1/investors/withdrawals/${withdrawalId}/review`,
@@ -807,119 +798,6 @@ describe('check 2: the withdrawal flow posts correctly through approval', () => 
     );
     expect(second.statusCode, second.body).toBe(201);
     expect(body<{ status: string }>(second).status).toBe('rejected');
-  });
-
-  it('cannot be approved by the person who asked for it', async () => {
-    /*
-     * Three people, not two. The approvals module keeps the decider apart from the
-     * reviewer (who raised the approval) and 0058 keeps the reviewer apart from the
-     * requester — neither compares the decider with the requester, so
-     * A-requests, B-reviews, A-approves was allowed until the executor checked.
-     */
-    const withdrawalId = randomUUID();
-    const wallet = accountsById.get('wallet_bank') ?? '';
-    const requested = await checker.client.request('POST', '/v1/investors/withdrawals', {
-      body: { withdrawalId, investorId: ids.b, kind: 'profit', amountPoisha: '700' },
-    });
-    expect(requested.statusCode, requested.body).toBe(201);
-
-    const reviewed = await reviewer.client.request(
-      'POST',
-      `/v1/investors/withdrawals/${withdrawalId}/review`,
-      { body: { walletAccountId: wallet } },
-    );
-    expect(reviewed.statusCode, reviewed.body).toBe(201);
-
-    // `checker` asked for this one, so `checker` may not decide it.
-    const decided = await checker.client.request(
-      'POST',
-      `/v1/approvals/${body<{ approvalId: string }>(reviewed).approvalId}/decide`,
-      { body: { decision: 'approved' } },
-    );
-    expect(decided.statusCode).toBe(403);
-
-    // Nothing moved, and the row is still waiting.
-    const after = await accounts.client.request(
-      'GET',
-      `/v1/investors/withdrawals?investorId=${ids.b}`,
-    );
-    const row = body<{ items: { id: string; status: string }[] }>(after).items.find(
-      (item) => item.id === withdrawalId,
-    );
-    expect(row?.status).toBe('reviewed');
-
-    await accounts.client.request('POST', `/v1/investors/withdrawals/${withdrawalId}/reject`, {
-      body: { reason: 'Tidying up after the test' },
-    });
-  });
-
-  it('never lets the investor being paid raise, review, approve or pay it (D-314)', async () => {
-    // Staff in this brand who are also one of its investors: the roles a login may hold.
-    const insider = await harness.asRole(['accounts', 'investor'], ORG_A);
-    const wallet = accountsById.get('wallet_bank') ?? '';
-    const investorId = await createInvestor(accounts, {
-      code: 'INV-S',
-      name: 'Staff Investor',
-      userId: insider.userId,
-    });
-    await contribute(investorId, '1000000');
-
-    const own = await insider.client.request('POST', '/v1/investors/withdrawals', {
-      body: { withdrawalId: randomUUID(), investorId, kind: 'capital', amountPoisha: '100000' },
-    });
-    expect(own.statusCode, own.body).toBe(403);
-    // Refused for being the beneficiary, not for any other reason (D-314).
-    expect(own.body).toContain('by the investor it pays');
-
-    const withdrawalId = randomUUID();
-    const requested = await accounts.client.request('POST', '/v1/investors/withdrawals', {
-      body: { withdrawalId, investorId, kind: 'capital', amountPoisha: '100000' },
-    });
-    expect(requested.statusCode, requested.body).toBe(201);
-
-    const selfReview = await insider.client.request(
-      'POST',
-      `/v1/investors/withdrawals/${withdrawalId}/review`,
-      { body: { walletAccountId: wallet } },
-    );
-    expect(selfReview.statusCode, selfReview.body).toBe(403);
-    // Refused for being the beneficiary, not for any other reason (D-314).
-    expect(selfReview.body).toContain('by the investor it pays');
-
-    const reviewed = await reviewer.client.request(
-      'POST',
-      `/v1/investors/withdrawals/${withdrawalId}/review`,
-      { body: { walletAccountId: wallet } },
-    );
-    expect(reviewed.statusCode, reviewed.body).toBe(201);
-    const { approvalId } = body<{ approvalId: string }>(reviewed);
-
-    // Accounts may decide an investor withdrawal (D-119) — but not this one.
-    const selfApproval = await insider.client.request(
-      'POST',
-      `/v1/approvals/${approvalId}/decide`,
-      { body: { decision: 'approved' } },
-    );
-    expect(selfApproval.statusCode, selfApproval.body).toBe(403);
-    // Refused for being the beneficiary, not for any other reason (D-314).
-    expect(selfApproval.body).toContain('by the investor it pays');
-
-    await decide(approvalId, 'approved');
-
-    const selfPay = await insider.client.request(
-      'POST',
-      `/v1/investors/withdrawals/${withdrawalId}/pay`,
-    );
-    expect(selfPay.statusCode, selfPay.body).toBe(403);
-    // Refused for being the beneficiary, not for any other reason (D-314).
-    expect(selfPay.body).toContain('by the investor it pays');
-
-    const paid = await accounts.client.request(
-      'POST',
-      `/v1/investors/withdrawals/${withdrawalId}/pay`,
-    );
-    expect(paid.statusCode, paid.body).toBe(201);
-    expect(body<{ status: string }>(paid).status).toBe('paid');
   });
 
   it('refuses a review that names an account which is not a wallet', async () => {

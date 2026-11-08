@@ -152,11 +152,10 @@ export const orderAdvances = sales.table(
       'order_advances_status',
       sql`${table.status} in ('pending', 'rejected', 'verified', 'applied', 'refund_due', 'refunded', 'forfeited', 'voided')`,
     ),
-    // Decided means somebody other than the recorder decided it.
+    // Decided means somebody decided it, and when (D-954: the recorder may, with the permission).
     check(
-      'order_advances_four_eyes',
+      'order_advances_decided',
       sql`(${table.status} = 'pending') = (${table.decidedBy} is null)
-          and (${table.decidedBy} is null or ${table.decidedBy} <> ${table.recordedBy})
           and (${table.decidedBy} is null) = (${table.decidedAt} is null)`,
     ),
     check(
@@ -197,15 +196,14 @@ export const orderAdvances = sales.table(
           and (${table.status} = 'refunded') = (${table.refundWalletAccountId} is not null)
           and (${table.refundRef} is null or ${table.status} = 'refunded')`,
     ),
-    // A voided advance has its reversal journal, its reason and who undid it, and the person
-    // who undid a verification is not the one who made it (D-236).
+    // A voided advance has its reversal journal, its reason and who undid it (D-236; D-954:
+    // whoever may void does, the verifier included).
     check(
       'order_advances_voided',
       sql`(${table.status} = 'voided') = (${table.voidJournalId} is not null)
           and (${table.voidJournalId} is null) = (${table.voidedBy} is null)
           and (${table.voidedBy} is null) = (${table.voidedAt} is null)
-          and (${table.voidedBy} is null) = (${table.voidReason} is null)
-          and (${table.voidedBy} is null or ${table.voidedBy} <> ${table.decidedBy})`,
+          and (${table.voidedBy} is null) = (${table.voidReason} is null)`,
     ),
     check(
       'order_advances_text_lengths',

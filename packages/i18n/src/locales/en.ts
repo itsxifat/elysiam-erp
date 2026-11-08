@@ -244,7 +244,7 @@ const en = {
   'table.search': 'Search',
 
   'approvals.title': 'Approvals',
-  'approvals.subtitle': 'Requests waiting on a second person, and the ones you raised.',
+  'approvals.subtitle': 'Requests waiting for a decision, and the ones you raised.',
   'approvals.caption': 'Approval requests',
   'approvals.colType': 'Type',
   'approvals.colStatus': 'Status',
@@ -1294,7 +1294,7 @@ const en = {
   'investors.review': 'Review',
   'investors.reviewTitle': 'Review a withdrawal',
   'investors.reviewDetail':
-    'Name the account it would be paid from. Reviewing sends it to a checker, and you cannot review your own request.',
+    'Name the account it would be paid from. Reviewing sends it to a checker.',
   'investors.pay': 'Pay',
   'investors.payTitle': 'Pay this withdrawal',
   'investors.payDetail':

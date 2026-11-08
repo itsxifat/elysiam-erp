@@ -229,7 +229,7 @@ describe('GET /v1/users', () => {
       roles: [{ role: 'sales', branchIds: [] }],
       hasPassword: true,
       isSelf: false,
-      resetNeedsApproval: false,
+      canMakeSuperAdmin: false,
     });
     expect(row?.lastSignInAt).not.toBeNull();
     expect(items.find((item) => item.userId === invited.userId)?.status).toBe('invited');
@@ -237,7 +237,6 @@ describe('GET /v1/users', () => {
     expect(items.find((item) => item.userId === admin.userId)).toMatchObject({
       isSelf: true,
       twoFactorEnabled: true,
-      resetNeedsApproval: true,
     });
   });
 
@@ -505,76 +504,16 @@ describe('POST /v1/users/:id/password-link', () => {
     expect((await redeem(token)).statusCode).toBe(400);
   });
 
-  it('holds a checker’s reset for a second admin, whom neither the asker nor the person may be', async () => {
+  it('resets an admin’s password at once: no second admin (D-954)', async () => {
     const target = await harness.asRole('org_admin', ORG_A);
-
     const asked = await admin.client.request('POST', `/v1/users/${target.userId}/password-link`, {
       body: { reason: 'Locked out' },
     });
     expect(asked.statusCode, asked.body).toBe(201);
-    const pending = json<{ outcome: string; approvalRequestId: string; resetId: string }>(asked);
-    expect(pending.outcome).toBe('pending_approval');
-
-    // The person's sign-in is untouched while it waits.
-    expect((await target.client.request('GET', '/v1/me')).statusCode).toBe(200);
-
-    expect((await decide(admin.client, pending.approvalRequestId, 'approved')).statusCode).toBe(
-      403,
-    );
-    expect((await decide(target.client, pending.approvalRequestId, 'approved')).statusCode).toBe(
-      403,
-    );
-    const twice = await admin.client.request('POST', `/v1/users/${target.userId}/password-link`, {
-      body: { reason: 'Again' },
-    });
-    expect(twice.statusCode).toBe(409);
-
-    const approved = await decide(admin2.client, pending.approvalRequestId, 'approved');
-    expect(approved.statusCode, approved.body).toBe(201);
-
-    // Only the admin who asked collects it.
-    const byOther = await admin2.client.request(
-      'POST',
-      `/v1/users/${target.userId}/password-link`,
-      { body: { reason: 'Mine now' } },
-    );
-    expect(byOther.statusCode).toBe(409);
-    const collected = await admin.client.request(
-      'POST',
-      `/v1/users/${target.userId}/password-link`,
-      { body: { reason: 'Locked out' } },
-    );
-    expect(collected.statusCode, collected.body).toBe(201);
-    const link = json<{ outcome: string; kind: string; token: string }>(collected);
+    const link = json<{ outcome: string; kind: string; token: string }>(asked);
     expect(link).toMatchObject({ outcome: 'issued', kind: 'password' });
     expect((await target.client.request('GET', '/v1/me')).statusCode).toBe(401);
     expect((await redeem(link.token)).statusCode).toBe(200);
-
-    const [reset] = await withSystem(
-      async (tx) =>
-        tx.execute<{ status: string; decided_by: string }>(sql`
-          select status, decided_by from iam.credential_resets where id = ${pending.resetId}
-        `),
-      { orgId: ORG_A },
-    );
-    expect(reset).toEqual({ status: 'completed', decided_by: admin2.userId });
-  });
-
-  it('lets a rejection end the reset with nothing changed', async () => {
-    const target = await harness.asRole('accounts', ORG_A);
-    const pending = json<{ approvalRequestId: string; resetId: string }>(
-      await admin.client.request('POST', `/v1/users/${target.userId}/password-link`, {
-        body: { reason: 'Suspicious' },
-      }),
-    );
-    expect((await decide(admin2.client, pending.approvalRequestId, 'rejected')).statusCode).toBe(
-      201,
-    );
-    expect((await target.client.request('GET', '/v1/me')).statusCode).toBe(200);
-    const again = await admin.client.request('POST', `/v1/users/${target.userId}/password-link`, {
-      body: { reason: 'Collect?' },
-    });
-    expect(json<{ outcome: string }>(again).outcome).toBe('pending_approval');
   });
 
   it('leaves a cross-brand person to a super admin, who acts alone', async () => {
@@ -669,18 +608,14 @@ describe('POST /v1/users/:id/two-factor/reset', () => {
     expect(json<{ code: string }>(nothing).code).toBe('CREDENTIAL_NOTHING_TO_RESET');
   });
 
-  it('waits for a second admin for an accountant, then walls them until they enrol again', async () => {
+  it('removes an accountant’s second factor at once, then walls them until they enrol again', async () => {
     const target = await harness.asRole('accounts', ORG_A);
-    const pending = json<{ outcome: string; approvalRequestId: string }>(
+    const done = json<{ outcome: string }>(
       await admin.client.request('POST', `/v1/users/${target.userId}/two-factor/reset`, {
         body: { reason: 'Phone stolen' },
       }),
     );
-    expect(pending.outcome).toBe('pending_approval');
-
-    expect((await decide(admin2.client, pending.approvalRequestId, 'approved')).statusCode).toBe(
-      201,
-    );
+    expect(done.outcome).toBe('completed');
     expect((await target.client.request('GET', '/v1/me')).statusCode).toBe(401);
 
     const again = await signIn(target.email);
@@ -693,72 +628,13 @@ describe('POST /v1/users/:id/two-factor/reset', () => {
     const audit = await auditRowsFor(ORG_A, target.userId);
     expect(audit.some((row) => row.action === 'iam.two_factor_reset')).toBe(true);
   });
-
-  it('withdraws a waiting reset when the person is deactivated', async () => {
-    const target = await harness.asRole('accounts', ORG_A);
-    const pending = json<{ approvalRequestId: string; resetId: string }>(
-      await admin.client.request('POST', `/v1/users/${target.userId}/two-factor/reset`, {
-        body: { reason: 'Leaving' },
-      }),
-    );
-    await admin.client.request('POST', `/v1/users/${target.userId}/deactivate`, { body: {} });
-
-    const [approval] = await withSystem(
-      async (tx) =>
-        tx.execute<{ status: string }>(sql`
-          select status::text as status from approvals.approval_requests
-          where id = ${pending.approvalRequestId}
-        `),
-      { orgId: ORG_A },
-    );
-    expect(approval?.status).toBe('cancelled');
-    expect((await decide(admin2.client, pending.approvalRequestId, 'approved')).statusCode).toBe(
-      409,
-    );
-  });
 });
 
 // --- the database --------------------------------------------------------------------------
 
 // --- the ledger audit's findings --------------------------------------------------------
 
-describe('one admin cannot take over an account that can move money', () => {
-  it('still asks a second admin after the accountant is demoted (C1)', async () => {
-    const target = await harness.asRole('accounts', ORG_A);
-    const demoted = await admin.client.request('PUT', `/v1/users/${target.userId}/roles`, {
-      body: { roles: [{ role: 'sales', branchIds: [] }] },
-    });
-    expect(demoted.statusCode, demoted.body).toBe(200);
-
-    const twoFactor = await admin.client.request(
-      'POST',
-      `/v1/users/${target.userId}/two-factor/reset`,
-      { body: { reason: 'After the demotion' } },
-    );
-    expect(json<{ outcome: string }>(twoFactor).outcome).toBe('pending_approval');
-    const password = await admin.client.request(
-      'POST',
-      `/v1/users/${target.userId}/password-link`,
-      { body: { reason: 'After the demotion' } },
-    );
-    expect(json<{ outcome: string }>(password).outcome).toBe('pending_approval');
-  });
-
-  it('asks a second admin for anyone who can raise a request: branch manager, warehouse (W1)', async () => {
-    const branch = await createBranch(ORG_A, `W${Date.now().toString(36).slice(-5)}`);
-    const manager = await member(['sales']);
-    await admin2.client.request('PUT', `/v1/users/${manager.userId}/roles`, {
-      body: { roles: [{ role: 'branch_manager', branchIds: [branch] }] },
-    });
-    const store = await member(['warehouse']);
-    for (const person of [manager, store]) {
-      const asked = await admin.client.request('POST', `/v1/users/${person.userId}/password-link`, {
-        body: { reason: 'Forgot it' },
-      });
-      expect(json<{ outcome: string }>(asked).outcome, person.email).toBe('pending_approval');
-    }
-  });
-
+describe('the permission is the rule (D-954)', () => {
   it('refuses granting yourself a role through the invite route, and keeps the first granter (C2)', async () => {
     const own = await admin.client.request('POST', '/v1/users', {
       body: { email: admin.email, name: 'Me', role: 'accounts', branchIds: [] },
@@ -766,8 +642,8 @@ describe('one admin cannot take over an account that can move money', () => {
     expect(own.statusCode).toBe(403);
     expect(json<{ code: string }>(own).code).toBe('USER_SELF_MANAGEMENT');
 
-    // A person admin created, then re-granted and reshaped by admin2: admin stays in their
-    // lineage, so they can never approve admin's requests.
+    // A person admin created, then re-granted and reshaped by admin2: every granter is kept on
+    // record, and (D-954) the person may still decide admin's requests with the permission.
     const email = `lineage_${Date.now()}@example.invalid`;
     const created = await admin.client.request('POST', '/v1/users', {
       body: { email, name: 'Lineage', role: 'org_admin', branchIds: [] },
@@ -799,24 +675,7 @@ describe('one admin cannot take over an account that can move money', () => {
     });
     const { id } = json<{ id: string }>(raised);
     const decided = await decide(lineage.client, id, 'approved');
-    expect(decided.statusCode).toBe(403);
-    expect(decided.body).toMatch(/granted you your role/);
-  });
-
-  it('cannot carry out an approved reset of someone who has since joined another brand (W4)', async () => {
-    const target = await harness.asRole('accounts', ORG_A);
-    const pending = json<{ approvalRequestId: string }>(
-      await admin.client.request('POST', `/v1/users/${target.userId}/two-factor/reset`, {
-        body: { reason: 'Phone lost' },
-      }),
-    );
-    await grantMembership({ userId: target.userId, orgId: ORG_B, role: 'sales' });
-    const approved = await decide(admin2.client, pending.approvalRequestId, 'approved');
-    expect(approved.statusCode).toBe(409);
-    expect((await target.client.request('GET', '/v1/me')).statusCode).toBe(200);
-    expect((await decide(admin2.client, pending.approvalRequestId, 'rejected')).statusCode).toBe(
-      201,
-    );
+    expect(decided.statusCode, decided.body).toBe(201);
   });
 
   it('lets a checker reject an approval that names no reset (W3)', async () => {
@@ -874,97 +733,6 @@ describe('one admin cannot take over an account that can move money', () => {
 
 // admin has asked for close to its 20 resets an hour by here; admin2 has asked for none.
 describe('the database holds the reset lifecycle on its own (re-audit W3)', () => {
-  async function waiting(kind: 'password' | 'two_factor'): Promise<{
-    target: RoleClient;
-    resetId: string;
-    approvalRequestId: string;
-  }> {
-    const target = await harness.asRole('accounts', ORG_A);
-    const path = kind === 'password' ? 'password-link' : 'two-factor/reset';
-    const asked = json<{ resetId: string; approvalRequestId: string }>(
-      await admin2.client.request('POST', `/v1/users/${target.userId}/${path}`, {
-        body: { reason: 'Database lifecycle' },
-      }),
-    );
-    return { target, ...asked };
-  }
-
-  it('refuses a reset recorded for someone else, a withdrawal ahead of its approval, and a collection by another admin', async () => {
-    const person = await member(['sales']);
-    await expectRefused(
-      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
-        tx.execute(sql`
-          insert into iam.credential_resets
-            (org_id, user_id, kind, status, requested_by, reason, completed_at)
-          values (${ORG_A}, ${person.userId}, 'password', 'completed', ${admin2.userId}, 'forged', now())
-        `),
-      ),
-      /asked for by the acting user/,
-    );
-
-    const pending = await waiting('two_factor');
-    await expectRefused(
-      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
-        tx.execute(sql`
-          update iam.credential_resets set status = 'cancelled' where id = ${pending.resetId}
-        `),
-      ),
-      /withdrawn with its approval/,
-    );
-    await expectRefused(
-      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
-        tx.execute(sql`
-          update iam.credential_resets
-          set status = 'completed', decided_by = ${admin.userId}, decided_at = now(),
-              completed_at = now()
-          where id = ${pending.resetId}
-        `),
-      ),
-      /follows its approval/,
-    );
-
-    const approved = await waiting('password');
-    expect((await decide(admin.client, approved.approvalRequestId, 'approved')).statusCode).toBe(
-      201,
-    );
-    await expectRefused(
-      withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
-        tx.execute(sql`
-          update iam.credential_resets set status = 'completed', completed_at = now()
-          where id = ${approved.resetId}
-        `),
-      ),
-      /only the admin who asked collects/,
-    );
-    // Expiry is a legitimate end for an approved reset, whoever records it.
-    await withOrg({ orgId: ORG_A, userId: admin.userId }, async (tx) =>
-      tx.execute(sql`
-        update iam.credential_resets set status = 'expired' where id = ${approved.resetId}
-      `),
-    );
-  });
-
-  it('cancels an approved reset when the person is deactivated, so it cannot be collected', async () => {
-    const approved = await waiting('password');
-    expect((await decide(admin.client, approved.approvalRequestId, 'approved')).statusCode).toBe(
-      201,
-    );
-    const done = await admin.client.request(
-      'POST',
-      `/v1/users/${approved.target.userId}/deactivate`,
-      { body: {} },
-    );
-    expect(done.statusCode, done.body).toBe(201);
-    const [reset] = await withSystem(
-      async (tx) =>
-        tx.execute<{ status: string }>(sql`
-          select status from iam.credential_resets where id = ${approved.resetId}
-        `),
-      { orgId: ORG_A },
-    );
-    expect(reset?.status).toBe('cancelled');
-  });
-
   it('refuses a self-grant in either lineage table', async () => {
     const person = await member(['sales']);
     await expectRefused(

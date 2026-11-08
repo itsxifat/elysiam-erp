@@ -80,12 +80,6 @@ export class ReviewsService {
       if (review.status !== 'open') {
         throw posHttpError('POS_REVIEW_RESOLVED', 'That review item is already resolved.');
       }
-      if (review.seller_id === context.userId) {
-        throw posHttpError(
-          'POS_REVIEW_SELF_RESOLVE',
-          'The person who rang this up cannot resolve it; ask another manager.',
-        );
-      }
 
       const table = review.kind === 'sale' ? 'sales' : 'returns';
       const documentId = (review.kind === 'sale' ? review.sale_id : review.return_id) ?? '';

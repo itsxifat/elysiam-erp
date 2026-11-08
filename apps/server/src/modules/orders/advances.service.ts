@@ -212,12 +212,6 @@ export class AdvancesService {
             `This advance is already ${advance.row.status}.`,
           );
         }
-        if (advance.row.recorded_by === context.userId) {
-          throw new OrdersError(
-            'ADVANCE_SELF_VERIFY',
-            'You recorded this advance, so somebody else has to verify it.',
-          );
-        }
         const order = advance.order;
         const wallet = await this.walletAccount(tx, context.orgId, walletAccountId);
 
@@ -333,12 +327,6 @@ export class AdvancesService {
           throw new OrdersError(
             'ADVANCE_INVALID',
             `This advance is already ${advance.row.status}.`,
-          );
-        }
-        if (advance.row.recorded_by === context.userId) {
-          throw new OrdersError(
-            'ADVANCE_SELF_VERIFY',
-            'You recorded this advance, so somebody else has to decide it.',
           );
         }
         const marked = await advances.markRejected(tx, {
@@ -485,14 +473,6 @@ export class AdvancesService {
           throw new OrdersError(
             'ADVANCE_PARCEL_IN_FLIGHT',
             'This parcel is booked or on the road with the lower COD. Cancel the booking first.',
-          );
-        }
-        if (advance.row.decided_by === context.userId) {
-          // Four eyes both ways: a void takes money off a wallet's books and raises the COD
-          // again, so the person who verified cannot also undo it (the database agrees).
-          throw new OrdersError(
-            'ADVANCE_SELF_VERIFY',
-            'You verified this advance, so somebody else has to undo it.',
           );
         }
         const receivedJournalId = advance.row.received_journal_id;

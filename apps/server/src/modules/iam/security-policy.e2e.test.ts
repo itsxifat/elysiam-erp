@@ -358,7 +358,7 @@ describe('Staff: turn off two-step', () => {
     expect(await twoFactorEnabled(accountant.userId)).toBe(true);
   });
 
-  it('still needs a second admin for a money role, even where the setting no longer requires it', async () => {
+  it('turns it off at once where the setting no longer requires it, a money role too (D-954)', async () => {
     const accountant = await person(harness, ['accounts']);
     const accountantIn = await signIn(harness, accountant.email);
     await enrol(harness, accountantIn.client);
@@ -370,8 +370,8 @@ describe('Staff: turn off two-step', () => {
         { body: { reason: 'Moving to a shared till' } },
       );
       expect(asked.statusCode, asked.body).toBe(201);
-      expect(json<{ outcome: string }>(asked).outcome).toBe('pending_approval');
-      expect(await twoFactorEnabled(accountant.userId)).toBe(true);
+      expect(json<{ outcome: string }>(asked).outcome).toBe('completed');
+      expect(await twoFactorEnabled(accountant.userId)).toBe(false);
     } finally {
       await setPolicy(DEFAULT_ROLES);
     }

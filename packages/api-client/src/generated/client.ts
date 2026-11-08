@@ -2661,18 +2661,6 @@ export const OPERATIONS = {
     path: '/v1/users/{id}/super-admin-removal',
     ability: 'update:User',
   },
-  voteUserTrust: { method: 'POST', path: '/v1/users/{id}/trust', ability: 'update:User' },
-  withdrawSuperAdminNomination: {
-    method: 'DELETE',
-    path: '/v1/users/{id}/super-admin',
-    ability: 'update:User',
-  },
-  withdrawSuperAdminRemoval: {
-    method: 'DELETE',
-    path: '/v1/users/{id}/super-admin-removal',
-    ability: 'update:User',
-  },
-  withdrawUserTrust: { method: 'DELETE', path: '/v1/users/{id}/trust', ability: 'update:User' },
   wrapUpPhoneCall: {
     method: 'POST',
     path: '/v1/telephony/calls/{id}/wrap-up',
@@ -5678,27 +5666,6 @@ export function createApiClient(runtime: ApiRuntime) {
       input: { readonly path: { readonly id: string } },
       options?: RequestOptions,
     ): Promise<unknown> => request(runtime, OPERATIONS.voteSuperAdminRemoval, input, options),
-    /** Vouch for an admin: two thirds of the independent admins make them trusted. */
-    voteUserTrust: (
-      input: { readonly path: { readonly id: string } },
-      options?: RequestOptions,
-    ): Promise<unknown> => request(runtime, OPERATIONS.voteUserTrust, input, options),
-    /** Withdraw a pending super admin nomination. */
-    withdrawSuperAdminNomination: (
-      input: { readonly path: { readonly id: string } },
-      options?: RequestOptions,
-    ): Promise<unknown> =>
-      request(runtime, OPERATIONS.withdrawSuperAdminNomination, input, options),
-    /** Withdraw a pending super admin removal. */
-    withdrawSuperAdminRemoval: (
-      input: { readonly path: { readonly id: string } },
-      options?: RequestOptions,
-    ): Promise<unknown> => request(runtime, OPERATIONS.withdrawSuperAdminRemoval, input, options),
-    /** Withdraw your trust vote for an admin. */
-    withdrawUserTrust: (
-      input: { readonly path: { readonly id: string } },
-      options?: RequestOptions,
-    ): Promise<unknown> => request(runtime, OPERATIONS.withdrawUserTrust, input, options),
     /** Wrap up your own call once: its result, what it was about, a call-back; on a callable order also M41's attempt (a colleague's order needs x-acknowledge-owner: 1). */
     wrapUpPhoneCall: (
       input: { readonly path: { readonly id: string }; readonly body: PhoneCallWrapUpInput },

@@ -97,28 +97,6 @@ function view(row: repo.WithdrawalRow): WithdrawalView {
   };
 }
 
-/**
- * Nobody signs for a withdrawal paid to themselves (D-314).
- *
- * D-118's three distinct people say nothing about the person being paid. A login may hold
- * several roles in one brand, so an accounts user or org admin can also be an investor
- * there — and without this, that person could raise, review, approve or pay their own
- * withdrawal. The investor role alone never reaches these steps (it holds no `create` or
- * `update Investor`); this is about staff who are also investors.
- */
-function assertNotBeneficiary(
-  context: ActiveContext,
-  beneficiaryUserId: string | null,
-  act: string,
-): void {
-  if (beneficiaryUserId !== null && beneficiaryUserId === context.userId) {
-    throw investorsHttpError(
-      'FORBIDDEN',
-      `A withdrawal is never ${act} by the investor it pays; ask a colleague.`,
-    );
-  }
-}
-
 @Injectable()
 export class WithdrawalsService implements OnModuleInit {
   constructor(
@@ -169,7 +147,6 @@ export class WithdrawalsService implements OnModuleInit {
           request,
           input.investorId,
         );
-        assertNotBeneficiary(context, investor.user_id, 'requested');
 
         const existing = await repo.withdrawalById(tx, context.orgId, input.withdrawalId);
         if (existing !== undefined) {
@@ -283,13 +260,6 @@ export class WithdrawalsService implements OnModuleInit {
             `That withdrawal is ${row.status}; only a requested one can be reviewed.`,
           );
         }
-        if (row.requested_by === context.userId) {
-          throw investorsHttpError(
-            'FORBIDDEN',
-            'A withdrawal is reviewed by somebody other than whoever asked for it.',
-          );
-        }
-        assertNotBeneficiary(context, row.investor_user_id, 'reviewed');
 
         const wallet = await repo.accountById(tx, context.orgId, input.walletAccountId);
         if (wallet === undefined || !isAccountSubtype(wallet.subtype)) {
@@ -476,7 +446,6 @@ export class WithdrawalsService implements OnModuleInit {
         if (row === undefined) {
           throw investorsHttpError('INVESTOR_NOT_FOUND', 'No such withdrawal.');
         }
-        assertNotBeneficiary(context, row.investor_user_id, 'paid');
         if (row.status === 'paid') {
           // A double-clicked Pay answers with the row that exists. The journal's
           // idempotency key would have refused a second post anyway; this refuses
@@ -631,27 +600,6 @@ export class WithdrawalsService implements OnModuleInit {
           `That withdrawal is ${row.status}; only a reviewed one is waiting for a decision.`,
         );
       }
-
-      /*
-       * **Three people, not two.** The approvals module keeps the decider apart from
-       * whoever raised the *approval* — the reviewer — and 0058 keeps the reviewer
-       * apart from whoever asked. Neither compares the decider with the requester,
-       * so A-requests → B-reviews → A-approves was allowed: two of the three
-       * signatures on money leaving to an owner would be the same hand.
-       */
-      if (context.userId === row.requested_by) {
-        throw investorsHttpError(
-          'FORBIDDEN',
-          'A withdrawal cannot be approved by whoever asked for it.',
-        );
-      }
-      if (context.userId === row.reviewed_by) {
-        throw investorsHttpError(
-          'FORBIDDEN',
-          'A withdrawal cannot be approved by whoever reviewed it.',
-        );
-      }
-      assertNotBeneficiary(context, row.investor_user_id, 'approved');
 
       // The approval's amount, and nothing else, for money (D-078).
       const amount = approval.amountPoisha;

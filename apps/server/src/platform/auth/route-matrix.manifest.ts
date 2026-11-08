@@ -54,15 +54,9 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'POST /v1/users/:id/deactivate',
   'POST /v1/users/:id/password-link',
   'POST /v1/users/:id/two-factor/reset',
-  // D-654 to D-656: the admins' trust votes.
-  'POST /v1/users/:id/trust',
-  'DELETE /v1/users/:id/trust',
-  // D-659: super admins making super admins.
+  // D-954: super admins made and removed at once, and stepping down.
   'POST /v1/users/:id/super-admin',
-  'DELETE /v1/users/:id/super-admin',
-  // D-685, D-686: removing a super admin, and stepping down.
   'POST /v1/users/:id/super-admin-removal',
-  'DELETE /v1/users/:id/super-admin-removal',
   'POST /v1/users/me/step-down',
   // M40: the Staff screen's sign-out and turn-off, My account, and Settings → Security.
   'POST /v1/users/:id/two-factor/turn-off',

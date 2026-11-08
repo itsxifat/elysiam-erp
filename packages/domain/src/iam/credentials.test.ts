@@ -30,7 +30,6 @@ const targets = fc.record<ResetTarget>({
   inOtherBrand: fc.boolean(),
   hasPasswordAccount: fc.boolean(),
   twoFactorEnabled: fc.boolean(),
-  needsSecondPerson: fc.boolean(),
 });
 const actors = fc.record({ userId: ids, isSuperAdmin: fc.boolean() });
 
@@ -70,12 +69,11 @@ describe('planCredentialReset', () => {
     );
   });
 
-  it('resets a checker-capable person at once only for a super admin, or to re-send an invite', () => {
+  it('never waits for a second admin: an allowed reset happens at once (D-954)', () => {
     fc.assert(
       fc.property(actors, targets, kinds, (actor, target, kind) => {
         const plan = planCredentialReset({ actor, target, kind });
-        if (plan.decision !== 'now' || !target.needsSecondPerson) return;
-        expect(actor.isSuperAdmin || plan.effect === 'invite').toBe(true);
+        expect(['now', 'refuse']).toContain(plan.decision);
       }),
     );
   });
@@ -113,7 +111,6 @@ describe('planCredentialReset', () => {
       inOtherBrand: false,
       hasPasswordAccount: true,
       twoFactorEnabled: true,
-      needsSecondPerson: false,
     };
     const admin = { userId: 'usr_a', isSuperAdmin: false };
     const root = { userId: 'usr_a', isSuperAdmin: true };
@@ -129,21 +126,14 @@ describe('planCredentialReset', () => {
     expect(
       planCredentialReset({
         actor: admin,
-        target: { ...base, needsSecondPerson: true },
-        kind: 'two_factor',
-      }),
-    ).toEqual({ decision: 'approval', effect: 'two_factor' });
-    expect(
-      planCredentialReset({
-        actor: admin,
-        target: { ...base, needsSecondPerson: true, hasPasswordAccount: false },
+        target: { ...base, hasPasswordAccount: false },
         kind: 'password',
       }),
     ).toEqual({ decision: 'now', effect: 'invite' });
     expect(
       planCredentialReset({
         actor: root,
-        target: { ...base, needsSecondPerson: true, inOtherBrand: true },
+        target: { ...base, isSuperAdmin: true, inOtherBrand: true },
         kind: 'password',
       }),
     ).toEqual({ decision: 'now', effect: 'password' });

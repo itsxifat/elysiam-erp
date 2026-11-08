@@ -212,9 +212,7 @@ test('a forgotten password: the old one stops at once, and the link sets a new o
   await person.context().close();
 });
 
-test('a lost phone: an accountant is reset only after a second admin approves', async ({
-  browser,
-}) => {
+test('a lost phone: an admin resets two-step verification at once (D-954)', async ({ browser }) => {
   const locked = user('locked');
   const accountant = await freshPage(browser);
   // Better Auth allows three two-factor calls per address in ten seconds, and the two admins
@@ -226,25 +224,8 @@ test('a lost phone: an accountant is reset only after a second admin approves', 
   await expect(accountant.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
 
   await manage(admin, 'E2E locked agent');
-  await expect(admin.getByText('another admin must agree')).toBeVisible();
   await withReason(admin, 'Reset two-step verification', 'Reset two-step verification?', 'Reset');
-  await expect(admin.getByText('Asked. Another admin approves it')).toBeVisible();
-
-  // The admin who asked cannot approve it themselves; the screen offers them nothing.
-  await admin.goto('/users');
-  await expect(admin.getByText('Waiting for another admin to approve.')).toBeVisible();
-
-  // Nothing has happened to the accountant yet.
-  await accountant.reload();
-  await expect(accountant.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
-
-  await admin2.goto('/users');
-  const waiting = admin2.getByRole('region', { name: 'Sign-in resets waiting' });
-  await expect(waiting).toContainText('E2E locked agent');
-  await bothThemes(admin2, 'staff-waiting');
-  await waiting.getByRole('button', { name: 'Approve' }).click();
-  await admin2.getByRole('dialog').getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(admin2.getByRole('region', { name: 'Sign-in resets waiting' })).toHaveCount(0);
+  await expect(admin.getByText('Two-step verification removed.')).toBeVisible();
 
   // Signed out, and the next sign-in is the enrolment screen, not a code prompt.
   await accountant.reload();

@@ -894,7 +894,7 @@ describe('reversing a posted entry (D-602)', () => {
     if (first === undefined || second === undefined) throw new Error('no SKUs');
     const before = await booksDifference();
 
-    // Raised by an org admin, who cannot decide it; nor can accounts, which is no checker.
+    // Raised by an org admin; accounts is no checker for it.
     const entry = await enterStock([{ skuId: first.id, qty: 2, unitCostPoisha: '50000' }]);
     const raised = await call<{ approvalId: string }>(
       admin,
@@ -905,7 +905,6 @@ describe('reversing a posted entry (D-602)', () => {
     );
     const decide = (who: RoleClient, id: string, decision: 'approved' | 'rejected') =>
       who.client.request('POST', `/v1/approvals/${id}/decide`, { body: { decision } });
-    expect((await decide(admin, raised.approvalId, 'approved')).statusCode).toBe(403);
     expect((await decide(accounts, raised.approvalId, 'approved')).statusCode).toBe(403);
 
     // The average moves while it waits: the approval is refused and nothing moves.
@@ -1295,7 +1294,7 @@ describe('the opening stock window (D-602)', () => {
     expect(otherWindow.open).toBe(true);
   });
 
-  it('reopens only through an approval decided by a second admin', async () => {
+  it('reopens only through an approval', async () => {
     const raised = await call<{ approvalId: string; status: string }>(
       admin,
       'POST',
@@ -1318,10 +1317,6 @@ describe('the opening stock window (D-602)', () => {
     });
     expect(generic.statusCode).toBe(400);
 
-    const self = await admin.client.request('POST', `/v1/approvals/${raised.approvalId}/decide`, {
-      body: { decision: 'approved' },
-    });
-    expect(self.statusCode).toBeGreaterThanOrEqual(400);
     const stillClosed = await call<{ open: boolean; reopenPending: boolean }>(
       admin,
       'GET',
@@ -1331,8 +1326,9 @@ describe('the opening stock window (D-602)', () => {
     );
     expect(stillClosed).toMatchObject({ open: false, reopenPending: true });
 
+    // D-954: an org admin decides it, the one who asked included.
     await call(
-      secondAdmin,
+      admin,
       'POST',
       `/v1/approvals/${raised.approvalId}/decide`,
       {

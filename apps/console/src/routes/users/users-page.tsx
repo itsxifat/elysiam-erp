@@ -1,5 +1,4 @@
 import type { MembershipRole } from '@elysium/contracts';
-import { formatCount, type Locale } from '@elysium/i18n';
 import {
   Button,
   ConfirmDialog,
@@ -21,20 +20,18 @@ import {
   Crown,
   KeyRound,
   LogOut,
-  ShieldCheck,
   ShieldMinus,
   ShieldOff,
   ShieldX,
   UserMinus,
   UserPlus,
-  X,
 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../api.js';
 import { decideApproval } from '../../api/approvals.js';
 import { useAbility, useSession } from '../../auth/session.js';
-import { useLocale, useT } from '../../i18n/locale.js';
+import { useT } from '../../i18n/locale.js';
 import { useRealtime } from '../../realtime/use-realtime.js';
 import { useStaffNames } from '../../staff-names.js';
 import { Field } from '../../ui/primitives.js';
@@ -49,19 +46,11 @@ import {
   signOutEverywhere,
   stepDown,
   turnOffTwoFactor,
-  voteSuperAdmin,
-  voteSuperAdminRemoval,
-  voteTrust,
-  withdrawSuperAdmin,
-  withdrawSuperAdminRemoval,
-  withdrawTrust,
-  type NominationOutcome,
-  type NominationView,
+  makeSuperAdmin,
+  removeSuperAdmin,
   type OpenReset,
-  type RemovalView,
   type StaffRow,
   type StaffStatus,
-  type TrustView,
 } from './api.js';
 import { DeskSection } from './desk-section.js';
 import { orderedRoles, passwordLinkUrl, rolesToSubmit } from './link.js';
@@ -75,7 +64,7 @@ import { useTelT } from '../calls/messages.js';
  * hand over a password link, reset a lost phone's second factor.
  *
  * Nothing here decides who may do what to whom. The buttons are offered from the facts
- * the server sent (`isSelf`, `inOtherBrand`, `resetNeedsApproval`…), and every one of
+ * the server sent (`isSelf`, `inOtherBrand`, `canMakeSuperAdmin`…), and every one of
  * them is checked again, and explained, by the server (`planCredentialReset`).
  */
 
@@ -97,51 +86,14 @@ function roleKey(role: MembershipRole): UsersMessageKey {
   return `users.role.${role}` as UsersMessageKey;
 }
 
-/** "Trusted", or how far from it: "1 of 2 votes" (D-654). */
-function trustLabel(trust: TrustView, u: (key: UsersMessageKey) => string, locale: Locale): string {
-  return trust.trusted
-    ? u('users.trusted')
-    : u('users.trustVotes')
-        .replace('{n}', formatCount(trust.votes, locale))
-        .replace('{m}', formatCount(trust.needed, locale));
-}
-
-/** A pending super admin nomination: "Super admin: 1 of 2 votes" (D-659). */
-function nominationLabel(
-  nomination: NominationView,
-  u: (key: UsersMessageKey) => string,
-  locale: Locale,
-): string {
-  return u('users.superAdminPending')
-    .replace('{n}', formatCount(nomination.votes, locale))
-    .replace('{m}', formatCount(nomination.needed, locale));
-}
-
-/** A pending super admin removal: "Removal: 1 of 2 votes" (D-686). */
-function removalLabel(
-  removal: RemovalView,
-  u: (key: UsersMessageKey) => string,
-  locale: Locale,
-): string {
-  return u('users.removalPending')
-    .replace('{n}', formatCount(removal.votes, locale))
-    .replace('{m}', formatCount(removal.needed, locale));
-}
-
 /** An owner is "Owner" to everyone but another owner (D-473, D-658). */
 function displayName(row: StaffRow, u: (key: UsersMessageKey) => string): string {
   return row.isOwner && row.name === '' ? u('users.owner') : row.name;
 }
 
-/** What the page says once a super admin's yes has landed (D-659). */
-function nominationNotice(
-  outcome: NominationOutcome,
-  name: string,
-  u: (key: UsersMessageKey) => string,
-): string {
-  return (
-    outcome.outcome === 'promoted' ? u('users.superAdminPromoted') : u('users.superAdminWaiting')
-  ).replace('{name}', name);
+/** What the page says once a person is made a super admin (D-954: at once). */
+function promotedNotice(name: string, u: (key: UsersMessageKey) => string): string {
+  return u('users.superAdminPromoted').replace('{name}', name);
 }
 
 /** The server's problem+json detail is written to be shown; anything else never reached it. */
@@ -157,11 +109,10 @@ type Pending = {
   readonly row: StaffRow;
 } | null;
 
-/** A super admin removal action waiting for its confirmation (D-685, D-686). */
+/** A super admin removal, or stepping down, waiting for its confirmation (D-954). */
 type Removing = {
-  readonly kind: 'stepDown' | 'remove' | 'withdraw';
+  readonly kind: 'stepDown' | 'remove';
   readonly row: StaffRow;
-  readonly removal: RemovalView;
 } | null;
 
 interface IssuedLink {
@@ -176,7 +127,6 @@ export function UsersPage() {
   const session = useSession();
   const t = useT();
   const u = useUsersT();
-  const { locale } = useLocale();
   const queryClient = useQueryClient();
 
   const mayRead = ability.can('read', 'User');
@@ -253,21 +203,6 @@ export function UsersPage() {
                   {row.isSuperAdmin ? (
                     <StatusBadge tone="info">{u('users.superAdmin')}</StatusBadge>
                   ) : null}
-                  {row.superAdminNomination?.pending === true ? (
-                    <StatusBadge tone="warning">
-                      {nominationLabel(row.superAdminNomination, u, locale)}
-                    </StatusBadge>
-                  ) : null}
-                  {row.superAdminRemoval?.pending === true ? (
-                    <StatusBadge tone="warning">
-                      {removalLabel(row.superAdminRemoval, u, locale)}
-                    </StatusBadge>
-                  ) : null}
-                  {row.trust === null ? null : (
-                    <StatusBadge tone={row.trust.trusted ? 'success' : 'neutral'}>
-                      {trustLabel(row.trust, u, locale)}
-                    </StatusBadge>
-                  )}
                 </p>
                 {row.email === '' ? null : (
                   <p className="truncate text-xs text-muted-foreground">{row.email}</p>
@@ -373,7 +308,6 @@ export function UsersPage() {
         header: u('users.colActions'),
         cell: (cell) => {
           const row = cell.row.original;
-          const removal = row.superAdminRemoval;
           return (
             <div className="flex flex-wrap items-center gap-2">
               {/* A super admin with no role here, or an owner, is listed but managed elsewhere. */}
@@ -390,13 +324,12 @@ export function UsersPage() {
                   {u('users.manage')}
                 </Button>
               </PermissionGate>
-              {removal === null || !mayChange ? null : (
+              {!mayChange ? null : (
                 <RemovalActions
                   row={row}
-                  removal={removal}
                   onPick={(kind) => {
                     setNotice(null);
-                    setRemoving({ kind, row, removal });
+                    setRemoving({ kind, row });
                   }}
                 />
               )}
@@ -405,7 +338,7 @@ export function UsersPage() {
         },
       }),
     ]) as readonly DataTableColumn<StaffRow>[];
-  }, [u, branches, mayChange, locale, tel, extensions, showExtensions]);
+  }, [u, branches, mayChange, tel, extensions, showExtensions]);
 
   if (!mayRead) {
     return (
@@ -425,10 +358,8 @@ export function UsersPage() {
         description={u('users.subtitle')}
         actions={
           <div className="flex flex-wrap gap-2">
-            {/* Only the first super admin (or an owner) adds a super admin (D-659, D-666). */}
-            <PermissionGate
-              allowed={mayInvite && isSuperAdmin && staffQuery.data?.canStartSuperAdmin === true}
-            >
+            {/* Any super admin adds a super admin (D-954). */}
+            <PermissionGate allowed={mayInvite && isSuperAdmin}>
               <Button variant="outline" onClick={() => setInviteOpen('superAdmin')}>
                 <Crown aria-hidden="true" />
                 {u('users.inviteSuperAdmin')}
@@ -539,8 +470,8 @@ export function UsersPage() {
           onClose={() => setInviteOpen(null)}
           onInvited={async (result) => {
             setInviteOpen(null);
-            if (result.nomination !== undefined) {
-              setNotice(nominationNotice(result.nomination, result.name, u));
+            if (result.promoted) {
+              setNotice(promotedNotice(result.name, u));
             } else if (result.link === null) {
               setNotice(u('users.alreadyHasAccount'));
             }
@@ -594,48 +525,34 @@ export function UsersPage() {
   );
 }
 
-// --- removing a super admin, and stepping down (D-685, D-686) ------------------------------
+// --- removing a super admin, and stepping down (D-954: at once) ---------------------------
 
 function RemovalActions({
   row,
-  removal,
   onPick,
 }: {
   readonly row: StaffRow;
-  readonly removal: RemovalView;
-  readonly onPick: (kind: 'stepDown' | 'remove' | 'withdraw') => void;
+  readonly onPick: (kind: 'stepDown' | 'remove') => void;
 }) {
   const u = useUsersT();
   const name = displayName(row, u);
-  const voteLabel = removal.pending ? u('users.removalVote') : u('users.removalStart');
   return (
     <>
-      {removal.canStepDown ? (
+      {row.canStepDown ? (
         <Button variant="outline" size="sm" onClick={() => onPick('stepDown')}>
           <ShieldMinus aria-hidden="true" />
           {u('users.stepDown')}
         </Button>
       ) : null}
-      {removal.canVote ? (
+      {row.canRemoveSuperAdmin ? (
         <Button
           variant="outline"
           size="sm"
-          aria-label={`${voteLabel}: ${name}`}
+          aria-label={`${u('users.removalStart')}: ${name}`}
           onClick={() => onPick('remove')}
         >
           <ShieldMinus aria-hidden="true" />
-          {voteLabel}
-        </Button>
-      ) : null}
-      {removal.canWithdraw ? (
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label={`${u('users.removalWithdraw')}: ${name}`}
-          onClick={() => onPick('withdraw')}
-        >
-          <X aria-hidden="true" />
-          {u('users.removalWithdraw')}
+          {u('users.removalStart')}
         </Button>
       ) : null}
     </>
@@ -653,36 +570,22 @@ function RemovalConfirm({
 }) {
   const u = useUsersT();
   const t = useT();
-  const { locale } = useLocale();
 
   let text = { title: '', detail: '', confirm: '' };
   if (removing !== null) {
     const name = displayName(removing.row, u);
-    if (removing.kind === 'stepDown') {
-      text = {
-        title: u('users.stepDownTitle'),
-        detail: u('users.stepDownDetail'),
-        confirm: u('users.stepDown'),
-      };
-    } else if (removing.kind === 'withdraw') {
-      text = {
-        title: u('users.removalWithdrawTitle').replace('{name}', name),
-        detail: u('users.removalWithdrawDetail'),
-        confirm: u('users.removalWithdraw'),
-      };
-    } else {
-      const { pending, immediate, needed } = removing.removal;
-      text = {
-        title: (pending ? u('users.removalVoteTitle') : u('users.removalTitle')).replace(
-          '{name}',
-          name,
-        ),
-        detail: immediate
-          ? u('users.removalImmediate')
-          : u('users.removalRule').replace('{m}', formatCount(needed, locale)),
-        confirm: pending ? u('users.removalVote') : u('users.removalStart'),
-      };
-    }
+    text =
+      removing.kind === 'stepDown'
+        ? {
+            title: u('users.stepDownTitle'),
+            detail: u('users.stepDownDetail'),
+            confirm: u('users.stepDown'),
+          }
+        : {
+            title: u('users.removalTitle').replace('{name}', name),
+            detail: u('users.removalImmediate'),
+            confirm: u('users.removalStart'),
+          };
   }
 
   const confirm = async (current: NonNullable<Removing>) => {
@@ -695,15 +598,8 @@ function RemovalConfirm({
         window.location.reload();
         return;
       }
-      if (current.kind === 'withdraw') {
-        await withdrawSuperAdminRemoval(current.row.userId);
-        await onDone(u('users.removalWithdrawn'));
-        return;
-      }
-      const result = await voteSuperAdminRemoval(current.row.userId);
-      const done =
-        result.outcome === 'removed' ? u('users.removalDone') : u('users.removalWaiting');
-      await onDone(done.replace('{name}', name));
+      await removeSuperAdmin(current.row.userId);
+      await onDone(u('users.removalDone').replace('{name}', name));
     } catch (cause) {
       await onDone(messageOf(cause, t('error.unreachable')));
     }
@@ -715,7 +611,7 @@ function RemovalConfirm({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      destructive={removing?.kind !== 'withdraw'}
+      destructive
       title={text.title}
       description={text.detail}
       confirmLabel={text.confirm}
@@ -1062,9 +958,6 @@ function ManageDialog({
           <h3 id="signin-heading" className="text-sm font-medium">
             {u('users.signInHeading')}
           </h3>
-          {row.resetNeedsApproval && !resetLocked ? (
-            <p className="text-xs text-muted-foreground">{u('users.needsApprovalNote')}</p>
-          ) : null}
           <div className="flex flex-wrap gap-2">
             {row.hasPassword ? (
               <Button
@@ -1120,14 +1013,10 @@ function ManageDialog({
           ) : null}
         </section>
 
-        {row.trust === null ? null : <TrustSection row={row} trust={row.trust} onSaved={onSaved} />}
-
         {/* M41 (D-714): what this person may be offered, and the hub they pack at. */}
         {row.status === 'active' ? <DeskSection userId={row.userId} locked={locked} /> : null}
 
-        {row.superAdminNomination === null ? null : (
-          <SuperAdminSection row={row} nomination={row.superAdminNomination} onNotice={onNotice} />
-        )}
+        {row.canMakeSuperAdmin ? <SuperAdminSection row={row} onNotice={onNotice} /> : null}
 
         {row.status === 'active' || row.status === 'invited' ? (
           <section className="border-t border-border pt-4">
@@ -1147,135 +1036,40 @@ function ManageDialog({
   );
 }
 
-// --- trust votes (D-654 to D-656) ---------------------------------------------------------
-
-function TrustSection({
-  row,
-  trust,
-  onSaved,
-}: {
-  readonly row: StaffRow;
-  readonly trust: TrustView;
-  readonly onSaved: () => Promise<void>;
-}) {
-  const u = useUsersT();
-  const t = useT();
-  const { locale } = useLocale();
-  const [problem, setProblem] = useState<string | null>(null);
-  const change = useMutation({
-    mutationFn: () => (trust.votedByMe ? withdrawTrust(row.userId) : voteTrust(row.userId)),
-    onSuccess: async () => {
-      setProblem(null);
-      await onSaved();
-    },
-    onError: (cause) => setProblem(messageOf(cause, t('error.unreachable'))),
-  });
-
-  return (
-    <section aria-labelledby="trust-heading" className="space-y-3">
-      <div>
-        <h3 id="trust-heading" className="flex items-center gap-2 text-sm font-medium">
-          {u('users.trustHeading')}
-          <StatusBadge tone={trust.trusted ? 'success' : 'neutral'}>
-            {trustLabel(trust, u, locale)}
-          </StatusBadge>
-        </h3>
-        <p className="text-xs text-muted-foreground">{u('users.trustExplain')}</p>
-        <p className="text-xs text-muted-foreground">{u('users.trustRule')}</p>
-      </div>
-      {row.isSelf ? null : (
-        <div className="space-y-2">
-          {trust.votedByMe ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={change.isPending}
-              onClick={() => change.mutate()}
-            >
-              <ShieldX aria-hidden="true" />
-              {u('users.trustWithdraw')}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!trust.canVote || change.isPending}
-              aria-describedby={trust.canVote ? undefined : 'trust-reason'}
-              onClick={() => change.mutate()}
-            >
-              <ShieldCheck aria-hidden="true" />
-              {u('users.trustVote')}
-            </Button>
-          )}
-          {!trust.canVote && trust.reasonCode !== null && !trust.votedByMe ? (
-            <p id="trust-reason" className="text-xs text-muted-foreground">
-              {u(`users.trustReason.${trust.reasonCode}`)}
-            </p>
-          ) : null}
-          {problem === null ? null : (
-            <p role="alert" className="text-sm text-destructive">
-              {problem}
-            </p>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-// --- super admins making super admins (D-659) -------------------------------------------
+// --- making a super admin (D-954: at once) -------------------------------------------------
 
 function SuperAdminSection({
   row,
-  nomination,
   onNotice,
 }: {
   readonly row: StaffRow;
-  readonly nomination: NominationView;
   readonly onNotice: (message: string) => Promise<void>;
 }) {
   const u = useUsersT();
   const t = useT();
-  const { locale } = useLocale();
   const [problem, setProblem] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const vote = useMutation({
-    mutationFn: () => voteSuperAdmin(row.userId),
-    onSuccess: async (result) => {
+  const make = useMutation({
+    mutationFn: () => makeSuperAdmin(row.userId),
+    onSuccess: async () => {
       setProblem(null);
       setConfirming(false);
-      await onNotice(nominationNotice(result, row.name, u));
+      await onNotice(promotedNotice(row.name, u));
     },
     onError: (cause) => {
       setConfirming(false);
       setProblem(messageOf(cause, t('error.unreachable')));
     },
   });
-  const withdraw = useMutation({
-    mutationFn: () => withdrawSuperAdmin(row.userId),
-    onSuccess: async () => {
-      setProblem(null);
-      await onNotice(u('users.superAdminWithdrawn'));
-    },
-    onError: (cause) => setProblem(messageOf(cause, t('error.unreachable'))),
-  });
-  const busy = vote.isPending || withdraw.isPending;
-  const rule = nomination.immediate
-    ? u('users.superAdminImmediate')
-    : u('users.superAdminRule').replace('{m}', formatCount(nomination.needed, locale));
-  const actionLabel = nomination.pending ? u('users.superAdminVote') : u('users.superAdminMake');
 
   return (
     <section aria-labelledby="super-admin-heading" className="space-y-3">
       <div>
-        <h3 id="super-admin-heading" className="flex items-center gap-2 text-sm font-medium">
+        <h3 id="super-admin-heading" className="text-sm font-medium">
           {u('users.superAdminHeading')}
-          {nomination.pending ? (
-            <StatusBadge tone="warning">{nominationLabel(nomination, u, locale)}</StatusBadge>
-          ) : null}
         </h3>
         <p className="text-xs text-muted-foreground">{u('users.superAdminExplain')}</p>
-        <p className="text-xs text-muted-foreground">{rule}</p>
+        <p className="text-xs text-muted-foreground">{u('users.superAdminImmediate')}</p>
       </div>
       {confirming ? (
         <div className="space-y-2 rounded-md border border-border p-3">
@@ -1283,14 +1077,14 @@ function SuperAdminSection({
             {u('users.superAdminConfirm').replace('{name}', row.name)}
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={busy} onClick={() => vote.mutate()}>
+            <Button size="sm" disabled={make.isPending} onClick={() => make.mutate()}>
               <Crown aria-hidden="true" />
-              {actionLabel}
+              {u('users.superAdminMake')}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              disabled={busy}
+              disabled={make.isPending}
               onClick={() => setConfirming(false)}
             >
               {t('common.cancel')}
@@ -1298,27 +1092,11 @@ function SuperAdminSection({
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap gap-2">
-          {nomination.canVote ? (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirming(true)}>
-              <Crown aria-hidden="true" />
-              {actionLabel}
-            </Button>
-          ) : null}
-          {nomination.canWithdraw ? (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => withdraw.mutate()}>
-              <X aria-hidden="true" />
-              {u('users.superAdminWithdraw')}
-            </Button>
-          ) : null}
-        </div>
+        <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+          <Crown aria-hidden="true" />
+          {u('users.superAdminMake')}
+        </Button>
       )}
-      {nomination.votedByMe && !nomination.canVote ? (
-        <Muted>{u('users.superAdminVoted')}</Muted>
-      ) : null}
-      {!nomination.canVote && !nomination.canWithdraw && !nomination.votedByMe ? (
-        <Muted>{u('users.superAdminOnlyNote')}</Muted>
-      ) : null}
       {problem === null ? null : (
         <p role="alert" className="text-sm text-destructive">
           {problem}
@@ -1451,11 +1229,6 @@ function ReasonDialog({
     >
       <div className="space-y-3">
         <p className="text-sm font-medium">{pending.row.name}</p>
-        {pending.row.resetNeedsApproval &&
-        pending.action !== 'deactivate' &&
-        pending.action !== 'invite' ? (
-          <p className="text-xs text-muted-foreground">{u('users.needsApprovalNote')}</p>
-        ) : null}
         <Field
           label={u('users.fieldReason')}
           name="reason"
@@ -1538,13 +1311,14 @@ function InviteDialog({
   onInvited,
 }: {
   readonly branches: readonly BranchRow[];
-  /** Invite a super admin (D-659): an admin of the whole brand, nominated in the same step. */
+  /** Invite a super admin (D-954): an admin of the whole brand, made super admin at once. */
   readonly superAdmin: boolean;
   readonly onClose: () => void;
   readonly onInvited: (result: {
     link: IssuedLink | null;
     name: string;
-    nomination?: NominationOutcome;
+    /** Made a super admin in the same step (D-954: at once). */
+    promoted: boolean;
   }) => Promise<void>;
 }) {
   const u = useUsersT();
@@ -1578,7 +1352,7 @@ function InviteDialog({
       });
       await onInvited({
         name: name.trim(),
-        ...(result.superAdmin === undefined ? {} : { nomination: result.superAdmin }),
+        promoted: result.superAdmin?.outcome === 'promoted',
         link:
           result.inviteToken === undefined
             ? null

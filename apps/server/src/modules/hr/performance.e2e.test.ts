@@ -603,16 +603,7 @@ describe('bonus rules feed payroll', () => {
     expect(body<{ code: string }>(bad).code).toBe('BONUS_RULE_INVALID');
   });
 
-  it('lets only the version’s author send it for approval', async () => {
-    const notTheirs = await secondHr.client.request(
-      'POST',
-      `/v1/hr/bonus-rules/versions/${versionId}/submit`,
-      { body: {} },
-    );
-    expect(notTheirs.statusCode).toBe(403);
-  });
-
-  it('pays nothing until a second person approves the version', async () => {
+  it('pays nothing until the version is approved', async () => {
     const run = await hr.client.request('POST', '/v1/hr/payroll/runs', { body: { month: MONTH } });
     expect(run.statusCode, run.body).toBe(201);
     runId = body<{ id: string }>(run).id;
@@ -634,16 +625,6 @@ describe('bonus rules feed payroll', () => {
       submitted,
     ).versions.find((one) => one.id === versionId);
     expect(version?.status).toBe('pending_approval');
-
-    // The maker is not their own checker.
-    const own = await hr.client.request(
-      'POST',
-      `/v1/approvals/${version?.approvalId ?? ''}/decide`,
-      {
-        body: { decision: 'approved' },
-      },
-    );
-    expect(own.statusCode).toBe(403);
 
     const decided = await secondHr.client.request(
       'POST',

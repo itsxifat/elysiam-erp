@@ -3,10 +3,7 @@ import {
   NOMINATION_REFUSAL_REASONS,
   REMOVAL_REFUSAL_REASONS,
   nominationRefusal,
-  nominationTally,
   removalRefusal,
-  removalTally,
-  startRefusal,
   stepDownRefusal,
   type NominationRefusalCode,
   type RemovalRefusalCode,
@@ -15,27 +12,23 @@ import {
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import type { AuditService } from '../../platform/audit/audit.service.js';
 import {
-  castRemovalVote,
-  castSuperAdminVote,
-  clearVotesBy,
+  activeSuperAdmins,
   demoteSuperAdmin,
-  loadNominations,
   lockSuperAdmins,
   promoteSuperAdmin,
-  withdrawRemoval,
 } from './super-admin.repository.js';
 import { usersHttpError } from './users.errors.js';
 import { endSessions, membershipsOfUser, people } from './users.repository.js';
 
 /**
- * A super admin's yes for making an admin a super admin (D-659), shared by the Staff
- * screen's "Make super admin" and an invite sent as a super admin (`POST /v1/users`).
+ * Making and removing super admins (D-954): a super admin's permission is the whole rule, and
+ * it takes effect at once. Shared by the Staff screen's "Make super admin" and "Remove super
+ * admin", an invite sent as a super admin (`POST /v1/users`) and "Step down".
  *
- * In the caller's `withOrg` transaction, under the one super admin lock: the rule
- * (`nominationRefusal`, `nominationTally` in `packages/domain`) is asked, the yes recorded,
- * and — while the brand has at most one super admin, or once every one of them has said yes —
- * the candidate promoted through `iam.promote_super_admin`, which checks the rule again in
- * the database. Each vote and the promotion are audited in the same transaction.
+ * In the caller's `withOrg` transaction, under the one super admin lock: the rule in
+ * `packages/domain` is asked, then the flag changed through `iam.promote_super_admin` or
+ * `iam.demote_super_admin`, which check it again in the database. Audited in the same
+ * transaction.
  */
 
 export interface NominationActor {
@@ -47,10 +40,7 @@ export interface NominationActor {
 
 export interface NominationOutcome {
   readonly userId: string;
-  /** Promoted now, or waiting for the other super admins' votes. */
-  readonly outcome: 'promoted' | 'pending';
-  readonly votes: number;
-  readonly needed: number;
+  readonly outcome: 'promoted';
 }
 
 const REFUSAL_CODE: Readonly<
@@ -60,7 +50,6 @@ const REFUSAL_CODE: Readonly<
   >
 > = {
   not_super_admin: 'USER_PROTECTED',
-  not_first_super_admin: 'USER_PROTECTED',
   self: 'USER_SELF_MANAGEMENT',
   already_super_admin: 'SUPER_ADMIN_NOT_CANDIDATE',
   not_admin_here: 'SUPER_ADMIN_NOT_CANDIDATE',
@@ -73,7 +62,8 @@ export function requireSuperAdmin(actor: { readonly isSuperAdmin: boolean }): vo
   }
 }
 
-export async function voteSuperAdmin(
+/** Make an active admin of this brand a super admin, at once. */
+export async function makeSuperAdmin(
   tx: Tx,
   audit: AuditService,
   actor: NominationActor,
@@ -99,43 +89,6 @@ export async function voteSuperAdmin(
     throw usersHttpError(REFUSAL_CODE[refusal], NOMINATION_REFUSAL_REASONS[refusal]);
   }
 
-  const facts = await loadNominations(tx, actor.orgId);
-  const before = facts.votes.get(candidateId) ?? [];
-  if (before.length === 0) {
-    const notFirst = startRefusal(actor.userId, facts.starters);
-    if (notFirst !== null) {
-      throw usersHttpError(REFUSAL_CODE[notFirst], NOMINATION_REFUSAL_REASONS[notFirst]);
-    }
-  }
-  const cast = await castSuperAdminVote(tx, actor.orgId, actor.userId, candidateId);
-  const voters = cast ? [...before, actor.userId] : before;
-  const tally = nominationTally(facts.superAdmins, voters);
-  const audited = request === undefined ? {} : { request };
-
-  if (cast) {
-    await audit.record(tx, {
-      orgId: actor.orgId,
-      actorUserId: actor.userId,
-      operation: 'create',
-      action: before.length === 0 ? 'iam.super_admin_nominated' : 'iam.super_admin_voted',
-      entityType: 'User',
-      entityId: candidateId,
-      before: null,
-      after: {
-        voter: actor.userId,
-        votes: tally.votes,
-        needed: tally.needed,
-        immediate: tally.immediate,
-      },
-      requestId: actor.requestId,
-      ...audited,
-    });
-  }
-
-  if (!tally.complete) {
-    return { userId: candidateId, outcome: 'pending', votes: tally.votes, needed: tally.needed };
-  }
-
   await promoteSuperAdmin(tx, candidateId);
   await audit.record(tx, {
     orgId: actor.orgId,
@@ -145,26 +98,18 @@ export async function voteSuperAdmin(
     entityType: 'User',
     entityId: candidateId,
     before: { isSuperAdmin: false },
-    after: {
-      isSuperAdmin: true,
-      // Who said yes: the last voter alone while the brand had one super admin or none.
-      voters: [...new Set(voters)],
-      superAdminsBefore: facts.superAdmins.length,
-    },
+    after: { isSuperAdmin: true },
     requestId: actor.requestId,
-    ...audited,
+    ...(request === undefined ? {} : { request }),
   });
-  return { userId: candidateId, outcome: 'promoted', votes: tally.votes, needed: tally.needed };
+  return { userId: candidateId, outcome: 'promoted' };
 }
 
-// --- removing a super admin (D-685 to D-689) -----------------------------------------------
+// --- removing a super admin ------------------------------------------------------------------
 
 export interface RemovalOutcome {
   readonly userId: string;
-  /** Removed now, or waiting for the other super admins' votes. */
-  readonly outcome: 'removed' | 'pending';
-  readonly votes: number;
-  readonly needed: number;
+  readonly outcome: 'removed';
   /** The removed person's sessions ended, so the change applies at once. */
   readonly sessionsEnded: number;
 }
@@ -176,10 +121,8 @@ const REMOVAL_CODE: Readonly<
   >
 > = {
   not_super_admin: 'USER_PROTECTED',
-  not_first_super_admin: 'USER_PROTECTED',
   self: 'USER_SELF_MANAGEMENT',
   not_removable: 'SUPER_ADMIN_NOT_REMOVABLE',
-  first_super_admin: 'SUPER_ADMIN_NOT_REMOVABLE',
   last_super_admin: 'SUPER_ADMIN_LAST',
 };
 
@@ -192,14 +135,8 @@ export function requireSuperAdminToRemove(actor: { readonly isSuperAdmin: boolea
   if (!actor.isSuperAdmin) refuseRemoval('not_super_admin');
 }
 
-/**
- * A super admin's yes for removing another super admin (D-686). The first yes starts it, and
- * only the first super admin or an owner may (D-666); it removes once every other active super
- * admin but the target has said yes — at once while that is at most one of them. The flag is
- * cleared through `iam.demote_super_admin`, which checks the rule again in the database; the
- * person's sessions end in the same transaction (D-687). Each vote and the removal audited.
- */
-export async function voteRemoval(
+/** Remove another super admin's super admin power, at once; their sessions end with it. */
+export async function removeSuperAdmin(
   tx: Tx,
   audit: AuditService,
   actor: NominationActor,
@@ -214,7 +151,7 @@ export async function voteRemoval(
   if (person === undefined || (held.length === 0 && !person.is_super_admin)) {
     throw usersHttpError('USER_NOT_FOUND', 'No such person in this organization.');
   }
-  const facts = await loadNominations(tx, actor.orgId);
+  const superAdmins = await activeSuperAdmins(tx);
   const refusal = removalRefusal(
     actor,
     {
@@ -223,53 +160,12 @@ export async function voteRemoval(
       isSuperAdmin: person.is_super_admin,
       isOwner: person.is_owner,
     },
-    facts,
+    { superAdmins },
   );
   if (refusal !== null) refuseRemoval(refusal);
 
-  const before = facts.removals.get(targetId) ?? [];
-  if (before.length === 0 && startRefusal(actor.userId, facts.starters) !== null) {
-    refuseRemoval('not_first_super_admin');
-  }
-  const cast = await castRemovalVote(tx, actor.orgId, actor.userId, targetId);
-  const voters = cast ? [...before, actor.userId] : before;
-  const tally = removalTally(facts.superAdmins, targetId, voters);
-  const audited = request === undefined ? {} : { request };
-
-  if (cast) {
-    await audit.record(tx, {
-      orgId: actor.orgId,
-      actorUserId: actor.userId,
-      operation: 'create',
-      action:
-        before.length === 0 ? 'iam.super_admin_removal_started' : 'iam.super_admin_removal_voted',
-      entityType: 'User',
-      entityId: targetId,
-      before: null,
-      after: {
-        voter: actor.userId,
-        votes: tally.votes,
-        needed: tally.needed,
-        immediate: tally.immediate,
-      },
-      requestId: actor.requestId,
-      ...audited,
-    });
-  }
-
-  if (!tally.complete) {
-    return {
-      userId: targetId,
-      outcome: 'pending',
-      votes: tally.votes,
-      needed: tally.needed,
-      sessionsEnded: 0,
-    };
-  }
-
   await demoteSuperAdmin(tx, targetId);
   const sessionsEnded = await endSessions(tx, targetId, 'all');
-  const votesCleared = await clearVotesBy(tx, actor.orgId, targetId);
   await audit.record(tx, {
     orgId: actor.orgId,
     actorUserId: actor.userId,
@@ -278,24 +174,11 @@ export async function voteRemoval(
     entityType: 'User',
     entityId: targetId,
     before: { isSuperAdmin: true },
-    after: {
-      isSuperAdmin: false,
-      // Who said yes: the starter alone while at most one other super admin remained.
-      voters: [...new Set(voters)],
-      superAdminsBefore: facts.superAdmins.length,
-      sessionsEnded,
-      votesCleared,
-    },
+    after: { isSuperAdmin: false, sessionsEnded },
     requestId: actor.requestId,
-    ...audited,
+    ...(request === undefined ? {} : { request }),
   });
-  return {
-    userId: targetId,
-    outcome: 'removed',
-    votes: tally.votes,
-    needed: tally.needed,
-    sessionsEnded,
-  };
+  return { userId: targetId, outcome: 'removed', sessionsEnded };
 }
 
 /**
@@ -308,27 +191,19 @@ export async function stepDown(
   audit: AuditService,
   actor: NominationActor,
   request: AuditableRequest | undefined,
-): Promise<{ userId: string; sessionsEnded: number; firstNow: string | null }> {
+): Promise<{ userId: string; sessionsEnded: number }> {
   requireSuperAdminToRemove(actor);
   await lockSuperAdmins(tx);
   const [person] = await people(tx, [actor.userId]);
-  const facts = await loadNominations(tx, actor.orgId);
+  const superAdmins = await activeSuperAdmins(tx);
   const refusal = stepDownRefusal(
     { userId: actor.userId, isSuperAdmin: actor.isSuperAdmin, isOwner: person?.is_owner === true },
-    facts,
+    { superAdmins },
   );
   if (refusal !== null) refuseRemoval(refusal);
 
   await demoteSuperAdmin(tx, actor.userId);
   const sessionsEnded = await endSessions(tx, actor.userId, 'all');
-  const firstNow = facts.superAdmins.find((id) => id !== actor.userId) ?? null;
-  // The next earliest is the first now, whom the others never remove: a removal of them
-  // still open here could neither finish nor be voted on, so it goes, in the record below.
-  const clearedRemoval =
-    facts.first === actor.userId && firstNow !== null
-      ? await withdrawRemoval(tx, actor.orgId, firstNow)
-      : [];
-  const votesCleared = await clearVotesBy(tx, actor.orgId, actor.userId);
   await audit.record(tx, {
     orgId: actor.orgId,
     actorUserId: actor.userId,
@@ -336,16 +211,10 @@ export async function stepDown(
     action: 'iam.super_admin_removal_stepped_down',
     entityType: 'User',
     entityId: actor.userId,
-    before: { isSuperAdmin: true, wasFirst: facts.first === actor.userId },
-    after: {
-      isSuperAdmin: false,
-      firstNow,
-      sessionsEnded,
-      votesCleared,
-      clearedRemovalVoters: clearedRemoval,
-    },
+    before: { isSuperAdmin: true },
+    after: { isSuperAdmin: false, sessionsEnded },
     requestId: actor.requestId,
     ...(request === undefined ? {} : { request }),
   });
-  return { userId: actor.userId, sessionsEnded, firstNow };
+  return { userId: actor.userId, sessionsEnded };
 }

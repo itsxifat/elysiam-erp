@@ -538,13 +538,6 @@ export const ERROR_CODES = [
   /** There is nothing to reset: no second factor is enrolled. */
   'CREDENTIAL_NOTHING_TO_RESET',
   /**
-   * A trust vote that would not count (D-656): the voter is not an admin with two-step
-   * sign-in, or is in the person's invitation chain, or shares an inviter with them.
-   */
-  'TRUST_VOTE_REFUSED',
-  /** Only an active admin of the brand, not a super admin, is vouched for (D-654). */
-  'TRUST_NOT_CANDIDATE',
-  /**
    * Only an active admin of the brand who is not a super admin or an owner can be made a
    * super admin (D-659); or there is no nomination for them to withdraw.
    */
