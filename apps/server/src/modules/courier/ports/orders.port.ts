@@ -155,6 +155,22 @@ export interface OrdersPort {
   ): Promise<OrderBookingSnapshot | null>;
 
   /**
+   * The courier an order would be booked with (D-952): its own, else the brand's default by §9's
+   * rule. A read; null when there is none.
+   */
+  defaultCourierFor(tx: Tx, orgId: string, orderId: string): Promise<string | null>;
+
+  /**
+   * Give an order that names no courier the brand's default, audited, before its parcel is booked
+   * (D-952). The order's courier afterwards; null when the brand has no default courier.
+   */
+  giveDefaultCourier(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string; readonly requestId?: string | null },
+    orderId: string,
+  ): Promise<string | null>;
+
+  /**
    * The words for the courier ids this module stores (invariant 12).
    *
    * Every consignment, account, label and settlement row carries a `courier_id`, and
@@ -178,14 +194,16 @@ export interface OrdersPort {
   ): Promise<CourierParty & { readonly created: boolean }>;
 
   /**
-   * The brand's default courier (§9, D-913): the one every active delivery zone names, which
-   * is what each new order is given. Null when the zones disagree or name none.
+   * The brand's default courier (§9, D-913, D-952): the one every active delivery zone names,
+   * which is what each new order is given; when no active zone names one, the brand's chosen
+   * default, else its only courier. Null when the zones disagree or nothing names one.
    */
   defaultCourierId(tx: Tx, orgId: string): Promise<string | null>;
 
   /**
-   * The zones' defaults summed up (D-913): the one courier every active zone names (else
-   * null), whether the active zones name different ones, and how many zones are active.
+   * The zones' defaults summed up (D-913, D-952): the brand's default courier as
+   * `defaultCourierId` answers it, whether the active zones name different ones, and how many
+   * zones are active.
    */
   defaultCourierState(
     tx: Tx,
@@ -197,8 +215,8 @@ export interface OrdersPort {
   }>;
 
   /**
-   * Every delivery zone's default courier becomes this one (D-913), the zones locked first;
-   * the zones' defaults before.
+   * Every delivery zone's default courier becomes this one (D-913), the zones locked first, and
+   * so does the brand's own default (D-952); the zones' defaults and the brand's before.
    */
   setDefaultCourier(
     tx: Tx,
@@ -210,6 +228,7 @@ export interface OrdersPort {
       readonly courierId: string | null;
       readonly isActive: boolean;
     }[];
+    readonly brandDefaultBefore: string | null;
   }>;
 
   /**

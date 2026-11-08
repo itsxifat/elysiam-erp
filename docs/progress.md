@@ -4194,3 +4194,36 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   the owner's Petty Cash). No location, zone, courier or old row was added: the owner's own
   "Uttara 01" is still the only location, and there are no journals yet.
 - **New dependencies:** none.
+
+## 2026-11-08 · fix · Elysiam's first order reaches Steadfast: one default-courier rule, zones optional
+
+- **Why:** the owner: "why the first order not entering into steadfast courier and why you made all
+  systems so unclear complex to use". Read-only on Elysiam's server first: Steadfast connected
+  2026-11-08 02:01 Dhaka time with working keys (the balance call answered), the switch on, booking
+  on Confirm. But the brand had **no delivery zone** (deleted by the 2026-11-05 cleanup, not put
+  back on 11-06), and an order takes its courier from its zone's default, so the first order
+  (ELY-2611-00001, Tk 730) had no courier: Confirm was refused ("names no courier and its delivery
+  zone has no default") and "Use as the default courier" was refused twice ("no active delivery
+  zone"). Settings → Delivery zones' Add zone then opened nothing: the form lived inside the zones
+  table, which is not drawn when there are none.
+- **On the server (with the owner waiting on the order):** ELY-2611-00001's courier set to Steadfast,
+  the brand's only courier, in one transaction with an `order.courier.set` audit row
+  (`system:support`). Nothing else changed.
+- **What:** D-952. `deliveryFallbackCourier` is the one rule (zone's default → brand's chosen
+  default `orders.default_courier` → the one courier the zones name → the only active courier).
+  New orders are given it; `reserveConsignment` gives it to a courier-less order before booking
+  (`OrdersPort.giveDefaultCourier`, audited `order.courier.defaulted`), so Confirm, Book now and
+  bulk booking agree; `setDefaultCourier` saves the brand default too and `defaultCourierState`
+  answers it with no zone, so "Use as the default courier" works without zones. Clearer refusal
+  when nothing can be chosen. Console: Add zone opens with an empty list; Book now shows for an
+  order with no courier.
+- **Verification:** server and console typecheck PASS. `zones-page.test.tsx` (new, 2) and
+  `couriers-page.test.tsx` PASS. `connections.e2e.test.ts` PASS. `courier.m15.db.test.ts` PASS (new:
+  a courier-less order booked with the brand default, kept on the order, audited; the bulk test now
+  expects the default's own refusal and checks it rolled back). `default-courier.db.test.ts`: the
+  new D-952 test PASS; its two older delivery tests FAIL identically on the unchanged code (their
+  helper ships without the label and pack the order of work has required since 2026-11-01):
+  follow-up below. Broad suites not run (minimal-tests rule).
+- **Follow-up:** rework `default-courier.db.test.ts`'s `shippedWithNoCourier` to book, print the
+  label and pack before shipping (D-928), so its two delivery tests run again.
+- **New dependencies:** none.

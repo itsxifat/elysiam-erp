@@ -249,6 +249,7 @@ describe('making a courier the default', () => {
 
     const ownRider = await ownRiderCourier(ORG_A);
     await setZones({ inside_dhaka: ownRider, dhaka_suburbs: ownRider, outside_dhaka: ownRider });
+    await clearBrandDefault();
   });
 
   it('says when the active zones name different couriers', async () => {
@@ -262,3 +263,94 @@ describe('making a courier the default', () => {
     await setZones({ inside_dhaka: ownRider });
   });
 });
+
+describe('a brand whose zones name no courier (D-952)', () => {
+  it('keeps the default chosen in Settings → Couriers, and gives it to each new order', async () => {
+    const ownRider = await ownRiderCourier(ORG_A);
+    const steadfast = await party('steadfast', 'Steadfast');
+    // Elysiam's case: no active zone at all.
+    await setZonesActive(false);
+    try {
+      const { brandDefaultBefore } = await withOrg({ orgId: ORG_A, userId: SYSTEM_USER }, (tx) =>
+        ordersApi.setDefaultCourier(tx, ORG_A, steadfast),
+      );
+      expect(brandDefaultBefore).toBeNull();
+      const state = await withOrg({ orgId: ORG_A, userId: SYSTEM_USER }, (tx) =>
+        ordersApi.defaultCourierState(tx, ORG_A),
+      );
+      // Was `null` with "this brand has no active delivery zone": the refusal the owner saw.
+      expect(state).toEqual({ courierId: steadfast, mixed: false, activeZones: 0 });
+
+      // Zones back, naming no courier: a new order is given the brand's default, not none.
+      await setZonesActive(true);
+      await setZones({ inside_dhaka: null, dhaka_suburbs: null, outside_dhaka: null });
+      const orderId = await newOrderWithoutCourier();
+      expect(await orderCourier(orderId)).toBe(steadfast);
+    } finally {
+      await setZonesActive(true);
+      await setZones({ inside_dhaka: ownRider, dhaka_suburbs: ownRider, outside_dhaka: ownRider });
+      await clearBrandDefault();
+    }
+  });
+});
+
+async function clearBrandDefault(): Promise<void> {
+  await withSystem(
+    (tx) =>
+      tx.execute(sql`
+        delete from org.settings where org_id = ${ORG_A} and key = 'orders.default_courier'
+      `),
+    { orgId: ORG_A },
+  );
+}
+
+async function setZonesActive(active: boolean): Promise<void> {
+  await withSystem(
+    (tx) =>
+      tx.execute(
+        sql`update sales.delivery_zones set is_active = ${active} where org_id = ${ORG_A}`,
+      ),
+    { orgId: ORG_A },
+  );
+}
+
+async function orderCourier(orderId: string): Promise<string | null | undefined> {
+  const rows = await withSystem(
+    async (tx) =>
+      tx.execute<{ courier_id: string | null }>(sql`
+        select courier_id from sales.orders where org_id = ${ORG_A} and id = ${orderId}
+      `),
+    { orgId: ORG_A },
+  );
+  return rows[0]?.courier_id;
+}
+
+/** A new order taken with no courier named, as the desk and the website take one. */
+async function newOrderWithoutCourier(): Promise<string> {
+  const location = await warehouseId(ORG_A);
+  const { skus } = await seedProductWithSkus(ORG_A, `dnew${randomUUID().slice(0, 6)}`, 1);
+  const skuId = skus[0]?.id ?? '';
+  const actor = { orgId: ORG_A, userId: SYSTEM_USER };
+  await withOrg(actor, (tx) =>
+    inventory.receiveSupply(tx, actor, {
+      supplyId: randomUUID(),
+      supplierId: randomUUID(),
+      locationId: location,
+      branchId: null,
+      occurredAt: new Date(),
+      lines: [{ skuId, qty: 1, unitCostPoisha: poisha(40_000n) }],
+    }),
+  );
+  const customerId = await seedCustomer(ORG_A, {
+    phoneE164: '+8801712345601',
+    name: 'Nusrat Jahan',
+  });
+  const created = await orders.create(context(), request(), {
+    channel: 'phone',
+    customerId,
+    locationId: location,
+    deliveryChargePoisha: '6000',
+    lines: [{ skuId, qty: 1, unitPricePoisha: '150000' }],
+  });
+  return created.id;
+}

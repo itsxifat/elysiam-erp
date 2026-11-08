@@ -22,6 +22,8 @@ import { sql } from 'drizzle-orm';
 import type { AuditableRequest } from '../../platform/audit/audit.interceptor.js';
 import type { ActiveContext } from '../../platform/http/context.js';
 import type { LedgerApi } from '../ledger/ledger.api.js';
+// The real default-courier rule (D-952), so this stand-in cannot drift from it.
+import * as ordersRepo from '../orders/orders.repository.js';
 import type { LedgerReadPort } from './ports/ledger-read.port.js';
 import type {
   AppliedTrigger,
@@ -546,11 +548,34 @@ export class TestOrdersPort implements OrdersPort {
       select default_courier_id from sales.delivery_zones where org_id = ${orgId} and is_active
     `);
     const named = new Set([...rows].map((row) => row.default_courier_id));
-    return {
-      courierId: rows.length === 0 || named.size !== 1 ? null : ([...named][0] ?? null),
-      mixed: named.size > 1,
-      activeZones: rows.length,
-    };
+    const single = rows.length === 0 || named.size !== 1 ? null : ([...named][0] ?? null);
+    // As the real port (D-952): with no zone naming one, the brand's default answers.
+    const courierId =
+      single ??
+      ([...rows].every((row) => row.default_courier_id === null)
+        ? ((await ordersRepo.deliveryFallbackCourier(tx, orgId, null)) ?? null)
+        : null);
+    return { courierId, mixed: named.size > 1, activeZones: rows.length };
+  }
+
+  async defaultCourierFor(tx: Tx, orgId: string, orderId: string): Promise<string | null> {
+    const order = await ordersRepo.orderById(tx, orgId, orderId);
+    if (order === undefined) return null;
+    if (order.courier_id !== null) return order.courier_id;
+    return (await ordersRepo.deliveryFallbackCourier(tx, orgId, order.delivery_zone_id)) ?? null;
+  }
+
+  /** As the real port (D-952), less its audit row. */
+  async giveDefaultCourier(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string },
+    orderId: string,
+  ): Promise<string | null> {
+    const courierId = await this.defaultCourierFor(tx, actor.orgId, orderId);
+    if (courierId === null) return null;
+    await ordersRepo.setOrderCourier(tx, { orgId: actor.orgId, orderId, courierId });
+    const after = await ordersRepo.orderById(tx, actor.orgId, orderId);
+    return after?.courier_id === courierId ? courierId : null;
   }
 
   async setDefaultCourier(
@@ -563,7 +588,9 @@ export class TestOrdersPort implements OrdersPort {
       readonly courierId: string | null;
       readonly isActive: boolean;
     }[];
+    readonly brandDefaultBefore: string | null;
   }> {
+    const brandDefaultBefore = await ordersRepo.brandDefaultCourierSetting(tx, orgId);
     // The zones locked, then read and written, as the real port does.
     const before = await tx.execute<{
       code: string;
@@ -577,12 +604,14 @@ export class TestOrdersPort implements OrdersPort {
       update sales.delivery_zones set default_courier_id = ${courierId}::uuid, updated_at = now()
       where org_id = ${orgId}
     `);
+    await ordersRepo.saveOrgSetting(tx, orgId, 'orders.default_courier', courierId);
     return {
       before: [...before].map((row) => ({
         zoneCode: row.code,
         courierId: row.default_courier_id,
         isActive: row.is_active,
       })),
+      brandDefaultBefore,
     };
   }
 

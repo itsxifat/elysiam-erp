@@ -915,6 +915,7 @@ The sales desk (orders, customers, messages) and the fulfilment hub (slips, pack
 ### Delivery zones and charges
 
 - Each org defines its own zones, each with a charge and a default courier.
+- An order that names no courier goes with one rule's answer (`deliveryFallbackCourier`, D-952): its zone's default, else the brand's default chosen in Settings → Couriers (`org.settings` `orders.default_courier`, saved with the zones' defaults), else the one courier the active zones name, else the brand's only active courier. A new order is given it, a booking gives it to an order that has none (audited), and a delivery is posted against it. A brand needs no zone for its orders to reach its courier.
 - Example zones: Inside Dhaka, Dhaka suburbs, Outside Dhaka (seed placeholders, D-009).
 - District/thana → zone mapping is seeded and editable.
 

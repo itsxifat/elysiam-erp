@@ -548,11 +548,31 @@ export interface OrdersApi {
   ): Promise<CourierParty & { readonly created: boolean }>;
 
   /**
-   * The brand's default courier (§9, D-913): the one every active delivery zone names as its
-   * default, which is what a new order is given. Null when the zones name different couriers,
-   * or none, or there are no active zones.
+   * The brand's default courier (§9, D-913, D-952): the one every active delivery zone names as
+   * its default, which is what a new order is given; when no active zone names one (a brand with
+   * no zones too), the brand's chosen default, else its only active courier. Null when the zones
+   * name different couriers, or nothing names one.
    */
   defaultCourierId(tx: Tx, orgId: string): Promise<string | null>;
+
+  /**
+   * The courier an order that names none would be given (D-952): `deliveryFallbackCourier`'s
+   * answer for its zone. A read. Null for an order that is not this org's, or when the brand has
+   * no default courier.
+   */
+  defaultCourierFor(tx: Tx, orgId: string, orderId: string): Promise<string | null>;
+
+  /**
+   * Give an order that names no courier the brand's default before its parcel is booked
+   * (D-952), audited, in the caller's transaction. The order's courier when it already names
+   * one; null when the brand has no default (the caller refuses with the fix). Only an order not
+   * yet shipped is changed: §7's receivable is posted against the order's courier at delivery.
+   */
+  giveDefaultCourier(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string; readonly requestId?: string | null },
+    orderId: string,
+  ): Promise<string | null>;
 
   /**
    * The zones' default couriers, summed up for Settings → Couriers (§9, D-913): the one every
@@ -569,10 +589,11 @@ export interface OrdersApi {
   }>;
 
   /**
-   * Make this courier the brand's default (D-913): every delivery zone's default courier
-   * becomes it, so each new order is given it. In the caller's transaction, unaudited here;
-   * the caller audits it. The zones are locked first, so two changes at once are one after
-   * the other, never interleaved. Answers the zones' defaults before the change.
+   * Make this courier the brand's default (D-913, D-952): every delivery zone's default courier
+   * becomes it and so does the brand's own `orders.default_courier`, so each new order is given
+   * it, with or without zones. In the caller's transaction, unaudited here; the caller audits
+   * it. The zones are locked first, so two changes at once are one after the other, never
+   * interleaved. Answers the zones' defaults and the brand's chosen one before the change.
    */
   setDefaultCourier(
     tx: Tx,
@@ -584,6 +605,7 @@ export interface OrdersApi {
       readonly courierId: string | null;
       readonly isActive: boolean;
     }[];
+    readonly brandDefaultBefore: string | null;
   }>;
 
   /**
@@ -1826,7 +1848,49 @@ export class OrdersApiService implements OrdersApi {
     const active = (await repo.listZones(tx, orgId)).filter((zone) => zone.is_active);
     const named = new Set(active.map((zone) => zone.default_courier_id));
     const single = active.length > 0 && named.size === 1 ? ([...named][0] ?? null) : null;
-    return { courierId: single, mixed: named.size > 1, activeZones: active.length };
+    // No active zone names a courier (or there is no zone): the brand's own default answers, as
+    // it does for an order (D-952), so Settings → Couriers says what a new order is given.
+    const courierId =
+      single ??
+      (active.every((zone) => zone.default_courier_id === null)
+        ? ((await repo.deliveryFallbackCourier(tx, orgId, null)) ?? null)
+        : null);
+    return { courierId, mixed: named.size > 1, activeZones: active.length };
+  }
+
+  async defaultCourierFor(tx: Tx, orgId: string, orderId: string): Promise<string | null> {
+    const order = await repo.orderById(tx, orgId, orderId);
+    if (order === undefined) return null;
+    if (order.courier_id !== null) return order.courier_id;
+    return (await repo.deliveryFallbackCourier(tx, orgId, order.delivery_zone_id)) ?? null;
+  }
+
+  async giveDefaultCourier(
+    tx: Tx,
+    actor: { readonly orgId: string; readonly userId: string; readonly requestId?: string | null },
+    orderId: string,
+  ): Promise<string | null> {
+    const order = await repo.orderById(tx, actor.orgId, orderId);
+    if (order === undefined) return null;
+    if (order.courier_id !== null) return order.courier_id;
+    const courierId = await repo.deliveryFallbackCourier(tx, actor.orgId, order.delivery_zone_id);
+    if (courierId === undefined) return null;
+    // Not yet shipped only (the repository's own filter): a delivered order's courier is history.
+    await repo.setOrderCourier(tx, { orgId: actor.orgId, orderId, courierId });
+    const after = await repo.orderById(tx, actor.orgId, orderId);
+    if (after?.courier_id !== courierId) return null;
+    await this.audit.record(tx, {
+      orgId: actor.orgId,
+      actorUserId: actor.userId.startsWith('system:') ? null : actor.userId,
+      operation: 'update',
+      action: 'order.courier.defaulted',
+      entityType: 'Order',
+      entityId: orderId,
+      before: { courierId: null },
+      after: { courierId },
+      requestId: actor.requestId ?? null,
+    });
+    return courierId;
   }
 
   async setDefaultCourier(
@@ -1839,6 +1903,7 @@ export class OrdersApiService implements OrdersApi {
       readonly courierId: string | null;
       readonly isActive: boolean;
     }[];
+    readonly brandDefaultBefore: string | null;
   }> {
     // Locked before they are read, so `before` is what this change replaces and a second
     // change at the same moment waits for this one rather than skipping its zones.
@@ -1848,8 +1913,11 @@ export class OrdersApiService implements OrdersApi {
       courierId: zone.default_courier_id,
       isActive: zone.is_active,
     }));
+    const brandDefaultBefore = await repo.brandDefaultCourierSetting(tx, orgId);
     await repo.setZonesDefaultCourier(tx, orgId, courierId);
-    return { before };
+    // Kept beside the zones (D-952): a brand with no zone, or one added later, still has it.
+    await repo.saveOrgSetting(tx, orgId, 'orders.default_courier', courierId);
+    return { before, brandDefaultBefore };
   }
 
   async buyerPhones(

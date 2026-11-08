@@ -574,14 +574,19 @@ export async function couriersByCodes(
 }
 
 /**
- * The courier party a delivery is posted against when the order names none (§7, §9).
+ * The courier party an order goes with when it names none (§7, §9; D-913, D-952).
  *
  * §9's default, never an alphabetical first: the order's own zone's default courier, else the
- * one courier the brand's active zones name (a zone that names none is skipped), else the
- * brand's only active courier party. Undefined when none of those names exactly one, and the
- * caller refuses: a receivable against a courier that never carried the parcel is one no
- * statement clears. This was once the first active party by code, so adding Carrybee (which
- * sorts before `own_rider`) moved every such delivery onto Carrybee (D-913).
+ * brand's default courier as chosen in Settings → Couriers (`orders.default_courier`, D-952:
+ * kept beside the zones so a brand with no zone still has one), else the one courier the
+ * brand's active zones name (a zone that names none is skipped), else the brand's only active
+ * courier party. Undefined when none of those names exactly one, and the caller refuses: a
+ * receivable against a courier that never carried the parcel is one no statement clears. This
+ * was once the first active party by code, so adding Carrybee (which sorts before `own_rider`)
+ * moved every such delivery onto Carrybee (D-913).
+ *
+ * The one reading of the rule: a new order is given its answer, a Confirm or a Book now gives it
+ * to an order that has none before booking (D-952), and a delivery is posted against it.
  */
 export async function deliveryFallbackCourier(
   tx: Tx,
@@ -592,6 +597,8 @@ export async function deliveryFallbackCourier(
     const zone = await zoneById(tx, orgId, zoneId);
     if (zone?.default_courier_id != null) return zone.default_courier_id;
   }
+  const chosen = await brandDefaultCourierSetting(tx, orgId);
+  if (chosen !== null) return chosen;
   const named = new Set(
     (await listZones(tx, orgId)).flatMap((zone) =>
       zone.is_active && zone.default_courier_id !== null ? [zone.default_courier_id] : [],
@@ -719,11 +726,24 @@ export async function notReceivedHoursSetting(tx: Tx, orgId: string): Promise<nu
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
 }
 
-/** One brand setting, written whole (D-901, D-903). */
+/**
+ * The brand's default courier as chosen in Settings → Couriers (D-952), `orders.default_courier`:
+ * null when it never chose, or chose a courier party since switched off or gone.
+ */
+export async function brandDefaultCourierSetting(tx: Tx, orgId: string): Promise<string | null> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    select c.id from org.settings s
+    join sales.couriers c on c.org_id = s.org_id and c.id::text = s.value #>> '{}'
+    where s.org_id = ${orgId} and s.key = 'orders.default_courier' and c.is_active
+  `);
+  return rows[0]?.id ?? null;
+}
+
+/** One brand setting, written whole (D-901, D-903, D-952). */
 export async function saveOrgSetting(
   tx: Tx,
   orgId: string,
-  key: 'orders.courier_booking' | 'orders.not_received_hours',
+  key: 'orders.courier_booking' | 'orders.not_received_hours' | 'orders.default_courier',
   value: string | number,
 ): Promise<void> {
   await tx.execute(sql`

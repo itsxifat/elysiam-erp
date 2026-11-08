@@ -192,7 +192,8 @@ export class BookingService implements OnModuleInit {
    * A read, for a Confirm under booking by hand: its label then waits for the consignment.
    */
   async canBook(tx: Tx, orgId: string, orderId: string): Promise<boolean> {
-    const courierId = (await this.orders.bookingSnapshot(tx, orgId, orderId))?.courierId ?? null;
+    // The courier it would be booked with: its own, else the brand's default (D-952).
+    const courierId = await this.orders.defaultCourierFor(tx, orgId, orderId);
     if (courierId === null) return false;
     const account = await repo.accountByCourier(tx, orgId, courierId);
     if (account?.is_active !== true) return false;
@@ -268,11 +269,15 @@ export class BookingService implements OnModuleInit {
      * orders module to consult them when it takes an order — and booking only ever uses the
      * courier the order already names. A different courier named here is refused with the fix.
      */
-    const courierId = order.courierId;
+    // An order that names no courier goes with the brand's default (D-952): its zone's, else the
+    // one chosen in Settings → Couriers, else the brand's only courier. Written onto the order
+    // here, under the lock taken above, so the delivery is later posted against the same party.
+    const courierId =
+      order.courierId ?? (await this.orders.giveDefaultCourier(tx, actor, input.orderId));
     if (courierId === null) {
       throw new CourierError(
         'CONSIGNMENT_INVALID',
-        'This order names no courier and its delivery zone has no default (§9). Set the order’s courier first.',
+        'This brand has no default courier, so this order has none. Open Settings → Couriers and turn on “Use as the default courier” for your courier, then try again.',
       );
     }
     if (

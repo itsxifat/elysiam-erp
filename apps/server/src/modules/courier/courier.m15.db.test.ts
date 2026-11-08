@@ -1637,10 +1637,23 @@ describe('bulk booking and labels', () => {
     });
     expect(result.results).toHaveLength(3);
     expect(result.results[0]).toMatchObject({ orderId: good.orderId, enqueued: true, code: null });
+    // D-952: an order naming no courier is given the brand's default (here the courier the
+    // zones name, which has no account in this brand), so that order alone is refused...
     expect(result.results[1]).toMatchObject({
       orderId: noCourier.orderId,
-      code: 'CONSIGNMENT_INVALID',
+      code: 'COURIER_ACCOUNT_NOT_FOUND',
     });
+    // ...and its refusal rolled back the courier it was given: nothing half-done is left.
+    const kept = await withSystem(
+      async (tx) =>
+        (
+          await tx.execute<{ courier_id: string | null }>(sql`
+            select courier_id from sales.orders where org_id = ${ORG_A} and id = ${noCourier.orderId}
+          `)
+        )[0]?.courier_id,
+      { orgId: ORG_A },
+    );
+    expect(kept).toBeNull();
     expect(result.results[2]).toMatchObject({ orderId: missing, code: 'ORDER_NOT_FOUND' });
 
     // A courier the orders do not name is refused per order, not booked beside them.
@@ -1651,6 +1664,62 @@ describe('bulk booking and labels', () => {
       courierId: courierB,
     });
     expect(mismatch.results[0]).toMatchObject({ enqueued: false, code: 'CONSIGNMENT_INVALID' });
+  });
+
+  it('books an order that names no courier with the brand’s default, and keeps it on the order (D-952)', async () => {
+    const order = await seedShippedOrder(ORG_A, { status: 'packed' });
+    // A brand whose zones name no courier (Elysiam had none at all): only its chosen default.
+    const setDefault = (value: string | null) =>
+      withSystem(
+        async (tx) => {
+          await tx.execute(sql`
+            update sales.orders set courier_id = null, delivery_zone_id = null
+            where org_id = ${ORG_A} and id = ${order.orderId}
+          `);
+          await tx.execute(sql`
+            delete from org.settings where org_id = ${ORG_A} and key = 'orders.default_courier'
+          `);
+          if (value !== null) {
+            await tx.execute(sql`
+              insert into org.settings (org_id, key, value)
+              values (${ORG_A}, 'orders.default_courier', ${JSON.stringify(value)}::jsonb)
+            `);
+          }
+        },
+        { orgId: ORG_A },
+      );
+    await setDefault(courierB);
+    try {
+      const consignmentId = await book(order);
+      const row = await consignment(consignmentId);
+      expect(row.courier_id).toBe(courierB);
+      expect(row.booking_state).toBe('booked');
+      const onOrder = await withSystem(
+        async (tx) =>
+          (
+            await tx.execute<{ courier_id: string | null }>(sql`
+              select courier_id from sales.orders where org_id = ${ORG_A} and id = ${order.orderId}
+            `)
+          )[0]?.courier_id,
+        { orgId: ORG_A },
+      );
+      // The delivery is posted against the order's courier: the parcel's, so they agree (§7).
+      expect(onOrder).toBe(courierB);
+      expect(
+        await count(sql`
+          select count(*) as count from audit.audit_log
+          where org_id = ${ORG_A} and action = 'order.courier.defaulted' and entity_id = ${order.orderId}
+        `),
+      ).toBe(1);
+    } finally {
+      await withSystem(
+        (tx) =>
+          tx.execute(sql`
+            delete from org.settings where org_id = ${ORG_A} and key = 'orders.default_courier'
+          `),
+        { orgId: ORG_A },
+      );
+    }
   });
 
   it('gathers a label with the full phone for the rider, and refuses an unbooked parcel', async () => {

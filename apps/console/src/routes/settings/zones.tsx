@@ -50,11 +50,11 @@ export function ZonesPage() {
         </Button>
       </div>
       <Loadable query={query}>
-        {(data) =>
-          data.zones.length === 0 ? (
-            <Empty />
-          ) : (
-            <>
+        {(data) => (
+          <>
+            {data.zones.length === 0 ? (
+              <Empty />
+            ) : (
               <table className={tableClass}>
                 <caption className="sr-only">{t('settings.nav.zones')}</caption>
                 <thead>
@@ -97,16 +97,17 @@ export function ZonesPage() {
                   ))}
                 </tbody>
               </table>
-              {editing === null ? null : (
-                <ZoneDialog
-                  zone={editing === 'new' ? null : editing}
-                  couriers={data.couriers}
-                  onClose={() => setEditing(null)}
-                />
-              )}
-            </>
-          )
-        }
+            )}
+            {/* Outside the table: with no zone yet, Add zone must still open the form. */}
+            {editing === null ? null : (
+              <ZoneDialog
+                zone={editing === 'new' ? null : editing}
+                couriers={data.couriers}
+                onClose={() => setEditing(null)}
+              />
+            )}
+          </>
+        )}
       </Loadable>
     </SettingsPage>
   );

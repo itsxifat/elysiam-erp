@@ -76,7 +76,9 @@ export function ParcelPanel({
 
   const items = (parcels.data?.items ?? []).filter((parcel) => parcel.bookingState !== 'cancelled');
   const waiting = BEFORE_SHIPMENT.includes(order.status);
-  const mayBook = mayUpdate && waiting && items.length === 0 && order.courierId !== null;
+  // An order with no courier is booked with the brand's default (D-952); with none, the server's
+  // refusal names the fix and shows below.
+  const mayBook = mayUpdate && waiting && items.length === 0;
 
   return (
     <section

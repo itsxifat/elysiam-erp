@@ -867,6 +867,15 @@ export class OrdersService {
     }
 
     const orderNo = await this.nextOrderNo(tx, context, at);
+    const deliveryZoneId = zone?.id ?? options.fallbackDeliveryZoneId ?? null;
+    // The order's courier: the one named, else the brand's default by §9's rule (D-952: the
+    // zone's, else the brand's chosen one, else its only courier), so a brand with no zone, or a
+    // zone with no default, still sends each new order to its courier.
+    const courierId =
+      input.courierId ??
+      zone?.defaultCourierId ??
+      (await repo.deliveryFallbackCourier(tx, context.orgId, deliveryZoneId)) ??
+      null;
     const orderId = await repo.insertOrder(tx, {
       orgId: context.orgId,
       branchId: input.branchId ?? null,
@@ -880,8 +889,8 @@ export class OrdersService {
       shipThanaId: shipTo.thanaId,
       shipArea: shipTo.area,
       shipAddressLine: shipTo.addressLine,
-      deliveryZoneId: zone?.id ?? options.fallbackDeliveryZoneId ?? null,
-      courierId: input.courierId ?? zone?.defaultCourierId ?? null,
+      deliveryZoneId,
+      courierId,
       locationId: holdAt ?? input.locationId ?? null,
       stockHeldAt: holdAt === undefined ? null : at,
       itemsPoisha: BigInt(totals.itemsPoisha),

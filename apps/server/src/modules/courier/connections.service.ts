@@ -437,8 +437,12 @@ export class CourierConnectionsService {
     }
     if (!mayChangeDefault) throw defaultRefused();
 
-    const { before } = await this.orders.setDefaultCourier(tx, context.orgId, courierId);
-    if (before.some((zone) => zone.courierId !== courierId)) {
+    const { before, brandDefaultBefore } = await this.orders.setDefaultCourier(
+      tx,
+      context.orgId,
+      courierId,
+    );
+    if (before.some((zone) => zone.courierId !== courierId) || brandDefaultBefore !== courierId) {
       const named = new Set(before.filter((zone) => zone.isActive).map((zone) => zone.courierId));
       await this.audit.record(tx, {
         orgId: context.orgId,
@@ -449,6 +453,7 @@ export class CourierConnectionsService {
         entityId: courierId,
         before: {
           defaultCourierId: named.size === 1 ? ([...named][0] ?? null) : null,
+          brandDefaultCourierId: brandDefaultBefore,
           zones: before,
         },
         after: { defaultCourierId: courierId },
@@ -461,11 +466,12 @@ export class CourierConnectionsService {
   }
 
   private message(done: string, wanted: boolean, outcome: DefaultOutcome): string {
-    if (outcome.isDefault) return `${done} It is the default courier for new orders.`;
-    if (wanted && outcome.activeZones === 0) {
-      return `${done} It could not be made the default: this brand has no active delivery zone. Add one in Settings → Delivery zones.`;
+    if (outcome.isDefault) {
+      return `${done} It is the default courier: every new order goes with it, and a confirmed order is booked with it.`;
     }
-    if (wanted) return `${done} It could not be made the default courier. Try again.`;
+    if (wanted) {
+      return `${done} It could not be made the default courier: your delivery zones name other couriers. Open Settings → Delivery zones and set each zone's courier.`;
+    }
     return done;
   }
 }
