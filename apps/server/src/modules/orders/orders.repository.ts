@@ -739,6 +739,15 @@ export async function brandDefaultCourierSetting(tx: Tx, orgId: string): Promise
   return rows[0]?.id ?? null;
 }
 
+/** One brand setting forgotten (D-952: a zone saved naming another courier). */
+export async function deleteOrgSetting(
+  tx: Tx,
+  orgId: string,
+  key: 'orders.default_courier',
+): Promise<void> {
+  await tx.execute(sql`delete from org.settings where org_id = ${orgId} and key = ${key}`);
+}
+
 /** One brand setting, written whole (D-901, D-903, D-952). */
 export async function saveOrgSetting(
   tx: Tx,

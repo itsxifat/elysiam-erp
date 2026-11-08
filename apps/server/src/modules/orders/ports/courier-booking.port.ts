@@ -51,6 +51,8 @@ export interface CourierBookingPort {
    * Write the consignment row and enqueue the booking, in the caller's transaction. `automatic`
    * (the brand's booking setting, D-901): a courier that cannot be booked here leaves the order
    * to be booked by hand instead of refusing the status change: then `null`, nothing reserved.
+   * An order that named no courier has been given the brand's default first either way (D-952),
+   * audited, which is the courier its delivery is posted against.
    */
   reserveConsignment(
     tx: Tx,

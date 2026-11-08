@@ -286,6 +286,20 @@ describe('a brand whose zones name no courier (D-952)', () => {
       await setZones({ inside_dhaka: null, dhaka_suburbs: null, outside_dhaka: null });
       const orderId = await newOrderWithoutCourier();
       expect(await orderCourier(orderId)).toBe(steadfast);
+
+      // A zone saved naming another courier: the zones decide now, and the chosen default is
+      // forgotten, so the screen and new orders never name different couriers.
+      await orders.upsertZone(context(), request(), {
+        code: 'inside_dhaka',
+        nameEn: 'Inside Dhaka',
+        chargePoisha: '6000',
+        defaultCourierId: ownRider,
+      });
+      const kept = await withOrg({ orgId: ORG_A, userId: SYSTEM_USER }, (tx) =>
+        ordersApi.defaultCourierState(tx, ORG_A),
+      );
+      expect(kept.courierId).not.toBe(steadfast);
+      expect(await newOrderWithoutCourier().then(orderCourier)).toBe(ownRider);
     } finally {
       await setZonesActive(true);
       await setZones({ inside_dhaka: ownRider, dhaka_suburbs: ownRider, outside_dhaka: ownRider });

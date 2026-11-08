@@ -658,6 +658,17 @@ export class OrdersService {
           position: input.position ?? 0,
           isActive: input.isActive ?? true,
         });
+        // D-952: a zone saved naming another courier than the brand's chosen default means the
+        // zones decide now, so that default is forgotten and Settings → Couriers and new orders
+        // keep naming the same courier. A zone saved with none keeps it (it falls back to it).
+        const brandDefault = await repo.brandDefaultCourierSetting(tx, context.orgId);
+        const brandDefaultCleared =
+          input.defaultCourierId !== undefined &&
+          brandDefault !== null &&
+          brandDefault !== input.defaultCourierId;
+        if (brandDefaultCleared) {
+          await repo.deleteOrgSetting(tx, context.orgId, 'orders.default_courier');
+        }
         await this.audit.record(tx, {
           orgId: context.orgId,
           actorUserId: context.userId,
@@ -665,7 +676,12 @@ export class OrdersService {
           action: 'delivery_zone.saved',
           entityType: 'delivery_zone',
           entityId: id,
-          after: { code: input.code, chargePoisha: input.chargePoisha },
+          after: {
+            code: input.code,
+            chargePoisha: input.chargePoisha,
+            defaultCourierId: input.defaultCourierId ?? null,
+            ...(brandDefaultCleared ? { brandDefaultCourierCleared: brandDefault } : {}),
+          },
           request,
         });
         return { id, code: input.code };
