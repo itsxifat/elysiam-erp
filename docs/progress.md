@@ -4224,6 +4224,12 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   new D-952 test PASS; its two older delivery tests FAIL identically on the unchanged code (their
   helper ships without the label and pack the order of work has required since 2026-11-01):
   follow-up below. Broad suites not run (minimal-tests rule).
+- **Ledger audit:** 0 critical. Its warning 1 fixed (a zone saved naming another courier forgets
+  the brand default, so the screen and new orders agree; tested). Deployed `8d511e90` to both
+  brands 2026-11-08: API and worker healthy, both consoles 200; no order on either brand had no
+  courier before the deploy.
+- **Follow-up:** a Confirm-path test (policy on_confirm, courier-less order, default with an
+  account; and an own-rider default) once the stale labels/handover suites are repaired.
 - **Follow-up:** rework `default-courier.db.test.ts`'s `shippedWithNoCourier` to book, print the
   label and pack before shipping (D-928), so its two delivery tests run again.
 - **New dependencies:** none.
