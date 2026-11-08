@@ -113,8 +113,11 @@ export interface AdjustmentRow {
   readonly countSessionId: string | null;
   readonly stockValuePoisha?: string | undefined;
   readonly reason: string;
+  /** `opening_correction` posts to opening equity, not profit (D-955). */
+  readonly cause: 'shrinkage' | 'opening_correction';
   readonly approvalId: string | null;
   readonly journalId: string | null;
+  readonly correctionJournalId: string | null;
   readonly businessDate: string;
   readonly createdBy: string;
 }
@@ -198,9 +201,15 @@ export function requestAdjustment(input: {
   readonly locationId: string;
   readonly direction: 'loss' | 'gain';
   readonly reason: string;
+  readonly cause?: 'shrinkage' | 'opening_correction';
   readonly lines: readonly { skuId: string; qty: number }[];
 }): Promise<AdjustmentRow> {
   return api.post('/v1/inventory/adjustments', input);
+}
+
+/** A posted write-off that only corrected the opening count, moved off profit (D-955). */
+export function markAdjustmentOpeningCorrection(id: string): Promise<AdjustmentRow> {
+  return api.post(`/v1/inventory/adjustments/${id}/opening-correction`, {});
 }
 
 export function listTransfers(status?: string): Promise<{ items: TransferRow[] }> {

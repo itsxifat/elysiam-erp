@@ -4319,3 +4319,31 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   `demo.env.bak-20261108-121409`); Site URL saved as `https://demo.elysium-lifestyle.bd`; the
   website recreated. Products answer 200 with no 401; a quote with only a delivery area prices
   Inside Dhaka Tk 80 and Outside Dhaka Tk 130 from Website → Settings.
+
+## 2026-11-08 · fix · a wrong opening count no longer shows as an expense (D-955)
+
+- **Why:** the owner asked why Elysiam showed an expense of about Tk 73,020 after removing stock
+  that had been counted in by mistake. On the live books it is exactly Tk 73,020 of 5600
+  Inventory write-off from nine Adjust → "fewer than recorded" entries (6–8 Nov): Tk 47,820
+  "Count difference" (one note says "Double entry chilo": two identical 44-piece stock in hand
+  entries at 13:52 and 13:54 on 6 Nov) and Tk 25,200 "Damaged". Opening stock posts Dr Inventory
+  / Cr Opening equity, but every Adjust loss posted Dr Inventory write-off, so undoing an
+  opening mistake became a loss on the P&L. The first "Damaged" write-off (6 Nov, Tk 22,000) is
+  the same 7 SKUs and quantities as the double entry, so that shelf's 88 counted pieces are now
+  0 on hand: the owner should check whether those were really damaged.
+- **Built:** an adjustment's `cause` (`shrinkage` | `opening_correction`); the posting rule sends
+  an opening correction to opening equity; the Adjust dialog offers "Opening stock entered
+  wrong" while the opening window is open (and warns on "Count difference"); a loss is capped
+  at what the opening counted in there less earlier corrections; `POST
+/v1/inventory/adjustments/:id/opening-correction` and an Adjustments-page button reverse a
+  posted write-off's journal and re-post it to opening equity, once; migration 0171 (cause,
+  `correction_journal_id`, freeze rules, the window).
+- **Verification:** domain posting tests (18, worked examples and fast-check for both
+  directions) PASS; server, console typecheck and lint PASS. New e2e cases in
+  `stock-in-hand.e2e.test.ts` (opening correction posts no expense; the cap; a write-off moved
+  to opening equity by reversal; 403 for the warehouse; once only; the database refuses undoing
+  it) written; see the deploy note for whether they ran (Docker Desktop had stopped).
+- **New dependencies:** none.
+- **Not done on the live books:** the existing write-offs were not moved. The owner (or anyone
+  with approve StockAdjustment) presses "Was an opening count mistake" on each row in Stock →
+  Adjustments that was a counting error; the six "Count difference" rows total Tk 47,820.

@@ -622,8 +622,19 @@ export const adjustments = inventory.table(
     /** Σ qty × WAC at the moment the request was raised. */
     valuePoisha: bigint('value_poisha', { mode: 'bigint' }).notNull(),
     reason: text('reason').notNull(),
+    /**
+     * `shrinkage` (a real loss or find, through profit) or `opening_correction` (the stock
+     * in hand entered at the start was wrong; to opening equity, only while the opening
+     * stock window is open). D-955; migration 0171 holds both rules.
+     */
+    cause: text('cause').notNull().default('shrinkage'),
     approvalRequestId: uuid('approval_request_id'),
     journalId: uuid('journal_id'),
+    /**
+     * Set when a posted write-off was found to be an opening correction: `journal_id` (the
+     * write-off) was reversed and this journal posted it to opening equity (D-955).
+     */
+    correctionJournalId: uuid('correction_journal_id'),
     businessDate: date('business_date').notNull(),
     createdBy: text('created_by').notNull(),
     ...timestamps,
@@ -671,6 +682,16 @@ export const adjustments = inventory.table(
       columns: [table.orgId, table.journalId],
       foreignColumns: [journals.orgId, journals.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'adjustments_org_id_correction_journal_id_fk',
+      columns: [table.orgId, table.correctionJournalId],
+      foreignColumns: [journals.orgId, journals.id],
+    }).onDelete('restrict'),
+    check('adjustments_cause', sql`${table.cause} in ('shrinkage', 'opening_correction')`),
+    check(
+      'adjustments_correction_shape',
+      sql`${table.correctionJournalId} is null or (${table.status} = 'posted' and ${table.cause} = 'opening_correction')`,
+    ),
     check('adjustments_value_not_negative', sql`${table.valuePoisha} >= 0`),
     check('adjustments_reason_length', sql`length(${table.reason}) between 1 and 500`),
     /*

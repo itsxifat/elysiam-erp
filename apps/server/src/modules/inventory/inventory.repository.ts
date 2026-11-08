@@ -1046,16 +1046,18 @@ export interface AdjustmentRow extends Record<string, unknown> {
   readonly count_session_id: string | null;
   readonly value_poisha: string;
   readonly reason: string;
+  readonly cause: 'shrinkage' | 'opening_correction';
   readonly approval_request_id: string | null;
   readonly journal_id: string | null;
+  readonly correction_journal_id: string | null;
   readonly business_date: string;
   readonly created_by: string;
 }
 
 const ADJUSTMENT_COLUMNS = sql`a.id, a.location_id, a.branch_id, a.direction::text as direction,
   a.status::text as status, a.count_session_id, a.value_poisha::text as value_poisha,
-  a.reason, a.approval_request_id, a.journal_id, a.business_date::text as business_date,
-  a.created_by`;
+  a.reason, a.cause, a.approval_request_id, a.journal_id, a.correction_journal_id,
+  a.business_date::text as business_date, a.created_by`;
 
 export async function insertAdjustment(
   tx: Tx,
@@ -1067,6 +1069,7 @@ export async function insertAdjustment(
     readonly countSessionId: string | null;
     readonly valuePoisha: bigint;
     readonly reason: string;
+    readonly cause: 'shrinkage' | 'opening_correction';
     readonly approvalRequestId: string;
     readonly businessDate: string;
     readonly createdBy: string;
@@ -1075,12 +1078,12 @@ export async function insertAdjustment(
   const rows = await tx.execute<{ id: string }>(sql`
     insert into inventory.adjustments
       (org_id, location_id, branch_id, direction, status, count_session_id, value_poisha,
-       reason, approval_request_id, business_date, created_by)
+       reason, cause, approval_request_id, business_date, created_by)
     values (${input.orgId}, ${input.locationId}, ${input.branchId}::uuid,
             ${input.direction}::inventory.adjustment_direction, 'pending_approval',
             ${input.countSessionId}::uuid, ${input.valuePoisha.toString()},
-            ${input.reason}, ${input.approvalRequestId}, ${input.businessDate}::date,
-            ${input.createdBy})
+            ${input.reason}, ${input.cause}, ${input.approvalRequestId},
+            ${input.businessDate}::date, ${input.createdBy})
     returning id
   `);
   const id = rows[0]?.id;
@@ -1161,6 +1164,60 @@ export async function settleAdjustment(
         updated_at = now()
     where org_id = ${orgId} and id = ${id} and status = 'pending_approval'
   `);
+}
+
+/**
+ * A posted write-off or gain found to be an opening correction (D-955): its journal has been
+ * reversed and `correctionJournalId` posts it to opening equity. Migration 0171 allows this
+ * one change, once, while the opening stock window is open.
+ */
+export async function markOpeningCorrection(
+  tx: Tx,
+  orgId: string,
+  id: string,
+  correctionJournalId: string,
+): Promise<void> {
+  await tx.execute(sql`
+    update inventory.adjustments
+    set cause = 'opening_correction', correction_journal_id = ${correctionJournalId}::uuid,
+        updated_at = now()
+    where org_id = ${orgId} and id = ${id} and status = 'posted' and cause = 'shrinkage'
+  `);
+}
+
+/**
+ * How many pieces of a SKU an opening correction may still take out of a location (D-955):
+ * what the opening counted in there (stock in hand and M14a's opening, less reversed stock
+ * in hand), less what opening corrections have already taken out (posted or waiting), plus
+ * what they have put back. An opening correction cannot remove pieces the opening never
+ * counted in: those were sold, lost or moved, and that is a write-off.
+ */
+export async function openingCorrectableQty(
+  tx: Tx,
+  orgId: string,
+  locationId: string,
+  skuId: string,
+): Promise<number> {
+  const rows = await tx.execute<{ qty: string }>(sql`
+    select (
+      coalesce((
+        select sum(m.qty_delta)
+        from inventory.stock_movements m
+        where m.org_id = ${orgId} and m.location_id = ${locationId} and m.sku_id = ${skuId}
+          and (m.kind = 'opening_balance'
+               or (m.kind = 'adjustment_loss' and m.ref_type = 'stock_in_hand'))
+      ), 0)
+      + coalesce((
+        select sum(case when a.direction = 'loss' then -l.qty else l.qty end)
+        from inventory.adjustments a
+        join inventory.adjustment_lines l on l.org_id = a.org_id and l.adjustment_id = a.id
+        where a.org_id = ${orgId} and a.location_id = ${locationId} and l.sku_id = ${skuId}
+          and a.cause = 'opening_correction'
+          and (a.status = 'posted' or (a.status = 'pending_approval' and a.direction = 'loss'))
+      ), 0)
+    )::text as qty
+  `);
+  return Number(rows[0]?.qty ?? '0');
 }
 
 export async function listAdjustments(

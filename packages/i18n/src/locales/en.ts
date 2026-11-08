@@ -479,6 +479,11 @@ const en = {
   'stock.status.posted': 'Posted',
   'stock.status.rejected': 'Rejected',
   'stock.awaitingApproval': 'Sent for approval. Nothing moves until a checker approves it.',
+  'stock.cause.opening': 'Opening count correction',
+  'stock.markOpening': 'Was an opening count mistake',
+  'stock.markOpeningConfirm': 'Move it out of profit',
+  'stock.markOpeningHint':
+    'The stock stays as it is. The write-off is reversed and the same value comes out of opening stock instead, so it no longer shows as an expense. This cannot be undone.',
 
   'stock.transfers': 'Transfers',
   'stock.transfersHint': 'Two steps: dispatch puts the stock in transit, receipt lands it.',
@@ -657,6 +662,11 @@ const en = {
   'cs.reason.lost': 'Lost or missing',
   'cs.reason.found': 'Found',
   'cs.reason.count': 'Count difference',
+  'cs.reason.opening': 'Opening stock entered wrong',
+  'cs.adjust.openingHint':
+    'Not a loss or a gain: it corrects the stock in hand entered at the start, so it does not touch profit. Only for pieces the opening count put here.',
+  'cs.adjust.countHint':
+    'Was the opening stock entered wrong (counted twice, a wrong number)? Choose "Opening stock entered wrong" instead, or it is booked as a loss.',
   'cs.transfer.action': 'Transfer',
   'cs.transfer.title': 'Transfer stock',
   'cs.transfer.help':

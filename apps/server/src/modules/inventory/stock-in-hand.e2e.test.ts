@@ -964,6 +964,136 @@ describe('reversing a posted entry (D-602)', () => {
   });
 });
 
+describe('correcting the opening count (D-955)', () => {
+  let made: Product;
+
+  beforeAll(async () => {
+    made = await product('Counted twice', 'counted-twice-oc');
+  });
+
+  async function raiseAndApprove(payload: Record<string, unknown>) {
+    const raised = await call<{ id: string; status: string; approvalId: string }>(
+      warehouse,
+      'POST',
+      '/v1/inventory/adjustments',
+      { locationId: mainWarehouse, ...payload },
+      201,
+    );
+    if (raised.status === 'pending_approval') {
+      await call(
+        admin,
+        'POST',
+        `/v1/approvals/${raised.approvalId}/decide`,
+        {
+          decision: 'approved',
+        },
+        201,
+      );
+    }
+    return raised.id;
+  }
+
+  it('takes over-counted opening stock out of opening equity, never through profit', async () => {
+    const sku = made.skus[0]?.id;
+    // A shelf of 4 entered twice: 8 at Tk 500 counted in, 4 really there.
+    await enterStock([{ skuId: sku, qty: 4, unitCostPoisha: '50000' }]);
+    await enterStock([{ skuId: sku, qty: 4, unitCostPoisha: '50000' }]);
+
+    const id = await raiseAndApprove({
+      direction: 'loss',
+      cause: 'opening_correction',
+      reason: 'Opening stock entered wrong',
+      lines: [{ skuId: sku, qty: 4 }],
+    });
+    // 4 × 50,000 = 200,000, Dr Opening equity / Cr Inventory: no expense.
+    expect(await journalOf(`stock_adjustment:${id}:opening_corrected`)).toEqual([
+      expect.objectContaining({ subtype: 'opening_equity', debit: '200000', credit: '0' }),
+      expect.objectContaining({ subtype: 'inventory', debit: '0', credit: '200000' }),
+    ]);
+    expect(await journalOf(`stock_adjustment:${id}:written_off`)).toEqual([]);
+    expect((await lookup(made.skus[0]?.barcode)).stock.onHand).toBe(4);
+
+    // The opening put 8 here and 4 are already corrected: 5 more is a real loss, refused.
+    const refused = await warehouse.client.request('POST', '/v1/inventory/adjustments', {
+      body: {
+        locationId: mainWarehouse,
+        direction: 'loss',
+        cause: 'opening_correction',
+        reason: 'Opening stock entered wrong',
+        lines: [{ skuId: sku, qty: 5 }],
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(body<{ code: string }>(refused).code).toBe('STOCK_INSUFFICIENT');
+  }, 60_000);
+
+  it('moves a write-off that was really an opening mistake off profit: reversed, then re-posted', async () => {
+    const sku = made.skus[1]?.id;
+    await enterStock([{ skuId: sku, qty: 6, unitCostPoisha: '37000' }]);
+    const id = await raiseAndApprove({
+      direction: 'loss',
+      reason: 'Count difference',
+      lines: [{ skuId: sku, qty: 5 }],
+    });
+    const writeOff = await journalOf(`stock_adjustment:${id}:written_off`);
+    expect(writeOff[0]).toMatchObject({ subtype: 'inventory_writeoff', debit: '185000' });
+    const before = await booksDifference();
+
+    // Only whoever may approve stock adjustments decides it.
+    const denied = await warehouse.client.request(
+      'POST',
+      `/v1/inventory/adjustments/${id}/opening-correction`,
+      { body: {} },
+    );
+    expect(denied.statusCode).toBe(403);
+
+    const moved = await call<{ cause: string; correctionJournalId: string | null }>(
+      admin,
+      'POST',
+      `/v1/inventory/adjustments/${id}/opening-correction`,
+      {},
+      201,
+    );
+    expect(moved.cause).toBe('opening_correction');
+    expect(moved.correctionJournalId).not.toBeNull();
+
+    // The write-off is reversed (never edited), and the value posted to opening equity.
+    const reversal = await journalOf(`journal:${writeOff[0]?.id ?? ''}:reversed`);
+    expect(reversal).toEqual([
+      expect.objectContaining({ subtype: 'inventory_writeoff', debit: '0', credit: '185000' }),
+      expect.objectContaining({ subtype: 'inventory', debit: '185000', credit: '0' }),
+    ]);
+    expect(await journalOf(`stock_adjustment:${id}:opening_corrected`)).toEqual([
+      expect.objectContaining({ subtype: 'opening_equity', debit: '185000', credit: '0' }),
+      expect.objectContaining({ subtype: 'inventory', debit: '0', credit: '185000' }),
+    ]);
+    // Stock and the books still agree, and nothing moved on the shelf.
+    expect(await booksDifference()).toBe(before);
+    expect((await lookup(made.skus[1]?.barcode)).stock.onHand).toBe(1);
+
+    // Once only: a second press changes nothing.
+    const again = await call<{ correctionJournalId: string | null }>(
+      admin,
+      'POST',
+      `/v1/inventory/adjustments/${id}/opening-correction`,
+      {},
+      201,
+    );
+    expect(again.correctionJournalId).toBe(moved.correctionJournalId);
+
+    // And the database refuses changing it behind the service's back.
+    const refusal = await databaseRefusal(
+      withOrg({ orgId: ORG_A, userId: 'usr_test' }, (tx) =>
+        tx.execute(sql`
+          update inventory.adjustments set cause = 'shrinkage', correction_journal_id = null
+          where org_id = ${ORG_A} and id = ${id}
+        `),
+      ),
+    );
+    expect(refusal).toContain('STOCK_ADJUSTMENT_FROZEN');
+  }, 60_000);
+});
+
 describe('counting by scanning (D-606)', () => {
   it('counts one piece per scan, once per scan key, only for SKUs on the count', async () => {
     const made = await product('Scan count', 'scan-count-sih');

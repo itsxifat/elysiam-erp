@@ -1,12 +1,14 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { withOrg, type Tx } from '@elysium/db';
 import {
+  adjustmentCounterSubtype,
   businessDate,
   poisha,
   stockAdjustmentDraft,
   stockValuePoisha,
   type AccountSubtype,
   type Poisha,
+  type StockAdjustmentCause,
 } from '@elysium/domain';
 import { sql } from 'drizzle-orm';
 
@@ -20,6 +22,7 @@ import { MovementsService } from './movements.service.js';
 import * as repo from './inventory.repository.js';
 import { mapStockErrors, StockError } from './inventory.errors.js';
 import type { RequestAdjustmentInput } from './inventory.schemas.js';
+import { lockWindow } from './stock-in-hand.repository.js';
 
 /**
  * Stock write-offs and gains: raised by one person, carried out by another
@@ -60,8 +63,12 @@ export interface AdjustmentView {
   /** Integer poisha as a decimal string; stripped for roles without `read:cost`. */
   readonly stockValuePoisha: string;
   readonly reason: string;
+  /** `shrinkage` (through profit) or `opening_correction` (to opening equity), D-955. */
+  readonly cause: StockAdjustmentCause;
   readonly approvalId: string | null;
   readonly journalId: string | null;
+  /** The opening-equity journal of a write-off later found to be an opening correction. */
+  readonly correctionJournalId: string | null;
   readonly businessDate: string;
   readonly createdBy: string;
 }
@@ -94,8 +101,9 @@ export class AdjustmentsService implements OnModuleInit {
   async request(
     context: ActiveContext,
     request: AuditableRequest,
-    input: RequestAdjustmentInput,
+    input: Omit<RequestAdjustmentInput, 'cause'> & { readonly cause?: StockAdjustmentCause },
   ): Promise<AdjustmentView> {
+    const cause = input.cause ?? 'shrinkage';
     return mapStockErrors(async () => {
       const prepared = await withOrg(
         { orgId: context.orgId, userId: context.userId },
@@ -146,6 +154,21 @@ export class AdjustmentsService implements OnModuleInit {
             }
           }
 
+          if (cause === 'opening_correction') {
+            await this.assertOpeningWindowOpen(tx, context.orgId);
+            if (input.direction === 'loss') {
+              for (const line of lines) {
+                await this.assertOpeningCorrectable(
+                  tx,
+                  context.orgId,
+                  input.locationId,
+                  line.skuId,
+                  line.qty,
+                );
+              }
+            }
+          }
+
           return { location, lines, valuePoisha };
         },
       );
@@ -181,6 +204,7 @@ export class AdjustmentsService implements OnModuleInit {
           countSessionId: input.countSessionId ?? null,
           valuePoisha: prepared.valuePoisha,
           reason: input.reason,
+          cause,
           approvalRequestId: raised.id,
           businessDate: businessDate(new Date()),
           createdBy: context.userId,
@@ -207,6 +231,7 @@ export class AdjustmentsService implements OnModuleInit {
           after: {
             locationId: input.locationId,
             direction: input.direction,
+            cause,
             stockValuePoisha: prepared.valuePoisha.toString(),
             approvalId: raised.id,
             reason: input.reason,
@@ -267,6 +292,11 @@ export class AdjustmentsService implements OnModuleInit {
         if (lines.length === 0) {
           throw new StockError('STOCK_MOVEMENT_INVALID', 'That adjustment has no lines.');
         }
+        // Approved after the window closed: the opening figures are final by then, so this
+        // is no longer a correction to them (D-955). Migration 0171 refuses it as well.
+        if (adjustment.cause === 'opening_correction') {
+          await this.assertOpeningWindowOpen(tx, context.orgId);
+        }
 
         for (const line of lines) {
           await this.movements.apply(
@@ -323,8 +353,7 @@ export class AdjustmentsService implements OnModuleInit {
     adjustment: repo.AdjustmentRow,
     valuePoisha: Poisha,
   ): Promise<string> {
-    const counterSubtype: AccountSubtype =
-      direction === 'loss' ? 'inventory_writeoff' : 'inventory_adjustment_gain';
+    const counterSubtype: AccountSubtype = adjustmentCounterSubtype(direction, adjustment.cause);
     const [inventory, counter] = await Promise.all([
       this.account(tx, context.orgId, 'inventory'),
       this.account(tx, context.orgId, counterSubtype),
@@ -340,6 +369,7 @@ export class AdjustmentsService implements OnModuleInit {
         // by the period lock anyway (D-093).
         occurredAt: new Date(),
         direction,
+        cause: adjustment.cause,
         inventory,
         counterAccount: counter,
         valuePoisha,
@@ -348,6 +378,118 @@ export class AdjustmentsService implements OnModuleInit {
       }),
     );
     return posted.journalId;
+  }
+
+  /**
+   * A posted write-off or gain that was really a correction to the opening count (D-955).
+   *
+   * The pieces already moved; only the books were wrong. The write-off's journal is reversed
+   * (invariant 2: never edited) and the same value is posted again to opening equity under
+   * `stock_adjustment:<id>:opening_corrected`, in one transaction, while the opening stock
+   * window is open. A loss can only be reclassified for pieces the opening counted in at that
+   * location: anything beyond that was a real loss. Decided by whoever may approve stock
+   * adjustments (D-954: the permission is the rule).
+   */
+  async markOpeningCorrection(
+    context: ActiveContext,
+    request: AuditableRequest,
+    adjustmentId: string,
+  ): Promise<AdjustmentView> {
+    return mapStockErrors(() =>
+      withOrg({ orgId: context.orgId, userId: context.userId }, async (tx) => {
+        const adjustment = await repo.adjustmentById(tx, context.orgId, adjustmentId, true);
+        if (adjustment === undefined) {
+          throw new StockError('STOCK_NOT_FOUND', 'No such adjustment.');
+        }
+        assertInScope(request, { branchId: adjustment.branch_id });
+        if (adjustment.cause === 'opening_correction') return this.view(adjustment);
+        if (adjustment.status !== 'posted' || adjustment.journal_id === null) {
+          throw new StockError(
+            'STOCK_ADJUSTMENT_FROZEN',
+            'Only a posted adjustment can be moved to the opening count.',
+          );
+        }
+        await this.assertOpeningWindowOpen(tx, context.orgId);
+
+        const direction = adjustment.direction as 'loss' | 'gain';
+        if (direction === 'loss') {
+          for (const line of await repo.adjustmentLines(tx, context.orgId, adjustment.id)) {
+            await this.assertOpeningCorrectable(
+              tx,
+              context.orgId,
+              adjustment.location_id,
+              line.sku_id,
+              line.qty,
+            );
+          }
+        }
+
+        await this.ledger.reverse(
+          tx,
+          { orgId: context.orgId, userId: context.userId },
+          adjustment.journal_id,
+          direction === 'loss'
+            ? 'Opening count correction, not a loss'
+            : 'Opening count correction, not a gain',
+        );
+        const journalId = await this.post(
+          tx,
+          context,
+          direction,
+          { ...adjustment, cause: 'opening_correction' },
+          poisha(BigInt(adjustment.value_poisha)),
+        );
+        await repo.markOpeningCorrection(tx, context.orgId, adjustment.id, journalId);
+
+        await this.audit.record(tx, {
+          orgId: context.orgId,
+          actorUserId: context.userId,
+          operation: 'update',
+          action: `inventory.adjustment.opening_correction:${direction}`,
+          entityType: 'StockAdjustment',
+          entityId: adjustment.id,
+          before: { cause: 'shrinkage', journalId: adjustment.journal_id },
+          after: {
+            cause: 'opening_correction',
+            journalId: adjustment.journal_id,
+            correctionJournalId: journalId,
+            stockValuePoisha: adjustment.value_poisha,
+          },
+          requestId: context.requestId,
+          request,
+        });
+
+        const row = await repo.adjustmentById(tx, context.orgId, adjustment.id);
+        if (row === undefined) throw new StockError('STOCK_NOT_FOUND', 'No such adjustment.');
+        return this.view(row);
+      }),
+    );
+  }
+
+  private async assertOpeningWindowOpen(tx: Tx, orgId: string): Promise<void> {
+    const window = await lockWindow(tx, orgId, 'share');
+    if (window.status === 'closed') {
+      throw new StockError(
+        'OPENING_STOCK_CLOSED',
+        'The opening stock is closed, so its count can no longer be corrected. A difference now is a write-off.',
+      );
+    }
+  }
+
+  private async assertOpeningCorrectable(
+    tx: Tx,
+    orgId: string,
+    locationId: string,
+    skuId: string,
+    qty: number,
+  ): Promise<void> {
+    const left = await repo.openingCorrectableQty(tx, orgId, locationId, skuId);
+    if (qty > left) {
+      throw new StockError(
+        'STOCK_INSUFFICIENT',
+        `The opening count put only ${String(Math.max(left, 0))} of that SKU at this location that is not corrected already. Take the rest out as a write-off.`,
+      );
+    }
   }
 
   private async account(
@@ -379,8 +521,10 @@ export class AdjustmentsService implements OnModuleInit {
       // have walked straight out to a warehouse packer.
       stockValuePoisha: row.value_poisha,
       reason: row.reason,
+      cause: row.cause,
       approvalId: row.approval_request_id,
       journalId: row.journal_id,
+      correctionJournalId: row.correction_journal_id,
       businessDate: row.business_date,
       createdBy: row.created_by,
     };

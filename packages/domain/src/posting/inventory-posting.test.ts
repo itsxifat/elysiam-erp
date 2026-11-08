@@ -331,3 +331,61 @@ describe('stock write-off and gain', () => {
     ).toThrow(LedgerError);
   });
 });
+
+describe('opening count correction (D-955)', () => {
+  const EQUITY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const equity = { accountId: EQUITY, subtype: 'opening_equity', branchId: null } as const;
+
+  it('a double-entered opening sheet comes out of opening equity, not an expense', () => {
+    // 44 pieces at Tk 500 entered twice: Tk 22,000 back out of opening equity.
+    const draft = stockAdjustmentDraft(
+      adjustment({
+        cause: 'opening_correction',
+        counterAccount: equity,
+        valuePoisha: poisha(2_200_000),
+      }),
+    );
+    validateJournalDraft(draft);
+    expect(draft.idempotencyKey).toBe(`stock_adjustment:${SOURCE}:opening_corrected`);
+    expect(draft.lines[0]).toMatchObject({ accountId: EQUITY, debitPoisha: 2_200_000n });
+    expect(draft.lines[1]).toMatchObject({ accountId: INVENTORY, creditPoisha: 2_200_000n });
+  });
+
+  it('pieces missed in the opening count go into opening equity, not income', () => {
+    const draft = stockAdjustmentDraft(
+      adjustment({ cause: 'opening_correction', direction: 'gain', counterAccount: equity }),
+    );
+    validateJournalDraft(draft);
+    expect(draft.lines[0]).toMatchObject({ accountId: INVENTORY, debitPoisha: 159_000n });
+    expect(draft.lines[1]).toMatchObject({ accountId: EQUITY, creditPoisha: 159_000n });
+  });
+
+  it('refuses an opening correction posted to the write-off account', () => {
+    expect(() => stockAdjustmentDraft(adjustment({ cause: 'opening_correction' }))).toThrow(
+      LedgerError,
+    );
+  });
+
+  it('balances for random values in both directions', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 1n, max: 9n * 10n ** 14n }),
+        fc.constantFrom('loss', 'gain' as const),
+        (value, direction) => {
+          const draft = stockAdjustmentDraft(
+            adjustment({
+              cause: 'opening_correction',
+              direction,
+              valuePoisha: poisha(value),
+              counterAccount: equity,
+            }),
+          );
+          validateJournalDraft(draft);
+          expect(debits(draft)).toBe(credits(draft));
+          expect(debits(draft)).toBe(value);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+});

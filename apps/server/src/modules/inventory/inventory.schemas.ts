@@ -98,6 +98,11 @@ export const requestAdjustmentSchema = z
     locationId: stockIdSchema,
     direction: z.enum(['loss', 'gain']),
     reason: z.string().trim().min(1, 'An adjustment needs a reason.').max(500),
+    /**
+     * `opening_correction` when the stock in hand entered at the start was wrong (D-955): it
+     * posts to opening equity, not to profit, and only while the opening stock window is open.
+     */
+    cause: z.enum(['shrinkage', 'opening_correction']).default('shrinkage'),
     countSessionId: stockIdSchema.optional(),
     lines: z
       .array(z.object({ skuId: stockIdSchema, qty: qtySchema }).strict())

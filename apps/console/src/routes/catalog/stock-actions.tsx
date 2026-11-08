@@ -639,7 +639,7 @@ export function ReceiveStockDialog({
 
 // --- adjust --------------------------------------------------------------------
 
-const REASONS = ['damaged', 'lost', 'found', 'count'] as const;
+const REASONS = ['damaged', 'lost', 'found', 'count', 'opening'] as const;
 
 export function AdjustStockDialog({
   open,
@@ -674,6 +674,17 @@ export function AdjustStockDialog({
   const chosenLocation =
     locationId !== '' ? locationId : (choosable.find((l) => l.kind === 'warehouse')?.id ?? '');
 
+  // While the opening stock is still open, a wrong opening count is corrected against the
+  // opening, not booked as a loss or a gain (D-955).
+  const openingWindow = useQuery({
+    queryKey: ['stock', 'opening-window'],
+    queryFn: openingStockWindow,
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const openingOpen = openingWindow.data?.open === true;
+  const opening = reasonKind === 'opening' && openingOpen;
+
   const available = (skuId: string) =>
     stock.find((row) => row.skuId === skuId && row.locationId === chosenLocation)?.available ?? 0;
 
@@ -689,6 +700,7 @@ export function AdjustStockDialog({
         locationId: chosenLocation,
         direction,
         reason: reasonText,
+        cause: opening ? 'opening_correction' : 'shrinkage',
         lines: lines ?? [],
       }),
     onSuccess: (row) => {
@@ -760,8 +772,12 @@ export function AdjustStockDialog({
             {t('cs.adjust.reason')}
           </legend>
           <div className="flex flex-wrap gap-1.5">
-            {REASONS.filter((reason) =>
-              direction === 'loss' ? reason !== 'found' : reason === 'found' || reason === 'count',
+            {REASONS.filter(
+              (reason) =>
+                (reason !== 'opening' || openingOpen) &&
+                (direction === 'loss'
+                  ? reason !== 'found'
+                  : reason === 'found' || reason === 'count' || reason === 'opening'),
             ).map((reason) => (
               <Button
                 key={reason}
@@ -775,6 +791,12 @@ export function AdjustStockDialog({
               </Button>
             ))}
           </div>
+          {opening ? (
+            <p className="text-xs text-muted-foreground">{t('cs.adjust.openingHint')}</p>
+          ) : null}
+          {reasonKind === 'count' && openingOpen ? (
+            <p className="text-xs text-muted-foreground">{t('cs.adjust.countHint')}</p>
+          ) : null}
           <label className="sr-only" htmlFor="adjust-note">
             {t('cs.adjust.note')}
           </label>

@@ -118,6 +118,8 @@ export const ROUTE_MATRIX_MANIFEST: readonly string[] = [
   'PUT /v1/inventory/reorder-levels',
   'GET /v1/inventory/adjustments',
   'POST /v1/inventory/adjustments',
+  // D-955: a posted write-off found to be an opening count correction.
+  'POST /v1/inventory/adjustments/:id/opening-correction',
   'GET /v1/inventory/transfers',
   'POST /v1/inventory/transfers',
   'POST /v1/inventory/transfers/:id/receive',

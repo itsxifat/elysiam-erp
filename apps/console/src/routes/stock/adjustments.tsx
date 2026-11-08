@@ -20,6 +20,8 @@ import {
   listLocations,
   listReconciliations,
   listStock,
+  markAdjustmentOpeningCorrection,
+  openingStockWindow,
   requestAdjustment,
   type AdjustmentRow,
 } from './api.js';
@@ -74,6 +76,9 @@ export function StockAdjustmentsPage() {
 
   const mayRead = ability.can('read', 'StockAdjustment');
   const mayRequest = ability.can('request', 'StockAdjustment');
+  const mayApprove = ability.can('approve', 'StockAdjustment');
+  // The row whose "was an opening count mistake" is waiting for its second click.
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const [locationId, setLocationId] = useState('');
   const [direction, setDirection] = useState<'loss' | 'gain'>('loss');
@@ -106,6 +111,23 @@ export function StockAdjustmentsPage() {
     queryKey: ['stock', 'adjustments'],
     queryFn: () => listAdjustments(),
     enabled: mayRead,
+  });
+
+  // A write-off can be moved to the opening count only while the opening stock is open (D-955).
+  const openingWindow = useQuery({
+    queryKey: ['stock', 'opening-window'],
+    queryFn: openingStockWindow,
+    enabled: mayApprove,
+    staleTime: 60_000,
+  });
+  const mayCorrect = mayApprove && openingWindow.data?.open === true;
+
+  const markOpening = useMutation({
+    mutationFn: (id: string) => markAdjustmentOpeningCorrection(id),
+    onSuccess: () => {
+      setConfirming(null);
+      void queryClient.invalidateQueries({ queryKey: ['stock'] });
+    },
   });
 
   const reconciliations = useQuery({
@@ -310,6 +332,11 @@ export function StockAdjustmentsPage() {
                       <th scope="col" className={TH}>
                         {st('stock.colStatus')}
                       </th>
+                      {mayCorrect ? (
+                        <th scope="col" className={TH}>
+                          <span className="sr-only">{st('stock.markOpening')}</span>
+                        </th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -321,7 +348,15 @@ export function StockAdjustmentsPage() {
                         <td className={TD}>
                           {st(`stock.direction.${row.direction}` as StockMessageKey)}
                         </td>
-                        <td className={`${TD} whitespace-normal`}>{row.reason}</td>
+                        <td className={`${TD} whitespace-normal`}>
+                          {row.reason}
+                          {row.cause === 'opening_correction' ? (
+                            <>
+                              {' '}
+                              <StatusBadge tone="neutral">{st('stock.cause.opening')}</StatusBadge>
+                            </>
+                          ) : null}
+                        </td>
                         <td className={TD_NUM}>
                           {row.stockValuePoisha === undefined ? (
                             '—'
@@ -334,6 +369,52 @@ export function StockAdjustmentsPage() {
                             {st(`stock.status.${row.status}` as StockMessageKey)}
                           </StatusBadge>
                         </td>
+                        {mayCorrect ? (
+                          <td className={`${TD} whitespace-normal`}>
+                            {row.status !== 'posted' ||
+                            row.cause !== 'shrinkage' ? null : confirming === row.id ? (
+                              <div className="space-y-1.5">
+                                <p className="text-xs text-muted-foreground">
+                                  {st('stock.markOpeningHint')}
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    disabled={markOpening.isPending}
+                                    onClick={() => markOpening.mutate(row.id)}
+                                  >
+                                    {st('stock.markOpeningConfirm')}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setConfirming(null)}
+                                  >
+                                    {t('common.cancel')}
+                                  </Button>
+                                </div>
+                                {markOpening.error !== null ? (
+                                  <p role="alert" className="text-sm text-destructive">
+                                    {markOpening.error instanceof ApiError
+                                      ? markOpening.error.message
+                                      : st('stock.saveFailed')}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  markOpening.reset();
+                                  setConfirming(row.id);
+                                }}
+                              >
+                                {st('stock.markOpening')}
+                              </Button>
+                            )}
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>

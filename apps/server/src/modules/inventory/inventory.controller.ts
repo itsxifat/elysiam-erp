@@ -180,6 +180,21 @@ export class InventoryController {
     );
   }
 
+  /**
+   * A posted write-off or gain that only corrected the opening count (D-955): its journal is
+   * reversed and the value moves to opening equity, while the opening stock window is open.
+   * Whoever may approve stock adjustments decides it.
+   */
+  @RequireAbility('approve', 'StockAdjustment')
+  @Post('adjustments/:id/opening-correction')
+  async markOpeningCorrection(@Req() request: FastifyRequest, @Param('id') id: string) {
+    return this.adjustments.markOpeningCorrection(
+      requireContext(request),
+      auditable(request),
+      parse(stockIdSchema, id),
+    );
+  }
+
   // --- transfers --------------------------------------------------------------
 
   @RequireAbility('read', 'Stock')

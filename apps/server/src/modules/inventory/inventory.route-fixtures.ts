@@ -204,6 +204,10 @@ export const INVENTORY_ROUTE_FIXTURES: Readonly<Record<string, () => Promise<Cal
       lines: [{ skuId: state().skuId, qty: 1 }],
     },
   }),
+  // No such adjustment: an admitted role reaches the handler and is told so (404).
+  'POST /v1/inventory/adjustments/:id/opening-correction': () => ({
+    url: '/v1/inventory/adjustments/00000000-0000-4000-8000-000000000960/opening-correction',
+  }),
   'GET /v1/inventory/transfers': () => ({ url: '/v1/inventory/transfers' }),
   'POST /v1/inventory/transfers': () => ({
     url: '/v1/inventory/transfers',
