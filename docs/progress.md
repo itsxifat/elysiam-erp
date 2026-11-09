@@ -4424,4 +4424,7 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   still names the old addresses as fallback defaults (`next.config.mjs`, `app/layout.js`,
   `middleware.js`, `Dockerfile`, `deploy/compose.demo.yml`, `.env.example`, README); the env
   file and build arguments override them on the server.
+- **Finished 2026-11-10:** the owner deleted the two old DNS records; `retired-elysium-lifestyle.conf`
+  removed, nginx reloaded. No live nginx file names the old addresses, and they no longer
+  connect; `erp.elysiam.bd`, `elysiam.bd` and `erp.beownz.com` 200.
 - **New dependencies:** none. **Migration:** none.
