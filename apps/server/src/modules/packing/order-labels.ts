@@ -1,4 +1,4 @@
-import type { OrderLabelSize } from '@elysium/contracts';
+import { DOCUMENT_CREDIT, type OrderLabelSize } from '@elysium/contracts';
 import { orderScanCode } from '@elysium/domain/packing';
 import { encode } from 'uqr';
 
@@ -14,7 +14,7 @@ import { DOCUMENT_FONT_STACK, fontFaceCss } from '../files/pdf/fonts.js';
  * The QR code is what the packing scanner reads (D-554): the scanner resolves a tracking code,
  * an order number or a consignment number to the packing list. Ink is pure black: a thermal
  * head prints grey as patchy ash. English, in Inter, with money as `Tk 1,250.00` (M43: D-750,
- * D-751, D-753).
+ * D-751, D-753). Every label ends with the developer's credit, one small centred line (D-956).
  */
 
 /** Exact paper sizes in millimetres, and whether the label is a small thermal one. */
@@ -144,10 +144,14 @@ function labelHtml(label: OrderLabel, options: LabelOptions): string {
       <div class="phone">${esc(label.recipientPhone)}</div>
       <div class="address">${esc(label.address)}</div>
     </div>`;
+  const credit = `<div class="credit">${esc(DOCUMENT_CREDIT)}</div>`;
   if (paper.compact && options.layout === 'landscape') {
     return `<section class="label landscape">
-      <div class="left">${head}${to}</div>
-      <div class="right">${qr}${cnBlock(label)}${options.showPrices ? priceRows(label) : ''}${options.showCod ? codBlock(label) : ''}</div>
+      <div class="columns">
+        <div class="left">${head}${to}</div>
+        <div class="right">${qr}${cnBlock(label)}${options.showPrices ? priceRows(label) : ''}${options.showCod ? codBlock(label) : ''}</div>
+      </div>
+      ${credit}
     </section>`;
   }
   return `<section class="label">
@@ -156,6 +160,7 @@ function labelHtml(label: OrderLabel, options: LabelOptions): string {
       ${cnBlock(label)}
       ${to}
       <div class="foot">${options.showPrices ? priceRows(label) : ''}${options.showCod ? codBlock(label) : ''}</div>
+      ${credit}
     </section>`;
 }
 
@@ -178,7 +183,9 @@ export function orderLabelsHtml(input: {
       body { margin: 0; color: #000; font-family: ${DOCUMENT_FONT_STACK}; font-size: ${small ? '7pt' : '10pt'}; line-height: 1.25; }
       .label { width: ${String(paper.w)}mm; height: ${String(paper.h)}mm; padding: ${String(paper.pad)}mm; display: flex; flex-direction: column; gap: ${small ? '0.8mm' : '2mm'}; page-break-after: always; break-after: page; overflow: hidden; }
       .label:last-child { page-break-after: auto; break-after: auto; }
-      .landscape { flex-direction: row; }
+      /* The columns fill the label above the credit and grow with their content, so on a label
+         the chosen options overflow, the credit is what gives way (D-956), never the content. */
+      .landscape .columns { flex: 1 0 auto; display: flex; flex-direction: row; }
       .landscape .left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.8mm; }
       .landscape .right { width: 34mm; border-left: 1px solid #000; padding-left: 2mm; display: flex; flex-direction: column; gap: 0.8mm; }
       header { display: flex; justify-content: space-between; gap: 2mm; border-bottom: ${small ? '1px' : '2px'} solid #000; padding-bottom: 1mm; }
@@ -199,6 +206,8 @@ export function orderLabelsHtml(input: {
       .cod { display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #000; margin-top: 1mm; padding-top: 1mm; }
       .amount { font-weight: 700; font-size: ${small ? '13pt' : '18pt'}; font-variant-numeric: tabular-nums; }
       .method { font-size: ${small ? '5.5pt' : '8pt'}; }
+      /* D-956: the developer's credit, the label's last line, solid black for a thermal head. */
+      .credit { flex: none; text-align: center; font-size: ${small ? '5pt' : '7pt'}; font-weight: 600; line-height: 1.1; letter-spacing: 0.06em; }
     </style>
   </head>
   <body>${input.labels.map((label) => labelHtml(label, input.options)).join('')}

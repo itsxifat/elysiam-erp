@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { DOCUMENT_CREDIT } from '@elysium/contracts';
 import { withOrg } from '@elysium/db';
 import {
   code128Encode,
@@ -45,8 +46,9 @@ import type { LabelSheetInput } from './catalog.schemas.js';
  *
  * Each sticker carries the brand's short name, the product name (cut to fit), the variant
  * in words, the selling price when asked, the barcode with its digits, the SKU code small,
- * and the print's extra line when one is given (D-651). Where each goes, and which give way
- * on a small sticker, is `stickerLayout`'s one rule for every size (D-650). The brand's name
+ * the print's extra line when one is given (D-651), and at the foot the developer's credit
+ * (D-956). Where each goes, and which give way on a small sticker, is `stickerLayout`'s one
+ * rule for every size (D-650). The brand's name
  * comes from its own organization row, never from code: the same build prints for every
  * brand (white label, M31).
  *
@@ -267,6 +269,8 @@ function stickerHtml(
       }
       case 'code':
         return `<div class="row code" style="${at}">${escapeHtml(sticker.code)}</div>`;
+      case 'credit':
+        return `<div class="row credit" style="${at}">${escapeHtml(DOCUMENT_CREDIT)}</div>`;
     }
   });
   return `<div class="sticker">${rows.join('')}</div>`;
@@ -376,6 +380,10 @@ body { font-family: ${FONT}; color: #000; -webkit-print-color-adjust: exact; }
   font-variant-numeric: tabular-nums; }
 .code { font-size: ${String(scale.code)}pt; text-align: center; line-height: 1.1;
   letter-spacing: 0.03em; white-space: nowrap; overflow: hidden; }
+/* D-956: the developer's credit, the sticker's last line. Its row is the font's own height, so
+   it is not clipped: a descender may reach a hair past the row, never past the padding. */
+.credit { font-size: ${String(scale.credit)}pt; font-weight: 500; text-align: center;
+  line-height: 1; letter-spacing: 0.02em; white-space: nowrap; }
 </style>
 </head>
 <body>${body}</body>

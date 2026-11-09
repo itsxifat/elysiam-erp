@@ -83,6 +83,7 @@ const en = {
   'st.stickers.preview.brand': 'Brand',
   'st.stickers.preview.price': '৳ Price',
   'st.stickers.preview.left': 'Left off to fit:',
+  'st.stickers.preview.dropped.credit': 'the developer credit',
   'st.stickers.preview.dropped.name2': 'the name’s second line',
   'st.stickers.preview.dropped.extra': 'the extra line',
   'st.stickers.preview.dropped.code': 'the SKU code',

@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DOCUMENT_CREDIT } from '@elysium/contracts';
 import { banglaCharactersIn, internalEan13, poisha, STICKER_MEDIA } from '@elysium/domain';
 import sharp from 'sharp';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -27,7 +28,8 @@ import { GotenbergClient, type GotenbergAsset } from './gotenberg.client.js';
  * For each: the page is English (no character of the Bengali block, U+0980 to U+09FF), the
  * PDF's every page is the exact paper size (read back from its `/MediaBox`, in points), the
  * page count is right (a long address does not spill a label onto a second page), Inter is
- * the embedded face, and page 1 is rasterised to `docs/review/M43/` for the owner to look at.
+ * the embedded face, every page ends with the developer's credit (D-956), and page 1 is
+ * rasterised to `docs/review/M43/` for the owner to look at.
  *
  * The PNG is the same HTML, the same fonts and the same Chromium as the PDF, through
  * Gotenberg's screenshot route at twice the page's size (`zoom: 2`), with the margin the PDF
@@ -270,6 +272,13 @@ describe('every printed document (M43)', () => {
       expect(banglaCharactersIn(sheet.html), sheet.name).toEqual([]);
       expect(sheet.html, sheet.name).toMatch(/<html lang="en">/);
       expect(sheet.html, sheet.name).not.toMatch(/Hind Siliguri|hind-siliguri/);
+    }
+  });
+
+  it('ends every page with the developer credit, once (D-956)', () => {
+    expect(DOCUMENT_CREDIT).toBe('Developed by tech.enfinito.com');
+    for (const sheet of sheets()) {
+      expect(sheet.html.split(DOCUMENT_CREDIT).length - 1, sheet.name).toBe(sheet.pages);
     }
   });
 

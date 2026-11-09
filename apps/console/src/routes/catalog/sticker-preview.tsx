@@ -1,3 +1,4 @@
+import { DOCUMENT_CREDIT } from '@elysium/contracts';
 import {
   EAN13_DIGIT_BAND_MODULES,
   EAN13_QUIET_LEFT,
@@ -203,6 +204,23 @@ export function StickerPreview({
             letterSpacing={fontMm * 0.03}
           >
             {text.code}
+          </text>
+        );
+      }
+      case 'credit': {
+        // D-956: the developer's credit, the same words the PDF prints at the sticker's foot.
+        const fontMm = scale.credit * PT_TO_MM;
+        return (
+          <text
+            key="credit"
+            x={widthMm / 2}
+            y={baseline(row.yMm, row.heightMm, fontMm)}
+            fontSize={fontMm}
+            fontWeight={500}
+            textAnchor="middle"
+            letterSpacing={fontMm * 0.02}
+          >
+            {DOCUMENT_CREDIT}
           </text>
         );
       }

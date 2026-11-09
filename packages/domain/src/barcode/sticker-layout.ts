@@ -11,11 +11,12 @@
  * price is on) and the **barcode with its digits**. A size that cannot hold both is refused
  * with a reason, never printed with a symbol a scanner cannot read.
  *
- * The other lines give way one at a time, least important first: the name's second line (a
- * name short enough for one line never takes two), the extra line (D-651), the SKU code, the
- * size and colour, then the product name. The bars
+ * The other lines give way one at a time, least important first: the developer's credit at the
+ * foot (D-956), the name's second line (a name short enough for one line never takes two), the
+ * extra line (D-651), the SKU code, the size and colour, then the product name. The bars
  * shorten first (from their preferred height down to 5 mm) and a line is dropped only when
- * even 5 mm bars do not leave it room.
+ * even 5 mm bars do not leave it room. Every fixed stock holds every line, the credit included;
+ * only a custom size too small for them all prints without it.
  *
  * ## The barcode's size
  *
@@ -66,11 +67,21 @@ const GAP_RESERVE_MM = 0.8;
 /** The most space between two rows; a tall sticker centres its rows instead of spreading them. */
 const MAX_GAP_MM = 2;
 
-/** Line heights, as multiples of the font size. */
-const LINE_HEIGHT = { top: 1.1, text: 1.15, code: 1.1 } as const;
+/**
+ * Held back from the space between rows, so rounding each row to the micrometre can never put
+ * the last one past the padding when the rows fill the sticker (a credit row 1.5875 mm tall
+ * rounds up by half a micrometre, D-956).
+ */
+const ROUNDING_SLACK_MM = 0.01;
+
+/**
+ * Line heights, as multiples of the font size. The credit's is the font's own size: one short
+ * line with nothing above or below it to keep apart from but the sticker's padding.
+ */
+const LINE_HEIGHT = { top: 1.1, text: 1.15, code: 1.1, credit: 1 } as const;
 
 /** The lines that may give way, in the order they do (first dropped first). */
-export const STICKER_DROP_ORDER = ['name2', 'extra', 'code', 'variant', 'name'] as const;
+export const STICKER_DROP_ORDER = ['credit', 'name2', 'extra', 'code', 'variant', 'name'] as const;
 
 export type StickerDroppableLine = (typeof STICKER_DROP_ORDER)[number];
 
@@ -98,6 +109,8 @@ export interface StickerTypeScale {
   readonly variant: number;
   readonly extra: number;
   readonly code: number;
+  /** The developer's credit, the last line (D-956). */
+  readonly credit: number;
   /** The most lines the product name may take. */
   readonly nameLines: 1 | 2;
   /** Padding at the top and bottom; the sides get 0.3 mm more. */
@@ -116,6 +129,7 @@ const SCALE_S: StickerTypeScale = {
   variant: 6.5,
   extra: 5.5,
   code: 4.5,
+  credit: 4,
   nameLines: 1,
   padMm: 1.1,
 };
@@ -126,6 +140,7 @@ const SCALE_M: StickerTypeScale = {
   variant: 7,
   extra: 6,
   code: 5,
+  credit: 4.5,
   nameLines: 2,
   padMm: 1.4,
 };
@@ -136,6 +151,7 @@ const SCALE_L: StickerTypeScale = {
   variant: 7.5,
   extra: 6.5,
   code: 5.5,
+  credit: 5,
   nameLines: 2,
   padMm: 1.8,
 };
@@ -146,6 +162,7 @@ const SCALE_XL: StickerTypeScale = {
   variant: 9,
   extra: 8,
   code: 6.5,
+  credit: 6,
   nameLines: 2,
   padMm: 2.5,
 };
@@ -158,7 +175,7 @@ export function stickerTypeScale(widthMm: number, heightMm: number): StickerType
   return SCALE_S;
 }
 
-export type StickerRowKind = 'top' | 'name' | 'variant' | 'extra' | 'symbol' | 'code';
+export type StickerRowKind = 'top' | 'name' | 'variant' | 'extra' | 'symbol' | 'code' | 'credit';
 
 /** One row of the sticker, top to bottom: where its box starts and how tall it is. */
 export interface StickerRow {
@@ -191,6 +208,7 @@ export interface StickerLayout {
     readonly variant: boolean;
     readonly extra: boolean;
     readonly code: boolean;
+    readonly credit: boolean;
   };
   /** The lines that were wanted and did not fit, in the order they were given up. */
   readonly dropped: readonly StickerDroppableLine[];
@@ -252,6 +270,7 @@ interface Attempt {
     variant: boolean;
     extra: boolean;
     code: boolean;
+    credit: boolean;
   };
 }
 
@@ -278,13 +297,15 @@ function attempt(
     variant: content.variant,
     extra: content.extra,
     code: true,
+    credit: true,
   };
   const dropped: StickerDroppableLine[] = [];
   const textHeight = () =>
     rowHeight(scale.name, LINE_HEIGHT.text, kept.nameLines) +
     (kept.variant ? rowHeight(scale.variant, LINE_HEIGHT.text) : 0) +
     (kept.extra ? rowHeight(scale.extra, LINE_HEIGHT.text) : 0) +
-    (kept.code ? rowHeight(scale.code, LINE_HEIGHT.code) : 0);
+    (kept.code ? rowHeight(scale.code, LINE_HEIGHT.code) : 0) +
+    (kept.credit ? rowHeight(scale.credit, LINE_HEIGHT.credit) : 0);
 
   for (let step = 0; step <= STICKER_DROP_ORDER.length; step += 1) {
     const room = available - top - digits - textHeight();
@@ -300,7 +321,8 @@ function attempt(
     // Give up the next line this sticker has, least important first.
     let gaveUp = false;
     for (const line of STICKER_DROP_ORDER) {
-      if (line === 'name2' && kept.nameLines === 2) kept.nameLines = 1;
+      if (line === 'credit' && kept.credit) kept.credit = false;
+      else if (line === 'name2' && kept.nameLines === 2) kept.nameLines = 1;
       else if (line === 'extra' && kept.extra) kept.extra = false;
       else if (line === 'code' && kept.code) kept.code = false;
       else if (line === 'variant' && kept.variant) kept.variant = false;
@@ -406,13 +428,19 @@ export function stickerLayout(
   if (kept.extra) stack.push({ kind: 'extra', heightMm: rowHeight(scale.extra, LINE_HEIGHT.text) });
   stack.push({ kind: 'symbol', heightMm: symbolHeightMm });
   if (kept.code) stack.push({ kind: 'code', heightMm: rowHeight(scale.code, LINE_HEIGHT.code) });
+  if (kept.credit) {
+    stack.push({ kind: 'credit', heightMm: rowHeight(scale.credit, LINE_HEIGHT.credit) });
+  }
 
   // Spread the rows over the sticker like a column with space between, but never more than
   // MAX_GAP_MM apart: the rest is split above and below, so a tall sticker stays composed.
   const contentHeight = heightMm - 2 * scale.padMm;
   const used = stack.reduce((sum, row) => sum + row.heightMm, 0);
   const free = Math.max(0, contentHeight - used);
-  const gap = stack.length > 1 ? Math.min(MAX_GAP_MM, free / (stack.length - 1)) : 0;
+  const gap =
+    stack.length > 1
+      ? Math.min(MAX_GAP_MM, Math.max(0, free - ROUNDING_SLACK_MM) / (stack.length - 1))
+      : 0;
   let y = scale.padMm + (free - gap * (stack.length - 1)) / 2;
   const rows: StickerRow[] = stack.map((row) => {
     const placed = { kind: row.kind, yMm: round3(y), heightMm: round3(row.heightMm) };
@@ -440,6 +468,7 @@ export function stickerLayout(
       variant: kept.variant,
       extra: kept.extra,
       code: kept.code,
+      credit: kept.credit,
     },
     dropped,
     rows,

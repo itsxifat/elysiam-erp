@@ -247,6 +247,8 @@ test('a receipt prints through the print stylesheet: 80 mm, English, and nothing
   await expect(receipt).toContainText('Sales receipt');
   await expect(receipt).toContainText('Elysiam Lifestyle BD');
   await expect(receipt.getByTestId('receipt-total')).toHaveText('Tk 1,500.00');
+  // D-956: the developer's credit is the receipt's last line.
+  await expect(receipt.getByTestId('receipt-credit')).toHaveText('Developed by tech.enfinito.com');
   // Not one character of the Bengali block on the paper, the taka sign included.
   const printed = await receipt.innerText();
   const bengali = new RegExp(`[${String.fromCodePoint(0x0980)}-${String.fromCodePoint(0x09ff)}]`);

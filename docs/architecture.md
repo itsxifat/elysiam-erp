@@ -1368,6 +1368,7 @@ Rules for every integration:
   - black ink, 1 px rules, tabular figures on amounts: they print cleanly on laser and thermal printers alike
   - the order's documents lead with the order number and its Code 128 barcode (the code the packing station opens), the cash to collect, and the recipient large and bold, then the courier and its numbers, the items and the totals (D-752)
   - templates: invoice, packing slip, parcel label, courier label, the QR label sheet, stickers, reseller invoice, payslip, statements
+  - every printed document, the till's receipt included, ends with one small centred line, the developer's credit `Developed by tech.enfinito.com` (`DOCUMENT_CREDIT`, D-956); on a sticker it is the layout's last row and the first to give way
   - every template takes the active org's `brand` block (§24) for legal name, address, VAT number and footer, and the logo (the block's, else the website's, D-754). The reseller invoice substitutes the reseller's business name (§13).
 
 ---

@@ -71,6 +71,7 @@ const MEDIUM_KEYS = {
 } as const;
 
 const DROPPED_KEYS = {
+  credit: 'st.stickers.preview.dropped.credit',
   name2: 'st.stickers.preview.dropped.name2',
   extra: 'st.stickers.preview.dropped.extra',
   code: 'st.stickers.preview.dropped.code',

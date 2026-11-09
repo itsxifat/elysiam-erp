@@ -4350,3 +4350,37 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
 - **Deployed:** `679e6a50` to both brands 2026-11-08: migration 0171 applied (Elysiam's 10
   adjustments read `shrinkage`), API and worker healthy, the new route answers 403 unsigned.
   The e2e file `stock-in-hand.e2e.test.ts` ran against real Postgres: 25/25 PASS.
+
+## 2026-11-09 · fix · every printed document ends with the developer's credit
+
+- **Decision:** D-956. The developer: "under every one of them there will be … developed by
+  tech.enfinito.com". `DOCUMENT_CREDIT` (`@elysium/contracts`) is one small centred line at the
+  foot of the invoice, the packing slip (A4, A5, batch), the 4 × 6 parcel label and the thermal
+  jobs drawn from it, the courier label, the order label sheet, the payslip, every barcode
+  sticker and the till's receipt; the console's sticker preview draws it too.
+- **Stickers:** a `credit` row in `stickerLayout` under the SKU code (4 pt on the smallest
+  stock, 4.5, 5, 6 pt above), the first line `STICKER_DROP_ORDER` gives up. Every fixed stock
+  keeps every line with it, the extra line included; the 50 × 25 roll's bars are 17 modules
+  (were 19), and with an extra line it prints 0.25 mm bars rather than drop a line. A hundredth
+  of a millimetre is held back from the rows' spacing, so rounding each row to the micrometre
+  can never put the last one past the padding (the property test found it at 36 × 29 mm).
+- **Fit:** the A5 slip's note, pieces line and footer sit a little closer, so it stays one page;
+  the 4 × 6 label's worst case (two-line name, clamped address, lot 12 of 20) still fits with
+  nothing in its margins, through the real Gotenberg at 203 dpi.
+- **Tests:** `documents-review.test.ts` (every page carries the credit exactly once; page sizes,
+  page counts, pictures in `docs/review/M43/`), `render.gotenberg.test.ts` (worst case,
+  `docs/review/M46/`), `order-documents.test.ts`, `order-labels.test.ts`, `stickers.test.ts`:
+  56 passed; `sticker-layout.test.ts` and the barcode suite 28 passed; the till's Playwright
+  spec 5 passed, its receipt checked for the credit and re-pictured.
+- **Follow-up:** the order label sheet's 2 × 3 and 3 × 2 sizes overflow with the QR code and the
+  cash box on, before and after this change (the amount is clipped), so the credit gives way
+  there; those two sizes need their own layout.
+- **Gates:** `pnpm verify` is not green, and not because of this change. On `0e3760f2`
+  (origin/main) alone, in a clean worktree, 95 tests in 13 files fail (`domain.test.ts`'s
+  self-approval check after the permission-only rule; the packing, handover, camera, labels,
+  orders, advances, marketing, marketplace and offers suites on "label not printed yet" and
+  their setup), and `check:api-client` drifts (`/v1/inventory/adjustments/{id}/opening-correction`
+  never regenerated). With this change the same 95 fail and no other: 4,727 passed. Format,
+  lint, typecheck, build, bundle 249.8 KB of 250, white-label, migrations, schema, route matrix
+  (683 routes) and i18n PASS. Committed on the branch `document-credit`, not merged to main.
+- **New dependencies:** none. **Migration:** none.

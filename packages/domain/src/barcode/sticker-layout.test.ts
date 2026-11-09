@@ -47,6 +47,8 @@ function wanted(
   layout: StickerLayout,
 ) {
   switch (line) {
+    case 'credit':
+      return true;
     case 'name2':
       return (
         layout.scale.nameLines === 2 &&
@@ -141,7 +143,7 @@ describe('the sticker layout (D-650)', () => {
     );
   });
 
-  it('gives lines up in the stated order: the extra line, the SKU code, size and colour, the name', () => {
+  it('gives lines up in the stated order: the credit, the extra line, the SKU code, size and colour, the name', () => {
     fc.assert(
       fc.property(tenths(29.3, 110), tenths(15, 100), content, (width, height, what) => {
         const layout = stickerLayout(width, height, what);
@@ -154,17 +156,22 @@ describe('the sticker layout (D-650)', () => {
         expect(layout.lines.code).toBe(!layout.dropped.includes('code'));
         expect(layout.lines.variant).toBe(what.variant && !layout.dropped.includes('variant'));
         expect(layout.lines.name).toBe(!layout.dropped.includes('name'));
+        expect(layout.lines.credit).toBe(!layout.dropped.includes('credit'));
         const kinds = layout.rows.map((row) => row.kind);
         expect(kinds.includes('extra')).toBe(layout.lines.extra);
         expect(kinds.includes('code')).toBe(layout.lines.code);
         expect(kinds.includes('variant')).toBe(layout.lines.variant);
         expect(kinds.includes('name')).toBe(layout.lines.name);
+        expect(kinds.includes('credit')).toBe(layout.lines.credit);
+        // D-956: the credit, when printed, is the sticker's last line.
+        if (layout.lines.credit) expect(kinds.at(-1)).toBe('credit');
       }),
       { numRuns: 2000 },
     );
-    // A short sticker shows it: the extra line and the SKU code go, the name and size stay.
+    // A short sticker shows it: the credit, the extra line and the SKU code go, the name and
+    // size stay.
     const small = stickerLayout(32.5, 20, { price: true, variant: true, extra: true });
-    expect(small.ok && small.dropped).toEqual(['extra', 'code']);
+    expect(small.ok && small.dropped).toEqual(['credit', 'extra', 'code']);
     // The smallest height keeps only what is never given up.
     const tiny = stickerLayout(29.3, 15, { price: true, variant: true, extra: true });
     expect(tiny.ok && tiny.rows.map((row) => row.kind)).toEqual(['top', 'symbol']);
@@ -177,19 +184,22 @@ describe('the sticker layout (D-650)', () => {
       if (!layout.ok) throw new Error(layout.message);
       return layout;
     };
-    // 0.25 mm (2 dots) on the 38 and 40 mm rolls, 0.375 mm (3 dots) on 45 and 50 mm.
+    // 0.25 mm (2 dots) on the 38 and 40 mm rolls, 0.375 mm (3 dots) on 45 and 50 mm. The 50 mm
+    // roll's bars give the credit its line (D-956): 17 modules, 6.375 mm (19 before).
     expect(at('thermal-38x25')).toMatchObject({ moduleMm: 0.25, barModules: 28, barHeightMm: 7 });
     expect(at('thermal-40x30').moduleMm).toBe(0.25);
-    expect(at('thermal-50x25')).toMatchObject({ moduleMm: 0.375, barModules: 19 });
+    expect(at('thermal-50x25')).toMatchObject({ moduleMm: 0.375, barModules: 17 });
     expect(at('thermal-45x35').moduleMm).toBe(0.375);
     expect(at('thermal-45x35').nameLines).toBe(2);
     // A sheet keeps the laser printer's module D-604 chose.
     expect(at('a4-3x8').moduleMm).toBe(0.375);
     expect(at('a4-4x10').moduleMm).toBe(0.33);
-    // Every fixed medium holds every line, the extra line included.
+    // Every fixed medium holds every line, the extra line and the credit included (D-956), and
+    // the credit is the last row.
     for (const id of STICKER_MEDIA_IDS) {
       expect(at(id).dropped).toEqual([]);
       expect(at(id, { ...full, extra: true }).dropped).toEqual([]);
+      expect(at(id, { ...full, extra: true }).rows.at(-1)?.kind).toBe('credit');
     }
     // A short name takes one line on a two-line size, a long one two, and the room a short
     // name leaves goes to the bars.

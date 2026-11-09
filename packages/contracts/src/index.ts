@@ -58,6 +58,8 @@ export * from './usage.js';
 export * from './storefront-marketing.js';
 // M38b: the packing station and the packing video.
 export * from './packing.js';
+// D-956: the developer's credit at the foot of every printed document.
+export * from './documents.js';
 // M46: Labels and Packaging: terminals, printers, the print queue, lots and the handover.
 export * from './labels.js';
 // M40: My account and the brand's two-step policy.

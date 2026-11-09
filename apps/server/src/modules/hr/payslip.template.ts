@@ -1,3 +1,4 @@
+import { DOCUMENT_CREDIT } from '@elysium/contracts';
 import { takaText, type Poisha } from '@elysium/domain';
 
 import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fonts.js';
@@ -18,6 +19,8 @@ import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fo
  *
  * **No signature line.** The document is generated, and a printed line saying "authorised
  * signatory" above nothing is worse than saying so.
+ *
+ * Its last line is the developer's credit, small and centred under the footer (D-956).
  */
 
 export interface PayslipBrand {
@@ -193,6 +196,11 @@ ${fontFaceCss(fonts)}
         margin-top: 10mm; padding-top: 3mm; border-top: 1px solid var(--hairline);
         color: var(--ink-soft); font-size: 8pt;
       }
+      /* D-956: the developer's credit, small and centred under everything else. */
+      .credit {
+        margin-top: 2.4mm; text-align: center; font-size: 7pt; font-weight: 500;
+        letter-spacing: 0.06em; color: var(--ink-muted);
+      }
     </style>
   </head>
   <body>
@@ -284,6 +292,7 @@ ${fontFaceCss(fonts)}
       <div>This payslip is computer-generated and needs no signature.</div>
       <div>If anything here looks wrong, please contact the HR department.</div>
     </footer>
+    <div class="credit">${escape(DOCUMENT_CREDIT)}</div>
   </body>
 </html>`;
 }

@@ -1,3 +1,4 @@
+import { DOCUMENT_CREDIT } from '@elysium/contracts';
 import {
   add,
   code128Encode,
@@ -56,6 +57,11 @@ import { DOCUMENT_FONT_STACK, fontFaceCss, type FontFile } from '../files/pdf/fo
  * taped to a box is an argument at the door about a discount the buyer did not expect. It does
  * carry the cash to collect. The label carries no item list and no notes: it is stuck on the
  * outside of the box, and a parcel's contents written on its outside is an invitation.
+ *
+ * ## The developer's credit
+ *
+ * Every page ends with one small centred line, `Developed by tech.enfinito.com` (D-956): under
+ * the footer on the invoice and the slip, under the cash box and the footer row on the label.
  *
  * Everything here is pure, so a test reads the page without a running Gotenberg; the bytes
  * are Chromium's business, the contents of the page are ours.
@@ -446,7 +452,12 @@ function pageCss(): string {
         margin-top: calc(var(--gap) * 1.4); padding-top: 3mm; border-top: 1px solid var(--hairline);
         font-size: var(--s-small); color: var(--ink-soft); line-height: 1.5;
       }
-      footer .thanks { color: var(--ink); font-weight: 700; font-size: var(--s-body); margin-bottom: 0.8mm; }`;
+      footer .thanks { color: var(--ink); font-weight: 700; font-size: var(--s-body); margin-bottom: 0.8mm; }
+      /* D-956: the developer's credit, small and centred under everything else. */
+      .credit {
+        margin-top: 2.4mm; text-align: center; font-size: var(--s-caption); font-weight: 500;
+        letter-spacing: 0.06em; color: var(--ink-muted);
+      }`;
 }
 
 function brandBlock(brand: DocumentBrand, withMeta: boolean): string {
@@ -527,13 +538,19 @@ function scanStrip(data: OrderDocumentData, paper: DocumentPaper): string {
 /** The scan strip's bar height (D-905). */
 export const SLIP_BARS_MM = { a4: 16, a5: 12 } as const;
 
-/** The packing slip's vertical rhythm, tightened to pay for its scan strip (D-905). */
+/**
+ * The packing slip's vertical rhythm, tightened to pay for its scan strip (D-905) and for the
+ * developer's credit under its footer (D-956): the note, the pieces line and the footer sit a
+ * little closer, so a typical order's A5 slip still prints on one page.
+ */
 function slipCss(): string {
   return `
       .scan-strip { margin-top: calc(var(--gap) * 0.5); }
       .hero { margin-top: calc(var(--gap) * 0.7); }
-      .strip, table.items { margin-top: calc(var(--gap) * 0.7); }
-      footer { margin-top: var(--gap); }`;
+      .strip, table.items, .close { margin-top: calc(var(--gap) * 0.7); }
+      .pieces { margin-top: 1.2mm; }
+      footer { margin-top: calc(var(--gap) * 0.6); padding-top: 1.8mm; }
+      .credit { margin-top: 1.2mm; line-height: 1.2; }`;
 }
 
 function recipient(data: OrderDocumentData): string {
@@ -688,7 +705,8 @@ export function renderOrderInvoiceHtml(input: {
         brand.invoiceFooter ?? 'To exchange an item, contact us within 7 days of delivery.',
       )}</div>
       <div>This invoice is computer-generated and needs no signature.</div>
-    </footer>`;
+    </footer>
+    ${credit()}`;
 
   return htmlDocument(
     `${data.orderNo} invoice`,
@@ -774,7 +792,8 @@ export function renderPackingSlipHtml(input: {
 
     <footer>
       <div>${escapeHtml(brand.displayName)} · Order ${escapeHtml(data.orderNo)} · Scan the barcode at the packing station to open this order.</div>
-    </footer>`;
+    </footer>
+    ${credit()}`;
 
   return htmlDocument(
     `${data.orderNo} packing slip`,
@@ -848,6 +867,7 @@ export function renderLabelHtml(input: {
         <div><span class="caption">Pieces</span><span class="value">${String(units(data))}</span></div>
         <div><span class="caption">Date</span><span class="value">${escapeHtml(documentDate(data.issuedOn))}</span></div>
       </div>
+      ${credit()}
     </div>`;
 
   return htmlDocument(`${data.orderNo} label`, labelCss(fonts), body);
@@ -917,7 +937,13 @@ function labelCss(fonts: readonly FontFile[]): string {
       .cod-amount { padding: 1.2mm 2.6mm 1.4mm; font-size: 24pt; font-weight: 700; line-height: 1.05; white-space: nowrap; font-variant-numeric: tabular-nums; }
       .foot { display: flex; justify-content: space-between; gap: 3mm; margin-top: 1.8mm; line-height: 1.2; }
       .foot .caption { margin-right: 1.6mm; }
-      .foot .value { font-size: 9.5pt; font-weight: 700; }`;
+      .foot .value { font-size: 9.5pt; font-weight: 700; }
+      /* D-956: the developer's credit, the label's last line, under the footer row. Solid black
+         at a weight a 203 dpi head draws whole: grey or a hairline stroke would print as ash. */
+      .credit {
+        margin-top: 1mm; text-align: center; font-size: 6.5pt; font-weight: 600; line-height: 1;
+        letter-spacing: 0.06em;
+      }`;
 }
 
 /** The inside of a document's `<body>`, for putting several documents in one file. */
@@ -926,6 +952,11 @@ function bodyOf(html: string): string {
   const end = html.lastIndexOf('</body>');
   if (start < 0 || end < start) throw new Error('an order document rendered without a body');
   return html.slice(start + '<body>'.length, end);
+}
+
+/** The developer's credit, the last line of every page (D-956). */
+function credit(): string {
+  return `<div class="credit" data-field="credit">${escapeHtml(DOCUMENT_CREDIT)}</div>`;
 }
 
 /** The `<style>` block of a document, so a batch carries the same CSS as a single page. */

@@ -1,3 +1,4 @@
+import { DOCUMENT_CREDIT } from '@elysium/contracts';
 import { formatDateTime, formatMoneyText } from '@elysium/i18n';
 import { createPortal } from 'react-dom';
 
@@ -22,6 +23,9 @@ import type { PosMessageKey } from '../i18n/messages.js';
  *
  * No cost appears here and none can: the receipt is built from the till's own
  * document, which never carries one (invariant 5).
+ *
+ * Its last line is the developer's credit, small and centred under the thanks
+ * (D-956), in the same ink as the rest: thermal paper prints grey as dither.
  */
 
 export interface ReceiptLine {
@@ -198,6 +202,12 @@ export function Receipt({
       <footer className="mt-3 text-center">
         {pending ? <p className="font-medium">{t('pos.receipt.pending')}</p> : null}
         <p>{data.header.footer ?? t('pos.receipt.thanks')}</p>
+        <p
+          className="mt-2 border-t border-dashed border-foreground pt-1 text-2xs tracking-wide"
+          data-testid="receipt-credit"
+        >
+          {DOCUMENT_CREDIT}
+        </p>
       </footer>
     </article>
   );

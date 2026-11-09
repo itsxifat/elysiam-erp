@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { DOCUMENT_CREDIT } from '@elysium/contracts';
 import { withOrg } from '@elysium/db';
 import {
   code128Encode,
@@ -33,7 +34,8 @@ import { ORDERS_PORT, type OrdersPort } from './ports/orders.port.js';
  * and invariant 10 is about logs, fixtures and prompts, not the one document whose job is to
  * get the parcel to that person.
  *
- * No item prices, no item list and no cost. A label is stuck on the outside of a box.
+ * No item prices, no item list and no cost. A label is stuck on the outside of a box. Its last
+ * line is the developer's credit, small and centred (D-956).
  *
  * Only a **booked** parcel gets a label. A label without the courier's number on it is a box
  * the pickup desk cannot scan, and printing one would invite exactly that.
@@ -242,6 +244,7 @@ export function renderLabelsHtml(input: {
         <div class="amount">${escape(takaText(poisha(nothing ? 0n : label.codAmountPoisha)))}</div>
       </div>
       ${label.note === null || label.note.trim() === '' ? '' : `<footer><span class="caption">Note</span> ${escape(label.note)}</footer>`}
+      <div class="credit">${escape(DOCUMENT_CREDIT)}</div>
     </section>`;
     })
     .join('');
@@ -277,6 +280,8 @@ export function renderLabelsHtml(input: {
       .cod-label { background: #000; color: #fff; padding: 1.2mm 2.6mm; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
       .amount { padding: 1.4mm 2.6mm 1.6mm; font-weight: 700; font-size: 22pt; line-height: 1.05; white-space: nowrap; font-variant-numeric: tabular-nums; }
       footer { font-size: 8.5pt; font-weight: 500; overflow-wrap: anywhere; }
+      /* D-956: the developer's credit, the label's last line, solid black for a thermal head. */
+      .credit { flex: none; text-align: center; font-size: 6.5pt; font-weight: 600; line-height: 1; letter-spacing: 0.06em; }
     </style>
   </head>
   <body>${pages}
