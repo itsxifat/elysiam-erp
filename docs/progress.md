@@ -4390,3 +4390,38 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   (`erp.elysium-lifestyle.bd`, `erp.beownz.com`). The credit is in each API's templates and each
   web root (the till's receipt, the console's sticker preview); a 4 × 6 label rendered with
   Elysiam's own API and Gotenberg prints it.
+
+## 2026-11-10 · deploy · Elysiam on elysiam.bd: the website at elysiam.bd, the ERP at erp.elysiam.bd
+
+- **Decision:** D-974. The developer: the website at `elysiam.bd`, the ERP at `erp.elysiam.bd`,
+  and `demo.elysium-lifestyle.bd` and `erp.elysium-lifestyle.bd` removed completely.
+- **Found first (read-only):** the old names lived in Elysiam's `.env.brand`
+  (`BRAND_ADMIN_HOST`), its nginx site, the website's nginx site and env file (four addresses),
+  two certificates, Website → Settings' Site URL, the website key's label, the mother's
+  registry, and 218 audit rows (kept: append-only). No courier webhook in 30 days, and no Meta,
+  Envo, payment-gateway or email setting, so nothing outside had to be re-pointed; the
+  website's Google sign-in is not set up; no till is registered; three print-station computers
+  are bound.
+- **Done on the brands server:** certificates for `erp.elysiam.bd` and `elysiam.bd`; the ERP's
+  host and nginx site switched and Elysiam redeployed at `728b6d8d` (API public URL and trusted
+  origin `https://erp.elysiam.bd`, the console, portal and till built for it); the website's
+  addresses changed, rebuilt (previous image kept as `elysium-web:previous`) and its nginx
+  site switched; Site URL `https://elysiam.bd`; a new website key "elysiam.bd website"; the
+  mother's Elysiam `admin_url` `https://erp.elysiam.bd` (audited as `system:operator`). The old
+  certificates deleted; `retired-elysium-lifestyle.conf` refuses the old names, which
+  otherwise fell through to another site on the server while Cloudflare still proxies them.
+- **Checked:** `https://erp.elysiam.bd` (console, `/portal/`, `/pos/`, `/health/ready`) 200,
+  no old host in the built files; `https://elysiam.bd` 200, `/api/health?erp=1` `"erp":"ok"`
+  with the new key, `/admin` 308 to `https://erp.elysiam.bd/`, product images from
+  `erp.elysiam.bd/media` 200 directly and through the site's image optimiser, no old name on
+  its pages; the old names answer Cloudflare's 525 (HTTPS) and 520 (HTTP); Beownz, the mother
+  and the server's other sites 200.
+- **For the owner:** delete the two old DNS records in the `elysium-lifestyle.bd` zone (then
+  the retired nginx file can go); revoke the old "demo.elysium-lifestyle.bd website" key in
+  Website → Connection; staff sign in again at `https://erp.elysiam.bd`, and the three
+  print-station computers are bound again there (their old device rows can be removed); add
+  `www.elysiam.bd` to DNS if the website should answer there too. The website's own repository
+  still names the old addresses as fallback defaults (`next.config.mjs`, `app/layout.js`,
+  `middleware.js`, `Dockerfile`, `deploy/compose.demo.yml`, `.env.example`, README); the env
+  file and build arguments override them on the server.
+- **New dependencies:** none. **Migration:** none.
