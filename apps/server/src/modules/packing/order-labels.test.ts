@@ -68,3 +68,23 @@ describe('the label sheet’s QR code (D-912)', () => {
     expect(booked).not.toContain('2610000042');
   });
 });
+
+describe('the developer’s credit on the label sheet (D-956)', () => {
+  it('ends every label of a full size, and is left off the two small thermal sizes', () => {
+    const credit = '<div class="credit">Developed by tech.enfinito.com</div>';
+    for (const size of ['a4', 'a5', 'a6', '4x6', '100x150', '80mm'] as const) {
+      const html = orderLabelsHtml({ labels: [LABEL], options: { ...OPTIONS, size }, fonts: [] });
+      expect(html, size).toContain(credit);
+    }
+    for (const size of ['2x3', '3x2'] as const) {
+      for (const layout of ['portrait', 'landscape'] as const) {
+        const html = orderLabelsHtml({
+          labels: [LABEL],
+          options: { ...OPTIONS, size, layout },
+          fonts: [],
+        });
+        expect(html, `${size} ${layout}`).not.toContain('Developed by');
+      }
+    }
+  });
+});

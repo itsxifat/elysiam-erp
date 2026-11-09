@@ -4372,9 +4372,10 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   `docs/review/M46/`), `order-documents.test.ts`, `order-labels.test.ts`, `stickers.test.ts`:
   56 passed; `sticker-layout.test.ts` and the barcode suite 28 passed; the till's Playwright
   spec 5 passed, its receipt checked for the credit and re-pictured.
-- **Follow-up:** the order label sheet's 2 × 3 and 3 × 2 sizes overflow with the QR code and the
-  cash box on, before and after this change (the amount is clipped), so the credit gives way
-  there; those two sizes need their own layout.
+- **Left off:** the order label sheet's 2 × 3 and 3 × 2 sizes print no credit (the developer:
+  leave the ones that cannot take the extra text). Follow-up: those two sizes overflow with the
+  QR code and the cash box on, before and after this change (the amount is clipped); they need
+  their own layout.
 - **Gates:** `pnpm verify` is not green, and not because of this change. On `0e3760f2`
   (origin/main) alone, in a clean worktree, 95 tests in 13 files fail (`domain.test.ts`'s
   self-approval check after the permission-only rule; the packing, handover, camera, labels,
