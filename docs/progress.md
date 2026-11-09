@@ -4385,3 +4385,8 @@ test`). Elysiam had one packing open at the deploy, which finishes the old way (
   lint, typecheck, build, bundle 249.8 KB of 250, white-label, migrations, schema, route matrix
   (683 routes) and i18n PASS. Committed on the branch `document-credit`, not merged to main.
 - **New dependencies:** none. **Migration:** none.
+- **Deployed:** `728b6d8d` to both brands 2026-11-10 (`infra/brand/deploy.sh enfinito@… all`):
+  no migration to apply (170), API and worker healthy on 3501 and 3502, both consoles 200
+  (`erp.elysium-lifestyle.bd`, `erp.beownz.com`). The credit is in each API's templates and each
+  web root (the till's receipt, the console's sticker preview); a 4 × 6 label rendered with
+  Elysiam's own API and Gotenberg prints it.
